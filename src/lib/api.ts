@@ -177,11 +177,39 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
-  /** A3-2b回显: all ACTIVE image bindings of a shop (keyed downstream by thirdPlatformItemId). */
+  /** A3-2b回显: all live image bindings of a shop (ACTIVE + PENDING), keyed by thirdPlatformItemId. */
   listImageBindings: (shop: string) =>
     request<ImageBindingView[]>(
       `/api/plugin/match/image-search/bindings?shopName=${encodeURIComponent(shop)}`
     ),
+
+  /** "确认无误": promote a product's PENDING (AI-suggested) image binding to ACTIVE. */
+  ackImageBinding: (shop: string, thirdPlatformItemId: string) => {
+    const params = new URLSearchParams({ shopName: shop, thirdPlatformItemId });
+    return request<void>(`/api/plugin/match/image-search/ack?${params.toString()}`, {
+      method: "POST",
+    });
+  },
+
+  /** "取消关联": soft-unbind a product's image binding (PENDING or ACTIVE). */
+  unbindImageBinding: (shop: string, thirdPlatformItemId: string) => {
+    const params = new URLSearchParams({ shopName: shop, thirdPlatformItemId });
+    return request<void>(`/api/plugin/match/image-search/unbind?${params.toString()}`, {
+      method: "POST",
+    });
+  },
+
+  /** "确认无误": promote a single variant's PENDING binding to ACTIVE (SKU 对齐页). */
+  ackSkuBinding: (shop: string, thirdPlatformSkuId: string) => {
+    const params = new URLSearchParams({ shopName: shop, thirdPlatformSkuId });
+    return request<void>(`/api/plugin/match/sku/ack?${params.toString()}`, { method: "POST" });
+  },
+
+  /** "取消关联": soft-unbind a single variant's binding (SKU 对齐页). */
+  unbindSkuBinding: (shop: string, thirdPlatformSkuId: string) => {
+    const params = new URLSearchParams({ shopName: shop, thirdPlatformSkuId });
+    return request<void>(`/api/plugin/match/sku/unbind?${params.toString()}`, { method: "POST" });
+  },
 
   /**
    * S1-a: SKU binding overview — products with at least one ACTIVE binding, aggregated per product

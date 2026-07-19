@@ -11,7 +11,6 @@ import {
   Layers,
   Loader2,
   RefreshCw,
-  Wand2,
 } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
@@ -49,6 +48,9 @@ const BREADCRUMBS = [
   { label: "智能选品", href: "/products" },
   { label: "SKU 绑定" },
 ];
+
+// Hold the completed progress bar briefly so users can see the finished state before the result view.
+const SCAN_DWELL_MS = 900;
 
 const matchRules = [
   "商品标题与关键词",
@@ -115,7 +117,7 @@ export default function SkuAlignPage() {
     } else {
       setPhase("scan");
       void startScan().then(() => {
-        void finishToResult();
+        window.setTimeout(() => void finishToResult(), SCAN_DWELL_MS);
       });
     }
   }, [isAuthorized, shopName, load, startScan, finishToResult]);
@@ -125,7 +127,7 @@ export default function SkuAlignPage() {
     clearScanned("sku-align", shopName);
     setPhase("scan");
     void startScan().then(() => {
-      void finishToResult();
+      window.setTimeout(() => void finishToResult(), SCAN_DWELL_MS);
     });
   }, [shopName, startScan, finishToResult]);
 
@@ -201,7 +203,7 @@ export default function SkuAlignPage() {
     title: "SKU 绑定助手",
     summary:
       products.length === 0
-        ? "确认匹配后的商品会在这里按变体展开，我会帮你把每个变体对齐到 1688 货源 SKU。"
+        ? "确认匹配后的商品会在这里按变体展开，我会帮你把每个变体对齐到 Tangbuy 货源 SKU。"
         : `我已帮你匹配 ${stats.boundVariants}/${stats.totalVariants} 个变体${
             stats.partial > 0 ? `，还有 ${stats.partial} 个商品需要手动处理` : "，全部已就绪"
           }。`,
@@ -241,7 +243,7 @@ export default function SkuAlignPage() {
     title: "正在自动整理",
     summary: scanDone
       ? "首轮自动对齐已完成，正在进入对照确认。"
-      : "我正在把已绑定商品的变体尝试对齐到 1688 货源 SKU，并预热货源明细。",
+      : "我正在把已绑定商品的变体尝试对齐到 Tangbuy 货源 SKU，并预热货源明细。",
     bullets: scanTasks.map((t) => `${t.label}：${scanStatusLabel(t.status, t.resultText)}`),
     nextAction: { label: scanDone ? "查看结果" : "直接查看当前结果", action: "view" },
   };
@@ -292,7 +294,7 @@ export default function SkuAlignPage() {
             <InfoCard title="这一步在做什么">
               <ul className="space-y-1.5">
                 <li>读取已绑定商品与变体</li>
-                <li>按 1688 货源 SKU 矩阵自动对齐（可信项落库）</li>
+                <li>按 Tangbuy 货源 SKU 矩阵自动对齐（可信项落库）</li>
                 <li>预热货源明细，进入后图 / 价即时可见</li>
               </ul>
             </InfoCard>
@@ -327,12 +329,17 @@ export default function SkuAlignPage() {
         breadcrumbs={BREADCRUMBS}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={restartScan}>
-              <Wand2 className="h-4 w-4" />
-              重新整理
+            <Button
+              variant="secondary"
+              onClick={restartScan}
+              className="w-9 px-0"
+              title="重新整理（重新对齐 SKU 并预热货源明细）"
+              aria-label="重新整理"
+            >
+              <RefreshCw className="h-4 w-4" />
             </Button>
             <Link href="/logistics">
-              <Button variant="secondary">
+              <Button>
                 进入物流确认
                 <ArrowRight className="h-4 w-4" />
               </Button>

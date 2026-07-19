@@ -23,7 +23,7 @@ function initialTasks(): ScanTaskView[] {
     { id: TASK_IDS.sync, label: "同步店铺商品镜像", status: "pending" },
     { id: TASK_IDS.load, label: "读取在售商品与货源关联", status: "pending" },
     { id: TASK_IDS.match, label: "自动图搜关联货源", status: "pending" },
-    { id: TASK_IDS.reco, label: "生成离线目录候选", status: "pending" },
+    { id: TASK_IDS.reco, label: "生成 Tangbuy 商城候选", status: "pending" },
   ];
 }
 
@@ -129,9 +129,10 @@ export function useProductsScan(shopName: string) {
                 imageSource: res.imageSource,
                 querySource: res.querySource,
                 appliedQuery: res.appliedQuery,
+                auto: true,
               });
               linked += 1;
-              pushRecent(`${name}：已关联 ${cand.title || cand.productId}`);
+              pushRecent(`${name}：AI 关联 ${cand.title || cand.productId}（待确认）`);
             }
           } catch {
             pushRecent(`${name}：跳过`);
@@ -157,7 +158,7 @@ export function useProductsScan(shopName: string) {
     patch(TASK_IDS.reco, { status: "running" });
     try {
       const recs = await api.getRecommendations(shopName, RECOMMENDATION_LIMIT);
-      patch(TASK_IDS.reco, { status: "done", resultText: `离线目录 ${recs.length} 条可上架` });
+      patch(TASK_IDS.reco, { status: "done", resultText: `Tangbuy 商城 ${recs.length} 条可上架` });
     } catch (err) {
       patch(TASK_IDS.reco, { status: "failed", error: readableError(err) });
     }

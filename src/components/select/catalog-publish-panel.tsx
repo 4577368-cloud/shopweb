@@ -230,7 +230,7 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
     <>
       <div className="mb-3 flex items-center justify-between">
         <p className="text-xs text-ink-subtle">
-          从 Tangbuy 离线目录选品，按定价模板推算售价后一键上架为可售商品。
+          从 Tangbuy 商城选品，按定价模板推算售价后一键上架为可售商品。
         </p>
         <Button
           variant="secondary"
@@ -271,7 +271,7 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
 
       <div className="mb-2 mt-4 flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-ink">离线目录 · 可上架</h2>
+          <h2 className="text-sm font-semibold text-ink">Tangbuy 商城 · 可上架</h2>
           <p className="mt-0.5 text-xs text-ink-subtle">
             预估售价由上方定价模板推算 · 最多展示 {RECOMMENDATION_LIMIT} 条
           </p>
@@ -288,7 +288,7 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
       ) : recommendations.length === 0 ? (
         <EmptyState
           title="暂无可上架的货源商品"
-          description="离线目录当前为空，或后端未返回数据。"
+          description="Tangbuy 商城当前为空，或后端未返回数据。"
         />
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

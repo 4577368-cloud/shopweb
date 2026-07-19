@@ -43,22 +43,22 @@ function imageSearchError(err: unknown): string {
     raw = err.message;
   }
   if (raw.startsWith("AOP_CRED_MISSING") || raw.startsWith("AK_MISSING")) {
-    return "1688 开放平台凭证未配置或无效，请配置后重试";
+    return "Tangbuy 货源平台凭证未配置或无效，请配置后重试";
   }
   if (raw.startsWith("AOP_TOKEN_INVALID")) {
-    return "1688 授权已失效或过期，请重新授权后重试";
+    return "Tangbuy 货源授权已失效或过期，请重新授权后重试";
   }
   if (raw.startsWith("IMAGE_UNREADABLE")) {
     return "商品主图无法读取或上传，请更换主图后重试";
   }
   if (raw.startsWith("NO_PRIMARY_IMAGE")) {
-    return "该商品无主图，无法进行 1688 图搜";
+    return "该商品无主图，无法进行 Tangbuy 图搜";
   }
   if (raw.startsWith("PRODUCT_NOT_FOUND")) {
     return "未找到该商品镜像，请先同步商品";
   }
   if (raw.startsWith("GATEWAY_BUSY")) {
-    return "1688 网关繁忙或限流，请稍后重试";
+    return "Tangbuy 货源网关繁忙或限流，请稍后重试";
   }
   return raw || "图搜失败";
 }
@@ -112,6 +112,17 @@ function formatCny(price?: string | null): string {
   return `¥${trimmed}`;
 }
 
+/** Best available source image for a bound offer: white-bg image, else the first per-SKU image. */
+function offerImage(offer: OfferDetail | null): string | null {
+  if (offer?.whiteImageUrl) return offer.whiteImageUrl;
+  for (const sku of offer?.skus ?? []) {
+    for (const attr of sku.skuAttributes ?? []) {
+      if (attr.skuImageUrl) return attr.skuImageUrl;
+    }
+  }
+  return null;
+}
+
 /** Representative price of a bound offer, derived from its real SKU matrix (min–max). */
 function offerPriceText(offer: OfferDetail | null): string | null {
   const prices = (offer?.skus ?? [])
@@ -148,7 +159,7 @@ function priceRange(p: ShopMirrorProduct): string {
   return `${one.toFixed(2)}${cur}`;
 }
 
-type ShopFilter = "all" | "bound" | "unbound";
+type ShopFilter = "all" | "pending" | "confirmed" | "unbound";
 
 export function ShopProductsPanel({ onActivity }: { onActivity?: () => void }) {
   const { shop, showToast } = useOnboarding();
@@ -212,21 +223,38 @@ export function ShopProductsPanel({ onActivity }: { onActivity?: () => void }) {
     }
   };
 
-  const isBound = useCallback(
-    (p: ShopMirrorProduct) => Boolean(bindings[p.thirdPlatformItemId]?.bound),
+  // null = unbound; "pending" = AI 待确认; "confirmed" = 已确认 (legacy rows without status = confirmed).
+  const stateOf = useCallback(
+    (p: ShopMirrorProduct): "pending" | "confirmed" | null => {
+      const b = bindings[p.thirdPlatformItemId];
+      if (!b?.bound) return null;
+      return b.bindStatus === "PENDING" ? "pending" : "confirmed";
+    },
     [bindings]
   );
 
   const counts = useMemo(() => {
-    const bound = products.filter(isBound).length;
-    return { all: products.length, bound, unbound: products.length - bound };
-  }, [products, isBound]);
+    let pending = 0;
+    let confirmed = 0;
+    for (const p of products) {
+      const s = stateOf(p);
+      if (s === "pending") pending += 1;
+      else if (s === "confirmed") confirmed += 1;
+    }
+    return {
+      all: products.length,
+      pending,
+      confirmed,
+      unbound: products.length - pending - confirmed,
+    };
+  }, [products, stateOf]);
 
   const filtered = useMemo(() => {
-    if (filter === "bound") return products.filter(isBound);
-    if (filter === "unbound") return products.filter((p) => !isBound(p));
+    if (filter === "pending") return products.filter((p) => stateOf(p) === "pending");
+    if (filter === "confirmed") return products.filter((p) => stateOf(p) === "confirmed");
+    if (filter === "unbound") return products.filter((p) => stateOf(p) === null);
     return products;
-  }, [products, filter, isBound]);
+  }, [products, filter, stateOf]);
 
   return (
     <>
@@ -235,7 +263,8 @@ export function ShopProductsPanel({ onActivity }: { onActivity?: () => void }) {
           variant="chip"
           tabs={[
             { id: "all", label: "全部", count: counts.all },
-            { id: "bound", label: "已关联货源", count: counts.bound },
+            { id: "pending", label: "AI 待确认", count: counts.pending },
+            { id: "confirmed", label: "已确认", count: counts.confirmed },
             { id: "unbound", label: "未关联", count: counts.unbound },
           ]}
           value={filter}
@@ -308,7 +337,7 @@ export function ShopProductsPanel({ onActivity }: { onActivity?: () => void }) {
   );
 }
 
-/** A compact tile (image + title + price) for one side of the Shopify↔1688 comparison. */
+/** A compact tile (image + title + price) for one side of the Shopify↔Tangbuy comparison. */
 function CompareTile({
   label,
   labelTone,
@@ -330,6 +359,10 @@ function CompareTile({
   placeholder?: ReactNode;
   loading?: boolean;
 }) {
+  const [imgError, setImgError] = useState(false);
+  useEffect(() => {
+    setImgError(false);
+  }, [image]);
   return (
     <div className="flex min-w-0 flex-col rounded-[var(--radius-control)] border border-hairline bg-surface-muted/40 p-2.5">
       <span
@@ -354,7 +387,7 @@ function CompareTile({
       ) : (
         <>
           <div className="relative mt-1.5 aspect-square w-full overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface">
-            {image ? (
+            {image && !imgError ? (
               <Image
                 src={image}
                 alt={imageAlt ?? title ?? ""}
@@ -362,10 +395,11 @@ function CompareTile({
                 sizes="180px"
                 className="object-cover"
                 unoptimized
+                onError={() => setImgError(true)}
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-[10px] text-ink-subtle">
-                无图
+              <div className="flex h-full w-full items-center justify-center px-2 text-center text-[10px] text-ink-subtle">
+                {image ? "货源图暂不可用" : "无图"}
               </div>
             )}
           </div>
@@ -404,9 +438,14 @@ function ShopProductCard({
   // The panel owns binding truth (回显 map); the card renders the prop and reports confirms upward.
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [acking, setAcking] = useState(false);
+  const [unbinding, setUnbinding] = useState(false);
 
   const boundOfferId =
     binding?.bound && binding.tangbuyProductId ? binding.tangbuyProductId : null;
+  // AI 待确认 (PENDING) vs 已确认 (ACTIVE). Legacy rows without a status are treated as confirmed.
+  const bindPending = Boolean(binding?.bound) && binding?.bindStatus === "PENDING";
+  const bindConfirmed = Boolean(binding?.bound) && !bindPending;
 
   // Bound cards lazily fetch the real offer detail so the right tile can show 货源图/价 (route B).
   const [offer, setOffer] = useState<OfferDetail | null>(null);
@@ -484,6 +523,42 @@ function ShopProductCard({
     }
   };
 
+  // "确认无误": promote the AI-suggested (PENDING) binding to confirmed (ACTIVE).
+  const ackBinding = async () => {
+    if (acking || !binding?.bound) return;
+    setAcking(true);
+    setConfirmError(null);
+    try {
+      await api.ackImageBinding(shopName, item.thirdPlatformItemId);
+      onBound(item.thirdPlatformItemId, { ...binding, bindStatus: "ACTIVE" });
+      showToast("已确认关联");
+    } catch (err) {
+      setConfirmError(imageMatchError(err));
+    } finally {
+      setAcking(false);
+    }
+  };
+
+  // "取消关联": soft-unbind; the card returns to the unmatched state (can re-search).
+  const unbindBinding = async () => {
+    if (unbinding || !binding?.bound) return;
+    const ok = window.confirm("取消该商品的货源关联？取消后可重新查找货源。");
+    if (!ok) return;
+    setUnbinding(true);
+    setConfirmError(null);
+    try {
+      await api.unbindImageBinding(shopName, item.thirdPlatformItemId);
+      onBound(item.thirdPlatformItemId, { bound: false });
+      setResult(null);
+      setCurrentIdx(0);
+      showToast("已取消关联");
+    } catch (err) {
+      setConfirmError(imageMatchError(err));
+    } finally {
+      setUnbinding(false);
+    }
+  };
+
   const candidates = result?.items ?? null;
   const current = candidates?.[currentIdx] ?? null;
   // Right tile shows the active search candidate when searching, else the bound source, else a CTA.
@@ -499,7 +574,7 @@ function ShopProductCard({
 
   return (
     <article className="flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface p-3.5 shadow-card">
-      {/* Shopify ↔ 1688 side-by-side comparison */}
+      {/* Shopify ↔ Tangbuy side-by-side comparison */}
       <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2.5">
         <CompareTile
           label="Shopify"
@@ -520,10 +595,19 @@ function ShopProductCard({
 
         <div className="flex flex-col items-center justify-center gap-1 px-0.5">
           <MoveRight className="h-4 w-4 text-ink-subtle" />
-          {binding?.bound && binding.matchScore != null && binding.matchScore > 0 ? (
-            <span className="text-center text-[10px] font-medium text-brand">
-              相似度
+          {bindPending ? (
+            <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-center text-[10px] font-medium text-amber-700">
+              AI
               <br />
+              待确认
+            </span>
+          ) : bindConfirmed ? (
+            <span className="rounded-full bg-brand-soft px-1.5 py-0.5 text-center text-[10px] font-medium text-brand-strong">
+              已确认
+            </span>
+          ) : null}
+          {binding?.bound && binding.matchScore != null && binding.matchScore > 0 ? (
+            <span className="text-center text-[10px] font-medium text-ink-subtle">
               {formatSimilarity(binding.matchScore)}
             </span>
           ) : null}
@@ -531,7 +615,7 @@ function ShopProductCard({
 
         {rightMode === "candidate" && current ? (
           <CompareTile
-            label="1688 候选"
+            label="Tangbuy 候选"
             labelTone="brand"
             image={current.imageUrl}
             imageAlt={current.title || current.productId}
@@ -555,9 +639,9 @@ function ShopProductCard({
           />
         ) : rightMode === "bound" ? (
           <CompareTile
-            label="1688 货源"
+            label="Tangbuy 货源"
             labelTone="brand"
-            image={offer?.whiteImageUrl}
+            image={offerImage(offer)}
             imageAlt={offer?.subjectTrans ?? offer?.subject ?? boundOfferId ?? ""}
             title={offer?.subjectTrans ?? offer?.subject ?? `offer ${boundOfferId}`}
             loading={offerLoading && !offer}
@@ -574,7 +658,7 @@ function ShopProductCard({
           />
         ) : (
           <CompareTile
-            label="1688 货源"
+            label="Tangbuy 货源"
             labelTone="brand"
             placeholder={
               hasImage ? "未关联货源 · 点「查找货源」" : "该商品无主图，无法图搜"
@@ -613,7 +697,7 @@ function ShopProductCard({
               className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-muted underline underline-offset-2 hover:text-ink"
             >
               <ExternalLink className="h-3 w-3" />
-              1688 详情
+              货源详情
             </a>
           ) : null}
           {current ? (
@@ -637,6 +721,32 @@ function ShopProductCard({
                     : "确认匹配"}
               </Button>
             )
+          ) : boundOfferId ? (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => void unbindBinding()}
+                disabled={unbinding || acking}
+              >
+                {unbinding ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                取消关联
+              </Button>
+              {bindPending ? (
+                <Button size="sm" onClick={() => void ackBinding()} disabled={acking || unbinding}>
+                  {acking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  确认无误
+                </Button>
+              ) : null}
+            </>
+          ) : hasImage ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => showToast("发起询盘功能即将上线")}
+            >
+              发起询盘
+            </Button>
           ) : null}
         </div>
       </div>
@@ -664,7 +774,7 @@ function ShopProductCard({
 
       {result && candidates && candidates.length === 0 ? (
         <p className="mt-2.5 text-xs text-ink-muted">
-          1688 未召回相似货源，可稍后重试或更换商品。
+          Tangbuy 未召回相似货源，可稍后重试或更换商品。
         </p>
       ) : null}
 

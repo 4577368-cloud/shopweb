@@ -29,13 +29,10 @@ import { InfoCard } from "@/components/workbench/info-card";
 import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
 import { useOnboarding } from "@/context/onboarding-context";
-import { api, shopifyInstallUrl } from "@/lib/api";
+import { api } from "@/lib/api";
+import { SHOP_STORAGE_KEY, launchShopifyInstall } from "@/lib/shopify-install";
 import type { AiPanelContent } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-const SHOP_DOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i;
-// Remembers the shop the user launched OAuth for, so we can restore state after the redirect.
-const SHOP_STORAGE_KEY = "tangbuy.shopDomain";
 
 const trustSignals = [
   "官方安全授权",
@@ -197,29 +194,13 @@ export default function AuthorizePage() {
     }
   }, [refreshing, shop.domain, shop.name, shop.authorizedAt, hydrateAuthorizedShop, loadBound, showToast]);
 
-  // Real Shopify OAuth: validate the shop domain, then full-page navigate to the backend install
-  // endpoint (which 302s to Shopify's consent screen). No mock state is mutated here.
+  // Fallback connect on the return-landing page: reuse the shared launcher (validate → remember →
+  // full-page navigate to the backend install → Shopify consent). No OAuth logic lives here.
   const startShopifyInstall = (explicitDomain?: string) => {
-    const shopDomain = (explicitDomain ?? shopDomainInput)
-      .trim()
-      .replace(/^https?:\/\//, "")
-      .replace(/\/+$/, "");
-    if (!shopDomain) {
+    const result = launchShopifyInstall(explicitDomain ?? shopDomainInput);
+    if (!result.ok) {
       setEditingDomain(true);
-      showToast("请先填写店铺域名");
-      return;
-    }
-    if (!SHOP_DOMAIN_PATTERN.test(shopDomain)) {
-      setEditingDomain(true);
-      showToast("请输入正确的店铺域名，例如 your-store.myshopify.com");
-      return;
-    }
-    try {
-      const url = shopifyInstallUrl(shopDomain);
-      window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);
-      window.location.href = url;
-    } catch {
-      showToast("后端地址未配置（NEXT_PUBLIC_API_BASE）");
+      if (result.error) showToast(result.error);
     }
   };
 
@@ -278,7 +259,7 @@ export default function AuthorizePage() {
     >
       <WorkbenchPanel
         title="授权店铺"
-        description="这是工作台入口。连接 Shopify 后，系统会自动同步商品与订单基础数据，无需手动导入。"
+        description="Shopify 授权回跳后在这里恢复接入状态并查看结果；也可直接从这里兜底连接店铺。"
         actions={
           isAuthorized ? (
             <div className="flex items-center gap-2">
@@ -469,7 +450,7 @@ function buildAssistant(
 
   if (phase === "authorized") {
     const boundText =
-      boundCount != null ? `，其中 ${boundCount} 个已关联 1688 货源` : "";
+      boundCount != null ? `，其中 ${boundCount} 个已关联 Tangbuy 货源` : "";
     return {
       copilot: {
         title: "接入完成",
@@ -490,7 +471,7 @@ function buildAssistant(
           a:
             boundCount != null && boundCount > 0
               ? `建议前往「智能选品」继续为在售商品关联货源，当前已关联 ${boundCount} 个。`
-              : "建议前往「智能选品」，为在售商品自动图搜关联 1688 货源。",
+              : "建议前往「智能选品」，为在售商品自动图搜关联 Tangbuy 货源。",
         },
         {
           id: "count0",
@@ -502,8 +483,8 @@ function buildAssistant(
           q: "“已关联货源”是什么？",
           a:
             boundCount != null
-              ? `指已确认绑定 1688 货源的在售商品数，当前为 ${boundCount} 个。`
-              : "指已确认绑定 1688 货源的在售商品数，正在读取。",
+              ? `指已确认绑定 Tangbuy 货源的在售商品数，当前为 ${boundCount} 个。`
+              : "指已确认绑定 Tangbuy 货源的在售商品数，正在读取。",
         },
       ],
     };
@@ -536,7 +517,7 @@ function buildAssistant(
     copilot: {
       title: "开始接入",
       summary:
-        "Hi！我是 Tangbuy AI Copilot。连接 Shopify 后，我会自动同步商品，并在后续为你匹配 1688 货源、优化利润。",
+        "Hi！我是 Tangbuy AI Copilot。连接 Shopify 后，我会自动同步商品，并在后续为你匹配 Tangbuy 货源、优化利润。",
       bullets: [
         "整页跳转至 Shopify 官方授权，安全只读",
         "授权后自动同步商品镜像",

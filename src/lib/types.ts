@@ -375,12 +375,16 @@ export interface ConfirmImageMatchRequest {
   imageSource?: ImageSearchImageSource | null;
   querySource?: ImageSearchQuerySource | null;
   appliedQuery?: string | null;
+  /** true=扫描自动关联，落 PENDING 待确认；false/缺省=人工确认，落 ACTIVE。 */
+  auto?: boolean;
 }
 
 /**
  * 图搜绑定视图：confirm 响应 + GET bindings 回显项。bound=false 为正常的"未绑定"。
  * imageSource/querySource/appliedQuery/detailUrl 由后端从审计 matchReason 解码。
  */
+export type BindingStatus = "PENDING" | "ACTIVE";
+
 export interface ImageBindingView {
   bound: boolean;
   thirdPlatformItemId?: string | null;
@@ -388,6 +392,8 @@ export interface ImageBindingView {
   tangbuyProductId?: string | null;
   tangbuySkuId?: string | null;
   matchScore?: number | null;
+  /** PENDING = AI 自动关联待确认；ACTIVE = 已确认。老数据可能为空。 */
+  bindStatus?: BindingStatus | null;
   imageSource?: ImageSearchImageSource | null;
   querySource?: ImageSearchQuerySource | null;
   appliedQuery?: string | null;
@@ -406,6 +412,8 @@ export interface SkuVariantBinding {
   candidateId?: number | null;
   tangbuyProductId?: string | null;
   tangbuySkuId?: string | null;
+  /** PENDING = AI 自动对齐待确认；ACTIVE = 已确认。老数据可能为空。 */
+  bindStatus?: BindingStatus | null;
   /** S1-b1 自动对齐命中的 1688 规格（如 "Red / M"）；IMAGE 绑定为空 */
   tangbuySkuSpec?: string | null;
   /** 绑定来源：IMAGE（图搜确认）/ RULE / AI（自动对齐） */

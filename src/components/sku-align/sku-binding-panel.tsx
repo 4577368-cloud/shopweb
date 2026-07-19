@@ -48,10 +48,10 @@ function autoAlignError(err: unknown): string {
   }
   if (raw.startsWith("NOT_BOUND")) return "该商品尚未绑定货源，请先在「智能选品」确认匹配";
   if (raw.startsWith("NO_VARIANT")) return "该商品无可用变体，请重新同步商品";
-  if (raw.startsWith("NO_OFFER_SKU")) return "该 1688 货源未返回可用 SKU";
-  if (raw.startsWith("AOP_CRED_MISSING")) return "1688 开放平台凭证未配置";
-  if (raw.startsWith("AOP_TOKEN_INVALID")) return "1688 授权已失效，请重新授权";
-  if (raw.startsWith("GATEWAY_BUSY")) return "1688 网关繁忙，请稍后重试";
+  if (raw.startsWith("NO_OFFER_SKU")) return "该 Tangbuy 货源未返回可用 SKU";
+  if (raw.startsWith("AOP_CRED_MISSING")) return "Tangbuy 货源平台凭证未配置";
+  if (raw.startsWith("AOP_TOKEN_INVALID")) return "Tangbuy 货源授权已失效，请重新授权";
+  if (raw.startsWith("GATEWAY_BUSY")) return "Tangbuy 货源网关繁忙，请稍后重试";
   return raw || "自动对齐失败";
 }
 
@@ -163,12 +163,51 @@ function VariantCompareRow({
   variant,
   offer,
   offerLoading,
+  shopName,
+  onMutated,
+  showToast,
 }: {
   variant: SkuVariant;
   offer?: OfferDetail;
   offerLoading: boolean;
+  shopName: string;
+  onMutated: () => Promise<void>;
+  showToast: (message: string) => void;
 }) {
   const bound = variant.bound;
+  const isPending = bound?.bindStatus === "PENDING";
+  const [acking, setAcking] = useState(false);
+  const [unbinding, setUnbinding] = useState(false);
+
+  const ackVariant = async () => {
+    if (acking) return;
+    setAcking(true);
+    try {
+      await api.ackSkuBinding(shopName, variant.thirdPlatformSkuId);
+      showToast("已确认该变体关联");
+      await onMutated();
+    } catch (err) {
+      showToast(autoAlignError(err));
+    } finally {
+      setAcking(false);
+    }
+  };
+
+  const unbindVariant = async () => {
+    if (unbinding) return;
+    if (!window.confirm("取消该变体的货源关联？")) return;
+    setUnbinding(true);
+    try {
+      await api.unbindSkuBinding(shopName, variant.thirdPlatformSkuId);
+      showToast("已取消该变体关联");
+      await onMutated();
+    } catch (err) {
+      showToast(autoAlignError(err));
+    } finally {
+      setUnbinding(false);
+    }
+  };
+
   const sku =
     offer?.skus?.find(
       (s) => bound?.tangbuySkuId && String(s.skuId) === String(bound.tangbuySkuId)
@@ -209,7 +248,11 @@ function VariantCompareRow({
       <div className="flex flex-row items-center justify-between gap-2 rounded-[var(--radius-control)] bg-surface-muted px-2.5 py-2 md:flex-col md:justify-center md:gap-1 md:bg-transparent md:px-0 md:py-0 md:text-center">
         {bound ? (
           <>
-            <Badge variant="success">已匹配</Badge>
+            {isPending ? (
+              <Badge variant="warning">AI 待确认</Badge>
+            ) : (
+              <Badge variant="success">已确认</Badge>
+            )}
             <span className="text-[11px] font-medium text-brand">
               {isAutoAligned(bound.matchSource) ? "匹配度" : "相似度"}{" "}
               {formatScore(bound.matchScore)}
@@ -242,10 +285,10 @@ function VariantCompareRow({
           </div>
         ) : (
           <>
-            <Thumb src={rightImage} alt={rightName ?? "1688 货源"} className="h-16 w-16" />
+            <Thumb src={rightImage} alt={rightName ?? "Tangbuy 货源"} className="h-16 w-16" />
             <div className="min-w-0 flex-1">
               <p className="text-[10px] font-medium uppercase tracking-wide text-brand-strong">
-                1688 货源
+                Tangbuy 货源
               </p>
               <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-4 text-ink">
                 {rightName ?? "(未取到规格)"}
@@ -268,6 +311,27 @@ function VariantCompareRow({
                 {bound.tangbuySkuId ? <span>SKU {bound.tangbuySkuId}</span> : null}
                 {!resolved && !offerLoading ? (
                   <span className="text-amber-600">货源明细未取到</span>
+                ) : null}
+              </div>
+              <div className="mt-1.5 flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void unbindVariant()}
+                  disabled={unbinding || acking}
+                >
+                  {unbinding ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  取消关联
+                </Button>
+                {isPending ? (
+                  <Button
+                    size="sm"
+                    onClick={() => void ackVariant()}
+                    disabled={acking || unbinding}
+                  >
+                    {acking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    确认无误
+                  </Button>
                 ) : null}
               </div>
             </div>
@@ -301,7 +365,10 @@ export function SkuProductCard({
 
   const [open, setOpen] = useState(() => state !== "full");
   const [aligning, setAligning] = useState(false);
+  const [ackingAll, setAckingAll] = useState(false);
   const [alignError, setAlignError] = useState<string | null>(null);
+
+  const pendingCount = product.variants.filter((v) => v.bound?.bindStatus === "PENDING").length;
 
   const [offerMap, setOfferMap] = useState<Record<string, OfferDetail>>({});
   const [offerLoading, setOfferLoading] = useState(false);
@@ -365,6 +432,25 @@ export function SkuProductCard({
     }
   };
 
+  // "确认全部待确认": promote every PENDING variant of this product to ACTIVE.
+  const ackAll = async () => {
+    if (ackingAll || pendingCount === 0) return;
+    setAckingAll(true);
+    setAlignError(null);
+    try {
+      const pend = product.variants.filter((v) => v.bound?.bindStatus === "PENDING");
+      for (const v of pend) {
+        await api.ackSkuBinding(shopName, v.thirdPlatformSkuId);
+      }
+      showToast(`已确认 ${pend.length} 个变体关联`);
+      await onAligned();
+    } catch (err) {
+      setAlignError(autoAlignError(err));
+    } finally {
+      setAckingAll(false);
+    }
+  };
+
   return (
     <article className="overflow-hidden rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">
       {/* Header — always visible summary */}
@@ -396,21 +482,33 @@ export function SkuProductCard({
             )}
           />
         </button>
-        <Button
-          size="sm"
-          variant="secondary"
-          className="shrink-0"
-          onClick={() => void runAutoAlign()}
-          disabled={aligning}
-          title="按 1688 货源的 SKU 矩阵，自动把每个变体对齐绑定"
-        >
-          {aligning ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Wand2 className="h-4 w-4" />
-          )}
-          {aligning ? "对齐中…" : "自动对齐 SKU"}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {pendingCount > 0 ? (
+            <Button
+              size="sm"
+              onClick={() => void ackAll()}
+              disabled={ackingAll || aligning}
+              title="确认该商品下全部 AI 待确认的变体关联"
+            >
+              {ackingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              确认全部（{pendingCount}）
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void runAutoAlign()}
+            disabled={aligning || ackingAll}
+            title="按 Tangbuy 货源的 SKU 矩阵，自动把每个变体对齐绑定"
+          >
+            {aligning ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Wand2 className="h-4 w-4" />
+            )}
+            {aligning ? "对齐中…" : "自动对齐 SKU"}
+          </Button>
+        </div>
       </div>
 
       {alignError ? (
@@ -432,6 +530,9 @@ export function SkuProductCard({
                   : undefined
               }
               offerLoading={offerLoading}
+              shopName={shopName}
+              onMutated={onAligned}
+              showToast={showToast}
             />
           ))}
         </div>
