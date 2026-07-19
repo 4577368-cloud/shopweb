@@ -117,12 +117,18 @@ export default function AuthorizePage() {
 
   // Runs once: prefill the (now secondary) domain input for one-click reconnect, and restore the real
   // authorized state from the backend after the OAuth redirect (localStorage + ?shop + /status).
-  const initedRef = useRef(false);
+  // Fail-open by design: the restore spinner ALWAYS clears (in finally + a hard timeout), so a blocked
+  // request (CORS/offline) or a slow backend can never strand the page — it falls back to the connect
+  // screen. We intentionally do NOT gate the clear behind a cancel flag (that stranded the spinner
+  // under React Strict Mode's double-invoke in dev).
+  const restoreStartedRef = useRef(false);
   useEffect(() => {
-    if (initedRef.current) return;
+    if (restoreStartedRef.current) return;
     if (typeof window === "undefined") return;
-    initedRef.current = true;
-    if (isAuthorized) return;
+    if (isAuthorized) {
+      restoreStartedRef.current = true;
+      return;
+    }
 
     const shopFromUrl = new URLSearchParams(window.location.search).get("shop");
     const stored = window.localStorage.getItem(SHOP_STORAGE_KEY);
@@ -130,17 +136,22 @@ export default function AuthorizePage() {
     if (shopFromUrl && !stored) {
       window.localStorage.setItem(SHOP_STORAGE_KEY, shopFromUrl);
     }
-    if (!shopToRestore) return;
+    if (!shopToRestore) {
+      restoreStartedRef.current = true;
+      return;
+    }
 
+    restoreStartedRef.current = true;
     setSavedShop(shopToRestore);
     if (!shopDomainInput) setShopDomainInput(shopToRestore);
 
-    let cancelled = false;
     setRestoring(true);
+    // Hard timeout so a hanging/blocked request never keeps the spinner up forever.
+    const timer = window.setTimeout(() => setRestoring(false), 12000);
     api
       .getShopStatus(shopToRestore)
       .then((status) => {
-        if (cancelled || !status.authorized) return;
+        if (!status.authorized) return;
         hydrateAuthorizedShop({
           name: status.shopName ?? shopToRestore,
           domain: status.shopDomain ?? shopToRestore,
@@ -149,14 +160,12 @@ export default function AuthorizePage() {
         });
       })
       .catch(() => {
-        // Offline / not configured / not yet authorized: stay on the connect screen.
+        // Offline / CORS / not configured / not yet authorized: fall back to the connect screen.
       })
       .finally(() => {
-        if (!cancelled) setRestoring(false);
+        window.clearTimeout(timer);
+        setRestoring(false);
       });
-    return () => {
-      cancelled = true;
-    };
   }, [isAuthorized, shopDomainInput, setShopDomainInput, hydrateAuthorizedShop]);
 
   // Once authorized, read the real "已关联货源数" from the same source /products uses.
