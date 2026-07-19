@@ -95,18 +95,24 @@ export default function AuthorizePage() {
   const [restoring, setRestoring] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [boundCount, setBoundCount] = useState<number | null>(null);
+  const [publishedCount, setPublishedCount] = useState<number | null>(null);
   const [editingDomain, setEditingDomain] = useState(false);
   const [savedShop, setSavedShop] = useState<string | null>(null);
 
-  const loadBound = useCallback(async (shopName: string) => {
+  // Real post-auth stats: 已关联货源 (distinct bound products) + 已刊登 (products published from catalog).
+  const loadStats = useCallback(async (shopName: string) => {
     try {
-      const list = await api.listImageBindings(shopName);
+      const [list, published] = await Promise.all([
+        api.listImageBindings(shopName),
+        api.getPublishedCount(shopName).catch(() => ({ count: 0 })),
+      ]);
       const distinct = new Set(
         list
           .filter((b) => b.bound && b.thirdPlatformItemId)
           .map((b) => b.thirdPlatformItemId)
       );
       setBoundCount(distinct.size);
+      setPublishedCount(published.count ?? 0);
     } catch {
       setBoundCount(null);
     }
@@ -168,9 +174,9 @@ export default function AuthorizePage() {
   // Once authorized, read the real "已关联货源数" from the same source /products uses.
   useEffect(() => {
     if (!isAuthorized || boundCount !== null) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot read of real bound count
-    void loadBound(shop.name);
-  }, [isAuthorized, boundCount, shop.name, loadBound]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot read of real post-auth stats
+    void loadStats(shop.name);
+  }, [isAuthorized, boundCount, shop.name, loadStats]);
 
   // Re-check status + bound count so the async post-auth product sync can surface without a reload.
   const refresh = useCallback(async () => {
@@ -185,14 +191,14 @@ export default function AuthorizePage() {
           authorizedAt: fmtDate(status.authorizedAt) || (shop.authorizedAt ?? ""),
           productCount: status.productCount ?? 0,
         });
-        await loadBound(status.shopName ?? shop.name);
+        await loadStats(status.shopName ?? shop.name);
       }
     } catch {
       showToast("刷新失败，请稍后重试");
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, shop.domain, shop.name, shop.authorizedAt, hydrateAuthorizedShop, loadBound, showToast]);
+  }, [refreshing, shop.domain, shop.name, shop.authorizedAt, hydrateAuthorizedShop, loadStats, showToast]);
 
   // Fallback connect on the return-landing page: reuse the shared launcher (validate → remember →
   // full-page navigate to the backend install → Shopify consent). No OAuth logic lives here.
@@ -297,7 +303,7 @@ export default function AuthorizePage() {
             </div>
 
             <div className="px-5 py-5">
-              <TwoStepProgress authorizing={authorizing} phase={phase} />
+              <TwoStepProgress authorizing={authorizing} phase={phase} syncing={syncing} />
 
               {phase === "authorized" ? (
                 <ConnectSummary
@@ -306,6 +312,7 @@ export default function AuthorizePage() {
                   authorizedAt={shop.authorizedAt}
                   productCount={shop.productCount}
                   boundCount={boundCount}
+                  publishedCount={publishedCount}
                   syncing={syncing}
                   refreshing={refreshing}
                   onRefresh={() => void refresh()}
@@ -555,9 +562,11 @@ function buildAssistant(
 function TwoStepProgress({
   authorizing,
   phase,
+  syncing,
 }: {
   authorizing: boolean;
   phase: Phase;
+  syncing?: boolean;
 }) {
   const connecting = authorizing || phase === "restoring";
   const authorized = phase === "authorized";
@@ -568,7 +577,21 @@ function TwoStepProgress({
   return (
     <div className="flex items-center gap-3">
       <StepPill index={1} label="选择店铺" done={step1Done} active={!step1Done} />
-      <span className={cn("h-px flex-1", step1Done ? "bg-brand/40" : "bg-hairline")} />
+      {/* When authorized, the connector carries the "授权成功" status badge (centered over the line). */}
+      <div className="relative flex flex-1 items-center">
+        <span
+          className={cn(
+            "h-px w-full",
+            authorized ? "bg-brand" : step1Done ? "bg-brand/40" : "bg-hairline"
+          )}
+        />
+        {authorized ? (
+          <span className="absolute left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-200 bg-brand-soft px-3 py-1 text-xs font-medium text-brand-strong shadow-card">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            授权成功{syncing ? " · 同步中" : ""}
+          </span>
+        ) : null}
+      </div>
       <StepPill
         index={2}
         label="授权并连接"
@@ -647,6 +670,7 @@ function ConnectSummary({
   authorizedAt,
   productCount,
   boundCount,
+  publishedCount,
   syncing,
   refreshing,
   onRefresh,
@@ -656,6 +680,7 @@ function ConnectSummary({
   authorizedAt?: string;
   productCount: number;
   boundCount: number | null;
+  publishedCount: number | null;
   syncing: boolean;
   refreshing: boolean;
   onRefresh: () => void;
@@ -664,8 +689,8 @@ function ConnectSummary({
     <div className="mt-5 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft px-4 py-3.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium text-brand-strong">
-          <ShieldCheck className="h-4 w-4" />
-          授权成功{syncing ? " · 数据同步中" : ""}
+          <Boxes className="h-4 w-4" />
+          接入摘要
         </div>
         <Button size="sm" variant="secondary" onClick={onRefresh} disabled={refreshing}>
           {refreshing ? (
@@ -687,6 +712,10 @@ function ConnectSummary({
         <SummaryStat
           label="已关联货源"
           value={boundCount == null ? "读取中…" : String(boundCount)}
+        />
+        <SummaryStat
+          label="已刊登"
+          value={publishedCount == null ? "读取中…" : String(publishedCount)}
         />
       </div>
     </div>

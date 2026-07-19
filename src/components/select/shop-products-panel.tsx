@@ -447,12 +447,20 @@ function ShopProductCard({
   const bindPending = Boolean(binding?.bound) && binding?.bindStatus === "PENDING";
   const bindConfirmed = Boolean(binding?.bound) && !bindPending;
 
-  // Bound cards lazily fetch the real offer detail so the right tile can show 货源图/价 (route B).
+  // Snapshot captured at confirm time: the exact candidate image/price the user matched. Preferred for
+  // 回显 so we don't depend on (and don't re-hit) offer-detail, whose cross-border payload often has a
+  // null white image and an empty SKU matrix.
+  const snapImage = binding?.bound ? (binding.offerImageUrl ?? null) : null;
+  const snapPrice = binding?.bound ? (binding.offerPrice ?? null) : null;
+  const hasSnapshot = Boolean(snapImage && snapPrice);
+
+  // Bound cards lazily fetch the real offer detail only when there's no snapshot, so the right tile can
+  // still show 货源图/价 for legacy bindings (route B). New bindings skip this call entirely.
   const [offer, setOffer] = useState<OfferDetail | null>(null);
   const [offerLoading, setOfferLoading] = useState(false);
 
   useEffect(() => {
-    if (!boundOfferId) {
+    if (!boundOfferId || hasSnapshot) {
       setOffer(null);
       return;
     }
@@ -473,7 +481,7 @@ function ShopProductCard({
     return () => {
       cancelled = true;
     };
-  }, [boundOfferId]);
+  }, [boundOfferId, hasSnapshot]);
 
   const runSearch = async () => {
     if (searching) return;
@@ -513,6 +521,8 @@ function ShopProductCard({
         imageSource: result?.imageSource,
         querySource: result?.querySource,
         appliedQuery: result?.appliedQuery,
+        offerImageUrl: candidate.imageUrl,
+        offerPrice: candidate.price,
       });
       onBound(item.thirdPlatformItemId, view);
       showToast(boundOfferId ? "已改绑货源" : "已绑定货源");
@@ -638,24 +648,30 @@ function ShopProductCard({
             }
           />
         ) : rightMode === "bound" ? (
-          <CompareTile
-            label="Tangbuy 货源"
-            labelTone="brand"
-            image={offerImage(offer)}
-            imageAlt={offer?.subjectTrans ?? offer?.subject ?? boundOfferId ?? ""}
-            title={offer?.subjectTrans ?? offer?.subject ?? `offer ${boundOfferId}`}
-            loading={offerLoading && !offer}
-            placeholder={offerLoading && !offer ? " " : undefined}
-            priceNode={
-              offerPriceText(offer) ? (
-                <span className="text-sm font-semibold text-ink">
-                  {offerPriceText(offer)}
-                </span>
-              ) : (
-                <span className="text-[11px] text-ink-subtle">价未取到</span>
-              )
-            }
-          />
+          (() => {
+            // Prefer the confirm-time snapshot; fall back to freshly fetched offer detail (legacy rows).
+            const boundImage = snapImage ?? offerImage(offer);
+            const boundPrice = snapPrice ? `¥${snapPrice}` : offerPriceText(offer);
+            const stillLoading = !hasSnapshot && offerLoading && !offer;
+            return (
+              <CompareTile
+                label="Tangbuy 货源"
+                labelTone="brand"
+                image={boundImage}
+                imageAlt={offer?.subjectTrans ?? offer?.subject ?? boundOfferId ?? ""}
+                title={offer?.subjectTrans ?? offer?.subject ?? `offer ${boundOfferId}`}
+                loading={stillLoading}
+                placeholder={stillLoading ? " " : undefined}
+                priceNode={
+                  boundPrice ? (
+                    <span className="text-sm font-semibold text-ink">{boundPrice}</span>
+                  ) : (
+                    <span className="text-[11px] text-ink-subtle">价未取到</span>
+                  )
+                }
+              />
+            );
+          })()
         ) : (
           <CompareTile
             label="Tangbuy 货源"

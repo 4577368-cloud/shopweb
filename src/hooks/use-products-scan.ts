@@ -129,6 +129,8 @@ export function useProductsScan(shopName: string) {
                 imageSource: res.imageSource,
                 querySource: res.querySource,
                 appliedQuery: res.appliedQuery,
+                offerImageUrl: cand.imageUrl,
+                offerPrice: cand.price,
                 auto: true,
               });
               linked += 1;

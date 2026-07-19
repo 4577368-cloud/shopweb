@@ -375,6 +375,10 @@ export interface ConfirmImageMatchRequest {
   imageSource?: ImageSearchImageSource | null;
   querySource?: ImageSearchQuerySource | null;
   appliedQuery?: string | null;
+  /** 命中候选的图片快照，落库后回显直接用，避免再查货源明细（其白底图/SKU 常为空）。 */
+  offerImageUrl?: string | null;
+  /** 命中候选的价格快照（网关原始串，如 "12.00"）。 */
+  offerPrice?: string | null;
   /** true=扫描自动关联，落 PENDING 待确认；false/缺省=人工确认，落 ACTIVE。 */
   auto?: boolean;
 }
@@ -398,6 +402,10 @@ export interface ImageBindingView {
   querySource?: ImageSearchQuerySource | null;
   appliedQuery?: string | null;
   detailUrl?: string | null;
+  /** 确认时落库的命中候选图快照；回显优先用它，无需再查货源明细。 */
+  offerImageUrl?: string | null;
+  /** 确认时落库的命中候选价快照（网关原始串）。 */
+  offerPrice?: string | null;
 }
 
 // ---------------------------------------------------------------------------

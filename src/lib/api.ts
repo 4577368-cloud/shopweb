@@ -146,6 +146,12 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /** "已刊登" count: products successfully published (listed) from the Tangbuy catalog for a shop. */
+  getPublishedCount: (shop: string) =>
+    request<{ count: number }>(
+      `/api/plugin/catalog/published-count?shopName=${encodeURIComponent(shop)}`
+    ),
+
   /** Publish a single catalog candidate as a sellable Shopify product; idempotent server-side. */
   publishCatalogItem: (shopName: string, candidateId: string) =>
     request<PublishResult>("/api/plugin/catalog/publish", {
