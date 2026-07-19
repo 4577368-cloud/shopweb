@@ -47,8 +47,14 @@ function imageSearchError(err: unknown): string {
   } else if (err instanceof Error) {
     raw = err.message;
   }
-  if (raw.startsWith("AK_MISSING")) {
-    return "1688 密钥（AK）未配置或无效，请配置后重试";
+  if (raw.startsWith("AOP_CRED_MISSING") || raw.startsWith("AK_MISSING")) {
+    return "1688 开放平台凭证未配置或无效，请配置后重试";
+  }
+  if (raw.startsWith("AOP_TOKEN_INVALID")) {
+    return "1688 授权已失效或过期，请重新授权后重试";
+  }
+  if (raw.startsWith("IMAGE_UNREADABLE")) {
+    return "商品主图无法读取或上传，请更换主图后重试";
   }
   if (raw.startsWith("NO_PRIMARY_IMAGE")) {
     return "该商品无主图，无法进行 1688 图搜";
@@ -86,6 +92,23 @@ function formatSimilarity(score?: number | null): string {
   if (score == null || Number.isNaN(score)) return "—";
   if (score <= 1) return `${Math.round(score * 100)}%`;
   return String(Math.round(score));
+}
+
+/** 月销 label (official imageQuery signal replacing similarity); null when absent/zero. */
+function formatSold(n?: number | null): string | null {
+  if (n == null || Number.isNaN(n) || n <= 0) return null;
+  if (n >= 10000) return `月销 ${(n / 10000).toFixed(1)}万`;
+  return `月销 ${n}`;
+}
+
+/** Short confidence signals for a candidate: 月销 + 复购率 (A3-3b replacement for similarity). */
+function candidateSignals(c: ImageSearchProduct): string[] {
+  const out: string[] = [];
+  const sold = formatSold(c.soldCount);
+  if (sold) out.push(sold);
+  const rate = (c.repurchaseRate ?? "").trim();
+  if (rate) out.push(`复购 ${rate}`);
+  return out;
 }
 
 function formatCny(price?: string | null): string {
@@ -395,7 +418,7 @@ function ShopProductCard({
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
           <Badge variant="success">已绑定货源</Badge>
           <span className="font-medium">1688 offer {binding.tangbuyProductId}</span>
-          {binding.matchScore != null ? (
+          {binding.matchScore != null && binding.matchScore > 0 ? (
             <span className="text-emerald-600">
               相似度 {formatSimilarity(binding.matchScore)}
             </span>
@@ -510,7 +533,7 @@ function ShopProductCard({
                         {formatCny(c.price)}
                       </span>
                       <span className="shrink-0 text-[10px] text-slate-400">
-                        {formatSimilarity(c.similarityScore)}
+                        {formatSold(c.soldCount) ?? ""}
                       </span>
                     </button>
                   ))}
@@ -539,12 +562,13 @@ function SourceCandidate({
 }) {
   const isBoundHere = boundOfferId != null && boundOfferId === candidate.productId;
   const isRebind = boundOfferId != null && boundOfferId !== candidate.productId;
+  const signals = candidateSignals(candidate);
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
         <Badge variant="outline">{isFirst ? "首个候选" : "当前候选"}</Badge>
         <span className="text-[11px] text-slate-400">
-          1688 · 相似度 {formatSimilarity(candidate.similarityScore)}
+          1688{signals.length ? ` · ${signals.join(" · ")}` : ""}
         </span>
       </div>
 

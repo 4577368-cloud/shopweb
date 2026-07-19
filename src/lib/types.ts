@@ -326,8 +326,11 @@ export interface ImageSearchProduct {
   /** 网关现价原始字符串（如 "12.00"），可能为空 */
   price?: string | null;
   supplier?: string | null;
+  /** 月销（官方图搜 monthSold）——A3-3b 起替代相似度作为可信度参考 */
   soldCount?: number | null;
-  /** 图搜相似度 */
+  /** 复购率展示串（如 "13%"）——官方图搜信号，替代相似度 */
+  repurchaseRate?: string | null;
+  /** A3-3b 起恒为 null（官方多语言图搜不返回逐条相似度） */
   similarityScore?: number | null;
   minOrderQty?: number | null;
   inventory?: number | null;
