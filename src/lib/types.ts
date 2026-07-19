@@ -311,6 +311,51 @@ export interface ShopMirrorProduct {
   updatedAt?: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// A3-1 路径A（在售商品匹配）：1688 图搜预览（无状态，不落库）。
+// 对应后端 ImageSearchProductVO；price 为网关原始字符串。
+// ---------------------------------------------------------------------------
+
+/** POST /api/plugin/match/image-search 返回的归一化 1688 候选（后端已按相似度降序，前端不重排）。 */
+export interface ImageSearchProduct {
+  productId: string;
+  title: string;
+  imageUrl?: string | null;
+  /** 后端归一化为可直接打开的完整 1688 offer 链接 */
+  detailUrl?: string | null;
+  /** 网关现价原始字符串（如 "12.00"），可能为空 */
+  price?: string | null;
+  supplier?: string | null;
+  soldCount?: number | null;
+  /** 图搜相似度 */
+  similarityScore?: number | null;
+  minOrderQty?: number | null;
+  inventory?: number | null;
+  skuId?: string | null;
+}
+
+/** 本次图搜用的图源：原始货源图 / Shopify 转存图（后端决定）。 */
+export type ImageSearchImageSource = "ORIGINAL" | "SHOPIFY";
+
+/** 本次图搜纠偏词来源：无 / 商品标题 / 视觉 LLM（后端决定）。 */
+export type ImageSearchQuerySource = "NONE" | "TITLE" | "LLM";
+
+/**
+ * A3-2a 包裹响应：候选列表 + 后端如何解析（用了哪张图、哪个纠偏词）。
+ * appliedQuery 为展示用文案，querySource=NONE 时为 null。
+ */
+export interface ImageSearchResult {
+  items: ImageSearchProduct[];
+  imageSource: ImageSearchImageSource;
+  querySource: ImageSearchQuerySource;
+  appliedQuery?: string | null;
+}
+
+/** POST /api/oss/upload（前端同源代理）返回：上传后的公网图片地址。 */
+export interface UploadedImage {
+  url: string;
+}
+
 /** POST /api/plugin/product/sync 响应。 */
 export interface ProductSyncResult {
   status: string;

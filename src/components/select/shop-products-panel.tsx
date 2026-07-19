@@ -2,7 +2,14 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,7 +17,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, ApiError } from "@/lib/api";
-import type { ShopMirrorProduct } from "@/lib/types";
+import type {
+  ImageSearchProduct,
+  ImageSearchResult,
+  ShopMirrorProduct,
+} from "@/lib/types";
 
 function readableError(err: unknown): string {
   if (err instanceof ApiError) {
@@ -19,6 +30,62 @@ function readableError(err: unknown): string {
   }
   if (err instanceof Error) return err.message;
   return "未知错误";
+}
+
+/**
+ * Map backend image-search errors to a readable, category-specific message.
+ * The backend prefixes CustomException messages with a machine code so we can
+ * differentiate: AK 未配置/无效、商品无主图、镜像缺失、网关繁忙/限流。
+ */
+function imageSearchError(err: unknown): string {
+  let raw = "";
+  if (err instanceof ApiError) {
+    if (err.status === 0) return err.message;
+    const body = err.body as { message?: string } | undefined;
+    raw = body?.message ?? err.message;
+  } else if (err instanceof Error) {
+    raw = err.message;
+  }
+  if (raw.startsWith("AK_MISSING")) {
+    return "1688 密钥（AK）未配置或无效，请配置后重试";
+  }
+  if (raw.startsWith("NO_PRIMARY_IMAGE")) {
+    return "该商品无主图，无法进行 1688 图搜";
+  }
+  if (raw.startsWith("PRODUCT_NOT_FOUND")) {
+    return "未找到该商品镜像，请先同步商品";
+  }
+  if (raw.startsWith("GATEWAY_BUSY")) {
+    return "1688 网关繁忙或限流，请稍后重试";
+  }
+  return raw || "图搜失败";
+}
+
+/** Similarity score may be a 0–1 ratio or an absolute index; render defensively. */
+function formatSimilarity(score?: number | null): string {
+  if (score == null || Number.isNaN(score)) return "—";
+  if (score <= 1) return `${Math.round(score * 100)}%`;
+  return String(Math.round(score));
+}
+
+function formatCny(price?: string | null): string {
+  const trimmed = (price ?? "").trim();
+  if (!trimmed) return "—";
+  return `¥${trimmed}`;
+}
+
+/** Restrained one-line explanation of how the backend resolved this search. */
+function sourceHint(r: ImageSearchResult): string {
+  const img = r.imageSource === "ORIGINAL" ? "货源原图" : "店铺图";
+  let q: string;
+  if (r.querySource === "TITLE") {
+    q = `标题纠偏「${r.appliedQuery ?? ""}」`;
+  } else if (r.querySource === "LLM") {
+    q = `AI 识图纠偏「${r.appliedQuery ?? ""}」`;
+  } else {
+    q = "纯图搜";
+  }
+  return `图源：${img} · ${q}`;
 }
 
 function priceRange(p: ShopMirrorProduct): string {
@@ -135,7 +202,7 @@ export function ShopProductsPanel() {
       ) : (
         <div className="space-y-2.5">
           {products.map((p) => (
-            <ShopProductCard key={p.id} item={p} />
+            <ShopProductCard key={p.id} item={p} shopName={shopName} />
           ))}
         </div>
       )}
@@ -143,15 +210,49 @@ export function ShopProductsPanel() {
   );
 }
 
-function ShopProductCard({ item }: { item: ShopMirrorProduct }) {
+function ShopProductCard({
+  item,
+  shopName,
+}: {
+  item: ShopMirrorProduct;
+  shopName: string;
+}) {
   const active = (item.status ?? "").toUpperCase() === "ACTIVE";
+  const hasImage = Boolean(item.primaryImageUrl);
+
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [result, setResult] = useState<ImageSearchResult | null>(null);
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+
+  const runSearch = async () => {
+    if (searching) return;
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const res = await api.imageSearch(shopName, item.thirdPlatformItemId, 4);
+      setResult(res);
+      setCurrentIdx(0);
+      setExpanded(false);
+    } catch (err) {
+      setResult(null);
+      setSearchError(imageSearchError(err));
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const candidates = result?.items ?? null;
+  const current = candidates?.[currentIdx] ?? null;
+
   return (
     <article className="rounded-lg border border-slate-200 bg-white px-3.5 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-      <div className="grid grid-cols-[64px_1fr_160px] items-stretch gap-3">
+      <div className="grid grid-cols-[64px_1fr_170px] items-stretch gap-3">
         <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-50">
-          {item.primaryImageUrl ? (
+          {hasImage ? (
             <Image
-              src={item.primaryImageUrl}
+              src={item.primaryImageUrl as string}
               alt={item.title ?? item.thirdPlatformItemId}
               fill
               sizes="64px"
@@ -187,12 +288,195 @@ function ShopProductCard({ item }: { item: ShopMirrorProduct }) {
         </div>
 
         <div className="flex flex-col items-end justify-center gap-1.5 border-l border-slate-100 pl-3">
-          <Badge variant="outline">待关联</Badge>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void runSearch()}
+            disabled={searching || !hasImage}
+            title={!hasImage ? "该商品无主图，无法图搜" : undefined}
+          >
+            {searching ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="h-4 w-4" />
+            )}
+            {searching ? "搜索中…" : "查找货源"}
+          </Button>
           <p className="text-[10px] leading-tight text-slate-400">
-            关联能力即将接入
+            1688 图搜（预览）
           </p>
         </div>
       </div>
+
+      {searchError ? (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          <span>{searchError}</span>
+          {hasImage ? (
+            <button
+              type="button"
+              className="shrink-0 font-medium underline underline-offset-2"
+              onClick={() => void runSearch()}
+            >
+              重试
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {result && candidates && candidates.length === 0 ? (
+        <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-xs text-slate-500">
+            1688 未召回相似货源，可稍后重试或更换商品。
+          </p>
+          <p className="mt-1 text-[10px] text-slate-400">{sourceHint(result)}</p>
+        </div>
+      ) : null}
+
+      {result && current ? (
+        <div className="mt-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
+          <p className="mb-2 text-[10px] text-slate-400">{sourceHint(result)}</p>
+          <SourceCandidate
+            candidate={current}
+            isFirst={currentIdx === 0}
+          />
+
+          {candidates && candidates.length > 1 ? (
+            <div className="mt-2.5 border-t border-slate-200 pt-2.5">
+              <button
+                type="button"
+                className="flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-slate-700"
+                onClick={() => setExpanded((v) => !v)}
+              >
+                {expanded ? (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+                {expanded
+                  ? "收起候选"
+                  : `更多候选（${candidates.length - 1}）`}
+              </button>
+
+              {expanded ? (
+                <div className="mt-2 space-y-1.5">
+                  {candidates.map((c, idx) => (
+                    <button
+                      key={`${c.productId}-${idx}`}
+                      type="button"
+                      onClick={() => setCurrentIdx(idx)}
+                      className={`flex w-full items-center gap-2.5 rounded-md border px-2 py-1.5 text-left transition-colors ${
+                        idx === currentIdx
+                          ? "border-slate-900 bg-white"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded border border-slate-200 bg-white">
+                        {c.imageUrl ? (
+                          <Image
+                            src={c.imageUrl}
+                            alt={c.title || c.productId}
+                            fill
+                            sizes="36px"
+                            className="object-cover"
+                            unoptimized
+                          />
+                        ) : null}
+                      </div>
+                      <span className="min-w-0 flex-1 truncate text-[11px] text-slate-700">
+                        {c.title || "(无标题)"}
+                      </span>
+                      <span className="shrink-0 text-[11px] font-medium text-slate-900">
+                        {formatCny(c.price)}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-slate-400">
+                        {formatSimilarity(c.similarityScore)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </article>
+  );
+}
+
+function SourceCandidate({
+  candidate,
+  isFirst,
+}: {
+  candidate: ImageSearchProduct;
+  isFirst: boolean;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2">
+        <Badge variant="outline">{isFirst ? "首个候选" : "当前候选"}</Badge>
+        <span className="text-[11px] text-slate-400">
+          1688 · 相似度 {formatSimilarity(candidate.similarityScore)}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-[56px_1fr] items-start gap-3">
+        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
+          {candidate.imageUrl ? (
+            <Image
+              src={candidate.imageUrl}
+              alt={candidate.title || candidate.productId}
+              fill
+              sizes="56px"
+              className="object-cover"
+              unoptimized
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-300">
+              无图
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0">
+          <p className="line-clamp-2 text-xs font-medium leading-4 text-slate-800">
+            {candidate.title || "(无标题)"}
+          </p>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+            <span className="text-sm font-semibold text-slate-900">
+              {formatCny(candidate.price)}
+            </span>
+            {candidate.minOrderQty != null ? (
+              <span className="text-[10px] text-slate-400">
+                起订 {candidate.minOrderQty}
+              </span>
+            ) : null}
+            {candidate.supplier ? (
+              <span className="truncate text-[10px] text-slate-400">
+                {candidate.supplier}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-1.5 flex items-center gap-3">
+            {candidate.detailUrl ? (
+              <a
+                href={candidate.detailUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900"
+              >
+                <ExternalLink className="h-3 w-3" />
+                查看 1688 详情
+              </a>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2.5 flex items-center justify-end">
+        <Button size="sm" disabled title="下一步（A3-2）接入持久化">
+          确认匹配（A3-2 接入）
+        </Button>
+      </div>
+    </div>
   );
 }

@@ -5,11 +5,13 @@
 
 import type {
   CatalogRecommendation,
+  ImageSearchResult,
   PricingTemplate,
   PricingTemplateUpsert,
   ProductSyncResult,
   PublishResult,
   ShopMirrorProduct,
+  UploadedImage,
 } from "@/lib/types";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
@@ -132,6 +134,18 @@ export const api = {
       body: JSON.stringify({ shopName, candidateId }),
     }),
 
+  /**
+   * A3-2a stateless 1688 image-search preview. The backend decides the search image + correction query
+   * (original image → title → LLM) and returns candidates (top-1 first) plus how it resolved them.
+   * No persistence. Defaults to 4 candidates. The UI never sends a query (backend-driven).
+   */
+  imageSearch: (shopName: string, thirdPlatformItemId: string, limit = 4) =>
+    request<ImageSearchResult>("/api/plugin/match/image-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shopName, thirdPlatformItemId, limit }),
+    }),
+
   /** List the shop's mirrored on-sale products (read-only; path A display). */
   getShopProducts: (shop: string) =>
     request<ShopMirrorProduct[]>(
@@ -148,5 +162,28 @@ export const api = {
       `/api/plugin/product/sync?${params.toString()}`,
       { method: "POST" }
     );
+  },
+
+  /**
+   * Upload an image to Tangbuy OSS via the same-origin Next.js proxy (/api/oss/upload) and get back
+   * its public URL. Reusable primitive for AI chat attachments, manual sourcing images, etc.
+   * Note: this hits the frontend route (same origin), not NEXT_PUBLIC_API_BASE.
+   */
+  uploadImage: async (file: File): Promise<UploadedImage> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    let res: Response;
+    try {
+      res = await fetch("/api/oss/upload", { method: "POST", body: fd });
+    } catch (cause) {
+      throw new ApiError("图片上传网络失败", 0, cause);
+    }
+    const text = await res.text();
+    const data = text ? safeJsonParse(text) : undefined;
+    if (!res.ok) {
+      const msg = (data as { error?: string })?.error ?? `上传失败（${res.status}）`;
+      throw new ApiError(msg, res.status, data);
+    }
+    return data as UploadedImage;
   },
 };
