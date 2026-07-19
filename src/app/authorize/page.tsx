@@ -687,21 +687,24 @@ function ConnectSummary({
 }) {
   return (
     <div className="mt-5 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft px-4 py-3.5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-medium text-brand-strong">
-          <Boxes className="h-4 w-4" />
-          接入摘要
-        </div>
-        <Button size="sm" variant="secondary" onClick={onRefresh} disabled={refreshing}>
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onRefresh}
+          disabled={refreshing}
+          className="w-8 px-0"
+          title="刷新接入摘要"
+          aria-label="刷新"
+        >
           {refreshing ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}
-          刷新
         </Button>
       </div>
-      <div className="mt-2.5 grid grid-cols-2 gap-2.5 text-xs sm:grid-cols-3">
+      <div className="mt-2 grid grid-cols-2 gap-2.5 text-xs sm:grid-cols-3">
         <SummaryStat label="店铺" value={name} />
         <SummaryStat label="店铺域名" value={domain} />
         <SummaryStat label="授权时间" value={authorizedAt || "—"} />

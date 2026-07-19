@@ -398,6 +398,8 @@ export interface ImageBindingView {
   matchScore?: number | null;
   /** PENDING = AI 自动关联待确认；ACTIVE = 已确认。老数据可能为空。 */
   bindStatus?: BindingStatus | null;
+  /** FROM_CANDIDATE = 图搜关联；FROM_PUBLISH = 从 Tangbuy 商城上架建立的 1:1 绑定。 */
+  bindSource?: string | null;
   imageSource?: ImageSearchImageSource | null;
   querySource?: ImageSearchQuerySource | null;
   appliedQuery?: string | null;

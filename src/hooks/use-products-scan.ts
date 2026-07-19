@@ -9,10 +9,10 @@ import type { ScanTaskView } from "@/components/workbench/scan-stage";
 // 1688 gateway, so keep the fan-out gentle.
 const MATCH_CONCURRENCY = 2;
 const RECENT_MAX = 6;
-const RECOMMENDATION_LIMIT = 20;
 
 const TASK_IDS = {
   sync: "sync",
+  link: "link",
   load: "load",
   match: "match",
   reco: "reco",
@@ -21,8 +21,9 @@ const TASK_IDS = {
 function initialTasks(): ScanTaskView[] {
   return [
     { id: TASK_IDS.sync, label: "同步店铺商品镜像", status: "pending" },
+    { id: TASK_IDS.link, label: "关联从 Tangbuy 商城上架的商品", status: "pending" },
     { id: TASK_IDS.load, label: "读取在售商品与货源关联", status: "pending" },
-    { id: TASK_IDS.match, label: "自动图搜关联货源", status: "pending" },
+    { id: TASK_IDS.match, label: "自动图搜关联剩余商品", status: "pending" },
     { id: TASK_IDS.reco, label: "生成 Tangbuy 商城候选", status: "pending" },
   ];
 }
@@ -68,6 +69,25 @@ export function useProductsScan(shopName: string) {
       patch(TASK_IDS.sync, { status: "done", resultText: `店铺共 ${r.productCount} 个商品` });
     } catch (err) {
       patch(TASK_IDS.sync, { status: "failed", error: readableError(err) });
+    }
+    if (cancelRef.current) return finalize();
+
+    // Step 1.5 — link products published from the Tangbuy catalog (1:1 source, no matching needed).
+    // Idempotent backfill: already-linked products are untouched. Runs before the read so these show
+    // as已关联 and are excluded from the image-match targets below. Fail-open.
+    patch(TASK_IDS.link, { status: "running" });
+    try {
+      const r = await api.backfillPublishedBindings(shopName);
+      const total = r.linked + r.alreadyLinked;
+      patch(TASK_IDS.link, {
+        status: "done",
+        resultText:
+          total > 0
+            ? `${total} 个来自 Tangbuy 商城的商品已 1:1 关联`
+            : "暂无从 Tangbuy 商城上架的商品",
+      });
+    } catch (err) {
+      patch(TASK_IDS.link, { status: "failed", error: readableError(err) });
     }
     if (cancelRef.current) return finalize();
 
@@ -159,8 +179,8 @@ export function useProductsScan(shopName: string) {
     // Step 4 — warm offline-catalog candidates (path B)
     patch(TASK_IDS.reco, { status: "running" });
     try {
-      const recs = await api.getRecommendations(shopName, RECOMMENDATION_LIMIT);
-      patch(TASK_IDS.reco, { status: "done", resultText: `Tangbuy 商城 ${recs.length} 条可上架` });
+      const { count } = await api.getRecommendationsCount();
+      patch(TASK_IDS.reco, { status: "done", resultText: `Tangbuy 商城 ${count} 条可上架` });
     } catch (err) {
       patch(TASK_IDS.reco, { status: "failed", error: readableError(err) });
     }

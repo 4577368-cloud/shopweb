@@ -6,10 +6,12 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  Image as ImageIcon,
   Loader2,
   MoveRight,
   RefreshCw,
   Search,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +26,7 @@ import type {
   ImageSearchProduct,
   ImageSearchResult,
   OfferDetail,
+  PricingTemplate,
   ShopMirrorProduct,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -134,18 +137,76 @@ function offerPriceText(offer: OfferDetail | null): string | null {
   return min === max ? `¥${min}` : `¥${min}–${max}`;
 }
 
-/** Restrained one-line explanation of how the backend resolved this search. */
-function sourceHint(r: ImageSearchResult): string {
-  const img = r.imageSource === "ORIGINAL" ? "货源原图" : "店铺图";
-  let q: string;
-  if (r.querySource === "TITLE") {
-    q = `标题纠偏「${r.appliedQuery ?? ""}」`;
-  } else if (r.querySource === "LLM") {
-    q = `AI 识图纠偏「${r.appliedQuery ?? ""}」`;
-  } else {
-    q = "纯图搜";
+/** Parse a gateway price string ("12.00" or "12–15") to a representative (min) number, else null. */
+function parsePrice(raw?: string | null): number | null {
+  const nums = (raw ?? "")
+    .split(/[^\d.]+/)
+    .map((s) => Number.parseFloat(s))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return nums.length ? Math.min(...nums) : null;
+}
+
+/** 预估毛利:货源采购价(¥)按定价模板汇率换算成目标币成本,与当前 Shopify 售价对比。 */
+interface MarginEstimate {
+  pct: number;
+  costInTarget: number;
+  currency: string;
+  rate: number;
+}
+
+/**
+ * Only produced when sale price, cost and rate are all known and the product's currency matches the
+ * template's target currency — otherwise null (we never fabricate a margin %). Uses only the exchange
+ * rate (not multiplier/addend, which shape a *new* sale price for publishing, not an existing one).
+ */
+function marginEstimate(
+  shopPrice: number | null,
+  shopCurrency: string | null | undefined,
+  costCny: number | null,
+  template: PricingTemplate | null
+): MarginEstimate | null {
+  if (!template || shopPrice == null || shopPrice <= 0 || costCny == null || costCny <= 0) {
+    return null;
   }
-  return `图源：${img} · ${q}`;
+  const rate = template.exchangeRate;
+  if (!Number.isFinite(rate) || rate <= 0) return null;
+  const target = (template.targetCurrency ?? "").toUpperCase();
+  const cur = (shopCurrency ?? "").toUpperCase();
+  if (cur && target && cur !== target) return null;
+  const costInTarget = costCny * rate;
+  return {
+    pct: Math.round(((shopPrice - costInTarget) / shopPrice) * 100),
+    costInTarget,
+    currency: target || cur || "",
+    rate,
+  };
+}
+
+function fmtMoney(n: number, currency?: string): string {
+  const v = n.toFixed(2);
+  return currency ? `${v} ${currency}` : v;
+}
+
+/** Translate the technical match provenance into operator-friendly reasons (≤4 short items). */
+function matchReasons(opts: {
+  imageSource?: string | null;
+  querySource?: string | null;
+  appliedQuery?: string | null;
+  matchScore?: number | null;
+  signals?: string[];
+}): string[] {
+  const out: string[] = [];
+  if (opts.imageSource === "ORIGINAL") out.push("按货源原图图搜命中");
+  else if (opts.imageSource === "SHOPIFY") out.push("按商品主图图搜命中");
+  else out.push("图搜命中");
+  const q = (opts.appliedQuery ?? "").trim();
+  if (opts.querySource === "TITLE" && q) out.push(`标题校准「${q}」`);
+  else if (opts.querySource === "LLM" && q) out.push(`AI 识图校准「${q}」`);
+  if (opts.matchScore != null && opts.matchScore > 0) {
+    out.push(`图像匹配度 ${formatSimilarity(opts.matchScore)}`);
+  }
+  for (const s of opts.signals ?? []) out.push(s);
+  return out.slice(0, 4);
 }
 
 function priceRange(p: ShopMirrorProduct): string {
@@ -159,17 +220,36 @@ function priceRange(p: ShopMirrorProduct): string {
   return `${one.toFixed(2)}${cur}`;
 }
 
-type ShopFilter = "all" | "pending" | "confirmed" | "unbound";
+export type ShopFilter = "all" | "pending" | "confirmed" | "unbound";
 
-export function ShopProductsPanel({ onActivity }: { onActivity?: () => void }) {
+export function ShopProductsPanel({
+  onActivity,
+  filter: filterProp,
+  onFilterChange,
+}: {
+  onActivity?: () => void;
+  /** Optional controlled filter — lets the page's top CTA jump straight to e.g. 待确认. */
+  filter?: ShopFilter;
+  onFilterChange?: (f: ShopFilter) => void;
+}) {
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
   const [products, setProducts] = useState<ShopMirrorProduct[]>([]);
-  const [filter, setFilter] = useState<ShopFilter>("all");
+  const [internalFilter, setInternalFilter] = useState<ShopFilter>("all");
+  const [template, setTemplate] = useState<PricingTemplate | null>(null);
+  const filter = filterProp ?? internalFilter;
+  const setFilter = useCallback(
+    (f: ShopFilter) => {
+      if (onFilterChange) onFilterChange(f);
+      else setInternalFilter(f);
+    },
+    [onFilterChange]
+  );
   // 回显: itemId -> ACTIVE binding. Server is the source of truth; refreshed on load/sync.
   const [bindings, setBindings] = useState<Record<string, ImageBindingView>>({});
 
@@ -177,11 +257,13 @@ export function ShopProductsPanel({ onActivity }: { onActivity?: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      const [items, bound] = await Promise.all([
+      const [items, bound, tpl] = await Promise.all([
         api.getShopProducts(shopName),
         api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
+        api.getPricingTemplate(shopName).catch(() => null),
       ]);
       setProducts(items);
+      setTemplate(tpl);
       const map: Record<string, ImageBindingView> = {};
       for (const b of bound) {
         if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
@@ -220,6 +302,28 @@ export function ShopProductsPanel({ onActivity }: { onActivity?: () => void }) {
       showToast("同步失败");
     } finally {
       setSyncing(false);
+    }
+  };
+
+  // Repair legacy bindings that show 无图/成本待取: re-fetch the image+price snapshot server-side.
+  const handleBackfill = async () => {
+    if (backfilling) return;
+    setBackfilling(true);
+    try {
+      const r = await api.backfillBindingSnapshots(shopName);
+      await load();
+      onActivity?.();
+      showToast(
+        r.backfilled > 0
+          ? `已补全 ${r.backfilled} 个货源图/价（搜索 ${r.fromSearch} · 详情 ${r.fromDetail}）`
+          : r.unresolved > 0
+            ? `有 ${r.unresolved} 个货源暂时取不到图/价，可稍后重试`
+            : "货源图/价已是最新"
+      );
+    } catch (err) {
+      showToast(readableError(err));
+    } finally {
+      setBackfilling(false);
     }
   };
 
@@ -270,14 +374,30 @@ export function ShopProductsPanel({ onActivity }: { onActivity?: () => void }) {
           value={filter}
           onValueChange={(id) => setFilter(id as ShopFilter)}
         />
-        <Button size="sm" onClick={() => void handleSync()} disabled={syncing}>
-          {syncing ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
-          )}
-          {syncing ? "同步中…" : "同步商品"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void handleBackfill()}
+            disabled={backfilling || syncing}
+            title="为显示「无图/成本待取」的已关联货源，重新补全货源图片与价格"
+          >
+            {backfilling ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ImageIcon className="h-4 w-4" />
+            )}
+            {backfilling ? "补全中…" : "补全图/价"}
+          </Button>
+          <Button size="sm" onClick={() => void handleSync()} disabled={syncing || backfilling}>
+            {syncing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            {syncing ? "同步中…" : "同步商品"}
+          </Button>
+        </div>
       </div>
 
       {error ? (
@@ -328,6 +448,7 @@ export function ShopProductsPanel({ onActivity }: { onActivity?: () => void }) {
               item={p}
               shopName={shopName}
               binding={bindings[p.thirdPlatformItemId] ?? null}
+              template={template}
               onBound={handleBound}
             />
           ))}
@@ -418,11 +539,13 @@ function ShopProductCard({
   item,
   shopName,
   binding,
+  template,
   onBound,
 }: {
   item: ShopMirrorProduct;
   shopName: string;
   binding: ImageBindingView | null;
+  template: PricingTemplate | null;
   onBound: (itemId: string, view: ImageBindingView) => void;
 }) {
   const { showToast } = useOnboarding();
@@ -446,6 +569,8 @@ function ShopProductCard({
   // AI 待确认 (PENDING) vs 已确认 (ACTIVE). Legacy rows without a status are treated as confirmed.
   const bindPending = Boolean(binding?.bound) && binding?.bindStatus === "PENDING";
   const bindConfirmed = Boolean(binding?.bound) && !bindPending;
+  // Published from the Tangbuy catalog → already a 1:1 source link; no matching needed.
+  const fromPublish = Boolean(binding?.bound) && binding?.bindSource === "FROM_PUBLISH";
 
   // Snapshot captured at confirm time: the exact candidate image/price the user matched. Preferred for
   // 回显 so we don't depend on (and don't re-hit) offer-detail, whose cross-border payload often has a
@@ -582,10 +707,98 @@ function ShopProductCard({
   const isRebind =
     current != null && boundOfferId != null && boundOfferId !== current.productId;
 
+  // —— AI 推荐卡派生值（全部映射真实数据，缺失即不显示，不编造） ——
+  const shopPrice = item.minPrice ?? item.maxPrice ?? null;
+  const boundImage = snapImage ?? offerImage(offer);
+  const boundTitle =
+    offer?.subjectTrans ?? offer?.subject ?? (boundOfferId ? `货源 ${boundOfferId}` : null);
+  const boundPriceText = snapPrice ? `¥${snapPrice}` : offerPriceText(offer);
+  const boundCostNum =
+    parsePrice(snapPrice) ?? parsePrice((offerPriceText(offer) ?? "").replace(/¥/g, ""));
+
+  // The recommended source: a live candidate (searching) takes precedence, else the bound source.
+  const reco =
+    rightMode === "candidate" && current
+      ? {
+          image: current.imageUrl ?? null,
+          title: current.title || `货源 ${current.productId}`,
+          priceText: formatCny(current.price),
+          costNum: parsePrice(current.price),
+          reasons: matchReasons({
+            imageSource: result?.imageSource,
+            querySource: result?.querySource,
+            appliedQuery: result?.appliedQuery,
+            matchScore: current.similarityScore,
+            signals: candidateSignals(current),
+          }),
+        }
+      : rightMode === "bound"
+        ? {
+            image: boundImage,
+            title: boundTitle,
+            priceText: boundPriceText,
+            costNum: boundCostNum,
+            reasons: fromPublish
+              ? ["从 Tangbuy 商城上架 · 与货源 1:1 绑定"]
+              : matchReasons({
+                  imageSource: binding?.imageSource,
+                  querySource: binding?.querySource,
+                  appliedQuery: binding?.appliedQuery,
+                  matchScore: binding?.matchScore,
+                }),
+          }
+        : null;
+
+  const margin = reco ? marginEstimate(shopPrice, item.currency, reco.costNum, template) : null;
+  const boundLoading = rightMode === "bound" && !hasSnapshot && offerLoading && !offer;
+
+  const status: { label: string; tone: "brand" | "amber" | "neutral" } = current
+    ? {
+        label: isBoundHere ? "已采用此货源" : isRebind ? "AI 推荐改绑" : "AI 推荐货源",
+        tone: "brand",
+      }
+    : bindPending
+      ? { label: "AI 待确认", tone: "amber" }
+      : fromPublish
+        ? { label: "来自 Tangbuy 商城", tone: "brand" }
+        : bindConfirmed
+          ? { label: "已采用货源", tone: "brand" }
+          : { label: "未匹配货源", tone: "neutral" };
+
   return (
     <article className="flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface p-3.5 shadow-card">
-      {/* Shopify ↔ Tangbuy side-by-side comparison */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2.5">
+      {/* Lead with AI's judgment (status + margin), not a raw comparison table. */}
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+            status.tone === "brand"
+              ? "bg-brand-soft text-brand-strong"
+              : status.tone === "amber"
+                ? "bg-amber-50 text-amber-700"
+                : "bg-slate-100 text-ink-subtle"
+          )}
+        >
+          {status.tone === "brand" ? <Sparkles className="h-3.5 w-3.5" /> : null}
+          {status.label}
+        </span>
+        {margin ? (
+          <span className="text-[11px] font-medium text-ink-subtle">
+            预估毛利{" "}
+            <span
+              className={cn(
+                "font-semibold",
+                margin.pct >= 0 ? "text-brand-strong" : "text-red-600"
+              )}
+            >
+              ~{margin.pct}%
+            </span>
+          </span>
+        ) : null}
+      </div>
+
+      {/* Compact 图对图（保留人眼对照，权重让给下方 AI 推荐理由）. */}
+      <div className="mt-2.5 grid grid-cols-[1fr_auto_1fr] items-stretch gap-2.5">
         <CompareTile
           label="Shopify"
           image={hasImage ? item.primaryImageUrl : null}
@@ -595,96 +808,72 @@ function ShopProductCard({
             <span className="text-sm font-semibold text-ink">{priceRange(item)}</span>
           }
           metaNode={
-            <div className="flex flex-wrap items-center gap-1">
-              {item.status ? (
-                <Badge variant={active ? "success" : "default"}>{item.status}</Badge>
-              ) : null}
-            </div>
+            item.status ? (
+              <Badge variant={active ? "success" : "default"}>{item.status}</Badge>
+            ) : null
           }
         />
 
-        <div className="flex flex-col items-center justify-center gap-1 px-0.5">
+        <div className="flex items-center justify-center px-0.5">
           <MoveRight className="h-4 w-4 text-ink-subtle" />
-          {bindPending ? (
-            <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-center text-[10px] font-medium text-amber-700">
-              AI
-              <br />
-              待确认
-            </span>
-          ) : bindConfirmed ? (
-            <span className="rounded-full bg-brand-soft px-1.5 py-0.5 text-center text-[10px] font-medium text-brand-strong">
-              已确认
-            </span>
-          ) : null}
-          {binding?.bound && binding.matchScore != null && binding.matchScore > 0 ? (
-            <span className="text-center text-[10px] font-medium text-ink-subtle">
-              {formatSimilarity(binding.matchScore)}
-            </span>
-          ) : null}
         </div>
 
-        {rightMode === "candidate" && current ? (
+        {reco ? (
           <CompareTile
-            label="Tangbuy 候选"
+            label={rightMode === "candidate" ? "AI 推荐候选" : "AI 推荐货源"}
             labelTone="brand"
-            image={current.imageUrl}
-            imageAlt={current.title || current.productId}
-            title={current.title}
+            image={reco.image}
+            imageAlt={reco.title ?? ""}
+            title={reco.title}
+            loading={boundLoading}
+            placeholder={boundLoading ? " " : undefined}
             priceNode={
-              <span className="text-sm font-semibold text-ink">
-                {formatCny(current.price)}
-              </span>
-            }
-            metaNode={
-              candidateSignals(current).length ? (
-                <span className="text-[10px] text-ink-subtle">
-                  {candidateSignals(current).join(" · ")}
-                </span>
-              ) : current.supplier ? (
-                <span className="truncate text-[10px] text-ink-subtle">
-                  {current.supplier}
-                </span>
-              ) : null
+              reco.priceText ? (
+                <span className="text-sm font-semibold text-ink">成本 {reco.priceText}</span>
+              ) : (
+                <span className="text-[11px] text-ink-subtle">成本待取</span>
+              )
             }
           />
-        ) : rightMode === "bound" ? (
-          (() => {
-            // Prefer the confirm-time snapshot; fall back to freshly fetched offer detail (legacy rows).
-            const boundImage = snapImage ?? offerImage(offer);
-            const boundPrice = snapPrice ? `¥${snapPrice}` : offerPriceText(offer);
-            const stillLoading = !hasSnapshot && offerLoading && !offer;
-            return (
-              <CompareTile
-                label="Tangbuy 货源"
-                labelTone="brand"
-                image={boundImage}
-                imageAlt={offer?.subjectTrans ?? offer?.subject ?? boundOfferId ?? ""}
-                title={offer?.subjectTrans ?? offer?.subject ?? `offer ${boundOfferId}`}
-                loading={stillLoading}
-                placeholder={stillLoading ? " " : undefined}
-                priceNode={
-                  boundPrice ? (
-                    <span className="text-sm font-semibold text-ink">{boundPrice}</span>
-                  ) : (
-                    <span className="text-[11px] text-ink-subtle">价未取到</span>
-                  )
-                }
-              />
-            );
-          })()
         ) : (
           <CompareTile
-            label="Tangbuy 货源"
+            label="AI 推荐货源"
             labelTone="brand"
-            placeholder={
-              hasImage ? "未关联货源 · 点「查找货源」" : "该商品无主图，无法图搜"
-            }
+            placeholder={hasImage ? "尚未找到货源 · 点「查找货源」" : "该商品无主图，无法图搜"}
           />
         )}
       </div>
 
-      {result ? (
-        <p className="mt-2 text-[10px] text-ink-subtle">{sourceHint(result)}</p>
+      {/* AI 推荐理由 + 预估毛利空间：新的视觉重心。 */}
+      {reco && reco.reasons.length ? (
+        <div className="mt-2.5 rounded-[var(--radius-control)] border border-hairline bg-surface-muted/40 px-2.5 py-2">
+          <p className="mb-1.5 text-[11px] font-medium text-ink-subtle">AI 为什么推荐</p>
+          <div className="flex flex-wrap gap-1.5">
+            {reco.reasons.map((r) => (
+              <span
+                key={r}
+                className="rounded-full border border-hairline bg-surface px-2 py-0.5 text-[11px] text-ink-muted"
+              >
+                {r}
+              </span>
+            ))}
+          </div>
+          {margin ? (
+            <p className="mt-2 text-[11px] leading-4 text-ink-subtle">
+              预估毛利空间{" "}
+              <span
+                className={cn(
+                  "font-semibold",
+                  margin.pct >= 0 ? "text-brand-strong" : "text-red-600"
+                )}
+              >
+                ~{margin.pct}%
+              </span>
+              {" · "}按售价 {fmtMoney(shopPrice as number, item.currency ?? margin.currency)} 与货源成本 ≈
+              {fmtMoney(margin.costInTarget, margin.currency)}（汇率 {margin.rate}）估算，为预估值
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {/* Action row */}

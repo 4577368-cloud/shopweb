@@ -125,12 +125,18 @@ export const api = {
     ),
 
   /** Read-only Tangbuy catalog recommendations with backend-computed estimatedSalePrice (M1-5). */
-  getRecommendations: (shop: string, limit: number) =>
+  getRecommendations: (shop: string, limit: number, offset = 0) =>
     request<CatalogRecommendation[]>(
       `/api/plugin/catalog/recommendations?shopName=${encodeURIComponent(
         shop
-      )}&limit=${encodeURIComponent(String(limit))}`
+      )}&offset=${encodeURIComponent(String(offset))}&limit=${encodeURIComponent(
+        String(limit)
+      )}`
     ),
+
+  /** Total number of Tangbuy catalog entries — the real "发现新品" count for pagination. */
+  getRecommendationsCount: () =>
+    request<{ count: number }>("/api/plugin/catalog/recommendations/count"),
 
   /** Effective pricing template for a shop (stored value, or system default when isDefault). */
   getPricingTemplate: (shop: string) =>
@@ -150,6 +156,22 @@ export const api = {
   getPublishedCount: (shop: string) =>
     request<{ count: number }>(
       `/api/plugin/catalog/published-count?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  /**
+   * One-shot repair: backfill the 1:1 CATALOG bindings for products published before publish-time
+   * linking existed. Idempotent — products already linked are left untouched.
+   */
+  backfillPublishedBindings: (shop: string) =>
+    request<{
+      total: number;
+      linked: number;
+      alreadyLinked: number;
+      skipped: number;
+      failed: number;
+    }>(
+      `/api/plugin/catalog/link-published?shopName=${encodeURIComponent(shop)}`,
+      { method: "POST" }
     ),
 
   /** Publish a single catalog candidate as a sellable Shopify product; idempotent server-side. */
@@ -204,6 +226,26 @@ export const api = {
       method: "POST",
     });
   },
+
+  /**
+   * Repair legacy bindings missing the image/price snapshot (re-search → match bound offer → else
+   * derive from offer detail). One-shot, idempotent; returns per-binding counts.
+   */
+  backfillBindingSnapshots: (shop: string) =>
+    request<{
+      total: number;
+      alreadyOk: number;
+      backfilled: number;
+      fromSearch: number;
+      fromDetail: number;
+      unresolved: number;
+      skipped: number;
+    }>(
+      `/api/plugin/match/image-search/backfill-snapshots?shopName=${encodeURIComponent(
+        shop
+      )}`,
+      { method: "POST" }
+    ),
 
   /** "确认无误": promote a single variant's PENDING binding to ACTIVE (SKU 对齐页). */
   ackSkuBinding: (shop: string, thirdPlatformSkuId: string) => {

@@ -33,6 +33,8 @@ export function AssistantRail({ children }: AssistantRailProps) {
 
 interface CopilotCardProps {
   content: AiPanelContent;
+  /** Header label; defaults to "AI 助手". Pages can specialize it, e.g. "AI 运营顾问". */
+  heading?: string;
   onAlertClick?: (targetId: string) => void;
   onNextAction?: (action: string) => void;
   highlightedAlertId?: string;
@@ -54,6 +56,7 @@ interface CopilotCardProps {
  */
 export function CopilotCard({
   content,
+  heading = "AI 助手",
   onAlertClick,
   onNextAction,
   highlightedAlertId,
@@ -68,7 +71,7 @@ export function CopilotCard({
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand-strong">
             <Bot className="h-4 w-4" />
           </span>
-          <span className="text-sm font-semibold text-ink">AI 助手</span>
+          <span className="text-sm font-semibold text-ink">{heading}</span>
         </div>
         <span className="flex items-center gap-1 text-[11px] text-ink-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-brand" />

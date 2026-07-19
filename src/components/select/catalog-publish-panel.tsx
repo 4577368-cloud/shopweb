@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronUp, Coins, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,7 +25,7 @@ import type {
   PublishStatus,
 } from "@/lib/types";
 
-const RECOMMENDATION_LIMIT = 20;
+const PAGE_SIZE = 40;
 
 const ROUNDING_OPTIONS: { value: string; label: string }[] = [
   { value: "HALF_UP", label: "四舍五入 (HALF_UP)" },
@@ -84,31 +84,62 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
   const [form, setForm] = useState<TemplateForm | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Pricing editor is demoted to a weak, collapsed-by-default entry (no longer a main-content card).
+  const [showPricing, setShowPricing] = useState(false);
   const [recommendations, setRecommendations] = useState<
     CatalogRecommendation[]
   >([]);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [publishState, setPublishState] = useState<
     Record<string, PublishCellState>
   >({});
 
+  // Re-fetch every page currently on screen so estimatedSalePrice reflects a just-saved template,
+  // without dropping the user's scroll depth.
   const loadRecommendations = useCallback(async () => {
-    const items = await api.getRecommendations(shopName, RECOMMENDATION_LIMIT);
-    setRecommendations(items);
-  }, [shopName]);
+    const pages = Math.max(1, Math.ceil(recommendations.length / PAGE_SIZE));
+    const collected: CatalogRecommendation[] = [];
+    for (let i = 0; i < pages; i++) {
+      collected.push(
+        ...(await api.getRecommendations(shopName, PAGE_SIZE, i * PAGE_SIZE))
+      );
+    }
+    setRecommendations(collected);
+  }, [shopName, recommendations.length]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const next = await api.getRecommendations(
+        shopName,
+        PAGE_SIZE,
+        recommendations.length
+      );
+      setRecommendations((prev) => [...prev, ...next]);
+    } catch (err) {
+      showToast(readableError(err));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [shopName, recommendations.length, loadingMore]);
 
   const loadAll = useCallback(async () => {
     setPageLoading(true);
     setPageError(null);
     try {
-      const [tpl, items] = await Promise.all([
+      const [tpl, items, cnt] = await Promise.all([
         api.getPricingTemplate(shopName),
-        api.getRecommendations(shopName, RECOMMENDATION_LIMIT),
+        api.getRecommendations(shopName, PAGE_SIZE, 0),
+        api.getRecommendationsCount().catch(() => ({ count: 0 })),
       ]);
       setTemplate(tpl);
       const f = toForm(tpl);
       setForm(f);
       setBaseline(f);
       setRecommendations(items);
+      setTotal(cnt.count || items.length);
     } catch (err) {
       setPageError(readableError(err));
     } finally {
@@ -258,26 +289,61 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
         </Card>
       ) : null}
 
-      <PricingTemplateCard
-        loading={pageLoading}
-        template={template}
-        form={form}
-        isDirty={isDirty}
-        saving={savingTemplate}
-        error={formError}
-        onPatch={patchForm}
-        onSave={() => void handleSaveTemplate()}
-      />
+      {showPricing ? (
+        <div>
+          <div className="mb-1.5 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowPricing(false)}
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-muted hover:text-ink"
+            >
+              收起定价 <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <PricingTemplateCard
+            loading={pageLoading}
+            template={template}
+            form={form}
+            isDirty={isDirty}
+            saving={savingTemplate}
+            error={formError}
+            onPatch={patchForm}
+            onSave={() => void handleSaveTemplate()}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowPricing(true)}
+          className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-card)] border border-hairline bg-surface px-3.5 py-2.5 text-left shadow-card transition-colors hover:border-hairline-strong"
+        >
+          <span className="flex min-w-0 items-center gap-2 text-xs text-ink-muted">
+            <Coins className="h-4 w-4 shrink-0 text-brand" />
+            {template ? (
+              <span className="truncate">
+                定价策略 · 采购价（{template.sourceCurrency}）按汇率 {template.exchangeRate} 换算为{" "}
+                {template.targetCurrency} · 倍率 ×{template.multiplier}
+                {template.isDefault ? " · 系统默认" : ""}
+              </span>
+            ) : (
+              <span>定价策略 · 影响上架到 Shopify 的售价</span>
+            )}
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-brand-strong">
+            调整定价 <ChevronDown className="h-3.5 w-3.5" />
+          </span>
+        </button>
+      )}
 
       <div className="mb-2 mt-4 flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-ink">Tangbuy 商城 · 可上架</h2>
           <p className="mt-0.5 text-xs text-ink-subtle">
-            预估售价由上方定价模板推算 · 最多展示 {RECOMMENDATION_LIMIT} 条
+            预估售价由上方定价模板推算 · 已加载 {recommendations.length}/{total} 条
           </p>
         </div>
         {!pageLoading ? (
-          <Badge variant="outline">{recommendations.length} 条</Badge>
+          <Badge variant="outline">{total} 条</Badge>
         ) : null}
       </div>
 
@@ -291,16 +357,31 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
           description="Tangbuy 商城当前为空，或后端未返回数据。"
         />
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {recommendations.map((item) => (
-            <RecommendationCard
-              key={item.candidateId}
-              item={item}
-              state={publishState[item.candidateId]}
-              onPublish={() => void handlePublish(item)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {recommendations.map((item) => (
+              <RecommendationCard
+                key={item.candidateId}
+                item={item}
+                state={publishState[item.candidateId]}
+                onPublish={() => void handlePublish(item)}
+              />
+            ))}
+          </div>
+          {recommendations.length < total ? (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="secondary"
+                onClick={() => void loadMore()}
+                disabled={loadingMore}
+              >
+                {loadingMore
+                  ? "加载中…"
+                  : `加载更多（还有 ${total - recommendations.length} 条）`}
+              </Button>
+            </div>
+          ) : null}
+        </>
       )}
     </>
   );
@@ -331,7 +412,7 @@ function PricingTemplateCard({
         <div>
           <CardTitle>定价模板</CardTitle>
           <CardDescription>
-            售价 = round((采购价 × 汇率 × 倍率) + 加价)。修改后保存，推荐列表预估售价会自动重算。
+            售价 = round((采购价 × 汇率 × 倍率) + 加价)。采购价为人民币时会按汇率自动换算为目标币种（美元），该规则将决定上架到 Shopify 的售价。修改保存后，预估售价会自动重算。
           </CardDescription>
         </div>
         {template ? (
