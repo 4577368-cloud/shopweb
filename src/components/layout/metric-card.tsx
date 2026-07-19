@@ -9,17 +9,17 @@ interface MetricCardProps {
 }
 
 const toneMap = {
-  default: "border-slate-200",
+  default: "border-hairline",
   success: "border-emerald-200",
   warning: "border-amber-200",
-  teal: "border-teal-200",
+  teal: "border-emerald-200",
 };
 
 const valueToneMap = {
   default: "text-slate-900",
   success: "text-emerald-700",
   warning: "text-amber-700",
-  teal: "text-teal-800",
+  teal: "text-brand-strong",
 };
 
 export function MetricCard({

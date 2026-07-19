@@ -1,21 +1,89 @@
 @import "tailwindcss";
 
+/*
+ * Tangbuy workbench design tokens (Step 3).
+ * Brand is intentionally an emerald-teal (偏绿的 teal): greener than the legacy teal-700
+ * but still in the teal family, so Tangbuy keeps its identity while matching the prototypes.
+ * teal/green is reserved for primary actions, active state, status and key emphasis only;
+ * everything else is neutral slate. No purple/blue "AI" hues, no big gradients/shadows.
+ */
 :root {
-  --background: #f1f5f9;
-  --foreground: #0f172a;
-  --surface: #ffffff;
-  --border: #e2e8f0;
-  --muted: #64748b;
-  --accent: #0f766e;
-  --accent-soft: #f0fdfa;
+  /* Surfaces */
+  --canvas: #f6f7f9; /* page background */
+  --surface: #ffffff; /* card background */
+  --surface-muted: #f8fafc; /* inset / subtle fill inside cards */
+
+  /* Borders (hairline-thin) */
+  --hairline: #e5e7eb;
+  --hairline-strong: #d7dbe0;
+
+  /* Text: 3 levels */
+  --ink: #0f172a; /* primary text */
+  --ink-muted: #64748b; /* secondary text / descriptions */
+  --ink-subtle: #94a3b8; /* weak text / hints / meta */
+
+  /* Brand (emerald-teal) — primary buttons, active, key emphasis */
+  --brand: #059669; /* emerald-600 */
+  --brand-strong: #047857; /* emerald-700 (hover/pressed) */
+  --brand-soft: #ecfdf5; /* emerald-50 (active tint / soft fill) */
+  --brand-ring: rgba(5, 150, 105, 0.28);
+
+  /* Status */
   --success: #059669;
+  --success-soft: #ecfdf5;
   --warning: #d97706;
+  --warning-soft: #fffbeb;
   --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --neutral-soft: #f1f5f9;
+
+  /* Radius */
+  --radius-card: 12px;
+  --radius-control: 8px;
+
+  /* Elevation — deliberately faint */
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-raised: 0 6px 20px rgba(15, 23, 42, 0.08);
+
+  /* Layout rhythm */
+  --wb-sidebar-w: 240px;
+  --wb-rail-w: 316px;
+  --wb-gutter: 20px;
+
+  /* Legacy aliases (kept so untouched components resolve) */
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --border: var(--hairline);
+  --muted: var(--ink-muted);
+  --accent: var(--brand);
+  --accent-soft: var(--brand-soft);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--canvas);
+  --color-foreground: var(--ink);
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+
+  --radius-card: var(--radius-card);
+  --radius-control: var(--radius-control);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+
   --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue",
     Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -31,8 +99,8 @@ body {
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--canvas);
+  color: var(--ink);
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
@@ -52,6 +120,6 @@ select {
 }
 
 ::selection {
-  background: #ccfbf1;
-  color: #134e4a;
+  background: #d1fae5; /* emerald-100 */
+  color: #065f46; /* emerald-800 */
 }

@@ -154,7 +154,7 @@ const rowActionVariants = cva(
         default:
           "h-7 border-slate-200 bg-white px-2 text-slate-700 hover:bg-slate-50",
         primary:
-          "h-7 border-teal-700 bg-teal-700 px-2 text-white hover:bg-teal-800",
+          "h-7 border-brand bg-brand px-2 text-white hover:bg-brand-strong",
         danger:
           "h-7 border-red-200 bg-white px-2 text-red-700 hover:bg-red-50",
         ghost:
