@@ -1,12 +1,24 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
-import { CheckCircle2, ExternalLink, Loader2, Wand2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ChevronDown,
+  ExternalLink,
+  ImageOff,
+  Loader2,
+  MoveRight,
+  Wand2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api, ApiError } from "@/lib/api";
-import type { SkuProductOverview, SkuVariant } from "@/lib/types";
+import type {
+  OfferDetail,
+  OfferSku,
+  SkuProductOverview,
+  SkuVariant,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export type ProductMatchState = "full" | "partial" | "none";
@@ -64,15 +76,36 @@ function formatScore(score?: number | null): string {
   return String(Math.round(score));
 }
 
-function formatPrice(price?: number | null): string {
+function formatShopPrice(price?: number | null): string {
   if (price == null || Number.isNaN(price)) return "—";
   return price.toFixed(2);
 }
 
-function queryHint(v: NonNullable<SkuVariant["bound"]>): string | null {
-  if (!v.querySource || v.querySource === "NONE") return null;
-  const src = v.querySource === "LLM" ? "AI 识图" : "标题";
-  return v.appliedQuery ? `${src}纠偏「${v.appliedQuery}」` : `${src}纠偏`;
+/** First usable price string from a 1688 SKU (wholesale, else consignment). */
+function offerSkuPrice(sku?: OfferSku | null): string | null {
+  const raw = sku?.price ?? sku?.consignPrice ?? null;
+  return raw && raw.trim() ? raw.trim() : null;
+}
+
+/** Human spec label from a 1688 SKU's attribute matrix (translated value preferred). */
+function offerSkuSpec(sku?: OfferSku | null): string | null {
+  const parts = sku?.skuAttributes
+    ?.map((a) => a.valueTrans || a.value)
+    .filter((v): v is string => Boolean(v && v.trim()));
+  return parts && parts.length ? parts.join(" / ") : null;
+}
+
+/** Per-value image on a 1688 SKU, if the attribute matrix carries one. */
+function offerSkuImage(sku?: OfferSku | null): string | null {
+  return sku?.skuAttributes?.map((a) => a.skuImageUrl).find(Boolean) ?? null;
+}
+
+/** One short, human reason for the middle judgement column. */
+function matchReason(bound: NonNullable<SkuVariant["bound"]>): string {
+  if (isAutoAligned(bound.matchSource)) return "按规格自动对齐";
+  if (bound.querySource === "LLM") return "AI 识图匹配";
+  if (bound.querySource === "TITLE") return "按标题图搜匹配";
+  return "按原图图搜匹配";
 }
 
 function MatchStatePill({
@@ -86,26 +119,179 @@ function MatchStatePill({
 }) {
   if (state === "full") {
     return (
-      <Badge variant="success" className="gap-1">
-        <CheckCircle2 className="h-3 w-3" />
-        {bound}/{total} 已匹配
+      <Badge variant="success">
+        全部匹配 {bound}/{total}
       </Badge>
     );
   }
   if (state === "partial") {
     return (
       <Badge variant="warning">
-        {bound}/{total} 部分匹配
+        部分匹配 {bound}/{total}
       </Badge>
     );
   }
   return <Badge variant="outline">未匹配</Badge>;
 }
 
+/** Small square thumbnail with graceful "no image" fallback. */
+function Thumb({
+  src,
+  alt,
+  className,
+}: {
+  src?: string | null;
+  alt: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "relative shrink-0 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted",
+        className
+      )}
+    >
+      {src ? (
+        <Image src={src} alt={alt} fill sizes="72px" className="object-cover" unoptimized />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-ink-subtle">
+          <ImageOff className="h-4 w-4" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
- * One product row on the SKU binding workbench: header (thumb + title + match-state pill + auto-align
- * action) expanding into its Shopify variants with their real binding state. Auto-align and read-only
- *回显 logic are unchanged from S1-a/S1-b1 — only the visual shell is upgraded to the workbench tokens.
+ * One variant comparison row: Shopify variant (left) vs the matched 1688 SKU (right), with a compact
+ * judgement in the middle. Evidence is ordered for the eye — image, name/spec, price — with codes/ids
+ * demoted to muted footnotes. Source image/price/spec come from the on-demand offer detail (`offer`);
+ * when it is unresolved we fall back to what the overview already carries and say so, never faking it.
+ */
+function VariantCompareRow({
+  variant,
+  offer,
+  offerLoading,
+}: {
+  variant: SkuVariant;
+  offer?: OfferDetail;
+  offerLoading: boolean;
+}) {
+  const bound = variant.bound;
+  const sku =
+    offer?.skus?.find(
+      (s) => bound?.tangbuySkuId && String(s.skuId) === String(bound.tangbuySkuId)
+    ) ?? undefined;
+
+  const rightImage = offerSkuImage(sku) ?? offer?.whiteImageUrl ?? null;
+  const rightName =
+    offerSkuSpec(sku) ??
+    bound?.tangbuySkuSpec ??
+    offer?.subjectTrans ??
+    offer?.subject ??
+    null;
+  const rightPrice = offerSkuPrice(sku);
+  const resolved = Boolean(offer);
+
+  return (
+    <div className="grid grid-cols-1 gap-3 py-3 md:grid-cols-[minmax(0,1fr)_128px_minmax(0,1fr)] md:items-center md:gap-4">
+      {/* Left — Shopify variant */}
+      <div className="flex gap-3">
+        <Thumb src={variant.imageUrl} alt={variant.optionLabel} className="h-16 w-16" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
+            Shopify
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-4 text-ink">
+            {variant.optionLabel}
+          </p>
+          <p className="mt-1 text-sm font-semibold text-ink">
+            ¥{formatShopPrice(variant.price)}
+          </p>
+          {variant.sku ? (
+            <p className="mt-0.5 truncate text-[11px] text-ink-subtle">SKU {variant.sku}</p>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Middle — judgement */}
+      <div className="flex flex-row items-center justify-between gap-2 rounded-[var(--radius-control)] bg-surface-muted px-2.5 py-2 md:flex-col md:justify-center md:gap-1 md:bg-transparent md:px-0 md:py-0 md:text-center">
+        {bound ? (
+          <>
+            <Badge variant="success">已匹配</Badge>
+            <span className="text-[11px] font-medium text-brand">
+              {isAutoAligned(bound.matchSource) ? "匹配度" : "相似度"}{" "}
+              {formatScore(bound.matchScore)}
+            </span>
+            <span className="hidden text-[10px] leading-tight text-ink-subtle md:block">
+              {matchReason(bound)}
+            </span>
+          </>
+        ) : (
+          <>
+            <Badge variant="outline">未匹配</Badge>
+            <span className="hidden text-[10px] leading-tight text-ink-subtle md:block">
+              尚未找到货源
+            </span>
+          </>
+        )}
+        <MoveRight className="hidden h-4 w-4 text-ink-subtle md:block" />
+      </div>
+
+      {/* Right — 1688 source */}
+      <div className="flex gap-3">
+        {!bound ? (
+          <div className="flex flex-1 items-center rounded-[var(--radius-control)] border border-dashed border-hairline px-3 py-3 text-[11px] text-ink-subtle">
+            未匹配货源
+          </div>
+        ) : offerLoading && !resolved ? (
+          <div className="flex flex-1 items-center gap-2 rounded-[var(--radius-control)] border border-hairline px-3 py-3 text-[11px] text-ink-subtle">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            载入货源…
+          </div>
+        ) : (
+          <>
+            <Thumb src={rightImage} alt={rightName ?? "1688 货源"} className="h-16 w-16" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-brand-strong">
+                1688 货源
+              </p>
+              <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-4 text-ink">
+                {rightName ?? "(未取到规格)"}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-ink">
+                {rightPrice ? `¥${rightPrice}` : "价未取到"}
+              </p>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-ink-subtle">
+                {bound.detailUrl ? (
+                  <a
+                    href={bound.detailUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-ink-muted underline underline-offset-2 hover:text-ink"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    详情
+                  </a>
+                ) : null}
+                {bound.tangbuySkuId ? <span>SKU {bound.tangbuySkuId}</span> : null}
+                {!resolved && !offerLoading ? (
+                  <span className="text-amber-600">货源明细未取到</span>
+                ) : null}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One product row on the SKU binding workbench. Collapsed by default when fully matched, expanded when
+ * partial — surfacing what needs human eyes. The header carries the visual summary (thumb + title +
+ * match-state pill + auto-align); expanding reveals per-variant Shopify↔1688 side-by-side comparison.
+ * Source images/prices are fetched on demand from the offer detail (route B, no backend change).
  */
 export function SkuProductCard({
   product,
@@ -118,13 +304,59 @@ export function SkuProductCard({
   onAligned: () => Promise<void>;
   showToast: (message: string) => void;
 }) {
-  const hasImage = Boolean(product.imageUrl);
-  const [aligning, setAligning] = useState(false);
-  const [alignError, setAlignError] = useState<string | null>(null);
-
   const total = product.variants.length;
   const bound = boundVariantCount(product);
   const state = productMatchState(product);
+
+  const [open, setOpen] = useState(() => state !== "full");
+  const [aligning, setAligning] = useState(false);
+  const [alignError, setAlignError] = useState<string | null>(null);
+
+  const [offerMap, setOfferMap] = useState<Record<string, OfferDetail>>({});
+  const [offerLoading, setOfferLoading] = useState(false);
+  const [fetchedSig, setFetchedSig] = useState<string | null>(null);
+
+  // Distinct 1688 offer ids referenced by this product's bound variants (usually one).
+  const boundOfferIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          product.variants
+            .map((v) => v.bound?.tangbuyProductId)
+            .filter((id): id is string => Boolean(id))
+        )
+      ),
+    [product]
+  );
+  const sig = boundOfferIds.join(",");
+
+  useEffect(() => {
+    if (!open || boundOfferIds.length === 0 || fetchedSig === sig) return;
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy on-expand fetch; guarded by fetchedSig
+    setOfferLoading(true);
+    void Promise.all(
+      boundOfferIds.map(async (id) => {
+        try {
+          return [id, await api.getOfferDetail(id)] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      const map: Record<string, OfferDetail> = {};
+      for (const [id, detail] of entries) {
+        if (detail) map[id] = detail;
+      }
+      setOfferMap(map);
+      setFetchedSig(sig);
+      setOfferLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, boundOfferIds, sig, fetchedSig]);
 
   const runAutoAlign = async () => {
     if (aligning) return;
@@ -133,6 +365,7 @@ export function SkuProductCard({
     try {
       const res = await api.autoAlignSku(shopName, product.thirdPlatformItemId);
       showToast(`自动对齐完成：${res.matchedCount}/${res.totalVariants} 个变体已绑定`);
+      setOpen(true);
       await onAligned();
     } catch (err) {
       setAlignError(autoAlignError(err));
@@ -142,33 +375,36 @@ export function SkuProductCard({
   };
 
   return (
-    <article className="rounded-[var(--radius-card)] border border-hairline bg-surface px-4 py-3.5 shadow-card">
-      <div className="flex items-start gap-3">
-        <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
-          {hasImage ? (
-            <Image
-              src={product.imageUrl as string}
-              alt={product.title ?? product.thirdPlatformItemId}
-              fill
-              sizes="48px"
-              className="object-cover"
-              unoptimized
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-[10px] text-ink-subtle">
-              无图
+    <article className="overflow-hidden rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">
+      {/* Header — always visible summary */}
+      <div className="flex items-start gap-3 px-4 py-3.5">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-w-0 flex-1 items-start gap-3 text-left"
+          aria-expanded={open}
+        >
+          <Thumb
+            src={product.imageUrl}
+            alt={product.title ?? product.thirdPlatformItemId}
+            className="h-12 w-12"
+          />
+          <div className="min-w-0 flex-1">
+            <h3 className="line-clamp-1 text-sm font-semibold leading-5 text-ink">
+              {product.title ?? "(无标题)"}
+            </h3>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-[11px] text-ink-subtle">{total} 个变体</span>
+              <MatchStatePill state={state} bound={bound} total={total} />
             </div>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="line-clamp-1 text-sm font-semibold leading-5 text-ink">
-            {product.title ?? "(无标题)"}
-          </h3>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[11px] text-ink-subtle">{total} 个变体</span>
-            <MatchStatePill state={state} bound={bound} total={total} />
           </div>
-        </div>
+          <ChevronDown
+            className={cn(
+              "mt-1 h-4 w-4 shrink-0 text-ink-subtle transition-transform",
+              open && "rotate-180"
+            )}
+          />
+        </button>
         <Button
           size="sm"
           variant="secondary"
@@ -187,79 +423,28 @@ export function SkuProductCard({
       </div>
 
       {alignError ? (
-        <div className="mt-2 rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+        <div className="mx-4 mb-3 rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           {alignError}
         </div>
       ) : null}
 
-      <div className="mt-2.5 divide-y divide-slate-100 border-t border-hairline">
-        {product.variants.map((v) => (
-          <VariantRow key={v.thirdPlatformSkuId} variant={v} />
-        ))}
-      </div>
-    </article>
-  );
-}
-
-function VariantRow({ variant }: { variant: SkuVariant }) {
-  const bound = variant.bound;
-  return (
-    <div className="flex items-start gap-3 py-2">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium text-ink">{variant.optionLabel}</p>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink-subtle">
-          {variant.sku ? <span>SKU {variant.sku}</span> : null}
-          <span>¥{formatPrice(variant.price)}</span>
+      {/* Body — per-variant side-by-side comparison */}
+      {open ? (
+        <div className="border-t border-hairline bg-canvas/40 px-4 py-1 divide-y divide-slate-100">
+          {product.variants.map((v) => (
+            <VariantCompareRow
+              key={v.thirdPlatformSkuId}
+              variant={v}
+              offer={
+                v.bound?.tangbuyProductId
+                  ? offerMap[v.bound.tangbuyProductId]
+                  : undefined
+              }
+              offerLoading={offerLoading}
+            />
+          ))}
         </div>
-      </div>
-
-      <div className="min-w-0 max-w-[62%] text-right">
-        {bound ? (
-          <div className="flex flex-col items-end gap-0.5">
-            <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
-              <Badge variant="success">
-                {isAutoAligned(bound.matchSource) ? "已对齐" : "已绑"}
-              </Badge>
-              {isAutoAligned(bound.matchSource) && bound.tangbuySkuId ? (
-                <span className="text-[11px] font-medium text-ink">
-                  1688 SKU {bound.tangbuySkuId}
-                </span>
-              ) : (
-                <span className="text-[11px] font-medium text-ink">
-                  1688 offer {bound.tangbuyProductId}
-                </span>
-              )}
-              {bound.matchScore != null ? (
-                <span className="text-[11px] text-brand">
-                  {isAutoAligned(bound.matchSource) ? "匹配度" : "相似度"}{" "}
-                  {formatScore(bound.matchScore)}
-                </span>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-x-2 text-[11px] text-ink-subtle">
-              {bound.tangbuySkuSpec ? (
-                <span className="text-ink-muted">规格 {bound.tangbuySkuSpec}</span>
-              ) : null}
-              {queryHint(bound) ? <span>{queryHint(bound)}</span> : null}
-              {bound.detailUrl ? (
-                <a
-                  href={bound.detailUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={cn(
-                    "inline-flex items-center gap-1 font-medium text-ink-muted underline underline-offset-2 hover:text-ink"
-                  )}
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  1688 详情
-                </a>
-              ) : null}
-            </div>
-          </div>
-        ) : (
-          <Badge variant="outline">未绑定</Badge>
-        )}
-      </div>
-    </div>
+      ) : null}
+    </article>
   );
 }

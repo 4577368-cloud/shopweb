@@ -458,6 +458,39 @@ export interface SkuAutoAlignResult {
   items: SkuAutoAlignItem[];
 }
 
+// ---------------------------------------------------------------------------
+// S1-b0 货源明细（只读镜像后端 OfferDetailVO）：仅用于 /sku-align 右侧「图/名/价」对照，
+// 由前端按需（展开商品时）拉取，不落库、不改 overview 契约。
+// ---------------------------------------------------------------------------
+
+/** 1688 SKU 的一条规格属性；skuImageUrl 为该规格值对应的图。 */
+export interface OfferSkuAttribute {
+  attributeName?: string | null;
+  value?: string | null;
+  attributeNameTrans?: string | null;
+  valueTrans?: string | null;
+  skuImageUrl?: string | null;
+}
+
+/** 1688 offer 下的单个 SKU；price 为网关返回的价格字符串（可能是区间）。 */
+export interface OfferSku {
+  skuId?: string | null;
+  price?: string | null;
+  consignPrice?: string | null;
+  amountOnSale?: number | null;
+  skuAttributes?: OfferSkuAttribute[] | null;
+}
+
+/** GET /api/plugin/match/sku/offer-detail 返回：归一化后的 1688 货源明细（含 SKU 矩阵）。 */
+export interface OfferDetail {
+  offerId?: string | null;
+  subject?: string | null;
+  subjectTrans?: string | null;
+  whiteImageUrl?: string | null;
+  minOrderQuantity?: number | null;
+  skus?: OfferSku[] | null;
+}
+
 /** POST /api/plugin/product/sync 响应。 */
 export interface ProductSyncResult {
   status: string;

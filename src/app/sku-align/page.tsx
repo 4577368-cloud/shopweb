@@ -100,13 +100,18 @@ export default function SkuAlignPage() {
     return { full, partial, none, totalVariants, boundVariants };
   }, [products]);
 
-  const filtered = useMemo(
-    () =>
+  // Surface what needs human eyes: partial first, then unmatched, fully-matched last.
+  const stateOrder: Record<ProductMatchState, number> = { partial: 0, none: 1, full: 2 };
+  const filtered = useMemo(() => {
+    const base =
       filter === "all"
         ? products
-        : products.filter((p) => productMatchState(p) === filter),
-    [products, filter]
-  );
+        : products.filter((p) => productMatchState(p) === filter);
+    return [...base].sort(
+      (a, b) => stateOrder[productMatchState(a)] - stateOrder[productMatchState(b)]
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stateOrder is a stable literal
+  }, [products, filter]);
 
   const metrics: MetricSummaryItem[] = [
     {

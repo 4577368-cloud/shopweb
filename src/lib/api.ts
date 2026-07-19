@@ -8,6 +8,7 @@ import type {
   ConfirmImageMatchRequest,
   ImageBindingView,
   ImageSearchResult,
+  OfferDetail,
   PricingTemplate,
   PricingTemplateUpsert,
   ProductSyncResult,
@@ -187,6 +188,17 @@ export const api = {
       { method: "POST" }
     );
   },
+
+  /**
+   * S1-b0 read-only: fetch a 1688 offer's normalized detail (SKU matrix with per-value images/prices).
+   * Used by /sku-align to render the right-hand 图/名/价 comparison on demand; no persistence.
+   */
+  getOfferDetail: (offerId: string, country = "en") =>
+    request<OfferDetail>(
+      `/api/plugin/match/sku/offer-detail?offerId=${encodeURIComponent(
+        offerId
+      )}&country=${encodeURIComponent(country)}`
+    ),
 
   /** List the shop's mirrored on-sale products (read-only; path A display). */
   getShopProducts: (shop: string) =>
