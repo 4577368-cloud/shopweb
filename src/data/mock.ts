@@ -60,7 +60,6 @@ export const mockShop: ShopInfo = {
   timezone: "America/Los_Angeles",
   authorizedAt: undefined,
   productCount: 42,
-  orderCount: 18,
 };
 
 export const mockOverview: OverviewMetrics = {

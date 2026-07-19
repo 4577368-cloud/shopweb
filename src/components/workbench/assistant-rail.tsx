@@ -1,11 +1,18 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AlertTriangle, Bot, Lightbulb, Send } from "lucide-react";
 import type { AiPanelContent } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+/** A guided question + its fixed, state-derived answer (Phase A: no free-text LLM). */
+export interface AssistantSuggestion {
+  id: string;
+  q: string;
+  a: string;
+}
 
 interface AssistantRailProps {
   /** Stacked cards, e.g. <CopilotCard /> then contextual <InfoCard />s. */
@@ -29,6 +36,13 @@ interface CopilotCardProps {
   onAlertClick?: (targetId: string) => void;
   onNextAction?: (action: string) => void;
   highlightedAlertId?: string;
+  /**
+   * Phase A guided input. When provided, the footer becomes clickable suggestion chips that reveal a
+   * fixed, state-derived answer (no free-text LLM). When omitted, the footer is a disabled stub.
+   */
+  suggestions?: AssistantSuggestion[];
+  /** Changing this key resets the revealed answer (e.g. when the page's auth state changes). */
+  suggestionsKey?: string;
 }
 
 /**
@@ -43,6 +57,8 @@ export function CopilotCard({
   onAlertClick,
   onNextAction,
   highlightedAlertId,
+  suggestions,
+  suggestionsKey,
 }: CopilotCardProps) {
   const next = content.nextAction;
   return (
@@ -153,19 +169,71 @@ export function CopilotCard({
         ) : null}
       </div>
 
-      {/* Visual composer stub — not wired to any chat backend this round. */}
-      <div className="border-t border-hairline p-2.5">
-        <div className="flex items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-2.5 py-1.5">
-          <input
-            disabled
-            placeholder="输入你的问题…"
-            className="min-w-0 flex-1 bg-transparent text-xs text-ink placeholder:text-ink-subtle focus:outline-none"
-          />
-          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand/40 text-white">
-            <Send className="h-3 w-3" />
-          </span>
+      {suggestions && suggestions.length > 0 ? (
+        <GuidedComposer key={suggestionsKey} suggestions={suggestions} />
+      ) : (
+        /* Visual composer stub — not wired to any chat backend on pages without guided input. */
+        <div className="border-t border-hairline p-2.5">
+          <div className="flex items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-2.5 py-1.5">
+            <input
+              disabled
+              placeholder="输入你的问题…"
+              className="min-w-0 flex-1 bg-transparent text-xs text-ink placeholder:text-ink-subtle focus:outline-none"
+            />
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand/40 text-white">
+              <Send className="h-3 w-3" />
+            </span>
+          </div>
         </div>
-      </div>
+      )}
     </section>
+  );
+}
+
+/**
+ * Phase A guided composer: suggestion chips + a revealed fixed answer. Not a free-text LLM — the
+ * disabled input signals that open chat is coming later. Remounted (via key) to reset on state change.
+ */
+function GuidedComposer({ suggestions }: { suggestions: AssistantSuggestion[] }) {
+  const [active, setActive] = useState<AssistantSuggestion | null>(null);
+
+  return (
+    <div className="space-y-2 border-t border-hairline p-2.5">
+      {active ? (
+        <div className="flex gap-2 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft px-2.5 py-2">
+          <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-strong" />
+          <p className="text-[11px] leading-5 text-ink-muted">{active.a}</p>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap gap-1.5">
+        {suggestions.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setActive(s)}
+            className={cn(
+              "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+              active?.id === s.id
+                ? "border-brand bg-surface text-ink"
+                : "border-hairline bg-surface text-ink-muted hover:border-brand hover:text-ink"
+            )}
+          >
+            {s.q}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-2.5 py-1.5">
+        <input
+          disabled
+          placeholder="点击上方问题获取解答 · 自由对话即将上线"
+          className="min-w-0 flex-1 bg-transparent text-xs text-ink placeholder:text-ink-subtle focus:outline-none"
+        />
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand/40 text-white">
+          <Send className="h-3 w-3" />
+        </span>
+      </div>
+    </div>
   );
 }

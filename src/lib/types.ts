@@ -74,7 +74,6 @@ export interface ShopInfo {
   timezone: string;
   authorizedAt?: string;
   productCount: number;
-  orderCount: number;
 }
 
 export interface OverviewMetrics {

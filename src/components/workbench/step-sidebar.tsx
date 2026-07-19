@@ -1,15 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CheckCircle2,
   ChevronDown,
-  Circle,
   AlertCircle,
-  Loader2,
-  Lightbulb,
   Store,
 } from "lucide-react";
 import { APP_NAME, APP_SUBTITLE } from "@/data/mock";
@@ -50,18 +46,13 @@ function statusLabel(status: StepStatus): { text: string; tone: string } {
   }
 }
 
-interface StepSidebarProps {
-  /** Simplified assist / tip card rendered near the bottom. Defaults to a compact AI tip card. */
-  tip?: ReactNode;
-}
-
 /**
  * Left rail (Step 3): brand header → shop switcher (visual) → progress → compact step timeline →
- * simplified assist/tip card → help footer. Reads the onboarding context (same source as the legacy
- * StepNav) and renders every step compactly with a green active state. teal/green is used only for the
- * active step, progress and status.
+ * lightweight help footer. Reads the onboarding context (same source as the legacy StepNav) and
+ * renders every step compactly with a green active state. teal/green is used only for the active
+ * step, progress and status. The AI tip card was removed to avoid duplicating the right-hand copilot.
  */
-export function StepSidebar({ tip }: StepSidebarProps) {
+export function StepSidebar() {
   const pathname = usePathname();
   const {
     steps,
@@ -122,13 +113,9 @@ export function StepSidebar({ tip }: StepSidebarProps) {
             T
           </span>
           <span className="min-w-0">
-            <span className="flex items-center gap-1.5">
-              <span className="text-[15px] font-semibold tracking-tight text-ink">
-                {APP_NAME}
-              </span>
-              <span className="rounded bg-brand-soft px-1 py-0.5 text-[9px] font-semibold text-brand-strong">
-                AI
-              </span>
+            <span className="block text-[15px] font-semibold tracking-tight text-ink">
+              {APP_NAME} <span className="text-ink-subtle">·</span>{" "}
+              <span className="text-brand-strong">AI Copilot</span>
             </span>
             <span className="block text-[11px] text-ink-muted">{APP_SUBTITLE}</span>
           </span>
@@ -208,8 +195,7 @@ export function StepSidebar({ tip }: StepSidebarProps) {
       </nav>
 
       <div className="border-t border-hairline p-3">
-        {tip ?? <DefaultTip />}
-        <div className="mt-3 flex items-center gap-3 px-1 text-[11px] text-ink-subtle">
+        <div className="flex items-center gap-3 px-1 text-[11px] text-ink-subtle">
           <Link href="#" className="hover:text-ink-muted">
             需要帮助？
           </Link>
@@ -219,20 +205,5 @@ export function StepSidebar({ tip }: StepSidebarProps) {
         </div>
       </div>
     </aside>
-  );
-}
-
-/** Compact AI tip card shown by default at the bottom of the rail. */
-function DefaultTip() {
-  return (
-    <div className="rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-3 py-2.5">
-      <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-ink">
-        <Lightbulb className="h-3 w-3 text-amber-500" />
-        AI 小贴士
-      </div>
-      <p className="text-[11px] leading-4 text-ink-muted">
-        我是 Tangbuy AI 助手，会帮你完成开店的每一步，有任何问题都可以问我。
-      </p>
-    </div>
   );
 }
