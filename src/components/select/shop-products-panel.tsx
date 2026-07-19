@@ -18,6 +18,7 @@ import { TableSkeleton } from "@/components/ui/skeleton";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, ApiError } from "@/lib/api";
 import type {
+  ImageBindingView,
   ImageSearchProduct,
   ImageSearchResult,
   ShopMirrorProduct,
@@ -59,6 +60,25 @@ function imageSearchError(err: unknown): string {
     return "1688 网关繁忙或限流，请稍后重试";
   }
   return raw || "图搜失败";
+}
+
+/** Map backend confirm (A3-2b) errors to a readable message by machine-code prefix. */
+function imageMatchError(err: unknown): string {
+  let raw = "";
+  if (err instanceof ApiError) {
+    if (err.status === 0) return err.message;
+    const body = err.body as { message?: string } | undefined;
+    raw = body?.message ?? err.message;
+  } else if (err instanceof Error) {
+    raw = err.message;
+  }
+  if (raw.startsWith("PRODUCT_NOT_FOUND")) {
+    return "未找到该商品镜像，请先同步商品";
+  }
+  if (raw.startsWith("NO_VARIANT")) {
+    return "该商品无可用变体（SKU），请重新同步商品后再匹配";
+  }
+  return raw || "确认匹配失败";
 }
 
 /** Similarity score may be a 0–1 ratio or an absolute index; render defensively. */
@@ -107,19 +127,33 @@ export function ShopProductsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [products, setProducts] = useState<ShopMirrorProduct[]>([]);
+  // 回显: itemId -> ACTIVE binding. Server is the source of truth; refreshed on load/sync.
+  const [bindings, setBindings] = useState<Record<string, ImageBindingView>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const items = await api.getShopProducts(shopName);
+      const [items, bound] = await Promise.all([
+        api.getShopProducts(shopName),
+        api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
+      ]);
       setProducts(items);
+      const map: Record<string, ImageBindingView> = {};
+      for (const b of bound) {
+        if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
+      }
+      setBindings(map);
     } catch (err) {
       setError(readableError(err));
     } finally {
       setLoading(false);
     }
   }, [shopName]);
+
+  const handleBound = useCallback((itemId: string, view: ImageBindingView) => {
+    setBindings((prev) => ({ ...prev, [itemId]: view }));
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch-on-mount; load() sets its own loading flag
@@ -146,7 +180,7 @@ export function ShopProductsPanel() {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs text-slate-500">
-            店铺在售商品（Shopify 同步镜像，只读）。关联货源能力即将接入。
+            店铺在售商品（Shopify 同步镜像）。可查找并绑定 1688 货源。
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -202,7 +236,13 @@ export function ShopProductsPanel() {
       ) : (
         <div className="space-y-2.5">
           {products.map((p) => (
-            <ShopProductCard key={p.id} item={p} shopName={shopName} />
+            <ShopProductCard
+              key={p.id}
+              item={p}
+              shopName={shopName}
+              binding={bindings[p.thirdPlatformItemId] ?? null}
+              onBound={handleBound}
+            />
           ))}
         </div>
       )}
@@ -213,10 +253,15 @@ export function ShopProductsPanel() {
 function ShopProductCard({
   item,
   shopName,
+  binding,
+  onBound,
 }: {
   item: ShopMirrorProduct;
   shopName: string;
+  binding: ImageBindingView | null;
+  onBound: (itemId: string, view: ImageBindingView) => void;
 }) {
+  const { showToast } = useOnboarding();
   const active = (item.status ?? "").toUpperCase() === "ACTIVE";
   const hasImage = Boolean(item.primaryImageUrl);
 
@@ -225,6 +270,10 @@ function ShopProductCard({
   const [result, setResult] = useState<ImageSearchResult | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [expanded, setExpanded] = useState(false);
+
+  // The panel owns binding truth (回显 map); the card renders the prop and reports confirms upward.
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const runSearch = async () => {
     if (searching) return;
@@ -240,6 +289,40 @@ function ShopProductCard({
       setSearchError(imageSearchError(err));
     } finally {
       setSearching(false);
+    }
+  };
+
+  const boundOfferId =
+    binding?.bound && binding.tangbuyProductId ? binding.tangbuyProductId : null;
+
+  const confirmMatch = async (candidate: ImageSearchProduct) => {
+    if (confirmingId) return;
+    if (boundOfferId && boundOfferId !== candidate.productId) {
+      const ok = window.confirm(
+        `该商品已绑定货源 ${boundOfferId}，确认改绑到 ${candidate.productId}？`
+      );
+      if (!ok) return;
+    }
+    setConfirmingId(candidate.productId);
+    setConfirmError(null);
+    try {
+      const view = await api.confirmImageMatch({
+        shopName,
+        thirdPlatformItemId: item.thirdPlatformItemId,
+        offerProductId: candidate.productId,
+        offerSkuId: candidate.skuId,
+        detailUrl: candidate.detailUrl,
+        similarityScore: candidate.similarityScore,
+        imageSource: result?.imageSource,
+        querySource: result?.querySource,
+        appliedQuery: result?.appliedQuery,
+      });
+      onBound(item.thirdPlatformItemId, view);
+      showToast(boundOfferId ? "已改绑货源" : "已绑定货源");
+    } catch (err) {
+      setConfirmError(imageMatchError(err));
+    } finally {
+      setConfirmingId(null);
     }
   };
 
@@ -308,6 +391,41 @@ function ShopProductCard({
         </div>
       </div>
 
+      {binding?.bound ? (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          <Badge variant="success">已绑定货源</Badge>
+          <span className="font-medium">1688 offer {binding.tangbuyProductId}</span>
+          {binding.matchScore != null ? (
+            <span className="text-emerald-600">
+              相似度 {formatSimilarity(binding.matchScore)}
+            </span>
+          ) : null}
+          {binding.querySource && binding.querySource !== "NONE" ? (
+            <span className="text-emerald-600">
+              {binding.querySource === "LLM" ? "AI 识图" : "标题"}纠偏
+              {binding.appliedQuery ? `「${binding.appliedQuery}」` : ""}
+            </span>
+          ) : null}
+          {binding.detailUrl ? (
+            <a
+              href={binding.detailUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 font-medium underline underline-offset-2"
+            >
+              <ExternalLink className="h-3 w-3" />
+              查看 1688 详情
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+
+      {confirmError ? (
+        <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {confirmError}
+        </div>
+      ) : null}
+
       {searchError ? (
         <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
           <span>{searchError}</span>
@@ -338,6 +456,9 @@ function ShopProductCard({
           <SourceCandidate
             candidate={current}
             isFirst={currentIdx === 0}
+            boundOfferId={boundOfferId}
+            confirming={confirmingId === current.productId}
+            onConfirm={() => void confirmMatch(current)}
           />
 
           {candidates && candidates.length > 1 ? (
@@ -406,10 +527,18 @@ function ShopProductCard({
 function SourceCandidate({
   candidate,
   isFirst,
+  boundOfferId,
+  confirming,
+  onConfirm,
 }: {
   candidate: ImageSearchProduct;
   isFirst: boolean;
+  boundOfferId: string | null;
+  confirming: boolean;
+  onConfirm: () => void;
 }) {
+  const isBoundHere = boundOfferId != null && boundOfferId === candidate.productId;
+  const isRebind = boundOfferId != null && boundOfferId !== candidate.productId;
   return (
     <div>
       <div className="mb-2 flex items-center gap-2">
@@ -473,9 +602,18 @@ function SourceCandidate({
       </div>
 
       <div className="mt-2.5 flex items-center justify-end">
-        <Button size="sm" disabled title="下一步（A3-2）接入持久化">
-          确认匹配（A3-2 接入）
-        </Button>
+        {isBoundHere ? (
+          <Button size="sm" variant="secondary" disabled>
+            已绑定此货源
+          </Button>
+        ) : (
+          <Button size="sm" onClick={onConfirm} disabled={confirming}>
+            {confirming ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : null}
+            {confirming ? "绑定中…" : isRebind ? "改绑到此货源" : "确认匹配"}
+          </Button>
+        )}
       </div>
     </div>
   );

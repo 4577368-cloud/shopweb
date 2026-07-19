@@ -5,12 +5,15 @@
 
 import type {
   CatalogRecommendation,
+  ConfirmImageMatchRequest,
+  ImageBindingView,
   ImageSearchResult,
   PricingTemplate,
   PricingTemplateUpsert,
   ProductSyncResult,
   PublishResult,
   ShopMirrorProduct,
+  SkuProductOverview,
   UploadedImage,
 } from "@/lib/types";
 
@@ -145,6 +148,32 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shopName, thirdPlatformItemId, limit }),
     }),
+
+  /**
+   * A3-2b: confirm a chosen 1688 offer as the SKU-level binding for a shop product (route B). The
+   * backend resolves the default variant and persists candidate + ACTIVE binding; returns the bound view.
+   */
+  confirmImageMatch: (req: ConfirmImageMatchRequest) =>
+    request<ImageBindingView>("/api/plugin/match/image-search/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    }),
+
+  /** A3-2b回显: all ACTIVE image bindings of a shop (keyed downstream by thirdPlatformItemId). */
+  listImageBindings: (shop: string) =>
+    request<ImageBindingView[]>(
+      `/api/plugin/match/image-search/bindings?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  /**
+   * S1-a: SKU binding overview — products with at least one ACTIVE binding, aggregated per product
+   * and expanded into Shopify variants with their current binding state (read-only).
+   */
+  getSkuOverview: (shop: string) =>
+    request<SkuProductOverview[]>(
+      `/api/plugin/match/sku/overview?shopName=${encodeURIComponent(shop)}`
+    ),
 
   /** List the shop's mirrored on-sale products (read-only; path A display). */
   getShopProducts: (shop: string) =>

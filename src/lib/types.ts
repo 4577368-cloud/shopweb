@@ -356,6 +356,78 @@ export interface UploadedImage {
   url: string;
 }
 
+// ---------------------------------------------------------------------------
+// A3-2b 路径A（在售商品匹配）：确认图搜结果 → 建立 SKU 级绑定（路线 B）。
+// 无状态预览之上的落库；后端解析默认变体，前端只提交所选 offer。
+// ---------------------------------------------------------------------------
+
+/** POST /api/plugin/match/image-search/confirm 请求体；后端按需解析店铺默认变体。 */
+export interface ConfirmImageMatchRequest {
+  shopName: string;
+  thirdPlatformItemId: string;
+  /** 1688 offer id（必填） */
+  offerProductId: string;
+  offerSkuId?: string | null;
+  detailUrl?: string | null;
+  similarityScore?: number | null;
+  imageSource?: ImageSearchImageSource | null;
+  querySource?: ImageSearchQuerySource | null;
+  appliedQuery?: string | null;
+}
+
+/**
+ * 图搜绑定视图：confirm 响应 + GET bindings 回显项。bound=false 为正常的"未绑定"。
+ * imageSource/querySource/appliedQuery/detailUrl 由后端从审计 matchReason 解码。
+ */
+export interface ImageBindingView {
+  bound: boolean;
+  thirdPlatformItemId?: string | null;
+  thirdPlatformSkuId?: string | null;
+  tangbuyProductId?: string | null;
+  tangbuySkuId?: string | null;
+  matchScore?: number | null;
+  imageSource?: ImageSearchImageSource | null;
+  querySource?: ImageSearchQuerySource | null;
+  appliedQuery?: string | null;
+  detailUrl?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// S1-a SKU 绑定页（只读回显）：对应后端 SkuProductOverviewVO / SkuVariantVO。
+// 仅返回"至少有一条 ACTIVE binding 的商品"，按商品聚合、逐变体展开。
+// ---------------------------------------------------------------------------
+
+/** 某个 Shopify 变体当前的 ACTIVE 绑定态（来自 A3-2b），bound 为 null 表示未绑定。 */
+export interface SkuVariantBinding {
+  /** 稳定标识，预留给 S1-b 逐变体自动绑定扩展 */
+  bindingId?: number | null;
+  candidateId?: number | null;
+  tangbuyProductId?: string | null;
+  tangbuySkuId?: string | null;
+  matchScore?: number | null;
+  querySource?: ImageSearchQuerySource | null;
+  appliedQuery?: string | null;
+  detailUrl?: string | null;
+}
+
+/** 单个 Shopify 变体；optionLabel 后端保证非空（规格名兜底）。 */
+export interface SkuVariant {
+  thirdPlatformSkuId: string;
+  sku?: string | null;
+  optionLabel: string;
+  price?: number | null;
+  imageUrl?: string | null;
+  bound?: SkuVariantBinding | null;
+}
+
+/** GET /api/plugin/match/sku/overview 返回项：按商品聚合。 */
+export interface SkuProductOverview {
+  thirdPlatformItemId: string;
+  title?: string | null;
+  imageUrl?: string | null;
+  variants: SkuVariant[];
+}
+
 /** POST /api/plugin/product/sync 响应。 */
 export interface ProductSyncResult {
   status: string;
