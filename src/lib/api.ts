@@ -13,6 +13,7 @@ import type {
   ProductSyncResult,
   PublishResult,
   ShopMirrorProduct,
+  SkuAutoAlignResult,
   SkuProductOverview,
   UploadedImage,
 } from "@/lib/types";
@@ -174,6 +175,18 @@ export const api = {
     request<SkuProductOverview[]>(
       `/api/plugin/match/sku/overview?shopName=${encodeURIComponent(shop)}`
     ),
+
+  /**
+   * S1-b1: auto-align a bound product's Shopify variants to the 1688 offer's SKU matrix, writing
+   * per-variant RULE bindings. offerId is resolved server-side from the product-level binding.
+   */
+  autoAlignSku: (shop: string, thirdPlatformItemId: string) => {
+    const params = new URLSearchParams({ shopName: shop, thirdPlatformItemId });
+    return request<SkuAutoAlignResult>(
+      `/api/plugin/match/sku/auto-align?${params.toString()}`,
+      { method: "POST" }
+    );
+  },
 
   /** List the shop's mirrored on-sale products (read-only; path A display). */
   getShopProducts: (shop: string) =>

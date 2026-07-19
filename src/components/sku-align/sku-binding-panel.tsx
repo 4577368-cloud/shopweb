@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { ExternalLink, Loader2, RefreshCw, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,6 +20,30 @@ function readableError(err: unknown): string {
   }
   if (err instanceof Error) return err.message;
   return "未知错误";
+}
+
+/** Map auto-align backend errors to a readable message by machine-code prefix. */
+function autoAlignError(err: unknown): string {
+  let raw = "";
+  if (err instanceof ApiError) {
+    if (err.status === 0) return err.message;
+    const body = err.body as { message?: string } | undefined;
+    raw = body?.message ?? err.message;
+  } else if (err instanceof Error) {
+    raw = err.message;
+  }
+  if (raw.startsWith("NOT_BOUND")) return "该商品尚未绑定货源，请先在「智能选品」确认匹配";
+  if (raw.startsWith("NO_VARIANT")) return "该商品无可用变体，请重新同步商品";
+  if (raw.startsWith("NO_OFFER_SKU")) return "该 1688 货源未返回可用 SKU";
+  if (raw.startsWith("AOP_CRED_MISSING")) return "1688 开放平台凭证未配置";
+  if (raw.startsWith("AOP_TOKEN_INVALID")) return "1688 授权已失效，请重新授权";
+  if (raw.startsWith("GATEWAY_BUSY")) return "1688 网关繁忙，请稍后重试";
+  return raw || "自动对齐失败";
+}
+
+/** RULE/AI bindings come from S1-b1 auto-align; IMAGE from A3-2b image confirm. */
+function isAutoAligned(source?: string | null): boolean {
+  return source === "RULE" || source === "AI";
 }
 
 /** Similarity score may be a 0–1 ratio or an absolute index; render defensively. */
@@ -41,7 +65,7 @@ function queryHint(v: NonNullable<SkuVariant["bound"]>): string | null {
 }
 
 export function SkuBindingPanel() {
-  const { shop } = useOnboarding();
+  const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
 
   const [loading, setLoading] = useState(true);
@@ -129,7 +153,13 @@ export function SkuBindingPanel() {
       ) : (
         <div className="space-y-2.5">
           {products.map((p) => (
-            <SkuProductCard key={p.thirdPlatformItemId} product={p} />
+            <SkuProductCard
+              key={p.thirdPlatformItemId}
+              product={p}
+              shopName={shopName}
+              onAligned={load}
+              showToast={showToast}
+            />
           ))}
         </div>
       )}
@@ -137,8 +167,36 @@ export function SkuBindingPanel() {
   );
 }
 
-function SkuProductCard({ product }: { product: SkuProductOverview }) {
+function SkuProductCard({
+  product,
+  shopName,
+  onAligned,
+  showToast,
+}: {
+  product: SkuProductOverview;
+  shopName: string;
+  onAligned: () => Promise<void>;
+  showToast: (message: string) => void;
+}) {
   const hasImage = Boolean(product.imageUrl);
+  const [aligning, setAligning] = useState(false);
+  const [alignError, setAlignError] = useState<string | null>(null);
+
+  const runAutoAlign = async () => {
+    if (aligning) return;
+    setAligning(true);
+    setAlignError(null);
+    try {
+      const res = await api.autoAlignSku(shopName, product.thirdPlatformItemId);
+      showToast(`自动对齐完成：${res.matchedCount}/${res.totalVariants} 个变体已绑定`);
+      await onAligned();
+    } catch (err) {
+      setAlignError(autoAlignError(err));
+    } finally {
+      setAligning(false);
+    }
+  };
+
   return (
     <article className="rounded-lg border border-slate-200 bg-white px-3.5 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
       <div className="flex items-start gap-3">
@@ -166,7 +224,28 @@ function SkuProductCard({ product }: { product: SkuProductOverview }) {
             {product.variants.length} 个变体
           </p>
         </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="shrink-0"
+          onClick={() => void runAutoAlign()}
+          disabled={aligning}
+          title="按 1688 货源的 SKU 矩阵，自动把每个变体对齐绑定"
+        >
+          {aligning ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Wand2 className="h-4 w-4" />
+          )}
+          {aligning ? "对齐中…" : "自动对齐 SKU"}
+        </Button>
       </div>
+
+      {alignError ? (
+        <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {alignError}
+        </div>
+      ) : null}
 
       <div className="mt-2.5 divide-y divide-slate-100 border-t border-slate-100">
         {product.variants.map((v) => (
@@ -195,17 +274,29 @@ function VariantRow({ variant }: { variant: SkuVariant }) {
         {bound ? (
           <div className="flex flex-col items-end gap-0.5">
             <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
-              <Badge variant="success">已绑</Badge>
-              <span className="text-[11px] font-medium text-slate-700">
-                1688 offer {bound.tangbuyProductId}
-              </span>
+              <Badge variant="success">
+                {isAutoAligned(bound.matchSource) ? "已对齐" : "已绑"}
+              </Badge>
+              {isAutoAligned(bound.matchSource) && bound.tangbuySkuId ? (
+                <span className="text-[11px] font-medium text-slate-700">
+                  1688 SKU {bound.tangbuySkuId}
+                </span>
+              ) : (
+                <span className="text-[11px] font-medium text-slate-700">
+                  1688 offer {bound.tangbuyProductId}
+                </span>
+              )}
               {bound.matchScore != null ? (
                 <span className="text-[11px] text-emerald-600">
-                  相似度 {formatScore(bound.matchScore)}
+                  {isAutoAligned(bound.matchSource) ? "匹配度" : "相似度"}{" "}
+                  {formatScore(bound.matchScore)}
                 </span>
               ) : null}
             </div>
             <div className="flex flex-wrap items-center justify-end gap-x-2 text-[11px] text-slate-400">
+              {bound.tangbuySkuSpec ? (
+                <span className="text-slate-500">规格 {bound.tangbuySkuSpec}</span>
+              ) : null}
               {queryHint(bound) ? <span>{queryHint(bound)}</span> : null}
               {bound.detailUrl ? (
                 <a

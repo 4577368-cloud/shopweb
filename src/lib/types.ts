@@ -400,13 +400,17 @@ export interface ImageBindingView {
 // 仅返回"至少有一条 ACTIVE binding 的商品"，按商品聚合、逐变体展开。
 // ---------------------------------------------------------------------------
 
-/** 某个 Shopify 变体当前的 ACTIVE 绑定态（来自 A3-2b），bound 为 null 表示未绑定。 */
+/** 某个 Shopify 变体当前的 ACTIVE 绑定态（A3-2b 图搜 或 S1-b1 自动对齐），bound 为 null 表示未绑定。 */
 export interface SkuVariantBinding {
   /** 稳定标识，预留给 S1-b 逐变体自动绑定扩展 */
   bindingId?: number | null;
   candidateId?: number | null;
   tangbuyProductId?: string | null;
   tangbuySkuId?: string | null;
+  /** S1-b1 自动对齐命中的 1688 规格（如 "Red / M"）；IMAGE 绑定为空 */
+  tangbuySkuSpec?: string | null;
+  /** 绑定来源：IMAGE（图搜确认）/ RULE / AI（自动对齐） */
+  matchSource?: string | null;
   matchScore?: number | null;
   querySource?: ImageSearchQuerySource | null;
   appliedQuery?: string | null;
@@ -429,6 +433,29 @@ export interface SkuProductOverview {
   title?: string | null;
   imageUrl?: string | null;
   variants: SkuVariant[];
+}
+
+// ---------------------------------------------------------------------------
+// S1-b1 逐变体 SKU 自动对齐：把已绑定商品的每个 Shopify 变体对齐到 1688 offer 的 SKU 矩阵。
+// ---------------------------------------------------------------------------
+
+/** 单个 Shopify 变体的自动对齐结果。matched=false 表示未找到可信匹配，保持原状。 */
+export interface SkuAutoAlignItem {
+  thirdPlatformSkuId: string;
+  optionLabel: string;
+  matched: boolean;
+  tangbuySkuId?: string | null;
+  tangbuySkuSpec?: string | null;
+  score?: number | null;
+}
+
+/** POST /api/plugin/match/sku/auto-align 响应。 */
+export interface SkuAutoAlignResult {
+  thirdPlatformItemId: string;
+  offerId: string;
+  totalVariants: number;
+  matchedCount: number;
+  items: SkuAutoAlignItem[];
 }
 
 /** POST /api/plugin/product/sync 响应。 */
