@@ -36,15 +36,6 @@ export function boundVariantCount(product: SkuProductOverview): number {
   return product.variants.filter((v) => v.bound).length;
 }
 
-export function readableError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.status === 0) return err.message;
-    return `请求失败（${err.status}）：${err.message}`;
-  }
-  if (err instanceof Error) return err.message;
-  return "未知错误";
-}
-
 /** Map auto-align backend errors to a readable message by machine-code prefix. */
 function autoAlignError(err: unknown): string {
   let raw = "";

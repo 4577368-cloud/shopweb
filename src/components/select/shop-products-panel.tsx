@@ -1,12 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
   Loader2,
+  MoveRight,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -15,23 +16,17 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/skeleton";
+import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { useOnboarding } from "@/context/onboarding-context";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, readableError } from "@/lib/api";
 import type {
   ImageBindingView,
   ImageSearchProduct,
   ImageSearchResult,
+  OfferDetail,
   ShopMirrorProduct,
 } from "@/lib/types";
-
-function readableError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.status === 0) return err.message;
-    return `请求失败（${err.status}）：${err.message}`;
-  }
-  if (err instanceof Error) return err.message;
-  return "未知错误";
-}
+import { cn } from "@/lib/utils";
 
 /**
  * Map backend image-search errors to a readable, category-specific message.
@@ -117,6 +112,17 @@ function formatCny(price?: string | null): string {
   return `¥${trimmed}`;
 }
 
+/** Representative price of a bound offer, derived from its real SKU matrix (min–max). */
+function offerPriceText(offer: OfferDetail | null): string | null {
+  const prices = (offer?.skus ?? [])
+    .map((s) => Number.parseFloat((s.price ?? "").trim()))
+    .filter((n) => !Number.isNaN(n));
+  if (!prices.length) return null;
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return min === max ? `¥${min}` : `¥${min}–${max}`;
+}
+
 /** Restrained one-line explanation of how the backend resolved this search. */
 function sourceHint(r: ImageSearchResult): string {
   const img = r.imageSource === "ORIGINAL" ? "货源原图" : "店铺图";
@@ -142,7 +148,9 @@ function priceRange(p: ShopMirrorProduct): string {
   return `${one.toFixed(2)}${cur}`;
 }
 
-export function ShopProductsPanel() {
+type ShopFilter = "all" | "bound" | "unbound";
+
+export function ShopProductsPanel({ onActivity }: { onActivity?: () => void }) {
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
 
@@ -150,6 +158,7 @@ export function ShopProductsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [products, setProducts] = useState<ShopMirrorProduct[]>([]);
+  const [filter, setFilter] = useState<ShopFilter>("all");
   // 回显: itemId -> ACTIVE binding. Server is the source of truth; refreshed on load/sync.
   const [bindings, setBindings] = useState<Record<string, ImageBindingView>>({});
 
@@ -174,9 +183,13 @@ export function ShopProductsPanel() {
     }
   }, [shopName]);
 
-  const handleBound = useCallback((itemId: string, view: ImageBindingView) => {
-    setBindings((prev) => ({ ...prev, [itemId]: view }));
-  }, []);
+  const handleBound = useCallback(
+    (itemId: string, view: ImageBindingView) => {
+      setBindings((prev) => ({ ...prev, [itemId]: view }));
+      onActivity?.();
+    },
+    [onActivity]
+  );
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch-on-mount; load() sets its own loading flag
@@ -189,6 +202,7 @@ export function ShopProductsPanel() {
     try {
       const result = await api.syncShopProducts(shopName);
       await load();
+      onActivity?.();
       showToast(`已同步，店铺共 ${result.productCount} 个商品`);
     } catch (err) {
       setError(readableError(err));
@@ -198,27 +212,43 @@ export function ShopProductsPanel() {
     }
   };
 
+  const isBound = useCallback(
+    (p: ShopMirrorProduct) => Boolean(bindings[p.thirdPlatformItemId]?.bound),
+    [bindings]
+  );
+
+  const counts = useMemo(() => {
+    const bound = products.filter(isBound).length;
+    return { all: products.length, bound, unbound: products.length - bound };
+  }, [products, isBound]);
+
+  const filtered = useMemo(() => {
+    if (filter === "bound") return products.filter(isBound);
+    if (filter === "unbound") return products.filter((p) => !isBound(p));
+    return products;
+  }, [products, filter, isBound]);
+
   return (
     <>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-slate-500">
-            店铺在售商品（Shopify 同步镜像）。可查找并绑定 1688 货源。
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {!loading ? (
-            <Badge variant="outline">{products.length} 个商品</Badge>
-          ) : null}
-          <Button size="sm" onClick={() => void handleSync()} disabled={syncing}>
-            {syncing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            {syncing ? "同步中…" : "同步商品"}
-          </Button>
-        </div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <SegmentedTabs
+          variant="chip"
+          tabs={[
+            { id: "all", label: "全部", count: counts.all },
+            { id: "bound", label: "已关联货源", count: counts.bound },
+            { id: "unbound", label: "未关联", count: counts.unbound },
+          ]}
+          value={filter}
+          onValueChange={(id) => setFilter(id as ShopFilter)}
+        />
+        <Button size="sm" onClick={() => void handleSync()} disabled={syncing}>
+          {syncing ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+          {syncing ? "同步中…" : "同步商品"}
+        </Button>
       </div>
 
       {error ? (
@@ -256,9 +286,14 @@ export function ShopProductsPanel() {
             </Button>
           }
         />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          title="该筛选下暂无商品"
+          description="切换到「全部」查看所有在售商品。"
+        />
       ) : (
-        <div className="space-y-2.5">
-          {products.map((p) => (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {filtered.map((p) => (
             <ShopProductCard
               key={p.id}
               item={p}
@@ -270,6 +305,78 @@ export function ShopProductsPanel() {
         </div>
       )}
     </>
+  );
+}
+
+/** A compact tile (image + title + price) for one side of the Shopify↔1688 comparison. */
+function CompareTile({
+  label,
+  labelTone,
+  image,
+  imageAlt,
+  title,
+  priceNode,
+  metaNode,
+  placeholder,
+  loading,
+}: {
+  label: string;
+  labelTone?: "brand";
+  image?: string | null;
+  imageAlt?: string;
+  title?: string | null;
+  priceNode?: ReactNode;
+  metaNode?: ReactNode;
+  placeholder?: ReactNode;
+  loading?: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col rounded-[var(--radius-control)] border border-hairline bg-surface-muted/40 p-2.5">
+      <span
+        className={cn(
+          "text-[10px] font-medium uppercase tracking-wide",
+          labelTone === "brand" ? "text-brand-strong" : "text-ink-subtle"
+        )}
+      >
+        {label}
+      </span>
+      {placeholder ? (
+        <div className="mt-1.5 flex min-h-[7.5rem] flex-1 items-center justify-center rounded-[var(--radius-control)] border border-dashed border-hairline px-2 text-center text-[11px] text-ink-subtle">
+          {loading ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              载入货源…
+            </span>
+          ) : (
+            placeholder
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="relative mt-1.5 aspect-square w-full overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface">
+            {image ? (
+              <Image
+                src={image}
+                alt={imageAlt ?? title ?? ""}
+                fill
+                sizes="180px"
+                className="object-cover"
+                unoptimized
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-[10px] text-ink-subtle">
+                无图
+              </div>
+            )}
+          </div>
+          <p className="mt-1.5 line-clamp-2 text-xs font-medium leading-4 text-ink">
+            {title ?? "(无标题)"}
+          </p>
+          {priceNode ? <div className="mt-1">{priceNode}</div> : null}
+          {metaNode ? <div className="mt-0.5">{metaNode}</div> : null}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -298,6 +405,37 @@ function ShopProductCard({
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
+  const boundOfferId =
+    binding?.bound && binding.tangbuyProductId ? binding.tangbuyProductId : null;
+
+  // Bound cards lazily fetch the real offer detail so the right tile can show 货源图/价 (route B).
+  const [offer, setOffer] = useState<OfferDetail | null>(null);
+  const [offerLoading, setOfferLoading] = useState(false);
+
+  useEffect(() => {
+    if (!boundOfferId) {
+      setOffer(null);
+      return;
+    }
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch of bound offer detail
+    setOfferLoading(true);
+    api
+      .getOfferDetail(boundOfferId)
+      .then((d) => {
+        if (!cancelled) setOffer(d);
+      })
+      .catch(() => {
+        if (!cancelled) setOffer(null);
+      })
+      .finally(() => {
+        if (!cancelled) setOfferLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [boundOfferId]);
+
   const runSearch = async () => {
     if (searching) return;
     setSearching(true);
@@ -314,9 +452,6 @@ function ShopProductCard({
       setSearching(false);
     }
   };
-
-  const boundOfferId =
-    binding?.bound && binding.tangbuyProductId ? binding.tangbuyProductId : null;
 
   const confirmMatch = async (candidate: ImageSearchProduct) => {
     if (confirmingId) return;
@@ -351,106 +486,169 @@ function ShopProductCard({
 
   const candidates = result?.items ?? null;
   const current = candidates?.[currentIdx] ?? null;
+  // Right tile shows the active search candidate when searching, else the bound source, else a CTA.
+  const rightMode: "candidate" | "bound" | "empty" = current
+    ? "candidate"
+    : boundOfferId
+      ? "bound"
+      : "empty";
+  const isBoundHere =
+    current != null && boundOfferId != null && boundOfferId === current.productId;
+  const isRebind =
+    current != null && boundOfferId != null && boundOfferId !== current.productId;
 
   return (
-    <article className="rounded-lg border border-slate-200 bg-white px-3.5 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-      <div className="grid grid-cols-[64px_1fr_170px] items-stretch gap-3">
-        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-50">
-          {hasImage ? (
-            <Image
-              src={item.primaryImageUrl as string}
-              alt={item.title ?? item.thirdPlatformItemId}
-              fill
-              sizes="64px"
-              className="object-cover"
-              unoptimized
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-300">
-              无图
+    <article className="flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface p-3.5 shadow-card">
+      {/* Shopify ↔ 1688 side-by-side comparison */}
+      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2.5">
+        <CompareTile
+          label="Shopify"
+          image={hasImage ? item.primaryImageUrl : null}
+          imageAlt={item.title ?? item.thirdPlatformItemId}
+          title={item.title}
+          priceNode={
+            <span className="text-sm font-semibold text-ink">{priceRange(item)}</span>
+          }
+          metaNode={
+            <div className="flex flex-wrap items-center gap-1">
+              {item.status ? (
+                <Badge variant={active ? "success" : "default"}>{item.status}</Badge>
+              ) : null}
             </div>
-          )}
-        </div>
+          }
+        />
 
-        <div className="min-w-0">
-          <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-900">
-            {item.title ?? "(无标题)"}
-          </h3>
-          <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-sm font-semibold text-slate-900">
-              {priceRange(item)}
+        <div className="flex flex-col items-center justify-center gap-1 px-0.5">
+          <MoveRight className="h-4 w-4 text-ink-subtle" />
+          {binding?.bound && binding.matchScore != null && binding.matchScore > 0 ? (
+            <span className="text-center text-[10px] font-medium text-brand">
+              相似度
+              <br />
+              {formatSimilarity(binding.matchScore)}
             </span>
-            {item.status ? (
-              <Badge variant={active ? "success" : "default"}>
-                {item.status}
-              </Badge>
-            ) : null}
-          </div>
-          {item.handle ? (
-            <p className="mt-1 truncate text-[11px] text-slate-400">
-              /{item.handle}
-            </p>
           ) : null}
         </div>
 
-        <div className="flex flex-col items-end justify-center gap-1.5 border-l border-slate-100 pl-3">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => void runSearch()}
-            disabled={searching || !hasImage}
-            title={!hasImage ? "该商品无主图，无法图搜" : undefined}
-          >
-            {searching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4" />
-            )}
-            {searching ? "搜索中…" : "查找货源"}
-          </Button>
-          <p className="text-[10px] leading-tight text-slate-400">
-            1688 图搜（预览）
-          </p>
-        </div>
+        {rightMode === "candidate" && current ? (
+          <CompareTile
+            label="1688 候选"
+            labelTone="brand"
+            image={current.imageUrl}
+            imageAlt={current.title || current.productId}
+            title={current.title}
+            priceNode={
+              <span className="text-sm font-semibold text-ink">
+                {formatCny(current.price)}
+              </span>
+            }
+            metaNode={
+              candidateSignals(current).length ? (
+                <span className="text-[10px] text-ink-subtle">
+                  {candidateSignals(current).join(" · ")}
+                </span>
+              ) : current.supplier ? (
+                <span className="truncate text-[10px] text-ink-subtle">
+                  {current.supplier}
+                </span>
+              ) : null
+            }
+          />
+        ) : rightMode === "bound" ? (
+          <CompareTile
+            label="1688 货源"
+            labelTone="brand"
+            image={offer?.whiteImageUrl}
+            imageAlt={offer?.subjectTrans ?? offer?.subject ?? boundOfferId ?? ""}
+            title={offer?.subjectTrans ?? offer?.subject ?? `offer ${boundOfferId}`}
+            loading={offerLoading && !offer}
+            placeholder={offerLoading && !offer ? " " : undefined}
+            priceNode={
+              offerPriceText(offer) ? (
+                <span className="text-sm font-semibold text-ink">
+                  {offerPriceText(offer)}
+                </span>
+              ) : (
+                <span className="text-[11px] text-ink-subtle">价未取到</span>
+              )
+            }
+          />
+        ) : (
+          <CompareTile
+            label="1688 货源"
+            labelTone="brand"
+            placeholder={
+              hasImage ? "未关联货源 · 点「查找货源」" : "该商品无主图，无法图搜"
+            }
+          />
+        )}
       </div>
 
-      {binding?.bound ? (
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-          <Badge variant="success">已绑定货源</Badge>
-          <span className="font-medium">1688 offer {binding.tangbuyProductId}</span>
-          {binding.matchScore != null && binding.matchScore > 0 ? (
-            <span className="text-emerald-600">
-              相似度 {formatSimilarity(binding.matchScore)}
-            </span>
-          ) : null}
-          {binding.querySource && binding.querySource !== "NONE" ? (
-            <span className="text-emerald-600">
-              {binding.querySource === "LLM" ? "AI 识图" : "标题"}纠偏
-              {binding.appliedQuery ? `「${binding.appliedQuery}」` : ""}
-            </span>
-          ) : null}
-          {binding.detailUrl ? (
+      {result ? (
+        <p className="mt-2 text-[10px] text-ink-subtle">{sourceHint(result)}</p>
+      ) : null}
+
+      {/* Action row */}
+      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-hairline pt-2.5">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => void runSearch()}
+          disabled={searching || !hasImage}
+          title={!hasImage ? "该商品无主图，无法图搜" : undefined}
+        >
+          {searching ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Search className="h-4 w-4" />
+          )}
+          {searching ? "搜索中…" : boundOfferId ? "重新查找" : "查找货源"}
+        </Button>
+
+        <div className="flex items-center gap-2">
+          {boundOfferId && binding?.detailUrl ? (
             <a
               href={binding.detailUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 font-medium underline underline-offset-2"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-muted underline underline-offset-2 hover:text-ink"
             >
               <ExternalLink className="h-3 w-3" />
-              查看 1688 详情
+              1688 详情
             </a>
           ) : null}
+          {current ? (
+            isBoundHere ? (
+              <Button size="sm" variant="secondary" disabled>
+                已绑定此货源
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => void confirmMatch(current)}
+                disabled={confirmingId === current.productId}
+              >
+                {confirmingId === current.productId ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                {confirmingId === current.productId
+                  ? "绑定中…"
+                  : isRebind
+                    ? "改绑到此货源"
+                    : "确认匹配"}
+              </Button>
+            )
+          ) : null}
         </div>
-      ) : null}
+      </div>
 
       {confirmError ? (
-        <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+        <div className="mt-2.5 rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           {confirmError}
         </div>
       ) : null}
 
       {searchError ? (
-        <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+        <div className="mt-2.5 flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
           <span>{searchError}</span>
           {hasImage ? (
             <button
@@ -465,180 +663,65 @@ function ShopProductCard({
       ) : null}
 
       {result && candidates && candidates.length === 0 ? (
-        <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-          <p className="text-xs text-slate-500">
-            1688 未召回相似货源，可稍后重试或更换商品。
-          </p>
-          <p className="mt-1 text-[10px] text-slate-400">{sourceHint(result)}</p>
-        </div>
+        <p className="mt-2.5 text-xs text-ink-muted">
+          1688 未召回相似货源，可稍后重试或更换商品。
+        </p>
       ) : null}
 
-      {result && current ? (
-        <div className="mt-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
-          <p className="mb-2 text-[10px] text-slate-400">{sourceHint(result)}</p>
-          <SourceCandidate
-            candidate={current}
-            isFirst={currentIdx === 0}
-            boundOfferId={boundOfferId}
-            confirming={confirmingId === current.productId}
-            onConfirm={() => void confirmMatch(current)}
-          />
+      {/* More candidates (session-only switch) */}
+      {candidates && candidates.length > 1 ? (
+        <div className="mt-2.5 border-t border-hairline pt-2.5">
+          <button
+            type="button"
+            className="flex items-center gap-1 text-[11px] font-medium text-ink-muted hover:text-ink"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? (
+              <ChevronUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" />
+            )}
+            {expanded ? "收起候选" : `更多候选（${candidates.length - 1}）`}
+          </button>
 
-          {candidates && candidates.length > 1 ? (
-            <div className="mt-2.5 border-t border-slate-200 pt-2.5">
-              <button
-                type="button"
-                className="flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-slate-700"
-                onClick={() => setExpanded((v) => !v)}
-              >
-                {expanded ? (
-                  <ChevronUp className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                )}
-                {expanded
-                  ? "收起候选"
-                  : `更多候选（${candidates.length - 1}）`}
-              </button>
-
-              {expanded ? (
-                <div className="mt-2 space-y-1.5">
-                  {candidates.map((c, idx) => (
-                    <button
-                      key={`${c.productId}-${idx}`}
-                      type="button"
-                      onClick={() => setCurrentIdx(idx)}
-                      className={`flex w-full items-center gap-2.5 rounded-md border px-2 py-1.5 text-left transition-colors ${
-                        idx === currentIdx
-                          ? "border-slate-900 bg-white"
-                          : "border-slate-200 bg-white hover:border-slate-300"
-                      }`}
-                    >
-                      <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded border border-slate-200 bg-white">
-                        {c.imageUrl ? (
-                          <Image
-                            src={c.imageUrl}
-                            alt={c.title || c.productId}
-                            fill
-                            sizes="36px"
-                            className="object-cover"
-                            unoptimized
-                          />
-                        ) : null}
-                      </div>
-                      <span className="min-w-0 flex-1 truncate text-[11px] text-slate-700">
-                        {c.title || "(无标题)"}
-                      </span>
-                      <span className="shrink-0 text-[11px] font-medium text-slate-900">
-                        {formatCny(c.price)}
-                      </span>
-                      <span className="shrink-0 text-[10px] text-slate-400">
-                        {formatSold(c.soldCount) ?? ""}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+          {expanded ? (
+            <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {candidates.map((c, idx) => (
+                <button
+                  key={`${c.productId}-${idx}`}
+                  type="button"
+                  onClick={() => setCurrentIdx(idx)}
+                  className={cn(
+                    "flex items-center gap-2.5 rounded-[var(--radius-control)] border px-2 py-1.5 text-left transition-colors",
+                    idx === currentIdx
+                      ? "border-brand bg-surface"
+                      : "border-hairline bg-surface hover:border-hairline-strong"
+                  )}
+                >
+                  <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded border border-hairline bg-surface">
+                    {c.imageUrl ? (
+                      <Image
+                        src={c.imageUrl}
+                        alt={c.title || c.productId}
+                        fill
+                        sizes="36px"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    ) : null}
+                  </div>
+                  <span className="min-w-0 flex-1 truncate text-[11px] text-ink-muted">
+                    {c.title || "(无标题)"}
+                  </span>
+                  <span className="shrink-0 text-[11px] font-medium text-ink">
+                    {formatCny(c.price)}
+                  </span>
+                </button>
+              ))}
             </div>
           ) : null}
         </div>
       ) : null}
     </article>
-  );
-}
-
-function SourceCandidate({
-  candidate,
-  isFirst,
-  boundOfferId,
-  confirming,
-  onConfirm,
-}: {
-  candidate: ImageSearchProduct;
-  isFirst: boolean;
-  boundOfferId: string | null;
-  confirming: boolean;
-  onConfirm: () => void;
-}) {
-  const isBoundHere = boundOfferId != null && boundOfferId === candidate.productId;
-  const isRebind = boundOfferId != null && boundOfferId !== candidate.productId;
-  const signals = candidateSignals(candidate);
-  return (
-    <div>
-      <div className="mb-2 flex items-center gap-2">
-        <Badge variant="outline">{isFirst ? "首个候选" : "当前候选"}</Badge>
-        <span className="text-[11px] text-slate-400">
-          1688{signals.length ? ` · ${signals.join(" · ")}` : ""}
-        </span>
-      </div>
-
-      <div className="grid grid-cols-[56px_1fr] items-start gap-3">
-        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
-          {candidate.imageUrl ? (
-            <Image
-              src={candidate.imageUrl}
-              alt={candidate.title || candidate.productId}
-              fill
-              sizes="56px"
-              className="object-cover"
-              unoptimized
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-300">
-              无图
-            </div>
-          )}
-        </div>
-
-        <div className="min-w-0">
-          <p className="line-clamp-2 text-xs font-medium leading-4 text-slate-800">
-            {candidate.title || "(无标题)"}
-          </p>
-          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-            <span className="text-sm font-semibold text-slate-900">
-              {formatCny(candidate.price)}
-            </span>
-            {candidate.minOrderQty != null ? (
-              <span className="text-[10px] text-slate-400">
-                起订 {candidate.minOrderQty}
-              </span>
-            ) : null}
-            {candidate.supplier ? (
-              <span className="truncate text-[10px] text-slate-400">
-                {candidate.supplier}
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-1.5 flex items-center gap-3">
-            {candidate.detailUrl ? (
-              <a
-                href={candidate.detailUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900"
-              >
-                <ExternalLink className="h-3 w-3" />
-                查看 1688 详情
-              </a>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-2.5 flex items-center justify-end">
-        {isBoundHere ? (
-          <Button size="sm" variant="secondary" disabled>
-            已绑定此货源
-          </Button>
-        ) : (
-          <Button size="sm" onClick={onConfirm} disabled={confirming}>
-            {confirming ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : null}
-            {confirming ? "绑定中…" : isRebind ? "改绑到此货源" : "确认匹配"}
-          </Button>
-        )}
-      </div>
-    </div>
   );
 }

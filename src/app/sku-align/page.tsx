@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -11,6 +11,7 @@ import {
   Layers,
   Loader2,
   RefreshCw,
+  Wand2,
 } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
@@ -20,6 +21,9 @@ import {
   CopilotCard,
 } from "@/components/workbench/assistant-rail";
 import { InfoCard } from "@/components/workbench/info-card";
+import { ScanStage, type ScanTaskStatus } from "@/components/workbench/scan-stage";
+import { useSkuAlignScan } from "@/hooks/use-sku-align-scan";
+import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
 import {
   MetricSummaryCards,
   type MetricSummaryItem,
@@ -34,11 +38,10 @@ import {
   SkuProductCard,
   boundVariantCount,
   productMatchState,
-  readableError,
   type ProductMatchState,
 } from "@/components/sku-align/sku-binding-panel";
 import { useOnboarding } from "@/context/onboarding-context";
-import { api } from "@/lib/api";
+import { api, readableError } from "@/lib/api";
 import type { AiPanelContent, SkuProductOverview } from "@/lib/types";
 
 const BREADCRUMBS = [
@@ -64,6 +67,16 @@ export default function SkuAlignPage() {
   const [error, setError] = useState<string | null>(null);
   const [products, setProducts] = useState<SkuProductOverview[]>([]);
   const [filter, setFilter] = useState<FilterId>("all");
+  // "result" is the SSR/hydration-safe default; the mount effect flips to "scan" on first visit.
+  const [phase, setPhase] = useState<"scan" | "result">("result");
+
+  const {
+    tasks: scanTasks,
+    recent: scanRecent,
+    done: scanDone,
+    start: startScan,
+    cancel: cancelScan,
+  } = useSkuAlignScan(shopName);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,11 +90,44 @@ export default function SkuAlignPage() {
     }
   }, [shopName]);
 
+  // Move to the result view once (guarded), pulling the freshly-aligned overview. Non-blocking:
+  // callable while the scan is still running ("直接查看当前结果") — cancels remaining work first.
+  const finishedRef = useRef(false);
+  const finishToResult = useCallback(async () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    cancelScan();
+    markScanned("sku-align", shopName);
+    await load();
+    setPhase("result");
+  }, [cancelScan, shopName, load]);
+
+  // Decide once per shop: first session visit → play the scan; otherwise straight to result.
+  const startedForShopRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isAuthorized) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch-on-mount; load() sets its own loading flag
-    void load();
-  }, [load, isAuthorized]);
+    if (startedForShopRef.current === shopName) return;
+    startedForShopRef.current = shopName;
+    finishedRef.current = false;
+    if (hasScanned("sku-align", shopName)) {
+      setPhase("result");
+      void load();
+    } else {
+      setPhase("scan");
+      void startScan().then(() => {
+        void finishToResult();
+      });
+    }
+  }, [isAuthorized, shopName, load, startScan, finishToResult]);
+
+  const restartScan = useCallback(() => {
+    finishedRef.current = false;
+    clearScanned("sku-align", shopName);
+    setPhase("scan");
+    void startScan().then(() => {
+      void finishToResult();
+    });
+  }, [shopName, startScan, finishToResult]);
 
   const stats = useMemo(() => {
     let full = 0;
@@ -184,6 +230,22 @@ export default function SkuAlignPage() {
     </AssistantRail>
   );
 
+  const scanStatusLabel = (s: ScanTaskStatus, resultText?: string | null) => {
+    if (s === "running") return "进行中…";
+    if (s === "done") return resultText ?? "完成";
+    if (s === "failed") return "失败";
+    if (s === "skipped") return resultText ?? "跳过";
+    return "待处理";
+  };
+  const scanCopilot: AiPanelContent = {
+    title: "正在自动整理",
+    summary: scanDone
+      ? "首轮自动对齐已完成，正在进入对照确认。"
+      : "我正在把已绑定商品的变体尝试对齐到 1688 货源 SKU，并预热货源明细。",
+    bullets: scanTasks.map((t) => `${t.label}：${scanStatusLabel(t.status, t.resultText)}`),
+    nextAction: { label: scanDone ? "查看结果" : "直接查看当前结果", action: "view" },
+  };
+
   if (!isAuthorized) {
     return (
       <WorkbenchShell
@@ -215,6 +277,46 @@ export default function SkuAlignPage() {
     );
   }
 
+  if (phase === "scan") {
+    return (
+      <WorkbenchShell
+        sidebar={<StepSidebar />}
+        rail={
+          <AssistantRail>
+            <CopilotCard
+              content={scanCopilot}
+              onNextAction={(a) => {
+                if (a === "view") void finishToResult();
+              }}
+            />
+            <InfoCard title="这一步在做什么">
+              <ul className="space-y-1.5">
+                <li>读取已绑定商品与变体</li>
+                <li>按 1688 货源 SKU 矩阵自动对齐（可信项落库）</li>
+                <li>预热货源明细，进入后图 / 价即时可见</li>
+              </ul>
+            </InfoCard>
+          </AssistantRail>
+        }
+      >
+        <WorkbenchPanel
+          title="SKU 绑定"
+          description="首轮自动整理：正在为已绑定商品对齐货源 SKU。"
+          breadcrumbs={BREADCRUMBS}
+        >
+          <ScanStage
+            heading="首轮自动整理"
+            description="系统正在用真实接口自动对齐 SKU，可随时直接查看当前结果。"
+            tasks={scanTasks}
+            recent={scanRecent}
+            done={scanDone}
+            onViewResult={() => void finishToResult()}
+          />
+        </WorkbenchPanel>
+      </WorkbenchShell>
+    );
+  }
+
   const showFooter = !loading && !error && products.length > 0;
 
   return (
@@ -224,12 +326,18 @@ export default function SkuAlignPage() {
         description="AI 已自动匹配 Shopify 变体与货源 SKU，请确认并继续。"
         breadcrumbs={BREADCRUMBS}
         actions={
-          <Link href="/logistics">
-            <Button variant="secondary">
-              进入物流确认
-              <ArrowRight className="h-4 w-4" />
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={restartScan}>
+              <Wand2 className="h-4 w-4" />
+              重新整理
             </Button>
-          </Link>
+            <Link href="/logistics">
+              <Button variant="secondary">
+                进入物流确认
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
         }
         footer={
           showFooter ? (

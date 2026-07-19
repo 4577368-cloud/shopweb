@@ -477,7 +477,7 @@ function AuthorizedSummary({
   orderCount: number;
 }) {
   return (
-    <div className="mt-5 rounded-[var(--radius-control)] border border-emerald-200 bg-brand-soft px-4 py-3.5">
+    <div className="mt-5 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft px-4 py-3.5">
       <div className="flex items-center gap-2 text-sm font-medium text-brand-strong">
         <ShieldCheck className="h-4 w-4" />
         授权成功 · 数据同步中

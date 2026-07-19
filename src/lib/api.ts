@@ -33,6 +33,21 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Shared, human-readable rendering of a thrown error for toasts / inline error states.
+ * Network failures (status 0) surface their own message; HTTP errors are prefixed with the status.
+ * Callers that need machine-code-specific copy (image search, confirm, auto-align) map first, then
+ * fall back to this.
+ */
+export function readableError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 0) return err.message;
+    return `请求失败（${err.status}）：${err.message}`;
+  }
+  if (err instanceof Error) return err.message;
+  return "未知错误";
+}
+
 function safeJsonParse(text: string): unknown {
   try {
     return JSON.parse(text);

@@ -17,7 +17,7 @@ import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useOnboarding } from "@/context/onboarding-context";
-import { api, ApiError } from "@/lib/api";
+import { api, readableError } from "@/lib/api";
 import type {
   CatalogRecommendation,
   PricingTemplate,
@@ -64,22 +64,13 @@ function toForm(t: PricingTemplate): TemplateForm {
   };
 }
 
-function readableError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.status === 0) return err.message;
-    return `请求失败（${err.status}）：${err.message}`;
-  }
-  if (err instanceof Error) return err.message;
-  return "未知错误";
-}
-
 function money(value?: number | null, currency?: string | null): string {
   if (value == null) return "—";
   const amount = value.toFixed(2);
   return currency ? `${amount} ${currency}` : amount;
 }
 
-export function CatalogPublishPanel() {
+export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void }) {
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
 
@@ -218,6 +209,7 @@ export function CatalogPublishPanel() {
         ...prev,
         [item.candidateId]: { loading: false, result },
       }));
+      onActivity?.();
       if (result.publishStatus === "PUBLISHED") {
         showToast("上架成功");
       } else if (result.publishStatus === "PUBLISHING") {
@@ -237,7 +229,7 @@ export function CatalogPublishPanel() {
   return (
     <>
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-ink-subtle">
           从 Tangbuy 离线目录选品，按定价模板推算售价后一键上架为可售商品。
         </p>
         <Button
@@ -279,8 +271,8 @@ export function CatalogPublishPanel() {
 
       <div className="mb-2 mt-4 flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-slate-900">推荐货源商品</h2>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <h2 className="text-sm font-semibold text-ink">离线目录 · 可上架</h2>
+          <p className="mt-0.5 text-xs text-ink-subtle">
             预估售价由上方定价模板推算 · 最多展示 {RECOMMENDATION_LIMIT} 条
           </p>
         </div>
@@ -299,7 +291,7 @@ export function CatalogPublishPanel() {
           description="离线目录当前为空，或后端未返回数据。"
         />
       ) : (
-        <div className="space-y-2.5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {recommendations.map((item) => (
             <RecommendationCard
               key={item.candidateId}
@@ -434,7 +426,7 @@ function PricingTemplateCard({
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 {saving ? "保存中…" : "保存模板"}
               </Button>
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] text-ink-subtle">
                 {isDirty ? "有未保存的修改" : "无修改"}
               </span>
             </div>
@@ -469,89 +461,85 @@ function RecommendationCard({
   const publishing = state?.loading || result?.publishStatus === "PUBLISHING";
 
   return (
-    <article className="rounded-lg border border-slate-200 bg-white px-3.5 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-      <div className="grid grid-cols-[64px_1fr_180px] items-stretch gap-3">
-        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-50">
-          {item.imageUrl ? (
-            <Image
-              src={item.imageUrl}
-              alt={item.title}
-              fill
-              sizes="64px"
-              className="object-cover"
-              unoptimized
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-300">
-              无图
-            </div>
-          )}
-        </div>
-
-        <div className="min-w-0">
-          <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-slate-900">
-            {item.title}
-          </h3>
-          <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-sm font-semibold text-teal-800">
-              预估售价 {money(item.estimatedSalePrice, item.targetCurrency)}
-            </span>
-            <span className="text-[11px] text-slate-500">
-              采购价 {money(item.price, item.currency)}
-            </span>
+    <article className="flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface p-3 shadow-card">
+      <div className="relative aspect-square w-full overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
+        {item.imageUrl ? (
+          <Image
+            src={item.imageUrl}
+            alt={item.title}
+            fill
+            sizes="240px"
+            className="object-cover"
+            unoptimized
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-[10px] text-ink-subtle">
+            无图
           </div>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {item.supplierShop ? (
-              <Badge variant="outline">{item.supplierShop}</Badge>
-            ) : null}
-            {item.upstreamPlatform ? (
-              <Badge variant="outline">{item.upstreamPlatform}</Badge>
-            ) : null}
-            {item.skuAttr ? (
-              <Badge variant="outline">SKU {item.skuAttr}</Badge>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="flex flex-col justify-center gap-2 border-l border-slate-100 pl-3">
-          {result ? (
+        )}
+        {result ? (
+          <div className="absolute left-2 top-2">
             <Badge variant={PUBLISH_BADGE[result.publishStatus].variant}>
               {PUBLISH_BADGE[result.publishStatus].label}
             </Badge>
-          ) : state?.error ? (
+          </div>
+        ) : state?.error ? (
+          <div className="absolute left-2 top-2">
             <Badge variant="danger">上架失败</Badge>
-          ) : null}
+          </div>
+        ) : null}
+      </div>
 
-          <Button
-            size="sm"
-            className="w-full"
-            onClick={onPublish}
-            disabled={publishing || published}
-            variant={published ? "secondary" : "primary"}
-          >
-            {state?.loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : null}
-            {published
-              ? "已上架"
-              : publishing
-                ? "上架中…"
-                : state?.error
-                  ? "重试上架"
-                  : "上架到店铺"}
-          </Button>
+      <h3 className="mt-2.5 line-clamp-2 min-h-[2.5rem] text-xs font-semibold leading-5 text-ink">
+        {item.title}
+      </h3>
 
-          {published && result?.shopifyProductId ? (
-            <p className="break-all text-[10px] leading-tight text-slate-400">
-              {result.shopifyProductId}
-            </p>
+      <div className="mt-1.5">
+        <p className="text-sm font-semibold text-brand-strong">
+          预估售价 {money(item.estimatedSalePrice, item.targetCurrency)}
+        </p>
+        <p className="mt-0.5 text-[11px] text-ink-subtle">
+          采购价 {money(item.price, item.currency)}
+        </p>
+      </div>
+
+      {item.supplierShop || item.upstreamPlatform || item.skuAttr ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {item.supplierShop ? (
+            <Badge variant="outline">{item.supplierShop}</Badge>
           ) : null}
-          {state?.error ? (
-            <p className="text-[10px] leading-tight text-red-500">
-              {state.error}
-            </p>
+          {item.upstreamPlatform ? (
+            <Badge variant="outline">{item.upstreamPlatform}</Badge>
           ) : null}
+          {item.skuAttr ? <Badge variant="outline">SKU {item.skuAttr}</Badge> : null}
         </div>
+      ) : null}
+
+      <div className="mt-auto pt-3">
+        <Button
+          size="sm"
+          className="w-full"
+          onClick={onPublish}
+          disabled={publishing || published}
+          variant={published ? "secondary" : "primary"}
+        >
+          {state?.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {published
+            ? "已上架"
+            : publishing
+              ? "上架中…"
+              : state?.error
+                ? "重试上架"
+                : "上架到店铺"}
+        </Button>
+        {published && result?.shopifyProductId ? (
+          <p className="mt-1.5 break-all text-[10px] leading-tight text-ink-subtle">
+            {result.shopifyProductId}
+          </p>
+        ) : null}
+        {state?.error ? (
+          <p className="mt-1.5 text-[10px] leading-tight text-red-500">{state.error}</p>
+        ) : null}
       </div>
     </article>
   );
