@@ -291,3 +291,31 @@ export interface PublishResult {
   targetCurrency?: string | null;
   message?: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// A1 路径A（在售商品）：店铺商品镜像的只读展示类型，对应后端 ThirdPlatformProduct。
+// ---------------------------------------------------------------------------
+
+/** GET /api/plugin/product/list 返回的店铺在售商品镜像行（只读展示用子集）。 */
+export interface ShopMirrorProduct {
+  id: number;
+  shopName?: string | null;
+  thirdPlatformItemId: string;
+  handle?: string | null;
+  title?: string | null;
+  status?: string | null;
+  currency?: string | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  primaryImageUrl?: string | null;
+  updatedAt?: string | null;
+}
+
+/** POST /api/plugin/product/sync 响应。 */
+export interface ProductSyncResult {
+  status: string;
+  shopName: string;
+  mode: string;
+  windowMinutes?: number | null;
+  productCount: number;
+}

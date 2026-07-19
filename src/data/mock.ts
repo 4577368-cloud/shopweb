@@ -30,8 +30,8 @@ export const initialSteps: OnboardingStep[] = [
   {
     id: "products",
     order: 2,
-    title: "智能选品",
-    description: "确认货源匹配结果",
+    title: "选品",
+    description: "在售关联 + 目录上架",
     href: "/products",
     status: "not_started",
   },

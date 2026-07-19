@@ -8,7 +8,6 @@ import {
   AlertCircle,
   Loader2,
   Store,
-  PackagePlus,
 } from "lucide-react";
 import { APP_NAME, APP_SUBTITLE } from "@/data/mock";
 import { useOnboarding } from "@/context/onboarding-context";
@@ -139,33 +138,6 @@ export function StepNav() {
                 <div className="mt-1.5">
                   <StepStatusBadge status={syncStatus} />
                 </div>
-              </div>
-            </Link>
-          </li>
-        </ul>
-
-        <p className="mt-4 mb-2 px-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
-          路径B · 实测
-        </p>
-        <ul className="space-y-0.5">
-          <li>
-            <Link
-              href="/catalog"
-              className={cn(
-                "flex items-start gap-2.5 rounded-md px-2.5 py-2.5 transition-colors",
-                pathname === "/catalog"
-                  ? "bg-teal-50 text-teal-900"
-                  : "text-slate-700 hover:bg-slate-50"
-              )}
-            >
-              <div className="mt-0.5">
-                <PackagePlus className="h-4 w-4 text-slate-400" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <span className="text-sm font-medium">离线目录上架</span>
-                <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
-                  定价模板 + 一键上架到店铺
-                </p>
               </div>
             </Link>
           </li>

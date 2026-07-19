@@ -7,7 +7,9 @@ import type {
   CatalogRecommendation,
   PricingTemplate,
   PricingTemplateUpsert,
+  ProductSyncResult,
   PublishResult,
+  ShopMirrorProduct,
 } from "@/lib/types";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
@@ -129,4 +131,22 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shopName, candidateId }),
     }),
+
+  /** List the shop's mirrored on-sale products (read-only; path A display). */
+  getShopProducts: (shop: string) =>
+    request<ShopMirrorProduct[]>(
+      `/api/plugin/product/list?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  /** Trigger a Shopify product pull into the mirror; omit windowMinutes for a full pull. */
+  syncShopProducts: (shop: string, windowMinutes?: number) => {
+    const params = new URLSearchParams({ shopName: shop });
+    if (windowMinutes != null) {
+      params.set("windowMinutes", String(windowMinutes));
+    }
+    return request<ProductSyncResult>(
+      `/api/plugin/product/sync?${params.toString()}`,
+      { method: "POST" }
+    );
+  },
 };
