@@ -268,7 +268,7 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
       const result = await api.publishCatalogItem(
         shopName,
         item.candidateId,
-        isMallGatewayConfigured() ? toPublishSnapshot(item) : undefined
+        toPublishSnapshot(item)
       );
       setPublishState((prev) => ({
         ...prev,
