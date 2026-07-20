@@ -1,38 +1,43 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState, startTransition } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Coins } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
 import { InfoCard } from "@/components/workbench/info-card";
 import { ScanStage, type ScanTaskStatus } from "@/components/workbench/scan-stage";
+import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { useProductsScan } from "@/hooks/use-products-scan";
 import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
-import { AiTaskStatus } from "@/components/select/ai-task-status";
+import { SmartSourcingSummaryBar } from "@/components/select/smart-sourcing-summary-bar";
+import { PricingStrategyRailCard } from "@/components/select/pricing-strategy-rail-card";
+import { PricingTemplateDrawer } from "@/components/select/pricing-template-drawer";
+import { ProductsAgentPanel } from "@/components/select/products-agent-panel";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useOnboarding } from "@/context/onboarding-context";
-import { api } from "@/lib/api";
+import { api, readableError } from "@/lib/api";
 import {
   ShopProductsPanel,
   type ShopFilter,
 } from "@/components/select/shop-products-panel";
 import { CatalogPublishPanel } from "@/components/select/catalog-publish-panel";
-import type { AiPanelContent, PricingTemplate } from "@/lib/types";
+import { buildProductsPageContext } from "@/lib/agents/products/page-context";
+import type { AgentResponse } from "@/lib/agents/types";
+import { deriveRecommendedCategories } from "@/lib/recommended-categories";
+import type { AiPanelContent, PricingTemplate, ShopMirrorProduct } from "@/lib/types";
 
 type Tab = "shop" | "catalog";
 
 const BREADCRUMBS = [{ label: "工作台", href: "/" }, { label: "智能选品" }];
 
-// Hold the completed progress bar briefly so users can see the finished state before the result view.
 const SCAN_DWELL_MS = 900;
 
-/** Shop-level counts derived from real endpoints; drives the metric strip + copilot summary. */
 interface ProductsSummary {
   shopProducts: number;
   confirmedProducts: number;
@@ -42,11 +47,11 @@ interface ProductsSummary {
 function SelectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, isAuthorized } = useOnboarding();
+  const { shop, isAuthorized, showToast } = useOnboarding();
   const shopName = shop.name;
+  const wb = useWorkbenchPage("products");
 
   const urlTab: Tab = searchParams.get("tab") === "catalog" ? "catalog" : "shop";
-  // Optimistic local tab so clicks switch immediately even if soft-nav / searchParams lag.
   const [tab, setTabLocal] = useState<Tab>(urlTab);
   useEffect(() => {
     setTabLocal(urlTab);
@@ -66,12 +71,35 @@ function SelectContent() {
     [router, searchParams]
   );
 
-  // Filter is lifted so the top status CTA can jump to e.g. 待确认 / 未关联.
   const [shopFilter, setShopFilter] = useState<ShopFilter>("all");
   const [summary, setSummary] = useState<ProductsSummary | null>(null);
   const [template, setTemplate] = useState<PricingTemplate | null>(null);
-  // "result" is the SSR/hydration-safe default; the mount effect flips to "scan" on first visit.
+  const [shopProducts, setShopProducts] = useState<ShopMirrorProduct[]>([]);
   const [phase, setPhase] = useState<"scan" | "result">("result");
+  const [filtersMountEl, setFiltersMountEl] = useState<HTMLDivElement | null>(null);
+  const [pricingOpen, setPricingOpen] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [clearingTemplate, setClearingTemplate] = useState(false);
+  const [filterSummary, setFilterSummary] = useState<string[]>([]);
+  const [focusProductId, setFocusProductId] = useState<string | null>(null);
+  const [highlightProductId, setHighlightProductId] = useState<string | null>(
+    null
+  );
+  const [searchModeProductId, setSearchModeProductId] = useState<string | null>(
+    null
+  );
+  const [rematchUnboundSignal, setRematchUnboundSignal] = useState(0);
+  const [pendingMinis, setPendingMinis] = useState<
+    import("@/lib/agents/products/shop-minis").ShopProductMini[]
+  >([]);
+  const [unboundMinis, setUnboundMinis] = useState<
+    import("@/lib/agents/products/shop-minis").ShopProductMini[]
+  >([]);
+  const [filterPresetRequest, setFilterPresetRequest] = useState<{
+    categoryName?: string;
+    keywords?: string;
+  } | null>(null);
 
   const {
     tasks: scanTasks,
@@ -81,11 +109,14 @@ function SelectContent() {
     cancel: cancelScan,
   } = useProductsScan(shopName);
 
-  // Independent, read-only aggregation for the header. Panels keep their own interactive fetches;
-  // this only powers the metric strip + copilot, and is refreshed when a panel reports activity.
+  const recommendedCategories = useMemo(
+    () => deriveRecommendedCategories(shopProducts, 3),
+    [shopProducts]
+  );
+
   const loadSummary = useCallback(async () => {
     const [products, bindings, tpl] = await Promise.all([
-      api.getShopProducts(shopName).catch(() => []),
+      api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
       api.listImageBindings(shopName).catch(() => []),
       api.getPricingTemplate(shopName).catch(() => null),
     ]);
@@ -96,6 +127,7 @@ function SelectContent() {
       if (b.bindStatus === "PENDING") pending.add(b.thirdPlatformItemId);
       else confirmed.add(b.thirdPlatformItemId);
     }
+    setShopProducts(products);
     setTemplate(tpl);
     setSummary({
       shopProducts: products.length,
@@ -104,9 +136,6 @@ function SelectContent() {
     });
   }, [shopName]);
 
-  // Move to the result view once (guarded), refreshing the header summary. Non-blocking: callable
-  // while the scan is still running ("直接查看当前结果") — cancels remaining work first. The panels
-  // reload their own data on mount, so freshly auto-linked bindings show up in the result view.
   const finishedRef = useRef(false);
   const finishToResult = useCallback(async () => {
     if (finishedRef.current) return;
@@ -117,7 +146,6 @@ function SelectContent() {
     setPhase("result");
   }, [cancelScan, shopName, loadSummary]);
 
-  // Decide once per shop: first session visit → play the scan; otherwise straight to result.
   const startedForShopRef = useRef<string | null>(null);
   useEffect(() => {
     if (!isAuthorized) return;
@@ -149,8 +177,217 @@ function SelectContent() {
     summary != null
       ? Math.max(summary.shopProducts - summary.confirmedProducts - summary.pendingProducts, 0)
       : 0;
+  const matched =
+    summary != null ? summary.confirmedProducts + summary.pendingProducts : 0;
 
-  // Header-only primary CTA: 处理待确认 → 查找货源 → 进入 SKU 绑定.
+  const analysisReady = phase === "result" && summary != null;
+  const previewPricingGuide = searchParams.get("previewPricingGuide") === "1";
+
+  const openPricingDrawer = useCallback(() => {
+    if (!isAuthorized) {
+      showToast("请先授权店铺，授权后即可配置并保存定价策略");
+      return;
+    }
+    setTemplateError(null);
+    setPricingOpen(true);
+  }, [isAuthorized, showToast]);
+
+  const pageContext = useMemo(
+    () =>
+      buildProductsPageContext({
+        phase,
+        tab,
+        shopFilter,
+        authorized: isAuthorized,
+        shopName,
+        analyzedCount: summary?.shopProducts ?? 0,
+        matchedCount: matched,
+        pendingCount,
+        unboundCount: unbound,
+        analysisReady,
+        recommendedCategoryNames: recommendedCategories.map((c) => c.name),
+        filterSummary,
+        template,
+        focusProductId,
+      }),
+    [
+      phase,
+      tab,
+      shopFilter,
+      isAuthorized,
+      shopName,
+      summary?.shopProducts,
+      matched,
+      pendingCount,
+      unbound,
+      analysisReady,
+      recommendedCategories,
+      filterSummary,
+      template,
+      focusProductId,
+    ]
+  );
+
+  const focusProduct = useCallback(
+    (productId: string, opts?: { openSearch?: boolean }) => {
+      setTab("shop");
+      if (pendingMinis.some((m) => m.productId === productId)) {
+        setShopFilter("pending");
+      } else if (unboundMinis.some((m) => m.productId === productId)) {
+        setShopFilter("unbound");
+      }
+      setFocusProductId(productId);
+      setHighlightProductId(productId);
+      if (opts?.openSearch) {
+        setSearchModeProductId(productId);
+      }
+      window.setTimeout(() => setHighlightProductId(null), 2800);
+    },
+    [setTab, pendingMinis, unboundMinis]
+  );
+
+  const applyAgentAction = useCallback(
+    (res: AgentResponse) => {
+      const action = res.suggestedAction;
+      if (
+        res.openDrawer === "pricing" ||
+        action.kind === "open_pricing_drawer"
+      ) {
+        openPricingDrawer();
+      }
+      if (action.kind === "set_tab" && action.tab) {
+        setTab(action.tab);
+      }
+      if (action.kind === "set_shop_filter") {
+        if (action.tab) setTab(action.tab);
+        if (action.shopFilter) setShopFilter(action.shopFilter);
+        if (action.shopFilter === "pending" && pendingMinis[0]) {
+          setHighlightProductId(pendingMinis[0].productId);
+          setFocusProductId(pendingMinis[0].productId);
+          window.setTimeout(() => setHighlightProductId(null), 2800);
+        }
+        if (action.shopFilter === "unbound" && unboundMinis[0]) {
+          setHighlightProductId(unboundMinis[0].productId);
+          setFocusProductId(unboundMinis[0].productId);
+          window.setTimeout(() => setHighlightProductId(null), 2800);
+        }
+      }
+      if (action.kind === "focus_product" && action.productId) {
+        focusProduct(action.productId);
+      }
+      if (action.kind === "open_candidate_search" && action.productId) {
+        focusProduct(action.productId, { openSearch: true });
+      }
+      if (action.kind === "rematch_unbound") {
+        setTab("shop");
+        setShopFilter("unbound");
+        setRematchUnboundSignal((n) => n + 1);
+      }
+      if (action.kind === "apply_filter_preset") {
+        setTab("catalog");
+        setFilterPresetRequest({
+          categoryName: action.filterPreset?.categoryName,
+          keywords: action.filterPreset?.keywords,
+        });
+      }
+    },
+    [openPricingDrawer, setTab, focusProduct, pendingMinis, unboundMinis]
+  );
+
+  // Real reset: soft-delete stored template so isDefault becomes true again.
+  const resetPricingGuideRequested =
+    searchParams.get("resetPricingGuide") === "1";
+  const resetStartedRef = useRef(false);
+  useEffect(() => {
+    if (!resetPricingGuideRequested || !isAuthorized || !shopName) return;
+    if (resetStartedRef.current) return;
+    resetStartedRef.current = true;
+    void (async () => {
+      try {
+        const tpl = await api.clearPricingTemplate(shopName);
+        setTemplate(tpl);
+        showToast("已恢复未配置状态，可体验首次定价引导");
+      } catch (err) {
+        showToast(readableError(err));
+      } finally {
+        startTransition(() => {
+          router.replace("/products", { scroll: false });
+        });
+      }
+    })();
+  }, [
+    resetPricingGuideRequested,
+    isAuthorized,
+    shopName,
+    showToast,
+    router,
+  ]);
+
+  const handleSaveTemplate = useCallback(
+    async (payload: {
+      exchangeRate: number;
+      multiplier: number;
+      addend: number;
+      roundingStrategy: string;
+      decimals: number;
+      sourceCurrency: string;
+      targetCurrency: string;
+    }) => {
+      setSavingTemplate(true);
+      setTemplateError(null);
+      try {
+        const saved = await api.upsertPricingTemplate({ shopName, ...payload });
+        setTemplate(saved);
+        setPricingOpen(false);
+        showToast("定价策略已保存");
+        if (previewPricingGuide) {
+          startTransition(() => {
+            router.replace("/products", { scroll: false });
+          });
+        }
+      } catch (err) {
+        setTemplateError(readableError(err));
+        showToast("定价策略保存失败");
+      } finally {
+        setSavingTemplate(false);
+      }
+    },
+    [shopName, showToast, previewPricingGuide, router]
+  );
+
+  const handleClearTemplate = useCallback(async () => {
+    if (clearingTemplate) return;
+    if (!window.confirm("恢复系统默认后，右侧将重新出现首次定价引导。确定？")) {
+      return;
+    }
+    setClearingTemplate(true);
+    setTemplateError(null);
+    try {
+      const tpl = await api.clearPricingTemplate(shopName);
+      setTemplate(tpl);
+      setPricingOpen(false);
+      showToast("已恢复系统默认，可重新体验首次配置");
+    } catch (err) {
+      setTemplateError(readableError(err));
+      showToast(readableError(err));
+    } finally {
+      setClearingTemplate(false);
+    }
+  }, [clearingTemplate, shopName, showToast]);
+
+  const pricingDrawer = (
+    <PricingTemplateDrawer
+      open={pricingOpen}
+      template={template}
+      saving={savingTemplate}
+      error={templateError}
+      onClose={() => setPricingOpen(false)}
+      onSave={(payload) => void handleSaveTemplate(payload)}
+      onClear={() => void handleClearTemplate()}
+      clearing={clearingTemplate}
+    />
+  );
+
   const jumpToShopFilter = useCallback(
     (f: ShopFilter) => {
       setShopFilter(f);
@@ -164,46 +401,6 @@ function SelectContent() {
       : unbound > 0
         ? { label: `为 ${unbound} 个商品查找货源`, onClick: () => jumpToShopFilter("unbound") }
         : { label: "进入 SKU 绑定", href: "/sku-align" };
-
-  const copilot: AiPanelContent = {
-    title: summary ? "店铺商品分析已完成" : "正在分析店铺商品",
-    summary: summary
-      ? `已分析 ${summary.shopProducts} 个商品，AI 自动匹配 ${
-          summary.confirmedProducts + summary.pendingProducts
-        } 个货源，其中 ${summary.pendingProducts} 个待你确认。`
-      : "正在读取店铺商品与货源关联…",
-    bullets: summary
-      ? [
-          `已自动匹配货源：${summary.confirmedProducts + summary.pendingProducts}/${summary.shopProducts}`,
-          summary.pendingProducts > 0
-            ? `待你确认：${summary.pendingProducts} 个（卡片上「确认无误 / 取消关联」）`
-            : "待确认：0 个，货源关联已确认",
-          unbound > 0
-            ? `未匹配：${unbound} 个，可用图搜查找货源`
-            : "未匹配：0 个",
-          `下一步：用页面上方「${statusCta.label}」继续`,
-        ]
-      : ["读取中…"],
-    // 重点洞察仅在有待办时以「需注意」呈现；全部就绪则不报警，交由摘要与下一步表达。
-    alerts:
-      summary && pendingCount > 0
-        ? [
-            {
-              id: "insight-pending",
-              text: `发现 ${pendingCount} 个商品需要人工确认；确认后 ${
-                summary.confirmedProducts + pendingCount
-              } 个即可进入 SKU 绑定。`,
-            },
-          ]
-        : summary && unbound > 0
-          ? [
-              {
-                id: "insight-unbound",
-                text: `还有 ${unbound} 个商品未匹配货源，建议用图搜逐个查找。`,
-              },
-            ]
-          : undefined,
-  };
 
   const scanStatusLabel = (s: ScanTaskStatus, resultText?: string | null) => {
     if (s === "running") return "进行中…";
@@ -222,19 +419,56 @@ function SelectContent() {
   };
 
   const rail = (
-    <AssistantRail>
-      <CopilotCard content={copilot} heading="AI 运营顾问" />
-      <PricingStrategyCard template={template} onAdjust={() => setTab("catalog")} />
-    </AssistantRail>
+    <AssistantRail
+      assistantContent={
+        <ProductsAgentPanel
+          context={pageContext}
+          pendingMinis={pendingMinis}
+          unboundMinis={unboundMinis}
+          onApplySuggestedAction={(action) =>
+            applyAgentAction({
+              agentId: "orchestrator",
+              intent: "rail_action",
+              summary: "",
+              explanation: [],
+              nextSteps: [],
+              suggestedAction: action,
+            })
+          }
+          onFocusProduct={focusProduct}
+        />
+      }
+      strategyCards={
+        isAuthorized ? (
+          // First-time guide only; after pricing is saved, use the「定价策略」chip.
+          template == null || template.isDefault || previewPricingGuide ? (
+            <PricingStrategyRailCard
+              template={template}
+              analysisReady={analysisReady}
+              forceGuide={previewPricingGuide}
+              onConfigure={openPricingDrawer}
+            />
+          ) : null
+        ) : (
+          <InfoCard title="定价策略">
+            授权店铺后，可在此配置目标币种、汇率与倍率，并生成建议售价。
+          </InfoCard>
+        )
+      }
+    />
   );
 
   if (!isAuthorized) {
     return (
-      <WorkbenchShell sidebar={<StepSidebar />} rail={rail}>
+      <WorkbenchShell
+        sidebar={<StepSidebar />}
+        rail={rail}
+        {...wb.shellProps}
+      >
         <WorkbenchPanel
           title="智能选品"
-          description="连接店铺后，可为在售商品关联货源，或从 Tangbuy 商城选品上架。"
           breadcrumbs={[{ label: "授权店铺", href: "/authorize" }, { label: "智能选品" }]}
+          {...wb.panelProps}
         >
           <EmptyState
             title="尚未连接店铺"
@@ -248,6 +482,7 @@ function SelectContent() {
             }
           />
         </WorkbenchPanel>
+        {pricingDrawer}
       </WorkbenchShell>
     );
   }
@@ -257,27 +492,32 @@ function SelectContent() {
       <WorkbenchShell
         sidebar={<StepSidebar />}
         rail={
-          <AssistantRail>
-            <CopilotCard
-              content={scanCopilot}
-              onNextAction={(a) => {
-                if (a === "view") void finishToResult();
-              }}
-            />
-            <InfoCard title="这一步在做什么">
-              <ul className="space-y-1.5">
-                <li>同步 Shopify 在售商品镜像</li>
-                <li>为未关联商品自动图搜并绑定 Tangbuy 货源</li>
-                <li>生成 Tangbuy 商城可上架候选</li>
-              </ul>
-            </InfoCard>
-          </AssistantRail>
+          <AssistantRail
+            assistantContent={
+              <>
+                <CopilotCard
+                  content={scanCopilot}
+                  onNextAction={(a) => {
+                    if (a === "view") void finishToResult();
+                  }}
+                />
+                <InfoCard title="这一步在做什么">
+                  <ul className="space-y-1.5">
+                    <li>同步 Shopify 在售商品镜像</li>
+                    <li>为未关联商品自动图搜并绑定 Tangbuy 货源</li>
+                    <li>生成 Tangbuy 商城可上架候选</li>
+                  </ul>
+                </InfoCard>
+              </>
+            }
+          />
         }
+        {...wb.shellProps}
       >
         <WorkbenchPanel
           title="智能选品"
-          description="首轮自动选品：正在同步商品并自动关联货源。"
           breadcrumbs={BREADCRUMBS}
+          {...wb.panelProps}
         >
           <ScanStage
             heading="首轮自动选品"
@@ -288,21 +528,26 @@ function SelectContent() {
             onViewResult={() => void finishToResult()}
           />
         </WorkbenchPanel>
+        {pricingDrawer}
       </WorkbenchShell>
     );
   }
 
   const tabs = [
-    { id: "shop", label: "我的 Shopify 商品", count: summary?.shopProducts },
+    { id: "shop", label: "我的shopify", count: summary?.shopProducts },
     { id: "catalog", label: "发现新品" },
   ];
 
   return (
-    <WorkbenchShell sidebar={<StepSidebar />} rail={rail}>
+    <WorkbenchShell
+      sidebar={<StepSidebar />}
+      rail={rail}
+      {...wb.shellProps}
+    >
       <WorkbenchPanel
         title="智能选品"
-        description="为在售商品关联货源（路径 A），或从 Tangbuy 商城选品上架（路径 B）。"
         breadcrumbs={BREADCRUMBS}
+        {...wb.panelProps}
         actions={
           statusCta.href ? (
             <Link href={statusCta.href}>
@@ -319,91 +564,67 @@ function SelectContent() {
           )
         }
       >
-        <div className="space-y-4">
-          <AiTaskStatus
-            ready={summary != null}
-            analyzed={summary?.shopProducts ?? 0}
-            matched={(summary?.confirmedProducts ?? 0) + (summary?.pendingProducts ?? 0)}
-            pending={pendingCount}
-            confirmed={summary?.confirmedProducts ?? 0}
-            unbound={unbound}
-            onRefresh={restartScan}
+        <div className="space-y-3">
+          {/* 1) Tabs — above all tab-specific context */}
+          <SegmentedTabs
+            variant="solid"
+            tabs={tabs}
+            value={tab}
+            onValueChange={(id) => setTab(id as Tab)}
           />
 
-          <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
-            <SegmentedTabs
-              variant="solid"
-              tabs={tabs}
-              value={tab}
-              onValueChange={(id) => setTab(id as Tab)}
-            />
-            <p className="text-xs text-ink-subtle">
-              {tab === "shop"
-                ? "优化已有商品 · 为在售商品关联货源"
-                : "发现新品 · 从 Tangbuy 商城选品上架"}
-            </p>
+          {/* 2) Tab context: Shopify summary vs Discover filters */}
+          <div className="min-h-0">
+            {tab === "shop" ? (
+              <SmartSourcingSummaryBar
+                ready={summary != null}
+                analyzed={summary?.shopProducts ?? 0}
+                matched={matched}
+                pending={pendingCount}
+                unbound={unbound}
+                recommendedCategories={recommendedCategories}
+                onRefresh={restartScan}
+              />
+            ) : (
+              <div ref={setFiltersMountEl} />
+            )}
           </div>
 
+          {/* 3) Results — product pool / list */}
           {tab === "shop" ? (
             <div>
               <ShopProductsPanel
                 onActivity={loadSummary}
                 filter={shopFilter}
                 onFilterChange={setShopFilter}
+                highlightProductId={highlightProductId}
+                searchModeProductId={searchModeProductId}
+                rematchUnboundSignal={rematchUnboundSignal}
+                onSearchModeConsumed={() => setSearchModeProductId(null)}
+                onProductFocus={(id) => setFocusProductId(id)}
+                onMinisChange={({ pending, unbound }) => {
+                  setPendingMinis(pending);
+                  setUnboundMinis(unbound);
+                }}
               />
             </div>
           ) : null}
           <div className={tab === "catalog" ? undefined : "hidden"}>
-            <CatalogPublishPanel onActivity={loadSummary} />
+            <CatalogPublishPanel
+              onActivity={loadSummary}
+              recommendedCategories={recommendedCategories}
+              filtersMountEl={tab === "catalog" ? filtersMountEl : null}
+              sharedTemplate={template}
+              onAppliedFilterSummaryChange={setFilterSummary}
+              filterPresetRequest={filterPresetRequest}
+              onFilterPresetConsumed={() => setFilterPresetRequest(null)}
+            />
           </div>
         </div>
       </WorkbenchPanel>
-    </WorkbenchShell>
-  );
-}
 
-/** Lightweight pricing-strategy summary for the rail — the full editor lives (collapsed) under 发现新品. */
-function PricingStrategyCard({
-  template,
-  onAdjust,
-}: {
-  template: PricingTemplate | null;
-  onAdjust: () => void;
-}) {
-  return (
-    <InfoCard
-      title="定价策略"
-      icon={<Coins className="h-3.5 w-3.5 text-brand" />}
-      action={
-        <button
-          type="button"
-          onClick={onAdjust}
-          className="font-medium text-brand-strong hover:underline"
-        >
-          调整定价 →
-        </button>
-      }
-    >
-      {template ? (
-        <div className="space-y-1.5">
-          <p>
-            采购价（{template.sourceCurrency}）按汇率{" "}
-            <span className="font-medium text-ink">{template.exchangeRate}</span>{" "}
-            除法换算为 {template.targetCurrency}。
-          </p>
-          <p>
-            售价 = round(采购价 ÷ 汇率 × {template.multiplier} + {template.addend})
-          </p>
-          <p className="text-[11px] text-ink-subtle">
-            汇率为「多少源币种 = 1 目标币种」（如 6.5 表示 6.5 CNY = 1 USD）。
-            该规则将决定上架到 Shopify 的售价
-            {template.isDefault ? "（当前为系统默认，未保存）" : ""}。
-          </p>
-        </div>
-      ) : (
-        <p>读取定价策略中…</p>
-      )}
-    </InfoCard>
+      {pricingDrawer}
+    </WorkbenchShell>
   );
 }
 

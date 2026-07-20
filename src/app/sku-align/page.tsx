@@ -14,6 +14,7 @@ import {
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
+import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import {
   AssistantRail,
   CopilotCard,
@@ -62,6 +63,7 @@ type FilterId = "all" | ProductMatchState;
 export default function SkuAlignPage() {
   const { shop, showToast, isAuthorized } = useOnboarding();
   const shopName = shop.name;
+  const wb = useWorkbenchPage("sku-align");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -214,20 +216,24 @@ export default function SkuAlignPage() {
   };
 
   const rail = (
-    <AssistantRail>
-      <CopilotCard content={copilot} />
-      <InfoCard title="匹配规则说明">
-        <p className="mb-2">AI 基于以下维度进行匹配：</p>
-        <ul className="space-y-1.5">
-          {matchRules.map((rule) => (
-            <li key={rule} className="flex gap-2">
-              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
-              <span>{rule}</span>
-            </li>
-          ))}
-        </ul>
-      </InfoCard>
-    </AssistantRail>
+    <AssistantRail
+      assistantContent={
+        <>
+          <CopilotCard content={copilot} />
+          <InfoCard title="匹配规则说明">
+            <p className="mb-2">AI 基于以下维度进行匹配：</p>
+            <ul className="space-y-1.5">
+              {matchRules.map((rule) => (
+                <li key={rule} className="flex gap-2">
+                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
+                  <span>{rule}</span>
+                </li>
+              ))}
+            </ul>
+          </InfoCard>
+        </>
+      }
+    />
   );
 
   const scanStatusLabel = (s: ScanTaskStatus, resultText?: string | null) => {
@@ -251,15 +257,16 @@ export default function SkuAlignPage() {
       <WorkbenchShell
         sidebar={<StepSidebar />}
         rail={
-          <AssistantRail>
-            <CopilotCard content={copilot} />
-          </AssistantRail>
+          <AssistantRail
+            assistantContent={<CopilotCard content={copilot} />}
+          />
         }
+        {...wb.shellProps}
       >
         <WorkbenchPanel
           title="SKU 绑定"
-          description="请先完成店铺授权。"
           breadcrumbs={[{ label: "授权店铺", href: "/authorize" }, { label: "SKU 绑定" }]}
+          {...wb.panelProps}
         >
           <EmptyState
             title="尚未连接店铺"
@@ -282,27 +289,32 @@ export default function SkuAlignPage() {
       <WorkbenchShell
         sidebar={<StepSidebar />}
         rail={
-          <AssistantRail>
-            <CopilotCard
-              content={scanCopilot}
-              onNextAction={(a) => {
-                if (a === "view") void finishToResult();
-              }}
-            />
-            <InfoCard title="这一步在做什么">
-              <ul className="space-y-1.5">
-                <li>读取已绑定商品与变体</li>
-                <li>按 Tangbuy 货源 SKU 矩阵自动对齐（可信项落库）</li>
-                <li>预热货源明细，进入后图 / 价即时可见</li>
-              </ul>
-            </InfoCard>
-          </AssistantRail>
+          <AssistantRail
+            assistantContent={
+              <>
+                <CopilotCard
+                  content={scanCopilot}
+                  onNextAction={(a) => {
+                    if (a === "view") void finishToResult();
+                  }}
+                />
+                <InfoCard title="这一步在做什么">
+                  <ul className="space-y-1.5">
+                    <li>读取已绑定商品与变体</li>
+                    <li>按 Tangbuy 货源 SKU 矩阵自动对齐（可信项落库）</li>
+                    <li>预热货源明细，进入后图 / 价即时可见</li>
+                  </ul>
+                </InfoCard>
+              </>
+            }
+          />
         }
+        {...wb.shellProps}
       >
         <WorkbenchPanel
           title="SKU 绑定"
-          description="首轮自动整理：正在为已绑定商品对齐货源 SKU。"
           breadcrumbs={BREADCRUMBS}
+          {...wb.panelProps}
         >
           <ScanStage
             heading="首轮自动整理"
@@ -318,11 +330,11 @@ export default function SkuAlignPage() {
   }
 
   return (
-    <WorkbenchShell sidebar={<StepSidebar />} rail={rail}>
+    <WorkbenchShell sidebar={<StepSidebar />} rail={rail} {...wb.shellProps}>
       <WorkbenchPanel
         title="SKU 绑定"
-        description="AI 已自动匹配 Shopify 变体与货源 SKU，请确认并继续。"
         breadcrumbs={BREADCRUMBS}
+        {...wb.panelProps}
         actions={
           <div className="flex items-center gap-2">
             <Button

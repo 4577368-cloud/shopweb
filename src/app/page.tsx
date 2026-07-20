@@ -113,11 +113,6 @@ export default function HomePage() {
     <AppShell ai={ai}>
       <PageHeader
         title="开店工作台"
-        description={
-          isAuthorized
-            ? `${shop.name}（${shop.domain}）已接入。按流程确认后即可同步到店铺。`
-            : "请先授权 Shopify 店铺。授权后系统自动同步商品与订单基础数据。"
-        }
         breadcrumbs={[{ label: "工作台" }]}
         actions={
           <Link href={nextHref === "/" ? "/sync" : nextHref}>

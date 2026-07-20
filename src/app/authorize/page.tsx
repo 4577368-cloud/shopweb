@@ -5,13 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Boxes,
-  Check,
   CheckCircle2,
   Database,
   LineChart,
   Link2,
   Loader2,
-  Lock,
   Pencil,
   RefreshCw,
   ShieldCheck,
@@ -25,7 +23,6 @@ import {
   CopilotCard,
   type AssistantSuggestion,
 } from "@/components/workbench/assistant-rail";
-import { InfoCard } from "@/components/workbench/info-card";
 import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
 import { useOnboarding } from "@/context/onboarding-context";
@@ -62,13 +59,6 @@ const capabilities: { icon: typeof Database; title: string; desc: string }[] = [
     title: "推荐优供应链",
     desc: "匹配更优供应链，提升利润和履约效率",
   },
-];
-
-const safetyPoints = [
-  "Shopify 官方 API 授权",
-  "仅获取必要数据（只读）",
-  "银行级加密传输",
-  "符合 GDPR 隐私标准",
 ];
 
 type Phase = "unbound" | "restoring" | "authorized";
@@ -232,42 +222,22 @@ export default function AuthorizePage() {
     <WorkbenchShell
       sidebar={<StepSidebar />}
       rail={
-        <AssistantRail>
-          <CopilotCard
-            content={copilot}
-            suggestions={suggestions}
-            suggestionsKey={phase}
-            onNextAction={(action) => {
-              if (action === "connect") startShopifyInstall();
-            }}
-          />
-          <InfoCard
-            title="你的数据安全，我们保障"
-            icon={<Lock className="h-3.5 w-3.5 text-brand" />}
-            footer={
-              <Link
-                href="#"
-                className="font-medium text-brand-strong hover:underline"
-              >
-                了解数据安全 →
-              </Link>
-            }
-          >
-            <ul className="space-y-1.5">
-              {safetyPoints.map((point) => (
-                <li key={point} className="flex items-center gap-2">
-                  <Check className="h-3.5 w-3.5 shrink-0 text-brand" />
-                  <span>{point}</span>
-                </li>
-              ))}
-            </ul>
-          </InfoCard>
-        </AssistantRail>
+        <AssistantRail
+          assistantContent={
+            <CopilotCard
+              content={copilot}
+              suggestions={suggestions}
+              suggestionsKey={phase}
+              onNextAction={(action) => {
+                if (action === "connect") startShopifyInstall();
+              }}
+            />
+          }
+        />
       }
     >
       <WorkbenchPanel
         title="授权店铺"
-        description="Shopify 授权回跳后在这里恢复接入状态并查看结果；也可直接从这里兜底连接店铺。"
         actions={
           isAuthorized ? (
             <div className="flex items-center gap-2">

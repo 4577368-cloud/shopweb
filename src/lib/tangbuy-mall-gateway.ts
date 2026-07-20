@@ -40,7 +40,7 @@ function gatewayBaseUrl(): string {
 function gatewayToken(): string {
   const token = process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim();
   if (!token) {
-    throw new Error("NEXT_PUBLIC_TANGBUY_MALL_TOKEN 未配置");
+    throw new Error("商城货源暂不可用，请稍后重试或联系管理员");
   }
   return token;
 }
@@ -73,13 +73,13 @@ export async function fetchMallPage(
   });
 
   if (!res.ok) {
-    throw new Error(`Tangbuy 商城网关 HTTP ${res.status}`);
+    throw new Error("加载货源失败，请稍后重试");
   }
 
   const data = (await res.json()) as GatewayResponse;
   if (data.code != null && data.code !== 200) {
     throw new Error(
-      `Tangbuy 商城网关 code=${data.code}${data.msg ? ` msg=${data.msg}` : ""}`
+      data.msg?.trim() ? data.msg : "加载货源失败，请稍后重试"
     );
   }
 

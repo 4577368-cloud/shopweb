@@ -176,6 +176,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  /** Soft-delete stored template; GET then returns system default (isDefault: true). */
+  clearPricingTemplate: (shop: string) =>
+    request<PricingTemplate>(
+      `/api/plugin/pricing/template?shopName=${encodeURIComponent(shop)}`,
+      { method: "DELETE" }
+    ),
+
   /** "已刊登" count: products successfully published (listed) from the Tangbuy catalog for a shop. */
   getPublishedCount: (shop: string) =>
     request<{ count: number }>(

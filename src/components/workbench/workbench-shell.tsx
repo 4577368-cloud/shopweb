@@ -1,30 +1,48 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { WorkspaceLayout } from "@/components/workbench/workspace-layout";
 
 interface WorkbenchShellProps {
   /** Left rail — typically <StepSidebar />. */
   sidebar: ReactNode;
   /** Center column — typically <WorkbenchPanel /> (owns its own header/scroll/footer). */
   children: ReactNode;
-  /** Right rail — typically <AssistantRail />. Omit to hide the rail. */
+  /** Right rail — typically <AssistantRail />. Omit to hide the rail entirely. */
   rail?: ReactNode;
+  /**
+   * Whether the assistant column is visible. When omitted with a {@link rail},
+   * defaults to open (backward compatible). Pair with {@link onAssistantOpenChange}
+   * or {@link useWorkspaceAssistant} for collapse/expand.
+   */
+  assistantOpen?: boolean;
+  onAssistantOpenChange?: (open: boolean) => void;
+  /** Uncontrolled initial open when {@link assistantOpen} is not passed. */
+  assistantDefaultOpen?: boolean;
 }
 
 /**
- * The stable three-column workbench frame (Step 3). Pure layout: fixed left/right rails around a
- * flexible center that owns its own scrolling (see {@link WorkbenchPanel}). Column widths come from
- * the layout tokens (--wb-sidebar-w / --wb-rail-w). This is the canonical shell the pages migrate to
- * in steps 4–6; {@code AppShell} is a thin backward-compatible adapter over it.
+ * Canonical workbench frame adapter over {@link WorkspaceLayout}.
+ * Existing pages keep `{ sidebar, children, rail }`; pages that need collapse pass
+ * {@code assistantOpen} / {@code onAssistantOpenChange}.
  */
-export function WorkbenchShell({ sidebar, children, rail }: WorkbenchShellProps) {
+export function WorkbenchShell({
+  sidebar,
+  children,
+  rail,
+  assistantOpen,
+  onAssistantOpenChange,
+  assistantDefaultOpen = true,
+}: WorkbenchShellProps) {
   return (
-    <div className="flex h-screen min-h-0 overflow-hidden bg-canvas text-ink">
-      <div className="w-[var(--wb-sidebar-w)] shrink-0">{sidebar}</div>
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {children}
-      </main>
-      {rail ? (
-        <div className="w-[var(--wb-rail-w)] shrink-0">{rail}</div>
-      ) : null}
-    </div>
+    <WorkspaceLayout
+      leftSidebar={sidebar}
+      assistantPanel={rail}
+      assistantOpen={assistantOpen}
+      onAssistantOpenChange={onAssistantOpenChange}
+      assistantDefaultOpen={assistantDefaultOpen}
+    >
+      {children}
+    </WorkspaceLayout>
   );
 }

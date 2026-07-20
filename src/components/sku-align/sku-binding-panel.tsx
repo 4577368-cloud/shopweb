@@ -51,7 +51,7 @@ function autoAlignError(err: unknown): string {
   if (raw.startsWith("NO_OFFER_SKU")) return "该 Tangbuy 货源未返回可用 SKU";
   if (raw.startsWith("AOP_CRED_MISSING")) return "Tangbuy 货源平台凭证未配置";
   if (raw.startsWith("AOP_TOKEN_INVALID")) return "Tangbuy 货源授权已失效，请重新授权";
-  if (raw.startsWith("GATEWAY_BUSY")) return "Tangbuy 货源网关繁忙，请稍后重试";
+  if (raw.startsWith("GATEWAY_BUSY")) return "Tangbuy 货源服务繁忙，请稍后重试";
   return raw || "自动对齐失败";
 }
 

@@ -15,20 +15,85 @@ export interface AssistantSuggestion {
 }
 
 interface AssistantRailProps {
-  /** Stacked cards, e.g. <CopilotCard /> then contextual <InfoCard />s. */
-  children: ReactNode;
+  /**
+   * Legacy stacked content (context + cards). Kept for pages not yet split into slots.
+   * Prefer {@link assistantContent} + {@link strategyCards} for the two-layer rail.
+   */
+  children?: ReactNode;
+  /** Upper context panel: AI advisor / analysis / next-step. Natural height. */
+  assistantContent?: ReactNode;
+  /**
+   * Lower strategy / action cards (pricing, logistics template, …).
+   * When present, sits directly under a stretched context panel (no large mid-rail gap).
+   * When absent, context fills the column with no reserved empty band.
+   */
+  strategyCards?: ReactNode;
+  /** Alias of {@link strategyCards}. */
+  railCards?: ReactNode;
+  className?: string;
 }
 
 /**
- * Right rail container (Step 3): a vertical, scrollable stack that holds the AI copilot card plus any
- * page-specific contextual cards (tips, rule explainer, safety). Layout only — pages compose the cards.
+ * Right workspace rail: optional two-layer layout.
+ *
+ * - With strategy cards: context (Copilot) stretches, strategy sits directly under it.
+ * - Without strategy cards: context fills the column — no empty “future card” band.
  */
-export function AssistantRail({ children }: AssistantRailProps) {
+export function AssistantRail({
+  children,
+  assistantContent,
+  strategyCards,
+  railCards,
+  className,
+}: AssistantRailProps) {
+  const strategy = strategyCards ?? railCards;
+  const hasStrategy = hasRailSlot(strategy);
+  const useSlots = assistantContent !== undefined || strategyCards !== undefined || railCards !== undefined;
+
+  if (!useSlots) {
+    return (
+      <aside
+        className={cn(
+          "flex h-full flex-col gap-3 overflow-y-auto border-l border-hairline bg-canvas/70 p-3",
+          className
+        )}
+      >
+        {children}
+      </aside>
+    );
+  }
+
+  const context = assistantContent ?? children;
+
   return (
-    <aside className="flex h-full flex-col gap-3 overflow-y-auto border-l border-hairline bg-canvas/70 p-3">
-      {children}
+    <aside
+      className={cn(
+        "flex h-full flex-col overflow-hidden border-l border-hairline bg-canvas/70 p-3",
+        className
+      )}
+      data-rail-layout={hasStrategy ? "context-strategy" : "context-fill"}
+    >
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+        <div
+          className={cn(
+            "flex min-h-0 flex-col gap-2",
+            "min-h-0 flex-1 overflow-y-auto [&>[data-copilot-card]]:min-h-0 [&>[data-copilot-card]]:flex-1"
+          )}
+        >
+          {context}
+        </div>
+        {hasStrategy ? (
+          <div className="flex shrink-0 flex-col gap-2">{strategy}</div>
+        ) : null}
+      </div>
     </aside>
   );
+}
+
+function hasRailSlot(node: ReactNode): boolean {
+  if (node == null || node === false || node === true) return false;
+  if (Array.isArray(node)) return node.some(hasRailSlot);
+  return true;
 }
 
 interface CopilotCardProps {
@@ -45,6 +110,7 @@ interface CopilotCardProps {
   suggestions?: AssistantSuggestion[];
   /** Changing this key resets the revealed answer (e.g. when the page's auth state changes). */
   suggestionsKey?: string;
+  className?: string;
 }
 
 /**
@@ -62,11 +128,18 @@ export function CopilotCard({
   highlightedAlertId,
   suggestions,
   suggestionsKey,
+  className,
 }: CopilotCardProps) {
   const next = content.nextAction;
   return (
-    <section className="flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">
-      <div className="flex items-center justify-between border-b border-hairline px-3.5 py-3">
+    <section
+      data-copilot-card
+      className={cn(
+        "flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card",
+        className
+      )}
+    >
+      <div className="flex shrink-0 items-center justify-between border-b border-hairline px-3.5 py-2.5">
         <div className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand-strong">
             <Bot className="h-4 w-4" />
@@ -79,7 +152,7 @@ export function CopilotCard({
         </span>
       </div>
 
-      <div className="space-y-3 px-3.5 py-3">
+      <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3.5 py-2.5">
         {content.title ? (
           <p className="text-[11px] font-medium text-ink-subtle">{content.title}</p>
         ) : null}
@@ -144,7 +217,8 @@ export function CopilotCard({
             <p className="mt-1 text-xs leading-5 text-ink-muted">
               {next.disabled && next.disabledReason
                 ? next.disabledReason
-                : `执行「${next.label}」继续当前步骤。`}
+                : next.description ??
+                  `执行「${next.label}」继续当前步骤。`}
             </p>
             <div className="mt-2">
               {next.href && !next.disabled ? (
@@ -176,7 +250,7 @@ export function CopilotCard({
         <GuidedComposer key={suggestionsKey} suggestions={suggestions} />
       ) : (
         /* Visual composer stub — not wired to any chat backend on pages without guided input. */
-        <div className="border-t border-hairline p-2.5">
+        <div className="mt-auto shrink-0 border-t border-hairline p-2.5">
           <div className="flex items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-2.5 py-1.5">
             <input
               disabled
@@ -201,7 +275,7 @@ function GuidedComposer({ suggestions }: { suggestions: AssistantSuggestion[] })
   const [active, setActive] = useState<AssistantSuggestion | null>(null);
 
   return (
-    <div className="space-y-2 border-t border-hairline p-2.5">
+    <div className="mt-auto shrink-0 space-y-2 border-t border-hairline p-2.5">
       {active ? (
         <div className="flex gap-2 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft px-2.5 py-2">
           <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-strong" />

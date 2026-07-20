@@ -1,128 +1,145 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Loader2, RefreshCw } from "lucide-react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Field, Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { EmptyState } from "@/components/ui/empty-state";
-import { TableSkeleton } from "@/components/ui/skeleton";
+import { Card, CardContent } from "@/components/ui/card";
+import { CatalogProductGrid } from "@/components/select/catalog-product-grid";
+import type { PublishCellState } from "@/components/select/catalog-product-card";
+import { SmartSourcingFilters } from "@/components/select/smart-sourcing-filters";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import {
   fetchRecommendations,
   repriceRecommendations,
+  toPurchasePriceUsd,
 } from "@/lib/catalog-recommendations";
 import {
-  isMallGatewayConfigured,
-  toPublishSnapshot,
-} from "@/lib/tangbuy-mall-gateway";
+  createSavedSearch,
+  loadFiltersCollapsed,
+  loadSavedSearches,
+  persistFiltersCollapsed,
+  persistSavedSearches,
+  summarizeFilters,
+  DEFAULT_CATALOG_FILTERS,
+} from "@/lib/catalog-saved-searches";
 import type {
-  CatalogRecommendation,
-  PricingTemplate,
-  PublishResult,
-  PublishStatus,
-} from "@/lib/types";
+  CatalogFilterState,
+  RecommendedCategory,
+  SavedCatalogSearch,
+} from "@/lib/catalog-sourcing-types";
+import { toPublishSnapshot } from "@/lib/tangbuy-mall-gateway";
+import type { CatalogRecommendation, PricingTemplate } from "@/lib/types";
 
 const PAGE_SIZE = 30;
 
-const ROUNDING_OPTIONS: { value: string; label: string }[] = [
-  { value: "HALF_UP", label: "四舍五入 (HALF_UP)" },
-  { value: "CEIL", label: "向上取整 (CEIL)" },
-  { value: "FLOOR", label: "向下取整 (FLOOR)" },
-  { value: "CHARM_99", label: "魅力价 .99 (CHARM_99)" },
-];
-
-/** 单条上架的会话内状态：加载中 / 结果 / 错误。仅本次会话记忆，刷新即重置。 */
-interface PublishCellState {
-  loading: boolean;
-  result?: PublishResult;
-  error?: string;
-}
-
-/** 定价模板表单的可编辑字段（以字符串承载输入，保存时解析）。 */
-interface TemplateForm {
-  exchangeRate: string;
-  multiplier: string;
-  addend: string;
-  roundingStrategy: string;
-  decimals: string;
-  sourceCurrency: string;
-  targetCurrency: string;
-}
-
-function toForm(t: PricingTemplate): TemplateForm {
-  return {
-    exchangeRate: String(t.exchangeRate),
-    multiplier: String(t.multiplier),
-    addend: String(t.addend),
-    roundingStrategy: t.roundingStrategy,
-    decimals: String(t.decimals),
-    sourceCurrency: t.sourceCurrency,
-    targetCurrency: t.targetCurrency,
-  };
-}
-
 function money(value?: number | null, currency?: string | null): string {
   if (value == null) return "—";
-  const amount = value.toFixed(2);
-  return currency ? `${amount} ${currency}` : amount;
+  return `${value.toFixed(2)}${currency ? ` ${currency}` : ""}`;
 }
 
-export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void }) {
+function parseOptionalNumber(raw: string): number | null {
+  const t = raw.trim();
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+function buildGatewayKeywords(
+  filters: CatalogFilterState,
+  categories: RecommendedCategory[]
+): string {
+  const parts: string[] = [];
+  if (filters.keywords.trim()) parts.push(filters.keywords.trim());
+  for (const id of filters.categoryIds) {
+    const name = categories.find((c) => c.id === id)?.name;
+    if (name) parts.push(name);
+  }
+  return parts.join(" ").trim();
+}
+
+export function CatalogPublishPanel({
+  onActivity,
+  recommendedCategories = [],
+  /** When set, filters render into this host (Discover top context slot above tabs). */
+  filtersMountEl = null,
+  /** Page-level pricing template; when saved upstream, local list reprices. */
+  sharedTemplate = null,
+  /** Report applied filter chips for PageContext / agents. */
+  onAppliedFilterSummaryChange,
+  /** Agent one-click preset: apply recommended category by name */
+  filterPresetRequest = null,
+  onFilterPresetConsumed,
+}: {
+  onActivity?: () => void;
+  recommendedCategories?: RecommendedCategory[];
+  filtersMountEl?: HTMLElement | null;
+  sharedTemplate?: PricingTemplate | null;
+  onAppliedFilterSummaryChange?: (chips: string[]) => void;
+  filterPresetRequest?: { categoryName?: string; keywords?: string } | null;
+  onFilterPresetConsumed?: () => void;
+}) {
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
 
-  // —— 分层 loading：页面加载 / 模板保存 / 单条上架 ——
   const [pageLoading, setPageLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
-  const [savingTemplate, setSavingTemplate] = useState(false);
-
   const [template, setTemplate] = useState<PricingTemplate | null>(null);
-  const [baseline, setBaseline] = useState<TemplateForm | null>(null);
-  const [form, setForm] = useState<TemplateForm | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-
-  // Pricing editor is demoted to a weak, collapsed-by-default entry (no longer a main-content card).
-  const [showPricing, setShowPricing] = useState(false);
-  const [recommendations, setRecommendations] = useState<
-    CatalogRecommendation[]
-  >([]);
+  const [recommendations, setRecommendations] = useState<CatalogRecommendation[]>(
+    []
+  );
   const [page, setPage] = useState(1);
   const [pageTurning, setPageTurning] = useState(false);
-  const [publishState, setPublishState] = useState<
-    Record<string, PublishCellState>
-  >({});
+  const [publishState, setPublishState] = useState<Record<string, PublishCellState>>(
+    {}
+  );
+
+  const [filters, setFilters] = useState<CatalogFilterState>(DEFAULT_CATALOG_FILTERS);
+  const [appliedFilters, setAppliedFilters] =
+    useState<CatalogFilterState>(DEFAULT_CATALOG_FILTERS);
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const [savedSearches, setSavedSearches] = useState<SavedCatalogSearch[]>([]);
+  const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
+  const [bootstrapped, setBootstrapped] = useState(false);
 
   const templateRef = useRef<PricingTemplate | null>(null);
   templateRef.current = template;
+  const appliedRef = useRef(appliedFilters);
+  appliedRef.current = appliedFilters;
+  const categoriesRef = useRef(recommendedCategories);
+  categoriesRef.current = recommendedCategories;
 
   const hasNextPage = recommendations.length >= PAGE_SIZE;
 
-  const loadPage = useCallback(async (pageNum: number, tpl?: PricingTemplate | null) => {
-    const effectiveTemplate = tpl ?? templateRef.current;
-    if (!effectiveTemplate) return;
-    const items = await fetchRecommendations(
-      shopName,
-      PAGE_SIZE,
-      (pageNum - 1) * PAGE_SIZE,
-      effectiveTemplate
-    );
-    setRecommendations(items);
-    setPage(pageNum);
-  }, [shopName]);
+  const fetchOpts = useCallback((f: CatalogFilterState) => {
+    return {
+      keywords: buildGatewayKeywords(f, categoriesRef.current),
+      sort: f.sort,
+      priceMinUsd: parseOptionalNumber(f.priceMinUsd),
+      priceMaxUsd: parseOptionalNumber(f.priceMaxUsd),
+    };
+  }, []);
+
+  const loadPage = useCallback(
+    async (pageNum: number, tpl?: PricingTemplate | null, f?: CatalogFilterState) => {
+      const effectiveTemplate = tpl ?? templateRef.current;
+      if (!effectiveTemplate) return;
+      const filterState = f ?? appliedRef.current;
+      const items = await fetchRecommendations(
+        shopName,
+        PAGE_SIZE,
+        (pageNum - 1) * PAGE_SIZE,
+        effectiveTemplate,
+        fetchOpts(filterState)
+      );
+      setRecommendations(items);
+      setPage(pageNum);
+    },
+    [shopName, fetchOpts]
+  );
 
   const loadAll = useCallback(
-    async (opts?: { showSkeleton?: boolean }) => {
+    async (opts?: { showSkeleton?: boolean; filters?: CatalogFilterState }) => {
       const showSkeleton = opts?.showSkeleton ?? templateRef.current === null;
       if (showSkeleton) setPageLoading(true);
       setPageError(null);
@@ -130,10 +147,8 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
         const tpl = await api.getPricingTemplate(shopName);
         templateRef.current = tpl;
         setTemplate(tpl);
-        const f = toForm(tpl);
-        setForm(f);
-        setBaseline(f);
-        await loadPage(1, tpl);
+        const f = opts?.filters ?? appliedRef.current;
+        await loadPage(1, tpl, f);
       } catch (err) {
         setPageError(readableError(err));
       } finally {
@@ -142,6 +157,84 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
     },
     [shopName, loadPage]
   );
+
+  // Hydrate saved searches; seed Top-1 recommended category on first enter.
+  useEffect(() => {
+    const saved = loadSavedSearches(shopName);
+    setSavedSearches(saved);
+    const collapsed = loadFiltersCollapsed(shopName);
+    setFiltersCollapsed(collapsed);
+
+    const top = recommendedCategories[0];
+    const initial: CatalogFilterState = top
+      ? { ...DEFAULT_CATALOG_FILTERS, categoryIds: [top.id] }
+      : { ...DEFAULT_CATALOG_FILTERS };
+    setFilters(initial);
+    setAppliedFilters(initial);
+    appliedRef.current = initial;
+    setActiveSavedId(null);
+    setBootstrapped(true);
+    void loadAll({ showSkeleton: true, filters: initial });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- init once per shop
+  }, [shopName]);
+
+  // Sync when page-level drawer saves a template.
+  useEffect(() => {
+    if (!sharedTemplate) return;
+    setTemplate(sharedTemplate);
+    templateRef.current = sharedTemplate;
+    setRecommendations((prev) =>
+      prev.length > 0 ? repriceRecommendations(prev, sharedTemplate) : prev
+    );
+  }, [sharedTemplate]);
+
+  // Surface applied filters to page-level PageContext / agents.
+  useEffect(() => {
+    if (!onAppliedFilterSummaryChange) return;
+    const names: Record<string, string> = {};
+    for (const c of recommendedCategories) names[c.id] = c.name;
+    onAppliedFilterSummaryChange(summarizeFilters(appliedFilters, names));
+  }, [appliedFilters, recommendedCategories, onAppliedFilterSummaryChange]);
+
+  // If categories arrive after first paint (shop products loaded late), seed Top-1 once.
+  useEffect(() => {
+    if (!bootstrapped) return;
+    const top = recommendedCategories[0];
+    if (!top) return;
+    setFilters((prev) => {
+      if (prev.categoryIds.length > 0 || prev.keywords.trim()) return prev;
+      return { ...prev, categoryIds: [top.id] };
+    });
+    setAppliedFilters((prev) => {
+      if (prev.categoryIds.length > 0 || prev.keywords.trim()) return prev;
+      const next = { ...prev, categoryIds: [top.id] };
+      appliedRef.current = next;
+      void loadPage(1, templateRef.current, next);
+      return next;
+    });
+  }, [recommendedCategories, bootstrapped, loadPage]);
+
+  // Agent / rail filter preset → apply real category id (no fabricated results).
+  useEffect(() => {
+    if (!filterPresetRequest || !bootstrapped) return;
+    const name = filterPresetRequest.categoryName?.trim();
+    const match = name
+      ? recommendedCategories.find((c) => c.name === name)
+      : undefined;
+    const next: CatalogFilterState = {
+      ...DEFAULT_CATALOG_FILTERS,
+      categoryIds: match ? [match.id] : [],
+      keywords: filterPresetRequest.keywords?.trim() ?? "",
+    };
+    setFilters(next);
+    setAppliedFilters(next);
+    appliedRef.current = next;
+    setActiveSavedId(null);
+    void loadPage(1, templateRef.current, next).finally(() => {
+      onFilterPresetConsumed?.();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterPresetRequest]);
 
   const goToPage = useCallback(
     async (nextPage: number) => {
@@ -159,73 +252,78 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
     [hasNextPage, loadPage, page, pageTurning, showToast]
   );
 
-  useEffect(() => {
-    void loadAll({ showSkeleton: true });
-  }, [shopName]); // eslint-disable-line react-hooks/exhaustive-deps -- init per shop only
-
-  const isDirty = useMemo(() => {
-    if (!form || !baseline) return false;
-    return (Object.keys(form) as (keyof TemplateForm)[]).some(
-      (k) => form[k] !== baseline[k]
-    );
-  }, [form, baseline]);
-
-  const patchForm = (patch: Partial<TemplateForm>) => {
-    setForm((prev) => (prev ? { ...prev, ...patch } : prev));
-    setFormError(null);
-  };
-
-  const handleSaveTemplate = async () => {
-    if (!form || !isDirty || savingTemplate) return;
-
-    const exchangeRate = Number(form.exchangeRate);
-    const multiplier = Number(form.multiplier);
-    const addend = Number(form.addend);
-    const decimals = Number.parseInt(form.decimals, 10);
-
-    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
-      setFormError("汇率必须为大于 0 的数字");
-      return;
-    }
-    if (!Number.isFinite(multiplier) || multiplier <= 0) {
-      setFormError("倍率必须为大于 0 的数字");
-      return;
-    }
-    if (!Number.isFinite(addend)) {
-      setFormError("加价必须为数字");
-      return;
-    }
-    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 4) {
-      setFormError("小数位需为 0–4 的整数");
-      return;
-    }
-
-    setSavingTemplate(true);
-    setFormError(null);
+  const applyFilters = useCallback(async () => {
+    setAppliedFilters(filters);
+    setActiveSavedId(null);
+    setPageTurning(true);
     try {
-      const saved = await api.upsertPricingTemplate({
-        shopName,
-        exchangeRate,
-        multiplier,
-        addend,
-        roundingStrategy: form.roundingStrategy,
-        decimals,
-        sourceCurrency: form.sourceCurrency,
-        targetCurrency: form.targetCurrency,
-      });
-      setTemplate(saved);
-      const f = toForm(saved);
-      setForm(f);
-      setBaseline(f);
-      setRecommendations((prev) => repriceRecommendations(prev, saved));
-      showToast("定价模板已保存，预估售价已按新模板重算");
+      await loadPage(1, templateRef.current, filters);
     } catch (err) {
-      setFormError(readableError(err));
-      showToast("定价模板保存失败");
+      showToast(readableError(err));
     } finally {
-      setSavingTemplate(false);
+      setPageTurning(false);
     }
-  };
+  }, [filters, loadPage, showToast]);
+
+  const clearFilters = useCallback(async () => {
+    const next = { ...DEFAULT_CATALOG_FILTERS };
+    setFilters(next);
+    setAppliedFilters(next);
+    setActiveSavedId(null);
+    setPageTurning(true);
+    try {
+      await loadPage(1, templateRef.current, next);
+    } catch (err) {
+      showToast(readableError(err));
+    } finally {
+      setPageTurning(false);
+    }
+  }, [loadPage, showToast]);
+
+  const handleSaveSearch = useCallback(
+    (name: string) => {
+      const entry = createSavedSearch(name, filters);
+      const next = [entry, ...savedSearches].slice(0, 12);
+      setSavedSearches(next);
+      persistSavedSearches(shopName, next);
+      setActiveSavedId(entry.id);
+      setAppliedFilters(filters);
+      setFiltersCollapsed(true);
+      persistFiltersCollapsed(shopName, true);
+      showToast(`已保存搜索「${entry.name}」`);
+      void loadPage(1, templateRef.current, filters);
+    },
+    [filters, savedSearches, shopName, showToast, loadPage]
+  );
+
+  const handleSelectSaved = useCallback(
+    async (search: SavedCatalogSearch) => {
+      setFilters(search.filters);
+      setAppliedFilters(search.filters);
+      setActiveSavedId(search.id);
+      setFiltersCollapsed(true);
+      persistFiltersCollapsed(shopName, true);
+      setPageTurning(true);
+      try {
+        await loadPage(1, templateRef.current, search.filters);
+      } catch (err) {
+        showToast(readableError(err));
+      } finally {
+        setPageTurning(false);
+      }
+    },
+    [loadPage, shopName, showToast]
+  );
+
+  const handleRemoveSaved = useCallback(
+    (id: string) => {
+      const next = savedSearches.filter((s) => s.id !== id);
+      setSavedSearches(next);
+      persistSavedSearches(shopName, next);
+      if (activeSavedId === id) setActiveSavedId(null);
+    },
+    [savedSearches, shopName, activeSavedId]
+  );
 
   const handlePublish = async (item: CatalogRecommendation) => {
     const current = publishState[item.candidateId];
@@ -272,398 +370,76 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
     }
   };
 
+  const purchasePriceById = useMemo(() => {
+    const rate = template?.exchangeRate ?? 0;
+    const map: Record<string, number | null> = {};
+    for (const item of recommendations) {
+      map[item.candidateId] = toPurchasePriceUsd(item.price, rate);
+    }
+    return map;
+  }, [recommendations, template]);
+
+  const targetCurrency = template?.targetCurrency ?? "USD";
+
+  const filtersNode = (
+    <SmartSourcingFilters
+      filters={filters}
+      collapsed={filtersCollapsed}
+      recommendedCategories={recommendedCategories}
+      savedSearches={savedSearches}
+      activeSavedId={activeSavedId}
+      onChange={setFilters}
+      onApply={() => void applyFilters()}
+      onClear={() => void clearFilters()}
+      onToggleCollapsed={() => {
+        const next = !filtersCollapsed;
+        setFiltersCollapsed(next);
+        persistFiltersCollapsed(shopName, next);
+      }}
+      onSaveSearch={handleSaveSearch}
+      onSelectSaved={(s) => void handleSelectSaved(s)}
+      onRemoveSaved={handleRemoveSaved}
+      onRefresh={() => void loadAll({ showSkeleton: false })}
+      refreshDisabled={pageLoading || pageTurning}
+      refreshing={pageLoading}
+    />
+  );
+
   return (
-    <>
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs text-ink-subtle">
-          从 Tangbuy 商城选品，按定价模板推算售价后一键上架为可售商品。
-          {isMallGatewayConfigured() ? " · 目录由浏览器直连 Tangbuy 网关加载" : ""}
-        </p>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => void loadAll({ showSkeleton: false })}
-          disabled={pageLoading || pageTurning}
-        >
-          {pageLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4" />
-          )}
-          刷新
-        </Button>
-      </div>
+    <div className="space-y-3">
+      {filtersMountEl
+        ? createPortal(filtersNode, filtersMountEl)
+        : filtersNode}
 
       {pageError ? (
-        <Card className="mb-3 border-red-200">
+        <Card className="border-red-200">
           <CardContent className="flex items-center justify-between gap-3 py-3 text-sm text-red-700">
             <span>加载失败：{pageError}</span>
-            <Button size="sm" variant="secondary" onClick={() => void loadAll()}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void loadAll({ showSkeleton: true })}
+            >
               重试
             </Button>
           </CardContent>
         </Card>
       ) : null}
 
-      {showPricing ? (
-        <div>
-          <div className="mb-1.5 flex justify-end">
-            <button
-              type="button"
-              onClick={() => setShowPricing(false)}
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-muted hover:text-ink"
-            >
-              收起定价 <ChevronUp className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <PricingTemplateCard
-            loading={pageLoading}
-            template={template}
-            form={form}
-            isDirty={isDirty}
-            saving={savingTemplate}
-            error={formError}
-            onPatch={patchForm}
-            onSave={() => void handleSaveTemplate()}
-          />
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setShowPricing(true)}
-          className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-card)] border border-hairline bg-surface px-3.5 py-2.5 text-left shadow-card transition-colors hover:border-hairline-strong"
-        >
-          <span className="flex min-w-0 items-center gap-2 text-xs text-ink-muted">
-            <Coins className="h-4 w-4 shrink-0 text-brand" />
-            {template ? (
-              <span className="truncate">
-                定价策略 · 采购价（{template.sourceCurrency}）÷ 汇率 {template.exchangeRate} 换算为{" "}
-                {template.targetCurrency} · 倍率 ×{template.multiplier}
-                {template.isDefault ? " · 系统默认" : ""}
-              </span>
-            ) : (
-              <span>定价策略 · 影响上架到 Shopify 的售价</span>
-            )}
-          </span>
-          <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-brand-strong">
-            调整定价 <ChevronDown className="h-3.5 w-3.5" />
-          </span>
-        </button>
-      )}
-
-      <div className="mb-2 mt-4">
-        <h2 className="text-sm font-semibold text-ink">Tangbuy 商城 · 可上架</h2>
-        <p className="mt-0.5 text-xs text-ink-subtle">
-          预估售价由上方定价模板推算 · 每页 {PAGE_SIZE} 条
-        </p>
-      </div>
-
-      {pageLoading ? (
-        <Card>
-          <TableSkeleton rows={5} />
-        </Card>
-      ) : recommendations.length === 0 && !pageTurning ? (
-        <EmptyState
-          title="暂无可上架的货源商品"
-          description="Tangbuy 商城当前为空，或后端未返回数据。"
-        />
-      ) : (
-        <>
-          <div
-            className={
-              pageTurning
-                ? "grid grid-cols-1 gap-3 opacity-60 transition-opacity sm:grid-cols-2 lg:grid-cols-3"
-                : "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-            }
-          >
-            {recommendations.map((item) => (
-              <RecommendationCard
-                key={item.candidateId}
-                item={item}
-                state={publishState[item.candidateId]}
-                onPublish={() => void handlePublish(item)}
-              />
-            ))}
-          </div>
-          <div className="mt-4 flex items-center justify-center gap-3">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void goToPage(page - 1)}
-              disabled={page <= 1 || pageTurning}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              上一页
-            </Button>
-            <span className="min-w-[4.5rem] text-center text-xs text-ink-subtle">
-              {pageTurning ? "加载中…" : `第 ${page} 页`}
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void goToPage(page + 1)}
-              disabled={!hasNextPage || pageTurning}
-            >
-              下一页
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </>
-      )}
-    </>
-  );
-}
-
-function PricingTemplateCard({
-  loading,
-  template,
-  form,
-  isDirty,
-  saving,
-  error,
-  onPatch,
-  onSave,
-}: {
-  loading: boolean;
-  template: PricingTemplate | null;
-  form: TemplateForm | null;
-  isDirty: boolean;
-  saving: boolean;
-  error: string | null;
-  onPatch: (patch: Partial<TemplateForm>) => void;
-  onSave: () => void;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>定价模板</CardTitle>
-          <CardDescription>
-            售价 = round((采购价 ÷ 汇率 × 倍率) + 加价)。汇率表示「多少源币种 = 1 目标币种」（如 6.5 CNY = 1 USD），采购价会按除法换算为目标币种后再乘倍率、加加价；该规则将决定上架到 Shopify 的售价。修改保存后，预估售价会自动重算。
-          </CardDescription>
-        </div>
-        {template ? (
-          template.isDefault ? (
-            <Badge variant="warning">系统默认（未保存）</Badge>
-          ) : (
-            <Badge variant="success">已保存</Badge>
-          )
-        ) : null}
-      </CardHeader>
-      <CardContent>
-        {loading || !form ? (
-          <TableSkeleton rows={2} />
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Field label="汇率 (源→目标)">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={form.exchangeRate}
-                  onChange={(e) => onPatch({ exchangeRate: e.target.value })}
-                  disabled={saving}
-                />
-              </Field>
-              <Field label="倍率">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={form.multiplier}
-                  onChange={(e) => onPatch({ multiplier: e.target.value })}
-                  disabled={saving}
-                />
-              </Field>
-              <Field label="加价 (目标币种)">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={form.addend}
-                  onChange={(e) => onPatch({ addend: e.target.value })}
-                  disabled={saving}
-                />
-              </Field>
-              <Field label="小数位 (0–4)">
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  value={form.decimals}
-                  onChange={(e) => onPatch({ decimals: e.target.value })}
-                  disabled={saving}
-                />
-              </Field>
-              <Field label="取整策略">
-                <Select
-                  value={form.roundingStrategy}
-                  onChange={(e) => onPatch({ roundingStrategy: e.target.value })}
-                  disabled={saving}
-                >
-                  {ROUNDING_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="源币种">
-                <Input
-                  value={form.sourceCurrency}
-                  onChange={(e) =>
-                    onPatch({ sourceCurrency: e.target.value.toUpperCase() })
-                  }
-                  disabled={saving}
-                />
-              </Field>
-              <Field label="目标币种">
-                <Input
-                  value={form.targetCurrency}
-                  onChange={(e) =>
-                    onPatch({ targetCurrency: e.target.value.toUpperCase() })
-                  }
-                  disabled={saving}
-                />
-              </Field>
-            </div>
-
-            {error ? (
-              <p className="mt-2.5 text-[11px] leading-4 text-red-600">{error}</p>
-            ) : null}
-
-            <div className="mt-3 flex items-center gap-3">
-              <Button onClick={onSave} disabled={!isDirty || saving}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {saving ? "保存中…" : "保存模板"}
-              </Button>
-              <span className="text-[11px] text-ink-subtle">
-                {isDirty ? "有未保存的修改" : "无修改"}
-              </span>
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-const PUBLISH_BADGE: Record<
-  PublishStatus,
-  { variant: "warning" | "success" | "danger" | "default"; label: string }
-> = {
-  PENDING: { variant: "default", label: "待上架" },
-  PUBLISHING: { variant: "warning", label: "上架进行中" },
-  PUBLISHED: { variant: "success", label: "已上架" },
-  FAILED: { variant: "danger", label: "上架失败" },
-};
-
-function RecommendationCard({
-  item,
-  state,
-  onPublish,
-}: {
-  item: CatalogRecommendation;
-  state?: PublishCellState;
-  onPublish: () => void;
-}) {
-  const result = state?.result;
-  const published = result?.publishStatus === "PUBLISHED";
-  const publishing = state?.loading || result?.publishStatus === "PUBLISHING";
-  const [imgError, setImgError] = useState(false);
-
-  return (
-    <article className="flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface p-3 shadow-card">
-      <div className="relative aspect-square w-full overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
-        {item.imageUrl && !imgError ? (
-          <Image
-            src={item.imageUrl}
-            alt={item.title}
-            fill
-            sizes="240px"
-            className="object-cover"
-            unoptimized
-            referrerPolicy="no-referrer"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-[10px] text-ink-subtle">
-            {item.imageUrl ? "货源图暂不可用" : "无图"}
-          </div>
-        )}
-        {result ? (
-          <div className="absolute left-2 top-2">
-            <Badge variant={PUBLISH_BADGE[result.publishStatus].variant}>
-              {PUBLISH_BADGE[result.publishStatus].label}
-            </Badge>
-          </div>
-        ) : state?.error ? (
-          <div className="absolute left-2 top-2">
-            <Badge variant="danger">上架失败</Badge>
-          </div>
-        ) : null}
-      </div>
-
-      <h3 className="mt-2.5 line-clamp-2 min-h-[2.5rem] text-xs font-semibold leading-5 text-ink">
-        {item.tangbuyUrl ? (
-          <a
-            href={item.tangbuyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-ink hover:text-brand-strong hover:underline"
-            title="在 Tangbuy 打开货源"
-          >
-            {item.title}
-          </a>
-        ) : (
-          item.title
-        )}
-      </h3>
-
-      <div className="mt-1.5">
-        <p className="text-sm font-semibold text-brand-strong">
-          预估售价 {money(item.estimatedSalePrice, item.targetCurrency)}
-        </p>
-        <p className="mt-0.5 text-[11px] text-ink-subtle">
-          采购价 {money(item.price, item.currency)}
-        </p>
-      </div>
-
-      {item.supplierShop || item.upstreamPlatform || item.skuAttr ? (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {item.supplierShop ? (
-            <Badge variant="outline">{item.supplierShop}</Badge>
-          ) : null}
-          {item.upstreamPlatform ? (
-            <Badge variant="outline">{item.upstreamPlatform}</Badge>
-          ) : null}
-          {item.skuAttr ? <Badge variant="outline">SKU {item.skuAttr}</Badge> : null}
-        </div>
-      ) : null}
-
-      <div className="mt-auto pt-3">
-        <Button
-          size="sm"
-          className="w-full"
-          onClick={onPublish}
-          disabled={publishing || published}
-          variant={published ? "secondary" : "primary"}
-        >
-          {state?.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {published
-            ? "已上架"
-            : publishing
-              ? "上架中…"
-              : state?.error
-                ? "重试上架"
-                : "上架到店铺"}
-        </Button>
-        {published && result?.shopifyProductId ? (
-          <p className="mt-1.5 break-all text-[10px] leading-tight text-ink-subtle">
-            {result.shopifyProductId}
-          </p>
-        ) : null}
-        {state?.error ? (
-          <p className="mt-1.5 text-[10px] leading-tight text-red-500">{state.error}</p>
-        ) : null}
-      </div>
-    </article>
+      <CatalogProductGrid
+        items={recommendations}
+        page={page}
+        pageSize={PAGE_SIZE}
+        pageLoading={pageLoading}
+        pageTurning={pageTurning}
+        hasNextPage={hasNextPage}
+        purchasePriceById={purchasePriceById}
+        targetCurrency={targetCurrency}
+        publishState={publishState}
+        onPublish={(item) => void handlePublish(item)}
+        onPrevPage={() => void goToPage(page - 1)}
+        onNextPage={() => void goToPage(page + 1)}
+      />
+    </div>
   );
 }

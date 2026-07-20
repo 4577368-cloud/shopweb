@@ -1,20 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  Check,
   ChevronDown,
   ChevronUp,
+  Clock,
   ExternalLink,
-  Image as ImageIcon,
   Loader2,
   MoveRight,
   RefreshCw,
   Search,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/skeleton";
@@ -31,6 +30,19 @@ import type {
   ShopMirrorProduct,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import {
+  buildShopProductMinis,
+  type ShopProductMini,
+} from "@/lib/agents/products/shop-minis";
+import {
+  costInTargetCurrency,
+  formatTargetMoney,
+  normalizeMatchScore,
+  parseGatewayPrice,
+  pickBestCandidateIndex,
+  profitPerOrder,
+  rankCandidates,
+} from "@/lib/agents/products/match-rank";
 
 /**
  * Map backend image-search errors to a readable, category-specific message.
@@ -86,11 +98,10 @@ function imageMatchError(err: unknown): string {
   return raw || "确认匹配失败";
 }
 
-/** Similarity score may be a 0–1 ratio or an absolute index; render defensively. */
-function formatSimilarity(score?: number | null): string {
-  if (score == null || Number.isNaN(score)) return "—";
+function formatSimilarity(score?: number | null): string | null {
+  if (score == null || Number.isNaN(score) || score <= 0) return null;
   if (score <= 1) return `${Math.round(score * 100)}%`;
-  return String(Math.round(score));
+  return `${Math.round(Math.min(score, 100))}%`;
 }
 
 /** 月销 label (official imageQuery signal replacing similarity); null when absent/zero. */
@@ -114,6 +125,13 @@ function formatCny(price?: string | null): string {
   const trimmed = (price ?? "").trim();
   if (!trimmed) return "—";
   return `¥${trimmed}`;
+}
+
+function shortProductId(id: string): string {
+  const m = id.match(/Product\/(\d+)/i);
+  if (m) return m[1]!;
+  if (id.length > 18) return `${id.slice(0, 8)}…${id.slice(-6)}`;
+  return id;
 }
 
 /** Best available source image for a bound offer: white-bg image, else the first per-SKU image. */
@@ -211,6 +229,43 @@ function matchReasons(opts: {
   return out.slice(0, 4);
 }
 
+/** Short evidence pills for the Match column — real fields only. */
+function evidenceTags(opts: {
+  unbound?: boolean;
+  pending?: boolean;
+  imageSource?: string | null;
+  querySource?: string | null;
+  matchScore?: number | null;
+  signals?: string[];
+  marginPct?: number | null;
+}): { label: string; tone: "ok" | "warn" | "neutral" }[] {
+  if (opts.unbound) {
+    return [
+      { label: "建议图搜", tone: "neutral" },
+      { label: "可放宽条件", tone: "neutral" },
+    ];
+  }
+  const tags: { label: string; tone: "ok" | "warn" | "neutral" }[] = [];
+  if (opts.imageSource === "ORIGINAL" || opts.imageSource === "SHOPIFY") {
+    tags.push({ label: "图片相似", tone: "ok" });
+  } else if (!opts.unbound) {
+    tags.push({ label: "图搜命中", tone: "ok" });
+  }
+  if (opts.querySource === "TITLE" || opts.querySource === "LLM") {
+    tags.push({ label: "标题/识图校准", tone: "ok" });
+  }
+  if (opts.pending) {
+    tags.push({ label: "规格待确认", tone: "warn" });
+  }
+  if (opts.marginPct != null && opts.marginPct >= 15) {
+    tags.push({ label: "成本更优", tone: "ok" });
+  }
+  for (const s of (opts.signals ?? []).slice(0, 1)) {
+    tags.push({ label: s, tone: "neutral" });
+  }
+  return tags.slice(0, 3);
+}
+
 function priceRange(p: ShopMirrorProduct): string {
   const { minPrice, maxPrice, currency } = p;
   if (minPrice == null && maxPrice == null) return "—";
@@ -228,11 +283,27 @@ export function ShopProductsPanel({
   onActivity,
   filter: filterProp,
   onFilterChange,
+  highlightProductId = null,
+  searchModeProductId = null,
+  rematchUnboundSignal = 0,
+  onSearchModeConsumed,
+  onProductFocus,
+  onMinisChange,
 }: {
   onActivity?: () => void;
   /** Optional controlled filter — lets the page's top CTA jump straight to e.g. 待确认. */
   filter?: ShopFilter;
   onFilterChange?: (f: ShopFilter) => void;
+  highlightProductId?: string | null;
+  searchModeProductId?: string | null;
+  /** Increment to force re-image-search all unbound products (never touches existing binds). */
+  rematchUnboundSignal?: number;
+  onSearchModeConsumed?: () => void;
+  onProductFocus?: (productId: string) => void;
+  onMinisChange?: (minis: {
+    pending: ShopProductMini[];
+    unbound: ShopProductMini[];
+  }) => void;
 }) {
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
@@ -240,10 +311,11 @@ export function ShopProductsPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [backfilling, setBackfilling] = useState(false);
+  const [batchAcking, setBatchAcking] = useState(false);
   const [products, setProducts] = useState<ShopMirrorProduct[]>([]);
   const [internalFilter, setInternalFilter] = useState<ShopFilter>("all");
   const [template, setTemplate] = useState<PricingTemplate | null>(null);
+  const minisFpRef = useRef("");
   const filter = filterProp ?? internalFilter;
   const setFilter = useCallback(
     (f: ShopFilter) => {
@@ -287,10 +359,136 @@ export function ShopProductsPanel({
     [onActivity]
   );
 
+  const autoMatchedShopRef = useRef<string | null>(null);
+
+  /** Enter page: real image-match only for unbound products; never rebind existing associations. */
+  const autoMatchUnbound = useCallback(
+    async (
+      items: ShopMirrorProduct[],
+      boundMap: Record<string, ImageBindingView>,
+      shouldAbort?: () => boolean
+    ) => {
+      const targets = items.filter(
+        (p) => !boundMap[p.thirdPlatformItemId]?.bound && p.primaryImageUrl
+      );
+      if (targets.length === 0) return 0;
+      let linked = 0;
+      const queue = [...targets];
+      const worker = async () => {
+        while (queue.length > 0) {
+          if (shouldAbort?.()) return;
+          const p = queue.shift();
+          if (!p) return;
+          try {
+            const res = await api.imageSearch(shopName, p.thirdPlatformItemId, 5);
+            if (shouldAbort?.()) return;
+            const bestIdx = pickBestCandidateIndex(res.items ?? []);
+            const cand = res.items?.[bestIdx];
+            if (!cand) continue;
+            const view = await api.confirmImageMatch({
+              shopName,
+              thirdPlatformItemId: p.thirdPlatformItemId,
+              offerProductId: cand.productId,
+              offerSkuId: cand.skuId,
+              detailUrl: cand.detailUrl,
+              similarityScore: cand.similarityScore,
+              imageSource: res.imageSource,
+              querySource: res.querySource,
+              appliedQuery: res.appliedQuery,
+              offerImageUrl: cand.imageUrl,
+              offerPrice: cand.price,
+              auto: true,
+            });
+            if (shouldAbort?.()) return;
+            setBindings((prev) => ({
+              ...prev,
+              [p.thirdPlatformItemId]: view,
+            }));
+            linked += 1;
+          } catch {
+            /* fail-open per product */
+          }
+        }
+      };
+      await Promise.all(
+        Array.from(
+          { length: Math.min(2, targets.length) },
+          () => worker()
+        )
+      );
+      return linked;
+    },
+    [shopName]
+  );
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch-on-mount; load() sets its own loading flag
-    void load();
-  }, [load]);
+    let cancelled = false;
+    void (async () => {
+      await load();
+      if (cancelled) return;
+      if (autoMatchedShopRef.current === shopName) return;
+      try {
+        const [items, bound] = await Promise.all([
+          api.getShopProducts(shopName),
+          api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
+        ]);
+        if (cancelled) return;
+        const map: Record<string, ImageBindingView> = {};
+        for (const b of bound) {
+          if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
+        }
+        const n = await autoMatchUnbound(items, map, () => cancelled);
+        if (cancelled) return;
+        autoMatchedShopRef.current = shopName;
+        if (n > 0) {
+          onActivity?.();
+          showToast(`已自动匹配 ${n} 个未关联商品`);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount / shop change only
+  }, [shopName]);
+
+  // Rail「重搜候选」: force rematch all currently unbound products.
+  const rematchSignalSeen = useRef(0);
+  useEffect(() => {
+    if (!rematchUnboundSignal || rematchUnboundSignal === rematchSignalSeen.current) {
+      return;
+    }
+    rematchSignalSeen.current = rematchUnboundSignal;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [items, bound] = await Promise.all([
+          api.getShopProducts(shopName),
+          api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
+        ]);
+        if (cancelled) return;
+        const map: Record<string, ImageBindingView> = {};
+        for (const b of bound) {
+          if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
+        }
+        setFilter("unbound");
+        const n = await autoMatchUnbound(items, map, () => cancelled);
+        if (cancelled) return;
+        onActivity?.();
+        showToast(
+          n > 0 ? `已为 ${n} 个未匹配商品重新图搜` : "暂无未匹配商品可重搜"
+        );
+      } catch {
+        if (!cancelled) showToast("重搜失败，请稍后重试");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rematchUnboundSignal]);
 
   const handleSync = async () => {
     if (syncing) return;
@@ -298,35 +496,28 @@ export function ShopProductsPanel({
     try {
       const result = await api.syncShopProducts(shopName);
       await load();
+      // After sync, match any newly unbound products (never touch existing binds).
+      try {
+        const [items, bound] = await Promise.all([
+          api.getShopProducts(shopName),
+          api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
+        ]);
+        const map: Record<string, ImageBindingView> = {};
+        for (const b of bound) {
+          if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
+        }
+        const n = await autoMatchUnbound(items, map);
+        if (n > 0) showToast(`已同步 ${result.productCount} 个商品，并自动匹配 ${n} 个`);
+        else showToast(`已同步，店铺共 ${result.productCount} 个商品`);
+      } catch {
+        showToast(`已同步，店铺共 ${result.productCount} 个商品`);
+      }
       onActivity?.();
-      showToast(`已同步，店铺共 ${result.productCount} 个商品`);
     } catch (err) {
       setError(readableError(err));
       showToast("同步失败");
     } finally {
       setSyncing(false);
-    }
-  };
-
-  // Repair legacy bindings that show 无图/成本待取: re-fetch the image+price snapshot server-side.
-  const handleBackfill = async () => {
-    if (backfilling) return;
-    setBackfilling(true);
-    try {
-      const r = await api.backfillBindingSnapshots(shopName);
-      await load();
-      onActivity?.();
-      showToast(
-        r.backfilled > 0
-          ? `已补全 ${r.backfilled} 个货源图/价（搜索 ${r.fromSearch} · 详情 ${r.fromDetail}）`
-          : r.unresolved > 0
-            ? `有 ${r.unresolved} 个货源暂时取不到图/价，可稍后重试`
-            : "货源图/价已是最新"
-      );
-    } catch (err) {
-      showToast(readableError(err));
-    } finally {
-      setBackfilling(false);
     }
   };
 
@@ -356,12 +547,69 @@ export function ShopProductsPanel({
     };
   }, [products, stateOf]);
 
+  const handleBatchAck = async () => {
+    if (batchAcking) return;
+    const pendingIds = products
+      .filter((p) => stateOf(p) === "pending")
+      .map((p) => p.thirdPlatformItemId);
+    if (pendingIds.length === 0) {
+      showToast("暂无待确认商品");
+      return;
+    }
+    setBatchAcking(true);
+    let ok = 0;
+    let fail = 0;
+    for (const id of pendingIds) {
+      try {
+        await api.ackImageBinding(shopName, id);
+        setBindings((b) => {
+          const prev = b[id];
+          if (!prev?.bound) return b;
+          return { ...b, [id]: { ...prev, bindStatus: "ACTIVE" as const } };
+        });
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    onActivity?.();
+    showToast(
+      fail > 0
+        ? `已确认 ${ok} 个，失败 ${fail} 个`
+        : `已批量确认 ${ok} 个待关联`
+    );
+    setBatchAcking(false);
+  };
+
   const filtered = useMemo(() => {
     if (filter === "pending") return products.filter((p) => stateOf(p) === "pending");
     if (filter === "confirmed") return products.filter((p) => stateOf(p) === "confirmed");
     if (filter === "unbound") return products.filter((p) => stateOf(p) === null);
     return products;
   }, [products, filter, stateOf]);
+
+  useEffect(() => {
+    if (!onMinisChange) return;
+    const all = buildShopProductMinis(products, bindings);
+    const pending = all.filter((m) => m.state === "pending");
+    const unbound = all.filter((m) => m.state === "unbound");
+    const fp = `${pending.map((m) => m.productId).join(",")}|${unbound
+      .map((m) => m.productId)
+      .join(",")}`;
+    if (fp === minisFpRef.current) return;
+    minisFpRef.current = fp;
+    onMinisChange({ pending, unbound });
+    // Intentionally omit onMinisChange from deps — parent often passes an inline fn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, bindings]);
+
+  useEffect(() => {
+    if (!highlightProductId) return;
+    const el = document.querySelector(
+      `[data-product-id="${CSS.escape(highlightProductId)}"]`
+    );
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightProductId, filtered]);
 
   return (
     <>
@@ -378,21 +626,20 @@ export function ShopProductsPanel({
           onValueChange={(id) => setFilter(id as ShopFilter)}
         />
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => void handleBackfill()}
-            disabled={backfilling || syncing}
-            title="为显示「无图/成本待取」的已关联货源，重新补全货源图片与价格"
-          >
-            {backfilling ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ImageIcon className="h-4 w-4" />
-            )}
-            {backfilling ? "补全中…" : "补全图/价"}
-          </Button>
-          <Button size="sm" onClick={() => void handleSync()} disabled={syncing || backfilling}>
+          {counts.pending > 0 ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void handleBatchAck()}
+              disabled={batchAcking || syncing}
+            >
+              {batchAcking ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
+              {batchAcking ? "确认中…" : `批量确认 (${counts.pending})`}
+            </Button>
+          ) : null}
+          <Button size="sm" onClick={() => void handleSync()} disabled={syncing || batchAcking}>
             {syncing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -444,7 +691,7 @@ export function ShopProductsPanel({
           description="切换到「全部」查看所有在售商品。"
         />
       ) : (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3">
           {filtered.map((p) => (
             <ShopProductCard
               key={p.id}
@@ -454,6 +701,10 @@ export function ShopProductsPanel({
               template={template}
               onBound={handleBound}
               onOpenDetail={() => setDetailItemId(p.thirdPlatformItemId)}
+              highlighted={highlightProductId === p.thirdPlatformItemId}
+              searchModeRequested={searchModeProductId === p.thirdPlatformItemId}
+              onSearchModeConsumed={onSearchModeConsumed}
+              onFocus={() => onProductFocus?.(p.thirdPlatformItemId)}
             />
           ))}
         </div>
@@ -473,84 +724,6 @@ export function ShopProductsPanel({
   );
 }
 
-/** A compact tile (image + title + price) for one side of the Shopify↔Tangbuy comparison. */
-function CompareTile({
-  label,
-  labelTone,
-  image,
-  imageAlt,
-  title,
-  priceNode,
-  metaNode,
-  placeholder,
-  loading,
-}: {
-  label: string;
-  labelTone?: "brand";
-  image?: string | null;
-  imageAlt?: string;
-  title?: string | null;
-  priceNode?: ReactNode;
-  metaNode?: ReactNode;
-  placeholder?: ReactNode;
-  loading?: boolean;
-}) {
-  const [imgError, setImgError] = useState(false);
-  useEffect(() => {
-    setImgError(false);
-  }, [image]);
-  return (
-    <div className="flex min-w-0 flex-col rounded-[var(--radius-control)] border border-hairline bg-surface-muted/40 p-2.5">
-      <span
-        className={cn(
-          "text-[10px] font-medium uppercase tracking-wide",
-          labelTone === "brand" ? "text-brand-strong" : "text-ink-subtle"
-        )}
-      >
-        {label}
-      </span>
-      {placeholder ? (
-        <div className="mt-1.5 flex min-h-[7.5rem] flex-1 items-center justify-center rounded-[var(--radius-control)] border border-dashed border-hairline px-2 text-center text-[11px] text-ink-subtle">
-          {loading ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              载入货源…
-            </span>
-          ) : (
-            placeholder
-          )}
-        </div>
-      ) : (
-        <>
-          <div className="relative mt-1.5 aspect-square w-full overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface">
-            {image && !imgError ? (
-              <Image
-                src={image}
-                alt={imageAlt ?? title ?? ""}
-                fill
-                sizes="180px"
-                className="object-cover"
-                unoptimized
-                referrerPolicy="no-referrer"
-                onError={() => setImgError(true)}
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center px-2 text-center text-[10px] text-ink-subtle">
-                {image ? "货源图暂不可用" : "无图"}
-              </div>
-            )}
-          </div>
-          <p className="mt-1.5 line-clamp-2 text-xs font-medium leading-4 text-ink">
-            {title ?? "(无标题)"}
-          </p>
-          {priceNode ? <div className="mt-1">{priceNode}</div> : null}
-          {metaNode ? <div className="mt-0.5">{metaNode}</div> : null}
-        </>
-      )}
-    </div>
-  );
-}
-
 function ShopProductCard({
   item,
   shopName,
@@ -558,6 +731,10 @@ function ShopProductCard({
   template,
   onBound,
   onOpenDetail,
+  highlighted = false,
+  searchModeRequested = false,
+  onSearchModeConsumed,
+  onFocus,
 }: {
   item: ShopMirrorProduct;
   shopName: string;
@@ -565,16 +742,34 @@ function ShopProductCard({
   template: PricingTemplate | null;
   onBound: (itemId: string, view: ImageBindingView) => void;
   onOpenDetail: () => void;
+  highlighted?: boolean;
+  searchModeRequested?: boolean;
+  onSearchModeConsumed?: () => void;
+  onFocus?: () => void;
 }) {
   const { showToast } = useOnboarding();
-  const active = (item.status ?? "").toUpperCase() === "ACTIVE";
   const hasImage = Boolean(item.primaryImageUrl);
 
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [result, setResult] = useState<ImageSearchResult | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [expanded, setExpanded] = useState(false);
+  const [trayOpen, setTrayOpen] = useState(false);
+  const [searchPhase, setSearchPhase] = useState<string | null>(null);
+  const [matchScores, setMatchScores] = useState<Record<string, number>>({});
+  const [recommendedIdx, setRecommendedIdx] = useState(0);
+
+  // External request: enter Search Mode + run image search (real API).
+  useEffect(() => {
+    if (!searchModeRequested) return;
+    setTrayOpen(true);
+    onFocus?.();
+    void (async () => {
+      await runSearchWithPhases();
+      onSearchModeConsumed?.();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchModeRequested]);
 
   // The panel owns binding truth (回显 map); the card renders the prop and reports confirms upward.
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -603,13 +798,14 @@ function ShopProductCard({
   const [offerLoading, setOfferLoading] = useState(false);
 
   useEffect(() => {
-    if (!boundOfferId || hasSnapshot) {
+    if (!boundOfferId) {
       setOffer(null);
       return;
     }
     let cancelled = false;
+    // Snapshot covers image/price; still fetch detail for title when missing.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch of bound offer detail
-    setOfferLoading(true);
+    setOfferLoading(!hasSnapshot);
     api
       .getOfferDetail(boundOfferId)
       .then((d) => {
@@ -626,31 +822,84 @@ function ShopProductCard({
     };
   }, [boundOfferId, hasSnapshot]);
 
-  const runSearch = async () => {
+  const runSearchWithPhases = async () => {
     if (searching) return;
     setSearching(true);
     setSearchError(null);
+    setTrayOpen(true);
+    const phases = ["正在分析图片…", "正在匹配类目与规格…", "正在比对成本与销复购…"];
+    let i = 0;
+    setSearchPhase(phases[0]!);
+    const timer = window.setInterval(() => {
+      i = Math.min(i + 1, phases.length - 1);
+      setSearchPhase(phases[i]!);
+    }, 450);
     try {
-      const res = await api.imageSearch(shopName, item.thirdPlatformItemId, 4);
-      setResult(res);
+      const res = await api.imageSearch(shopName, item.thirdPlatformItemId, 5);
+      // Prefer API similarity; fill gaps via LLM match-score (server).
+      let scores: Record<string, number> = {};
+      for (const c of res.items) {
+        const n = normalizeMatchScore(c.similarityScore);
+        if (n != null) scores[c.productId] = n;
+      }
+      const needLlm = res.items.filter((c) => scores[c.productId] == null);
+      if (needLlm.length > 0) {
+        try {
+          const scoreRes = await fetch("/api/agents/products/match-score", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              shopTitle: item.title ?? "",
+              shopImageUrl: item.primaryImageUrl ?? "",
+              candidates: needLlm.map((c) => ({
+                productId: c.productId,
+                title: c.title,
+                imageUrl: c.imageUrl,
+              })),
+            }),
+          });
+          if (scoreRes.ok) {
+            const body = (await scoreRes.json()) as {
+              scores?: Record<string, number>;
+            };
+            scores = { ...scores, ...(body.scores ?? {}) };
+          }
+        } catch {
+          /* keep whatever we have */
+        }
+      }
+      setMatchScores(scores);
+      const ranked = rankCandidates(res.items, { matchScores: scores });
+      setRecommendedIdx(0);
+      setResult({ ...res, items: ranked });
       setCurrentIdx(0);
-      setExpanded(false);
     } catch (err) {
       setResult(null);
+      setMatchScores({});
       setSearchError(imageSearchError(err));
     } finally {
+      window.clearInterval(timer);
+      setSearchPhase(null);
       setSearching(false);
     }
   };
 
+  /** Open existing tray, or run a fresh search. */
+  const openOrRunSearch = async (forceRefresh: boolean) => {
+    onFocus?.();
+    if (!forceRefresh && result && result.items.length > 0) {
+      setTrayOpen(true);
+      return;
+    }
+    await runSearchWithPhases();
+  };
+
+  const runSearch = async () => {
+    await openOrRunSearch(true);
+  };
+
   const confirmMatch = async (candidate: ImageSearchProduct) => {
     if (confirmingId) return;
-    if (boundOfferId && boundOfferId !== candidate.productId) {
-      const ok = window.confirm(
-        `该商品已绑定货源 ${boundOfferId}，确认改绑到 ${candidate.productId}？`
-      );
-      if (!ok) return;
-    }
     setConfirmingId(candidate.productId);
     setConfirmError(null);
     try {
@@ -725,273 +974,442 @@ function ShopProductCard({
   const isRebind =
     current != null && boundOfferId != null && boundOfferId !== current.productId;
 
-  // —— AI 推荐卡派生值（全部映射真实数据，缺失即不显示，不编造） ——
+  // —— AI 推荐卡派生值（真实数据；价格按定价模板汇率换目标币） ——
   const shopPrice = item.minPrice ?? item.maxPrice ?? null;
   const boundImage = snapImage ?? offerImage(offer);
   const boundTitle =
-    offer?.subjectTrans ?? offer?.subject ?? (boundOfferId ? `货源 ${boundOfferId}` : null);
-  const boundPriceText = snapPrice ? `¥${snapPrice}` : offerPriceText(offer);
-  const boundCostNum =
-    parsePrice(snapPrice) ?? parsePrice((offerPriceText(offer) ?? "").replace(/¥/g, ""));
+    offer?.subjectTrans ?? offer?.subject ?? null;
+  const boundCostCny =
+    parseGatewayPrice(snapPrice) ??
+    parseGatewayPrice((offerPriceText(offer) ?? "").replace(/¥/g, ""));
+  const targetCur = template?.targetCurrency ?? null;
 
-  // The recommended source: a live candidate (searching) takes precedence, else the bound source.
+  const formatOfferCost = (cny: number | null, fallbackRaw?: string | null) => {
+    const inTarget = costInTargetCurrency(cny, template);
+    if (inTarget != null && targetCur) {
+      return `成本 ${formatTargetMoney(inTarget, targetCur)}`;
+    }
+    if (fallbackRaw) return `成本 ${formatCny(fallbackRaw)}`;
+    if (cny != null) return `成本 ¥${cny}`;
+    return "成本待取";
+  };
+
   const reco =
     rightMode === "candidate" && current
       ? {
           image: current.imageUrl ?? null,
-          title: current.title || `货源 ${current.productId}`,
-          priceText: formatCny(current.price),
-          costNum: parsePrice(current.price),
-          reasons: matchReasons({
-            imageSource: result?.imageSource,
-            querySource: result?.querySource,
-            appliedQuery: result?.appliedQuery,
-            matchScore: current.similarityScore,
-            signals: candidateSignals(current),
-          }),
+          title: current.title || null,
+          costCny: parseGatewayPrice(current.price),
+          priceText: formatOfferCost(
+            parseGatewayPrice(current.price),
+            current.price
+          ),
         }
       : rightMode === "bound"
         ? {
             image: boundImage,
             title: boundTitle,
-            priceText: boundPriceText,
-            costNum: boundCostNum,
-            reasons: fromPublish
-              ? ["从 Tangbuy 商城上架 · 与货源 1:1 绑定"]
-              : matchReasons({
-                  imageSource: binding?.imageSource,
-                  querySource: binding?.querySource,
-                  appliedQuery: binding?.appliedQuery,
-                  matchScore: binding?.matchScore,
-                }),
+            costCny: boundCostCny,
+            priceText: formatOfferCost(boundCostCny, snapPrice),
           }
         : null;
 
-  const margin = reco ? marginEstimate(shopPrice, item.currency, reco.costNum, template) : null;
+  const profit = reco
+    ? profitPerOrder(shopPrice, reco.costCny, template)
+    : null;
   const boundLoading = rightMode === "bound" && !hasSnapshot && offerLoading && !offer;
 
-  const status: { label: string; tone: "brand" | "amber" | "neutral" } = current
-    ? {
-        label: isBoundHere ? "已采用此货源" : isRebind ? "AI 推荐改绑" : "AI 推荐货源",
-        tone: "brand",
-      }
-    : bindPending
-      ? { label: "AI 待确认", tone: "amber" }
-      : fromPublish
-        ? { label: "来自 Tangbuy 商城", tone: "brand" }
-        : bindConfirmed
-          ? { label: "已采用货源", tone: "brand" }
-          : { label: "未匹配货源", tone: "neutral" };
+  const cardState: "matched" | "pending" | "unbound" = bindPending
+    ? "pending"
+    : boundOfferId
+      ? "matched"
+      : "unbound";
+
+  const displayScore =
+    (current ? matchScores[current.productId] : undefined) ??
+    normalizeMatchScore(current?.similarityScore) ??
+    normalizeMatchScore(binding?.matchScore);
+  const matchScoreLabel =
+    displayScore != null ? `${displayScore}%` : null;
+
+  const matchHeadline =
+    cardState === "unbound" && !current
+      ? "未找到可靠匹配"
+      : cardState === "pending"
+        ? "待确认"
+        : matchScoreLabel
+          ? `匹配度 ${matchScoreLabel}`
+          : "已自动匹配";
+
+  const tags = evidenceTags({
+    unbound: cardState === "unbound" && !current,
+    pending: cardState === "pending",
+    imageSource:
+      rightMode === "candidate" ? result?.imageSource : binding?.imageSource,
+    querySource:
+      rightMode === "candidate" ? result?.querySource : binding?.querySource,
+    matchScore: displayScore,
+    signals:
+      rightMode === "candidate" && current
+        ? candidateSignals(current)
+        : undefined,
+    marginPct: null,
+  });
+
+  const recoInventory =
+    rightMode === "candidate" && current?.inventory != null
+      ? String(current.inventory).trim()
+      : null;
+  const detailUrl =
+    (current?.detailUrl || binding?.detailUrl || null) ?? null;
+
+  const selectedTitleShort = (() => {
+    const t = current?.title ?? reco?.title;
+    if (!t) return null;
+    return t.length > 12 ? `${t.slice(0, 12)}…` : t;
+  })();
+
+  const primaryLabel =
+    cardState === "unbound" && !current
+      ? "查找候选"
+      : current && !isBoundHere
+        ? isRebind
+          ? `改绑：${selectedTitleShort ?? "该货源"}`
+          : `确认：${selectedTitleShort ?? "该货源"}`
+        : cardState === "pending"
+          ? "确认"
+          : null;
+
+  const onPrimary = () => {
+    if (cardState === "unbound" && !current) {
+      void openOrRunSearch(true);
+      return;
+    }
+    if (current && !isBoundHere) {
+      void confirmMatch(current);
+      return;
+    }
+    if (cardState === "pending") {
+      void ackBinding();
+    }
+  };
 
   return (
-    <article className="flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface p-3.5 shadow-card">
-      {/* Lead with AI's judgment (status + margin), not a raw comparison table. */}
+    <article
+      data-product-id={item.thirdPlatformItemId}
+      onClick={() => onFocus?.()}
+      className={cn(
+        "flex flex-col rounded-xl border bg-white p-4 shadow-sm transition-shadow",
+        highlighted
+          ? "border-emerald-400 ring-2 ring-emerald-200/60"
+          : "border-slate-200",
+        trayOpen ? "ring-1 ring-slate-300" : null
+      )}
+    >
+      {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <span
           className={cn(
             "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
-            status.tone === "brand"
-              ? "bg-brand-soft text-brand-strong"
-              : status.tone === "amber"
+            cardState === "matched"
+              ? "bg-emerald-50 text-emerald-700"
+              : cardState === "pending"
                 ? "bg-amber-50 text-amber-700"
-                : "bg-slate-100 text-ink-subtle"
+                : "bg-slate-100 text-slate-600"
           )}
         >
-          {status.tone === "brand" ? <Sparkles className="h-3.5 w-3.5" /> : null}
-          {status.label}
+          {cardState === "matched" ? (
+            <Check className="h-3.5 w-3.5" />
+          ) : cardState === "pending" ? (
+            <Clock className="h-3.5 w-3.5" />
+          ) : null}
+          {cardState === "matched"
+            ? fromPublish
+              ? "商城上架关联"
+              : "已自动匹配"
+            : cardState === "pending"
+              ? "待确认"
+              : "未匹配"}
         </span>
-        {margin ? (
-          <span className="text-[11px] font-medium text-ink-subtle">
-            预估毛利{" "}
-            <span
-              className={cn(
-                "font-semibold",
-                margin.pct >= 0 ? "text-brand-strong" : "text-red-600"
-              )}
-            >
-              ~{margin.pct}%
-            </span>
-          </span>
+        <span
+          className={cn(
+            "text-[12px] font-semibold",
+            cardState === "unbound" && !current
+              ? "text-slate-500"
+              : cardState === "pending"
+                ? "text-amber-700"
+                : "text-emerald-700"
+          )}
+        >
+          {matchHeadline}
+        </span>
+      </div>
+
+      {/* Three-column body */}
+      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_1fr] md:items-stretch md:gap-0">
+        {/* A. Shopify */}
+        <div className="flex min-w-0 gap-3 md:pr-4">
+          <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:h-[4.5rem] sm:w-[4.5rem]">
+            {hasImage ? (
+              <Image
+                src={item.primaryImageUrl!}
+                alt={item.title ?? ""}
+                fill
+                sizes="72px"
+                className="object-cover"
+                unoptimized
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
+                无图
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              Shopify 商品
+            </p>
+            <p className="mt-0.5 line-clamp-2 text-sm font-semibold leading-snug text-slate-900">
+              {item.title ?? "(无标题)"}
+            </p>
+            <p className="mt-1 text-sm font-semibold text-slate-800">
+              {priceRange(item)}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              ID {shortProductId(item.thirdPlatformItemId)}
+            </p>
+          </div>
+        </div>
+
+        {/* B. AI Match */}
+        <div className="flex flex-col items-center justify-center border-y border-slate-100 py-2 md:border-x md:border-y-0 md:px-4 md:py-0">
+          {cardState === "unbound" && !current ? (
+            <>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                AI Match
+              </p>
+              <p className="mt-1 text-center text-xs font-semibold text-slate-600">
+                未找到可靠匹配
+              </p>
+              <p className="mt-1 max-w-[9rem] text-center text-[10px] leading-4 text-slate-400">
+                建议使用图搜，或稍后重试
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-600/80">
+                AI Match
+              </p>
+              <MoveRight
+                className={cn(
+                  "my-1 h-5 w-5",
+                  cardState === "pending" ? "text-amber-500" : "text-emerald-500"
+                )}
+              />
+              <p
+                className={cn(
+                  "text-center text-xs font-bold",
+                  cardState === "pending" ? "text-amber-700" : "text-emerald-700"
+                )}
+              >
+                {matchHeadline}
+              </p>
+              <div className="mt-1.5 flex max-w-[11rem] flex-wrap justify-center gap-1">
+                {tags.map((t) => (
+                  <span
+                    key={t.label}
+                    className={cn(
+                      "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                      t.tone === "ok"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : t.tone === "warn"
+                          ? "bg-amber-50 text-amber-700"
+                          : "bg-slate-100 text-slate-600"
+                    )}
+                  >
+                    {t.label}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* C. Source */}
+        <div className="flex min-w-0 gap-3 md:pl-4">
+          {boundLoading ? (
+            <div className="flex flex-1 items-center gap-2 text-[11px] text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              载入货源…
+            </div>
+          ) : reco ? (
+            <>
+              <div
+                className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:h-[4.5rem] sm:w-[4.5rem]"
+                role={result && result.items.length > 0 ? "button" : undefined}
+                title={
+                  result && result.items.length > 0 && !trayOpen
+                    ? "展开候选"
+                    : undefined
+                }
+                onClick={(e) => {
+                  if (!result || result.items.length === 0) return;
+                  e.stopPropagation();
+                  void openOrRunSearch(false);
+                }}
+              >
+                {reco.image ? (
+                  <Image
+                    src={reco.image}
+                    alt={reco.title ?? ""}
+                    fill
+                    sizes="72px"
+                    className="object-contain"
+                    unoptimized
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
+                    无图
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                  推荐货源
+                </p>
+                <p className="mt-0.5 line-clamp-2 text-sm font-semibold leading-snug text-slate-900">
+                  {reco.title && !/^货源\s/.test(reco.title)
+                    ? reco.title
+                    : reco.title ?? "货源标题待取"}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">
+                  {reco.priceText}
+                </p>
+                {profit ? (
+                  <p className="mt-0.5 text-[11px] font-semibold text-red-600">
+                    每单获利：{formatTargetMoney(profit.amount, profit.currency)}
+                  </p>
+                ) : recoInventory ? (
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    库存 {recoInventory}
+                  </p>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-1 items-center rounded-lg border border-dashed border-slate-200 px-3 py-2 text-[11px] text-slate-500">
+              {hasImage
+                ? "尚未关联货源 · 点击「查找候选」开始图搜"
+                : "该商品无主图，无法图搜"}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Footer actions — secondary links + primary on the right */}
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-x-2 gap-y-2 border-t border-slate-100 pt-3">
+        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[12px]">
+          <button
+            type="button"
+            className="font-medium text-slate-500 hover:text-slate-800"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenDetail();
+            }}
+          >
+            编辑商品
+          </button>
+          {detailUrl ? (
+            <>
+              <span className="text-slate-300">|</span>
+              <a
+                href={detailUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-slate-500 hover:text-slate-800"
+                onClick={(e) => e.stopPropagation()}
+              >
+                货源详情
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </>
+          ) : null}
+          <span className="text-slate-300">|</span>
+          <button
+            type="button"
+            className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+            disabled={searching || !hasImage}
+            title={
+              !hasImage
+                ? "该商品无主图，无法图搜"
+                : result && result.items.length > 0
+                  ? "展开上一轮图搜结果"
+                  : "图搜匹配货源"
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              void openOrRunSearch(false);
+            }}
+          >
+            {searching ? "匹配中…" : "重新匹配"}
+          </button>
+          {boundOfferId ? (
+            <>
+              <span className="text-slate-300">|</span>
+              <button
+                type="button"
+                className="font-medium text-slate-500 hover:text-red-600 disabled:opacity-50"
+                disabled={unbinding || acking}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void unbindBinding();
+                }}
+              >
+                取消关联
+              </button>
+            </>
+          ) : null}
+        </div>
+        {primaryLabel ? (
+          <Button
+            size="sm"
+            className="h-8 min-w-[7.5rem]"
+            disabled={
+              searching ||
+              (cardState === "unbound" && !hasImage && !current) ||
+              confirmingId != null ||
+              acking
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              onPrimary();
+            }}
+          >
+            {(confirmingId || acking || searching) && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            )}
+            {primaryLabel}
+          </Button>
         ) : null}
       </div>
 
-      {/* Compact 图对图（保留人眼对照，权重让给下方 AI 推荐理由）. */}
-      <div className="mt-2.5 grid grid-cols-[1fr_auto_1fr] items-stretch gap-2.5">
-        <CompareTile
-          label="Shopify"
-          image={hasImage ? item.primaryImageUrl : null}
-          imageAlt={item.title ?? item.thirdPlatformItemId}
-          title={item.title}
-          priceNode={
-            <span className="text-sm font-semibold text-ink">{priceRange(item)}</span>
-          }
-          metaNode={
-            item.status ? (
-              <Badge variant={active ? "success" : "default"}>{item.status}</Badge>
-            ) : null
-          }
-        />
-
-        <div className="flex items-center justify-center px-0.5">
-          <MoveRight className="h-4 w-4 text-ink-subtle" />
-        </div>
-
-        {reco ? (
-          <CompareTile
-            label={rightMode === "candidate" ? "AI 推荐候选" : "AI 推荐货源"}
-            labelTone="brand"
-            image={reco.image}
-            imageAlt={reco.title ?? ""}
-            title={reco.title}
-            loading={boundLoading}
-            placeholder={boundLoading ? " " : undefined}
-            priceNode={
-              reco.priceText ? (
-                <span className="text-sm font-semibold text-ink">成本 {reco.priceText}</span>
-              ) : (
-                <span className="text-[11px] text-ink-subtle">成本待取</span>
-              )
-            }
-          />
-        ) : (
-          <CompareTile
-            label="AI 推荐货源"
-            labelTone="brand"
-            placeholder={hasImage ? "尚未找到货源 · 点「查找货源」" : "该商品无主图，无法图搜"}
-          />
-        )}
-      </div>
-
-      {/* AI 推荐理由 + 预估毛利空间：新的视觉重心。 */}
-      {reco && reco.reasons.length ? (
-        <div className="mt-2.5 rounded-[var(--radius-control)] border border-hairline bg-surface-muted/40 px-2.5 py-2">
-          <p className="mb-1.5 text-[11px] font-medium text-ink-subtle">AI 为什么推荐</p>
-          <div className="flex flex-wrap gap-1.5">
-            {reco.reasons.map((r) => (
-              <span
-                key={r}
-                className="rounded-full border border-hairline bg-surface px-2 py-0.5 text-[11px] text-ink-muted"
-              >
-                {r}
-              </span>
-            ))}
-          </div>
-          {margin ? (
-            <p className="mt-2 text-[11px] leading-4 text-ink-subtle">
-              预估毛利空间{" "}
-              <span
-                className={cn(
-                  "font-semibold",
-                  margin.pct >= 0 ? "text-brand-strong" : "text-red-600"
-                )}
-              >
-                ~{margin.pct}%
-              </span>
-              {" · "}按售价 {fmtMoney(shopPrice as number, item.currency ?? margin.currency)} 与货源成本 ≈
-              {fmtMoney(margin.costInTarget, margin.currency)}（汇率 {margin.rate}）估算，为预估值
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* Action row */}
-      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-hairline pt-2.5">
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={onOpenDetail}>
-            详情
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => void runSearch()}
-            disabled={searching || !hasImage}
-            title={!hasImage ? "该商品无主图，无法图搜" : undefined}
-          >
-            {searching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4" />
-            )}
-            {searching ? "搜索中…" : boundOfferId ? "重新查找" : "查找货源"}
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          {boundOfferId && binding?.detailUrl ? (
-            <a
-              href={binding.detailUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-muted underline underline-offset-2 hover:text-ink"
-            >
-              <ExternalLink className="h-3 w-3" />
-              货源详情
-            </a>
-          ) : null}
-          {current ? (
-            isBoundHere ? (
-              <Button size="sm" variant="secondary" disabled>
-                已绑定此货源
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                onClick={() => void confirmMatch(current)}
-                disabled={confirmingId === current.productId}
-              >
-                {confirmingId === current.productId ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : null}
-                {confirmingId === current.productId
-                  ? "绑定中…"
-                  : isRebind
-                    ? "改绑到此货源"
-                    : "确认匹配"}
-              </Button>
-            )
-          ) : boundOfferId ? (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => void unbindBinding()}
-                disabled={unbinding || acking}
-              >
-                {unbinding ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                取消关联
-              </Button>
-              {bindPending ? (
-                <Button size="sm" onClick={() => void ackBinding()} disabled={acking || unbinding}>
-                  {acking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  确认无误
-                </Button>
-              ) : null}
-            </>
-          ) : hasImage ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => showToast("发起询盘功能即将上线")}
-            >
-              发起询盘
-            </Button>
-          ) : null}
-        </div>
-      </div>
-
       {confirmError ? (
-        <div className="mt-2.5 rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+        <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
           {confirmError}
         </div>
       ) : null}
-
       {searchError ? (
-        <div className="mt-2.5 flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+        <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
           <span>{searchError}</span>
           {hasImage ? (
             <button
               type="button"
               className="shrink-0 font-medium underline underline-offset-2"
-              onClick={() => void runSearch()}
+              onClick={(e) => {
+                e.stopPropagation();
+                void runSearch();
+              }}
             >
               重试
             </button>
@@ -999,63 +1417,155 @@ function ShopProductCard({
         </div>
       ) : null}
 
-      {result && candidates && candidates.length === 0 ? (
-        <p className="mt-2.5 text-xs text-ink-muted">
-          Tangbuy 未召回相似货源，可稍后重试或更换商品。
-        </p>
-      ) : null}
-
-      {/* More candidates (session-only switch) */}
-      {candidates && candidates.length > 1 ? (
-        <div className="mt-2.5 border-t border-hairline pt-2.5">
-          <button
-            type="button"
-            className="flex items-center gap-1 text-[11px] font-medium text-ink-muted hover:text-ink"
-            onClick={() => setExpanded((v) => !v)}
-          >
-            {expanded ? (
-              <ChevronUp className="h-3.5 w-3.5" />
+      {/* Candidate tray */}
+      {trayOpen || searching ? (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+          <div className="flex items-center justify-between gap-2">
+            {trayOpen && !searching ? (
+              <button
+                type="button"
+                className="shrink-0 text-[11px] font-medium text-slate-600 underline underline-offset-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTrayOpen(false);
+                }}
+              >
+                收起
+              </button>
             ) : (
-              <ChevronDown className="h-3.5 w-3.5" />
+              <span className="text-[11px] text-slate-400">
+                {searching ? "匹配中…" : "候选"}
+              </span>
             )}
-            {expanded ? "收起候选" : `更多候选（${candidates.length - 1}）`}
-          </button>
+            <p className="min-w-0 flex-1 text-center text-[12px] font-semibold text-slate-800">
+              {searching
+                ? searchPhase ?? "正在搜索…"
+                : candidates && candidates.length > 0
+                  ? `${candidates.length} 个候选`
+                  : result
+                    ? "未召回候选"
+                    : "图搜候选"}
+            </p>
+            {trayOpen && !searching ? (
+              <button
+                type="button"
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                disabled={!hasImage}
+                title="刷新图搜"
+                aria-label="刷新图搜"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void runSearch();
+                }}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <span className="inline-block h-7 w-7 shrink-0" aria-hidden />
+            )}
+          </div>
 
-          {expanded ? (
-            <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-              {candidates.map((c, idx) => (
-                <button
-                  key={`${c.productId}-${idx}`}
-                  type="button"
-                  onClick={() => setCurrentIdx(idx)}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-[var(--radius-control)] border px-2 py-1.5 text-left transition-colors",
-                    idx === currentIdx
-                      ? "border-brand bg-surface"
-                      : "border-hairline bg-surface hover:border-hairline-strong"
-                  )}
-                >
-                  <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded border border-hairline bg-surface">
-                    {c.imageUrl ? (
-                      <Image
-                        src={c.imageUrl}
-                        alt={c.title || c.productId}
-                        fill
-                        sizes="36px"
-                        className="object-cover"
-                        unoptimized
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : null}
+          {candidates && candidates.length > 0 ? (
+            <div className="mt-2.5 flex items-stretch gap-2 overflow-x-auto pb-1">
+              {candidates.map((c, idx) => {
+                const signals = candidateSignals(c);
+                const score =
+                  matchScores[c.productId] ??
+                  normalizeMatchScore(c.similarityScore);
+                const isCurrent = idx === currentIdx;
+                const isBoundCand =
+                  boundOfferId != null && boundOfferId === c.productId;
+                const costCny = parseGatewayPrice(c.price);
+                const costTarget = costInTargetCurrency(costCny, template);
+                const costLabel =
+                  costTarget != null && targetCur
+                    ? `成本 ${formatTargetMoney(costTarget, targetCur)}`
+                    : `成本 ${formatCny(c.price)}`;
+                return (
+                  <div
+                    key={`${c.productId}-${idx}`}
+                    className={cn(
+                      "flex w-[11rem] shrink-0 flex-col rounded-lg border bg-white p-2",
+                      isCurrent ? "border-emerald-400" : "border-slate-200"
+                    )}
+                  >
+                    <div className="relative h-[4.5rem] w-full shrink-0 overflow-hidden rounded-md border border-slate-100 bg-slate-50">
+                      {c.imageUrl ? (
+                        <Image
+                          src={c.imageUrl}
+                          alt={c.title || c.productId}
+                          fill
+                          sizes="180px"
+                          className="object-contain"
+                          unoptimized
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : null}
+                      {idx === recommendedIdx ? (
+                        <span className="absolute left-1 top-1 rounded bg-emerald-600 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                          当前推荐
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1.5 line-clamp-2 min-h-[2rem] text-[11px] leading-4 text-slate-700">
+                      {c.title || "(无标题)"}
+                    </p>
+                    <p className="mt-1 shrink-0 text-[11px] font-semibold text-slate-900">
+                      {costLabel}
+                    </p>
+                    <div className="mt-1 flex min-h-[2.75rem] flex-wrap content-start gap-1">
+                      {score != null ? (
+                        <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
+                          匹配 {score}%
+                        </span>
+                      ) : null}
+                      {signals.slice(0, 2).map((s) => (
+                        <span
+                          key={s}
+                          className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-auto flex gap-1 pt-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 flex-1 px-1 text-[10px]"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCurrentIdx(idx);
+                        }}
+                      >
+                        查看
+                      </Button>
+                      {isBoundCand ? (
+                        <Button
+                          size="sm"
+                          className="h-7 flex-1 px-1 text-[10px]"
+                          disabled
+                        >
+                          已选用
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="h-7 flex-1 px-1 text-[10px]"
+                          disabled={confirmingId === c.productId}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCurrentIdx(idx);
+                            void confirmMatch(c);
+                          }}
+                        >
+                          选用
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-ink-muted">
-                    {c.title || "(无标题)"}
-                  </span>
-                  <span className="shrink-0 text-[11px] font-medium text-ink">
-                    {formatCny(c.price)}
-                  </span>
-                </button>
-              ))}
+                );
+              })}
             </div>
           ) : null}
         </div>

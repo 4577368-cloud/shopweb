@@ -1,6 +1,9 @@
+"use client";
+
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
+import { AssistantToggle } from "@/components/workbench/assistant-toggle";
 import { cn } from "@/lib/utils";
 
 interface Breadcrumb {
@@ -12,8 +15,14 @@ interface WorkbenchPanelProps {
   title: string;
   description?: string;
   breadcrumbs?: Breadcrumb[];
-  /** Top-right header actions (buttons/links). */
+  /** Top-right header actions (buttons/links). Primary CTA goes here. */
   actions?: ReactNode;
+  /**
+   * When set, renders a fixed {@link AssistantToggle} after {@link actions}
+   * (center header — not inside the right rail).
+   */
+  assistantOpen?: boolean;
+  onAssistantToggle?: () => void;
   /** Optional sticky footer, e.g. <StickyActionBar />. Pinned to the bottom of the center column. */
   footer?: ReactNode;
   /** Content max width in px (centered). Prototypes sit around 1080. */
@@ -32,10 +41,14 @@ export function WorkbenchPanel({
   description,
   breadcrumbs,
   actions,
+  assistantOpen,
+  onAssistantToggle,
   footer,
   maxWidth = 1080,
   children,
 }: WorkbenchPanelProps) {
+  const showAssistantToggle = typeof onAssistantToggle === "function";
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b border-hairline bg-canvas/80 px-[var(--wb-gutter)] pb-3 pt-4 backdrop-blur">
@@ -67,7 +80,17 @@ export function WorkbenchPanel({
                 </p>
               ) : null}
             </div>
-            {actions ? <div className="shrink-0">{actions}</div> : null}
+            {actions || showAssistantToggle ? (
+              <div className="flex shrink-0 items-center gap-2">
+                {actions}
+                {showAssistantToggle ? (
+                  <AssistantToggle
+                    open={assistantOpen ?? true}
+                    onToggle={onAssistantToggle}
+                  />
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </header>

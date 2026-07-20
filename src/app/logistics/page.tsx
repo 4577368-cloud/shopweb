@@ -7,6 +7,7 @@ import { ArrowRight, Loader2, RefreshCw } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
+import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import {
   AssistantRail,
   CopilotCard,
@@ -50,6 +51,7 @@ function LogisticsContent() {
   const { shop, isAuthorized, saveLogistics, showToast, skuReadyForNext } =
     useOnboarding();
   const shopName = shop.name;
+  const wb = useWorkbenchPage("logistics");
 
   const [analysis, setAnalysis] = useState<LogisticsAnalysis | null>(null);
   const [template, setTemplate] = useState<LogisticsTemplate | null>(null);
@@ -227,12 +229,19 @@ function LogisticsContent() {
       <WorkbenchShell
         sidebar={<StepSidebar />}
         rail={
-          <AssistantRail>
-            <CopilotCard heading="AI 物流顾问" content={ai} />
-          </AssistantRail>
+          <AssistantRail
+            assistantContent={
+              <CopilotCard heading="AI 物流顾问" content={ai} />
+            }
+          />
         }
+        {...wb.shellProps}
       >
-        <WorkbenchPanel title="物流选择" breadcrumbs={BREADCRUMBS}>
+        <WorkbenchPanel
+          title="物流选择"
+          breadcrumbs={BREADCRUMBS}
+          {...wb.panelProps}
+        >
           <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-6 text-sm text-ink-muted">
             请先完成店铺授权。
             <Link
@@ -251,25 +260,30 @@ function LogisticsContent() {
     <WorkbenchShell
       sidebar={<StepSidebar />}
       rail={
-        <AssistantRail>
-          <CopilotCard
-            heading="AI 物流顾问"
-            content={ai}
-            onNextAction={(action) => {
-              if (action === "save-sync") void handleSave(true);
-            }}
-          />
-          <InfoCard title="下一步">
-            保存模板后进入「同步到店铺」。线路与运费推荐将在 Phase 2
-            基于本模板与已归类类型生成。
-          </InfoCard>
-        </AssistantRail>
+        <AssistantRail
+          assistantContent={
+            <>
+              <CopilotCard
+                heading="AI 物流顾问"
+                content={ai}
+                onNextAction={(action) => {
+                  if (action === "save-sync") void handleSave(true);
+                }}
+              />
+              <InfoCard title="下一步">
+                保存模板后进入「同步到店铺」。线路与运费推荐将在 Phase 2
+                基于本模板与已归类类型生成。
+              </InfoCard>
+            </>
+          }
+        />
       }
+      {...wb.shellProps}
     >
       <WorkbenchPanel
         title="物流选择"
-        description="直接使用前序已关联商品做物流类型归类，并配置一套店铺策略模板。"
         breadcrumbs={BREADCRUMBS}
+        {...wb.panelProps}
         actions={
           <Button
             size="sm"

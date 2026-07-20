@@ -10,8 +10,8 @@ import {
   SkipForward,
   AlertTriangle,
 } from "lucide-react";
-import { AppShell } from "@/components/layout/app-shell";
-import { PageHeader } from "@/components/layout/page-header";
+import { WorkbenchPageFrame } from "@/components/workbench/workbench-page";
+import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
 import { MetricCard } from "@/components/layout/metric-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,8 +80,7 @@ export default function SyncPage() {
           "同步过程约数秒（原型模拟）",
         ],
         nextAction: {
-          label:
-            phase === "syncing" ? "同步中…" : "开始同步到店铺",
+          label: phase === "syncing" ? "同步中…" : "开始同步到店铺",
           action: "sync",
           disabled: phase === "syncing",
           disabledReason: "正在写入店铺配置，请稍候。",
@@ -145,28 +144,28 @@ export default function SyncPage() {
   };
 
   return (
-    <AppShell
-      ai={ai}
-      onNextAction={(action) => {
-        if (action === "sync") startSync();
-      }}
+    <WorkbenchPageFrame
+      pageKey="sync"
+      title="同步到店铺"
+      breadcrumbs={[
+        { label: "工作台", href: "/" },
+        { label: "同步到店铺" },
+      ]}
+      actions={primaryCta()}
+      rail={
+        <AssistantRail
+          assistantContent={
+            <CopilotCard
+              heading="AI 同步顾问"
+              content={ai}
+              onNextAction={(action) => {
+                if (action === "sync") startSync();
+              }}
+            />
+          }
+        />
+      }
     >
-      <PageHeader
-        title="同步到店铺"
-        description={
-          phase === "completed"
-            ? "同步结果如下。成功项已生效；跳过与异常项需单独处理。"
-            : phase === "ready" || phase === "syncing"
-              ? "前置条件已满足，可以执行同步。"
-              : "请先完成物流确认等前置步骤，再执行同步。"
-        }
-        breadcrumbs={[
-          { label: "工作台", href: "/" },
-          { label: "同步到店铺" },
-        ]}
-        actions={primaryCta()}
-      />
-
       {phase === "blocked" ? (
         <Card className="mb-3 border-amber-200 bg-amber-50/40">
           <CardContent className="flex items-center gap-4 py-5">
@@ -215,7 +214,8 @@ export default function SyncPage() {
                 </Badge>
               </div>
               <p className="mt-1 text-sm text-slate-600">
-                {shop.name} 的商品映射与物流配置已就绪。点击「开始同步到店铺」写入配置。
+                {shop.name}{" "}
+                的商品映射与物流配置已就绪。点击「开始同步到店铺」写入配置。
               </p>
             </div>
           </CardContent>
@@ -345,6 +345,6 @@ export default function SyncPage() {
           </CardContent>
         </Card>
       ) : null}
-    </AppShell>
+    </WorkbenchPageFrame>
   );
 }

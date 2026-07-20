@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { api, readableError } from "@/lib/api";
+import { pickBestCandidateIndex } from "@/lib/agents/products/match-rank";
 import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
 import type { ScanTaskView } from "@/components/workbench/scan-stage";
 
@@ -135,8 +136,9 @@ export function useProductsScan(shopName: string) {
           if (!p) return;
           const name = p.title ?? p.thirdPlatformItemId;
           try {
-            const res = await api.imageSearch(shopName, p.thirdPlatformItemId, 4);
-            const cand = res.items?.[0];
+            const res = await api.imageSearch(shopName, p.thirdPlatformItemId, 5);
+            const bestIdx = pickBestCandidateIndex(res.items ?? []);
+            const cand = res.items?.[bestIdx];
             if (!cand) {
               pushRecent(`${name}：未召回货源`);
             } else {

@@ -277,6 +277,8 @@ export interface AiNextAction {
   action?: string;
   disabled?: boolean;
   disabledReason?: string;
+  /** Optional body under 「下一步」; falls back to a generic continue hint. */
+  description?: string;
 }
 
 export interface AiPanelContent {
