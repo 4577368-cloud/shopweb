@@ -78,12 +78,13 @@ export function useProductsScan(shopName: string) {
     patch(TASK_IDS.link, { status: "running" });
     try {
       const r = await api.backfillPublishedBindings(shopName);
-      const total = r.linked + r.alreadyLinked;
+      const total = r.linked + r.replaced + r.alreadyLinked;
       patch(TASK_IDS.link, {
         status: "done",
         resultText:
           total > 0
-            ? `${total} 个来自 Tangbuy 商城的商品已 1:1 关联`
+            ? `${total} 个来自 Tangbuy 商城的商品已 1:1 关联` +
+              (r.replaced > 0 ? `（修正 ${r.replaced} 个误绑）` : "")
             : "暂无从 Tangbuy 商城上架的商品",
       });
     } catch (err) {

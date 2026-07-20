@@ -166,6 +166,7 @@ export const api = {
     request<{
       total: number;
       linked: number;
+      replaced: number;
       alreadyLinked: number;
       skipped: number;
       failed: number;
