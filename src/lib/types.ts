@@ -182,6 +182,69 @@ export interface LogisticsPlan {
   batteryNote?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Logistics Phase 1 — strategy template + product type analysis (not lane UI).
+// ---------------------------------------------------------------------------
+
+export type LogisticsTypeCode =
+  | "GENERAL"
+  | "APPAREL"
+  | "FOOD"
+  | "BATTERY_MAGNETIC"
+  | "BLADE"
+  | "OTHER";
+
+export type PackagingType = "MINIMAL" | "CARTON";
+export type LogisticsSpeedPreference = "ECONOMY" | "FAST" | "BALANCED";
+
+export interface MarketSelection {
+  marketGroupId: string;
+  countryCodes: string[];
+}
+
+export interface LogisticsTemplate {
+  shopName: string;
+  packaging: PackagingType;
+  speedPreference: LogisticsSpeedPreference;
+  markets: MarketSelection[];
+  defaultTemplate?: boolean;
+  updatedAt?: string | null;
+}
+
+export interface LogisticsTemplateUpsert {
+  shopName: string;
+  packaging: PackagingType;
+  speedPreference: LogisticsSpeedPreference;
+  markets: MarketSelection[];
+}
+
+export interface ProductLogisticsProfile {
+  thirdPlatformItemId: string;
+  title?: string | null;
+  logisticsType: LogisticsTypeCode;
+  logisticsTypeLabel: string;
+  confidence: number;
+  signals: string[];
+  classifySource: string;
+  reviewed: boolean;
+}
+
+export interface LogisticsTypeCount {
+  type: LogisticsTypeCode;
+  label: string;
+  count: number;
+}
+
+export interface LogisticsAnalysis {
+  shopName: string;
+  status: string;
+  analyzedCount: number;
+  skippedUnboundCount: number;
+  distribution: LogisticsTypeCount[];
+  highRiskTypes: LogisticsTypeCode[];
+  profiles: ProductLogisticsProfile[];
+}
+
 export interface SyncResultItem {
   id: string;
   title: string;

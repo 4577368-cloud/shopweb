@@ -8,9 +8,14 @@ import type {
   ConfirmImageMatchRequest,
   ImageBindingView,
   ImageSearchResult,
+  LogisticsAnalysis,
+  LogisticsTemplate,
+  LogisticsTemplateUpsert,
+  LogisticsTypeCode,
   OfferDetail,
   PricingTemplate,
   PricingTemplateUpsert,
+  ProductLogisticsProfile,
   ProductSyncResult,
   PublishResult,
   ShopMirrorProduct,
@@ -309,6 +314,46 @@ export const api = {
       { method: "POST" }
     );
   },
+
+  /** Phase 1: classify bound products' logistics types (rule/keyword). */
+  analyzeLogistics: (shop: string, force = false) => {
+    const params = new URLSearchParams({
+      shopName: shop,
+      force: String(force),
+    });
+    return request<LogisticsAnalysis>(
+      `/api/plugin/logistics/analyze?${params.toString()}`,
+      { method: "POST" }
+    );
+  },
+
+  getLogisticsAnalysis: (shop: string) =>
+    request<LogisticsAnalysis>(
+      `/api/plugin/logistics/analysis?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  correctLogisticsType: (
+    shop: string,
+    thirdPlatformItemId: string,
+    logisticsType: LogisticsTypeCode
+  ) =>
+    request<ProductLogisticsProfile>("/api/plugin/logistics/correct-type", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shopName: shop, thirdPlatformItemId, logisticsType }),
+    }),
+
+  getLogisticsTemplate: (shop: string) =>
+    request<LogisticsTemplate>(
+      `/api/plugin/logistics/template?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  upsertLogisticsTemplate: (body: LogisticsTemplateUpsert) =>
+    request<LogisticsTemplate>("/api/plugin/logistics/template", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
 
   /**
    * Upload an image to Tangbuy OSS via the same-origin Next.js proxy (/api/oss/upload) and get back

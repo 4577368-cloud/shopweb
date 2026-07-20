@@ -1,58 +1,164 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import { Check } from "lucide-react";
-import { AppShell } from "@/components/layout/app-shell";
-import { PageHeader } from "@/components/layout/page-header";
-import { Button } from "@/components/ui/button";
-import { Input, Field, CheckboxRow } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  countryOptions,
-  mockLogisticsPlans,
-  speedOptions,
-} from "@/data/mock";
-import { useOnboarding } from "@/context/onboarding-context";
-import type { AiPanelContent } from "@/lib/types";
-import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRight, Loader2, RefreshCw } from "lucide-react";
+import { WorkbenchShell } from "@/components/workbench/workbench-shell";
+import { StepSidebar } from "@/components/workbench/step-sidebar";
+import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
+import {
+  AssistantRail,
+  CopilotCard,
+} from "@/components/workbench/assistant-rail";
+import { InfoCard } from "@/components/workbench/info-card";
+import { StickyActionBar } from "@/components/workbench/sticky-action-bar";
+import { Button } from "@/components/ui/button";
+import { LogisticsTypeSummary } from "@/components/logistics/logistics-type-summary";
+import { LogisticsTemplateForm } from "@/components/logistics/logistics-template-form";
+import { codesFromSelections } from "@/components/logistics/market-multi-select";
+import { useOnboarding } from "@/context/onboarding-context";
+import { api, readableError } from "@/lib/api";
+import { countryLabel } from "@/lib/logistics/markets";
+import type {
+  AiPanelContent,
+  LogisticsAnalysis,
+  LogisticsTemplate,
+  LogisticsTypeCode,
+} from "@/lib/types";
 
-export default function LogisticsPage() {
+const BREADCRUMBS = [
+  { label: "工作台", href: "/" },
+  { label: "SKU 对齐", href: "/sku-align" },
+  { label: "物流选择" },
+];
+
+const DEFAULT_TEMPLATE = (shopName: string): LogisticsTemplate => ({
+  shopName,
+  packaging: "MINIMAL",
+  speedPreference: "BALANCED",
+  markets: [{ marketGroupId: "north_america", countryCodes: ["US"] }],
+  defaultTemplate: true,
+});
+
+/**
+ * Logistics Phase 1: reuse bindings already persisted from 选品 / SKU 对齐.
+ * No product re-sync / re-read scan — only classify types + configure the strategy template.
+ */
+function LogisticsContent() {
   const router = useRouter();
-  const {
-    logisticsForm,
-    updateLogisticsForm,
-    selectedLogisticsPlanId,
-    setSelectedLogisticsPlanId,
-    saveLogistics,
-    isAuthorized,
-    skuReadyForNext,
-  } = useOnboarding();
+  const { shop, isAuthorized, saveLogistics, showToast, skuReadyForNext } =
+    useOnboarding();
+  const shopName = shop.name;
 
-  const battery = logisticsForm.batteryIncluded;
+  const [analysis, setAnalysis] = useState<LogisticsAnalysis | null>(null);
+  const [template, setTemplate] = useState<LogisticsTemplate | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [classifying, setClassifying] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [correctingId, setCorrectingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const availablePlans = useMemo(
-    () =>
-      mockLogisticsPlans.map((plan) => ({
-        ...plan,
-        blocked: battery && !plan.supportsBattery,
-      })),
-    [battery]
+  const load = useCallback(
+    async (forceClassify: boolean) => {
+      setLoading(true);
+      setError(null);
+      try {
+        setClassifying(true);
+        // Uses existing shop_product_binding + product mirror — does not pull Shopify again.
+        const [a, t] = await Promise.all([
+          forceClassify
+            ? api.analyzeLogistics(shopName, true)
+            : api.analyzeLogistics(shopName, false),
+          api.getLogisticsTemplate(shopName),
+        ]);
+        setAnalysis(a);
+        setTemplate(t);
+      } catch (err) {
+        setError(readableError(err));
+        setTemplate((prev) => prev ?? DEFAULT_TEMPLATE(shopName));
+      } finally {
+        setClassifying(false);
+        setLoading(false);
+      }
+    },
+    [shopName]
   );
 
-  const selectedPlan =
-    availablePlans.find((p) => p.id === selectedLogisticsPlanId) ??
-    availablePlans[0];
-
   useEffect(() => {
-    if (selectedPlan?.blocked) {
-      const fallback = availablePlans.find((p) => !p.blocked);
-      if (fallback) setSelectedLogisticsPlanId(fallback.id);
+    if (!isAuthorized) return;
+    void load(false);
+  }, [isAuthorized, load]);
+
+  const handleCorrect = async (itemId: string, type: LogisticsTypeCode) => {
+    if (correctingId) return;
+    setCorrectingId(itemId);
+    try {
+      const updated = await api.correctLogisticsType(shopName, itemId, type);
+      setAnalysis((prev) => {
+        if (!prev) return prev;
+        const profiles = prev.profiles.map((p) =>
+          p.thirdPlatformItemId === itemId ? { ...p, ...updated } : p
+        );
+        const counts = new Map<string, { label: string; count: number }>();
+        for (const p of profiles) {
+          const cur = counts.get(p.logisticsType) ?? {
+            label: p.logisticsTypeLabel,
+            count: 0,
+          };
+          cur.count += 1;
+          cur.label = p.logisticsTypeLabel;
+          counts.set(p.logisticsType, cur);
+        }
+        const distribution = Array.from(counts.entries()).map(([t, v]) => ({
+          type: t as LogisticsTypeCode,
+          label: v.label,
+          count: v.count,
+        }));
+        const highRiskTypes = profiles
+          .map((p) => p.logisticsType)
+          .filter(
+            (t, i, arr) =>
+              (t === "BATTERY_MAGNETIC" || t === "FOOD" || t === "BLADE") &&
+              arr.indexOf(t) === i
+          );
+        return { ...prev, profiles, distribution, highRiskTypes };
+      });
+      showToast("已修正物流类型");
+    } catch (err) {
+      showToast(readableError(err));
+    } finally {
+      setCorrectingId(null);
     }
-  }, [selectedPlan, availablePlans, setSelectedLogisticsPlanId]);
+  };
+
+  const handleSave = async (goSync = false) => {
+    if (!template || saving) return;
+    const codes = codesFromSelections(template.markets);
+    if (codes.length === 0) {
+      setSaveError("请至少选择一个销售国家");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const saved = await api.upsertLogisticsTemplate({
+        shopName,
+        packaging: template.packaging,
+        speedPreference: template.speedPreference,
+        markets: template.markets,
+      });
+      setTemplate(saved);
+      saveLogistics();
+      showToast("物流模板已保存");
+      if (goSync) router.push("/sync");
+    } catch (err) {
+      setSaveError(readableError(err));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const ai: AiPanelContent = useMemo(() => {
     if (!isAuthorized) {
@@ -63,284 +169,181 @@ export default function LogisticsPage() {
         nextAction: { label: "去授权店铺", href: "/authorize" },
       };
     }
-
-    const bullets = [
-      `当前方案：${selectedPlan.name} · ${selectedPlan.etaDays}`,
-      `预估运费 ${selectedPlan.estimatedFee}`,
-      logisticsForm.autoTracking
-        ? "已开启轨迹自动回传到 Shopify"
-        : "未开启轨迹回传，签收状态需人工维护",
-    ];
-
+    if (loading || classifying) {
+      return {
+        title: "正在归类物流类型",
+        summary:
+          "直接使用选品 / SKU 对齐已落库的关联关系，按标题规则识别普货、服装、带电等类型。",
+        bullets: ["不再重新同步店铺商品", "识别结果可手动修正", "接着配置物流策略模板"],
+      };
+    }
+    const dist = (analysis?.distribution ?? [])
+      .slice(0, 4)
+      .map((d) => `${d.label} ${d.count}`)
+      .join(" · ");
+    const countries = codesFromSelections(template?.markets ?? [])
+      .slice(0, 4)
+      .map(countryLabel)
+      .join("、");
     const alerts = [];
-    if (battery) {
+    if (!skuReadyForNext) {
       alerts.push({
-        id: "battery",
-        text: "已勾选带电 / 磁吸：经济海派小包不可用，请使用支持带电的专线。",
+        id: "sku",
+        text: "部分商品可能尚未完成 SKU 对齐；仍可先配置物流模板。",
       });
     }
-    if (logisticsForm.maxShippingFee < 5) {
+    if ((analysis?.highRiskTypes?.length ?? 0) > 0) {
       alerts.push({
-        id: "fee",
-        text: `最大可接受运费 $${logisticsForm.maxShippingFee} 可能低于标准专线下限，请确认或调高。`,
+        id: "risk",
+        text: "检测到带电 / 食品 / 刀具等特殊类型，后续线路匹配会更严格。",
       });
     }
-    if (!logisticsForm.autoTracking) {
-      alerts.push({
-        id: "tracking",
-        text: "未勾选自动回传轨迹：订单履约状态不会写回 Shopify。",
-      });
-    }
-
     return {
-      title: "物流确认",
-      summary: battery
-        ? "带电商品已启用合规渠道过滤。确认偏好后保存，将进入店铺同步。"
-        : "按近 30 天订单目的地，默认推荐美线标准专线。确认后保存并进入同步。",
-      bullets,
-      alerts: alerts.length ? alerts : undefined,
-      nextAction: {
-        label: "保存并进入同步",
-        action: "save",
-      },
+      title: "物流策略顾问",
+      summary:
+        "已基于现有关联完成归类。请确认包装、销售市场与时效偏好。",
+      bullets: [
+        analysis
+          ? `基于 ${analysis.analyzedCount} 个已关联商品`
+          : "暂无已关联商品",
+        dist ? `类型分布：${dist}` : "暂无类型分布",
+        countries ? `销售市场：${countries}` : "尚未选择销售市场",
+        "模板将作为后续线路与报价推荐的输入（本页暂不展示线路）",
+      ],
+      alerts,
+      nextAction: { label: "保存并进入同步", action: "save-sync" },
     };
   }, [
-    battery,
     isAuthorized,
-    logisticsForm.autoTracking,
-    logisticsForm.maxShippingFee,
-    selectedPlan,
+    loading,
+    classifying,
+    analysis,
+    template,
+    skuReadyForNext,
   ]);
-
-  const handleSave = () => {
-    saveLogistics();
-    router.push("/sync");
-  };
 
   if (!isAuthorized) {
     return (
-      <AppShell ai={ai}>
-        <PageHeader
-          title="确认物流"
-          description="请先完成店铺授权。"
-          actions={
-            <Link href="/authorize">
-              <Button>去授权店铺</Button>
+      <WorkbenchShell
+        sidebar={<StepSidebar />}
+        rail={
+          <AssistantRail>
+            <CopilotCard heading="AI 物流顾问" content={ai} />
+          </AssistantRail>
+        }
+      >
+        <WorkbenchPanel title="物流选择" breadcrumbs={BREADCRUMBS}>
+          <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-6 text-sm text-ink-muted">
+            请先完成店铺授权。
+            <Link
+              href="/authorize"
+              className="ml-2 text-brand-strong hover:underline"
+            >
+              去授权
             </Link>
-          }
-        />
-      </AppShell>
+          </div>
+        </WorkbenchPanel>
+      </WorkbenchShell>
     );
   }
 
   return (
-    <AppShell
-      ai={ai}
-      onNextAction={(action) => {
-        if (action === "save") handleSave();
-      }}
+    <WorkbenchShell
+      sidebar={<StepSidebar />}
+      rail={
+        <AssistantRail>
+          <CopilotCard
+            heading="AI 物流顾问"
+            content={ai}
+            onNextAction={(action) => {
+              if (action === "save-sync") void handleSave(true);
+            }}
+          />
+          <InfoCard title="下一步">
+            保存模板后进入「同步到店铺」。线路与运费推荐将在 Phase 2
+            基于本模板与已归类类型生成。
+          </InfoCard>
+        </AssistantRail>
+      }
     >
-      <PageHeader
-        title="确认物流"
-        description="选择默认履约方案与偏好。保存后写入店铺配置，并进入同步步骤。"
-        breadcrumbs={[
-          { label: "工作台", href: "/" },
-          { label: "确认物流" },
-        ]}
-      />
-
-      {!skuReadyForNext ? (
-        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
-          SKU 对齐尚未达到完成门槛。你可以先配置物流，但建议先处理完冲突项。
-          <Link href="/sku-align" className="ml-1 font-medium underline">
-            返回 SKU 对齐
-          </Link>
-        </div>
-      ) : null}
-
-      <div className="mb-3 grid grid-cols-3 gap-3">
-        {availablePlans.map((plan) => {
-          const selected = plan.id === selectedLogisticsPlanId;
-          return (
-            <button
-              key={plan.id}
-              type="button"
-              disabled={plan.blocked}
-              onClick={() => setSelectedLogisticsPlanId(plan.id)}
-              className={cn(
-                "flex h-[148px] flex-col rounded-lg border bg-white p-3.5 text-left transition-colors",
-                plan.blocked && "cursor-not-allowed opacity-50",
-                selected
-                  ? "border-teal-600 ring-1 ring-teal-600"
-                  : "border-slate-200 hover:border-slate-300"
-              )}
+      <WorkbenchPanel
+        title="物流选择"
+        description="直接使用前序已关联商品做物流类型归类，并配置一套店铺策略模板。"
+        breadcrumbs={BREADCRUMBS}
+        actions={
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void load(true)}
+            disabled={loading || classifying}
+            title="重新归类"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        }
+        footer={
+          <StickyActionBar
+            info={
+              analysis
+                ? `基于 ${analysis.analyzedCount} 个已关联商品`
+                : "配置物流策略模板"
+            }
+          >
+            <Button
+              variant="secondary"
+              onClick={() => router.push("/sku-align")}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {plan.name}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    {plan.carrier}
-                  </p>
-                </div>
-                {plan.blocked ? (
-                  <Badge variant="danger">不可用</Badge>
-                ) : plan.recommended ? (
-                  <Badge variant="teal">推荐</Badge>
-                ) : selected ? (
-                  <Badge variant="outline">已选</Badge>
-                ) : null}
-              </div>
-              <div className="mt-3 grid flex-1 grid-cols-2 gap-2 text-xs">
-                <div>
-                  <p className="text-[11px] text-slate-400">时效</p>
-                  <p className="text-sm font-medium text-slate-800">
-                    {plan.etaDays}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] text-slate-400">预估运费</p>
-                  <p className="text-sm font-medium text-slate-800">
-                    {plan.estimatedFee}
-                  </p>
-                </div>
-              </div>
-              <p className="mt-auto text-[11px] text-slate-500">
-                {plan.blocked ? plan.batteryNote : plan.coverage}
-              </p>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mb-3 flex items-center justify-between rounded-md border border-teal-200 bg-teal-50/60 px-3.5 py-2.5">
-        <div>
-          <p className="text-xs font-medium text-teal-900">当前已选方案</p>
-          <p className="mt-0.5 text-sm text-teal-950">
-            {selectedPlan.name} · {selectedPlan.carrier} · {selectedPlan.etaDays}{" "}
-            · {selectedPlan.estimatedFee}
-          </p>
-        </div>
-        <Badge variant="teal">已选</Badge>
-      </div>
-
-      {battery ? (
-        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
-          已勾选「带电 / 磁吸」：不支持带电的物流方案已禁用
-          {availablePlans.some((p) => p.blocked)
-            ? `（${availablePlans
-                .filter((p) => p.blocked)
-                .map((p) => p.name)
-                .join("、")}）`
-            : ""}
-          。系统已自动切到可用方案。
-        </div>
-      ) : null}
-
-      <Card className="mb-3">
-        <CardHeader>
-          <div>
-            <CardTitle>履约偏好</CardTitle>
-            <p className="mt-0.5 text-xs text-slate-500">
-              用于新订单的默认物流决策
-            </p>
+              返回 SKU 对齐
+            </Button>
+            <Button onClick={() => void handleSave(true)} disabled={saving}>
+              {saving ? "保存中…" : "保存并进入同步"}
+              <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+            </Button>
+          </StickyActionBar>
+        }
+      >
+        {loading && !analysis ? (
+          <div className="flex items-center gap-2 py-12 text-sm text-ink-subtle">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            正在按已有关联归类物流类型…
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-            <Field label="目标国家">
-              <Select
-                value={logisticsForm.targetCountry}
-                onChange={(e) =>
-                  updateLogisticsForm({ targetCountry: e.target.value })
-                }
-              >
-                {countryOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="时效偏好">
-              <Select
-                value={logisticsForm.speedPreference}
-                onChange={(e) =>
-                  updateLogisticsForm({
-                    speedPreference: e.target
-                      .value as typeof logisticsForm.speedPreference,
-                  })
-                }
-              >
-                {speedOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="最大可接受运费（USD）">
-              <Input
-                type="number"
-                min={1}
-                step={0.5}
-                value={logisticsForm.maxShippingFee}
-                onChange={(e) =>
-                  updateLogisticsForm({
-                    maxShippingFee: Number(e.target.value),
-                  })
-                }
+        ) : error && !analysis ? (
+          <div className="rounded-[var(--radius-card)] border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
+            {error}
+            <Button
+              size="sm"
+              variant="secondary"
+              className="ml-3"
+              onClick={() => void load(false)}
+            >
+              重试
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {analysis ? (
+              <LogisticsTypeSummary
+                analysis={analysis}
+                correctingId={correctingId}
+                onCorrect={(id, type) => void handleCorrect(id, type)}
               />
-            </Field>
-            <div className="flex flex-col gap-3">
-              <CheckboxRow
-                checked={logisticsForm.batteryIncluded}
-                onChange={(checked) =>
-                  updateLogisticsForm({ batteryIncluded: checked })
-                }
-              >
-                商品可能带电 / 含磁吸配件
-              </CheckboxRow>
-              <CheckboxRow
-                checked={logisticsForm.autoTracking}
-                onChange={(checked) =>
-                  updateLogisticsForm({ autoTracking: checked })
-                }
-              >
-                自动回传物流轨迹到 Shopify
-              </CheckboxRow>
-            </div>
+            ) : null}
+            {template ? (
+              <LogisticsTemplateForm
+                value={template}
+                saving={saving}
+                error={saveError}
+                onChange={setTemplate}
+                onSave={() => void handleSave(false)}
+              />
+            ) : null}
           </div>
-
-          <div className="mt-3 rounded-md border border-slate-100 bg-slate-50 px-3 py-2.5">
-            <p className="text-xs font-medium text-slate-700">方案要点</p>
-            <ul className="mt-1.5 space-y-1">
-              {selectedPlan.reasons.map((reason) => (
-                <li
-                  key={reason}
-                  className="flex gap-2 text-[11px] leading-4 text-slate-600"
-                >
-                  <Check className="mt-0.5 h-3 w-3 shrink-0 text-teal-700" />
-                  {reason}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3">
-        <div>
-          <p className="text-sm font-medium text-slate-800">
-            保存后进入店铺同步
-          </p>
-          <p className="mt-0.5 text-xs text-slate-500">
-            物流方案与履约规则将写入配置，不会在本页直接执行同步
-          </p>
-        </div>
-        <Button onClick={handleSave}>保存并进入同步</Button>
-      </div>
-    </AppShell>
+        )}
+      </WorkbenchPanel>
+    </WorkbenchShell>
   );
+}
+
+export default function LogisticsPage() {
+  return <LogisticsContent />;
 }

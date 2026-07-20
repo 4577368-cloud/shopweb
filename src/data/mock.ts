@@ -46,8 +46,8 @@ export const initialSteps: OnboardingStep[] = [
   {
     id: "logistics",
     order: 4,
-    title: "确认物流",
-    description: "设置履约与回传规则",
+    title: "物流选择",
+    description: "识别物流类型并配置策略模板",
     href: "/logistics",
     status: "not_started",
   },
