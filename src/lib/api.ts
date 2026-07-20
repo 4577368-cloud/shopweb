@@ -200,11 +200,23 @@ export const api = {
     ),
 
   /** Publish a single catalog candidate as a sellable Shopify product; idempotent server-side. */
-  publishCatalogItem: (shopName: string, candidateId: string) =>
+  publishCatalogItem: (
+    shopName: string,
+    candidateId: string,
+    snapshot?: {
+      title: string;
+      price?: number | null;
+      currency?: string | null;
+      imageUrl?: string | null;
+      tangbuyUrl?: string | null;
+      supplierShop?: string | null;
+      upstreamPlatform?: string | null;
+    }
+  ) =>
     request<PublishResult>("/api/plugin/catalog/publish", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ shopName, candidateId }),
+      body: JSON.stringify({ shopName, candidateId, ...snapshot }),
     }),
 
   /**

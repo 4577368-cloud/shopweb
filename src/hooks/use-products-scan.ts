@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { api, readableError } from "@/lib/api";
+import { fetchRecommendationsCount } from "@/lib/catalog-recommendations";
 import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
 import type { ScanTaskView } from "@/components/workbench/scan-stage";
 
@@ -180,7 +181,7 @@ export function useProductsScan(shopName: string) {
     // Step 4 — warm offline-catalog candidates (path B)
     patch(TASK_IDS.reco, { status: "running" });
     try {
-      const { count } = await api.getRecommendationsCount();
+      const count = await fetchRecommendationsCount();
       patch(TASK_IDS.reco, { status: "done", resultText: `Tangbuy 商城 ${count} 条可上架` });
     } catch (err) {
       patch(TASK_IDS.reco, { status: "failed", error: readableError(err) });

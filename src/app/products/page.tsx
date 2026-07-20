@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api } from "@/lib/api";
+import { fetchRecommendationsCount } from "@/lib/catalog-recommendations";
 import {
   ShopProductsPanel,
   type ShopFilter,
@@ -88,7 +89,7 @@ function SelectContent() {
     const [products, bindings, recCount, tpl] = await Promise.all([
       api.getShopProducts(shopName).catch(() => []),
       api.listImageBindings(shopName).catch(() => []),
-      api.getRecommendationsCount().catch(() => ({ count: 0 })),
+      fetchRecommendationsCount().catch(() => 0),
       api.getPricingTemplate(shopName).catch(() => null),
     ]);
     const confirmed = new Set<string>();
@@ -103,7 +104,7 @@ function SelectContent() {
       shopProducts: products.length,
       confirmedProducts: confirmed.size,
       pendingProducts: pending.size,
-      recommendations: recCount.count,
+      recommendations: recCount,
     });
   }, [shopName]);
 

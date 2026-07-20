@@ -18,6 +18,15 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
+import {
+  fetchRecommendations,
+  fetchRecommendationsCount,
+  repriceRecommendations,
+} from "@/lib/catalog-recommendations";
+import {
+  isMallGatewayConfigured,
+  toPublishSnapshot,
+} from "@/lib/tangbuy-mall-gateway";
 import type {
   CatalogRecommendation,
   PricingTemplate,
@@ -98,24 +107,42 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
   // Re-fetch every page currently on screen so estimatedSalePrice reflects a just-saved template,
   // without dropping the user's scroll depth.
   const loadRecommendations = useCallback(async () => {
+    if (!template) return;
+    if (isMallGatewayConfigured()) {
+      const pages = Math.max(1, Math.ceil(recommendations.length / PAGE_SIZE));
+      const collected: CatalogRecommendation[] = [];
+      for (let i = 0; i < pages; i++) {
+        collected.push(
+          ...(await fetchRecommendations(
+            shopName,
+            PAGE_SIZE,
+            i * PAGE_SIZE,
+            template
+          ))
+        );
+      }
+      setRecommendations(collected);
+      return;
+    }
     const pages = Math.max(1, Math.ceil(recommendations.length / PAGE_SIZE));
     const collected: CatalogRecommendation[] = [];
     for (let i = 0; i < pages; i++) {
       collected.push(
-        ...(await api.getRecommendations(shopName, PAGE_SIZE, i * PAGE_SIZE))
+        ...(await fetchRecommendations(shopName, PAGE_SIZE, i * PAGE_SIZE))
       );
     }
     setRecommendations(collected);
-  }, [shopName, recommendations.length]);
+  }, [shopName, recommendations.length, template]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore) return;
     setLoadingMore(true);
     try {
-      const next = await api.getRecommendations(
+      const next = await fetchRecommendations(
         shopName,
         PAGE_SIZE,
-        recommendations.length
+        recommendations.length,
+        template
       );
       setRecommendations((prev) => [...prev, ...next]);
     } catch (err) {
@@ -123,23 +150,23 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
     } finally {
       setLoadingMore(false);
     }
-  }, [shopName, recommendations.length, loadingMore]);
+  }, [shopName, recommendations.length, loadingMore, template]);
 
   const loadAll = useCallback(async () => {
     setPageLoading(true);
     setPageError(null);
     try {
-      const [tpl, items, cnt] = await Promise.all([
-        api.getPricingTemplate(shopName),
-        api.getRecommendations(shopName, PAGE_SIZE, 0),
-        api.getRecommendationsCount(),
+      const tpl = await api.getPricingTemplate(shopName);
+      const [items, cnt] = await Promise.all([
+        fetchRecommendations(shopName, PAGE_SIZE, 0, tpl),
+        fetchRecommendationsCount(),
       ]);
       setTemplate(tpl);
       const f = toForm(tpl);
       setForm(f);
       setBaseline(f);
       setRecommendations(items);
-      setTotal(cnt.count || items.length);
+      setTotal(cnt || items.length);
     } catch (err) {
       setPageError(readableError(err));
     } finally {
@@ -205,8 +232,11 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
       const f = toForm(saved);
       setForm(f);
       setBaseline(f);
-      // 保存成功后刷新推荐，让 estimatedSalePrice 按新模板重算。
-      await loadRecommendations();
+      if (isMallGatewayConfigured()) {
+        setRecommendations((prev) => repriceRecommendations(prev, saved));
+      } else {
+        await loadRecommendations();
+      }
       showToast("定价模板已保存，预估售价已按新模板重算");
     } catch (err) {
       setFormError(readableError(err));
@@ -235,7 +265,11 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
       [item.candidateId]: { loading: true },
     }));
     try {
-      const result = await api.publishCatalogItem(shopName, item.candidateId);
+      const result = await api.publishCatalogItem(
+        shopName,
+        item.candidateId,
+        isMallGatewayConfigured() ? toPublishSnapshot(item) : undefined
+      );
       setPublishState((prev) => ({
         ...prev,
         [item.candidateId]: { loading: false, result },
@@ -262,6 +296,7 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
       <div className="mb-3 flex items-center justify-between">
         <p className="text-xs text-ink-subtle">
           从 Tangbuy 商城选品，按定价模板推算售价后一键上架为可售商品。
+          {isMallGatewayConfigured() ? " · 目录由浏览器直连 Tangbuy 网关加载" : ""}
         </p>
         <Button
           variant="secondary"
