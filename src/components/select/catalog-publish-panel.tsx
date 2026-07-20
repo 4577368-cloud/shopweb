@@ -25,7 +25,7 @@ import type {
   PublishStatus,
 } from "@/lib/types";
 
-const PAGE_SIZE = 40;
+const PAGE_SIZE = 30;
 
 const ROUNDING_OPTIONS: { value: string; label: string }[] = [
   { value: "HALF_UP", label: "四舍五入 (HALF_UP)" },
