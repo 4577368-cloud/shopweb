@@ -418,13 +418,22 @@ export interface ShopProductDetail {
   media: ShopMirrorMedia[];
 }
 
-/** PUT /api/plugin/product/detail — Phase 2 write-back body. */
+/** PUT /api/plugin/product/detail — Phase 2–4 write-back body. */
+export interface ShopProductVariantUpdatePayload {
+  thirdPlatformSkuId: string;
+  price?: number | null;
+  inventoryQuantity?: number | null;
+}
+
 export interface ShopProductUpdatePayload {
   itemId: string;
   title?: string;
   description?: string;
   status?: string;
+  /** @deprecated Prefer variants[]; kept for back-compat. */
   defaultVariantPrice?: number | null;
+  /** Phase 4: per-variant price / inventory. */
+  variants?: ShopProductVariantUpdatePayload[];
   /** Mirror updatedAt from last GET; server returns 409 PRODUCT_CONFLICT on mismatch. */
   expectedUpdatedAt?: string | null;
   /** Skip concurrency check and overwrite Shopify. */

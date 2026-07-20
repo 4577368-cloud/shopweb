@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ApiError, api, readableError } from "@/lib/api";
-import type { ShopProductDetail } from "@/lib/types";
+import type {
+  ShopProductDetail,
+  ShopProductVariantUpdatePayload,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 8000;
@@ -56,13 +59,30 @@ function toHtml(text: string): string {
     .join("");
 }
 
+interface VariantEdit {
+  thirdPlatformSkuId: string;
+  price: string;
+  inventoryQuantity: string;
+}
+
+interface EditForm {
+  title: string;
+  description: string;
+  status: string;
+  variants: VariantEdit[];
+}
+
 function formFromDetail(d: ShopProductDetail): EditForm {
-  const firstPrice = d.variants?.[0]?.price;
   return {
     title: d.title ?? "",
     description: stripHtml(d.description),
     status: (d.status ?? "ACTIVE").toUpperCase(),
-    defaultVariantPrice: firstPrice != null ? String(firstPrice) : "",
+    variants: (d.variants ?? []).map((v) => ({
+      thirdPlatformSkuId: v.thirdPlatformSkuId,
+      price: v.price != null ? String(v.price) : "",
+      inventoryQuantity:
+        v.inventoryQuantity != null ? String(v.inventoryQuantity) : "",
+    })),
   };
 }
 
@@ -84,15 +104,22 @@ function isProductConflict(err: unknown): boolean {
   return /PRODUCT_CONFLICT|updated elsewhere|force overwrite/i.test(err.message);
 }
 
-interface EditForm {
-  title: string;
-  description: string;
-  status: string;
-  defaultVariantPrice: string;
+function variantsEqual(a: VariantEdit[], b: VariantEdit[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].thirdPlatformSkuId !== b[i].thirdPlatformSkuId ||
+      a[i].price !== b[i].price ||
+      a[i].inventoryQuantity !== b[i].inventoryQuantity
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
- * Shopify product detail drawer — Phase 2 edit + Phase 3 conflict UX.
+ * Shopify product detail drawer — Phase 2–4: edit + conflict UX + multi-variant write-back.
  */
 export function ShopProductDetailDrawer({
   open,
@@ -105,7 +132,6 @@ export function ShopProductDetailDrawer({
   shopName: string;
   itemId: string | null;
   onClose: () => void;
-  /** Called after a successful Shopify write-back so the list can refresh. */
   onSaved?: () => void;
 }) {
   const [loading, setLoading] = useState(false);
@@ -115,11 +141,9 @@ export function ShopProductDetailDrawer({
   const [detail, setDetail] = useState<ShopProductDetail | null>(null);
   const [form, setForm] = useState<EditForm | null>(null);
   const [baseline, setBaseline] = useState<EditForm | null>(null);
-  /** Mirror updatedAt when form baseline was last aligned (optimistic concurrency token). */
   const [baselineUpdatedAt, setBaselineUpdatedAt] = useState<string | null>(
     null
   );
-  /** Mirror changed while local edits are dirty (poll or 409). */
   const [conflict, setConflict] = useState(false);
 
   const dirtyRef = useRef(false);
@@ -193,14 +217,13 @@ export function ShopProductDetailDrawer({
       form.title !== baseline.title ||
       form.description !== baseline.description ||
       form.status !== baseline.status ||
-      form.defaultVariantPrice !== baseline.defaultVariantPrice
+      !variantsEqual(form.variants, baseline.variants)
     );
   }, [form, baseline]);
 
   dirtyRef.current = dirty;
   savingRef.current = saving;
 
-  // Phase 3: while the drawer is open, poll the mirror for webhook / Admin updates.
   useEffect(() => {
     if (!open || !itemId || loading || error) return;
     let cancelled = false;
@@ -211,7 +234,6 @@ export function ShopProductDetailDrawer({
         if (cancelled) return;
         if (sameUpdatedAt(d.updatedAt, mirrorUpdatedAtRef.current)) return;
         if (dirtyRef.current) {
-          // Keep form + baselineUpdatedAt; only refresh displayed mirror meta.
           setDetail(d);
           mirrorUpdatedAtRef.current = d.updatedAt;
           setConflict(true);
@@ -219,7 +241,7 @@ export function ShopProductDetailDrawer({
           applyDetail(d, true);
         }
       } catch {
-        // Ignore transient poll errors; save path still gates on expectedUpdatedAt.
+        // ignore poll errors
       }
     };
     const id = window.setInterval(() => {
@@ -236,10 +258,83 @@ export function ShopProductDetailDrawer({
     setSaveError(null);
   };
 
+  const patchVariant = (
+    skuId: string,
+    patch: Partial<Pick<VariantEdit, "price" | "inventoryQuantity">>
+  ) => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        variants: prev.variants.map((v) =>
+          v.thirdPlatformSkuId === skuId ? { ...v, ...patch } : v
+        ),
+      };
+    });
+    setSaveError(null);
+  };
+
   const handleReload = () => {
     if (!detail) return;
     applyDetail(detail, true);
     onSaved?.();
+  };
+
+  const buildVariantPayload = ():
+    | { ok: true; variants: ShopProductVariantUpdatePayload[] }
+    | { ok: false; error: string } => {
+    if (!form || !baseline) return { ok: true, variants: [] };
+    const out: ShopProductVariantUpdatePayload[] = [];
+    for (let i = 0; i < form.variants.length; i++) {
+      const cur = form.variants[i];
+      const base = baseline.variants[i];
+      if (!base || cur.thirdPlatformSkuId !== base.thirdPlatformSkuId) {
+        return { ok: false, error: "变体列表已变化，请重新加载后再编辑" };
+      }
+      const priceChanged = cur.price.trim() !== base.price.trim();
+      const invChanged =
+        cur.inventoryQuantity.trim() !== base.inventoryQuantity.trim();
+      if (!priceChanged && !invChanged) continue;
+
+      const row: ShopProductVariantUpdatePayload = {
+        thirdPlatformSkuId: cur.thirdPlatformSkuId,
+      };
+      if (priceChanged) {
+        if (!cur.price.trim()) {
+          return { ok: false, error: `变体价格不能为空（${cur.thirdPlatformSkuId}）` };
+        }
+        const n = Number(cur.price.trim());
+        if (!Number.isFinite(n) || n < 0) {
+          return {
+            ok: false,
+            error: `变体价格须为 ≥ 0 的数字（${optionLabel(
+              detail?.variants?.[i] ?? {}
+            )}）`,
+          };
+        }
+        row.price = n;
+      }
+      if (invChanged) {
+        if (!cur.inventoryQuantity.trim()) {
+          return {
+            ok: false,
+            error: `库存不能为空（${optionLabel(detail?.variants?.[i] ?? {})}）`,
+          };
+        }
+        const n = Number(cur.inventoryQuantity.trim());
+        if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+          return {
+            ok: false,
+            error: `库存须为 ≥ 0 的整数（${optionLabel(
+              detail?.variants?.[i] ?? {}
+            )}）`,
+          };
+        }
+        row.inventoryQuantity = n;
+      }
+      out.push(row);
+    }
+    return { ok: true, variants: out };
   };
 
   const handleSave = async (force = false) => {
@@ -249,19 +344,10 @@ export function ShopProductDetailDrawer({
       setSaveError("标题不能为空");
       return;
     }
-    let price: number | null | undefined = undefined;
-    const priceRaw = form.defaultVariantPrice.trim();
-    if (priceRaw !== (baseline?.defaultVariantPrice ?? "").trim()) {
-      if (!priceRaw) {
-        setSaveError("默认变体价格不能为空");
-        return;
-      }
-      const n = Number(priceRaw);
-      if (!Number.isFinite(n) || n < 0) {
-        setSaveError("默认变体价格须为 ≥ 0 的数字");
-        return;
-      }
-      price = n;
+    const variantResult = buildVariantPayload();
+    if (!variantResult.ok) {
+      setSaveError(variantResult.error);
+      return;
     }
 
     setSaving(true);
@@ -272,7 +358,9 @@ export function ShopProductDetailDrawer({
         title,
         description: toHtml(form.description),
         status: form.status,
-        ...(price !== undefined ? { defaultVariantPrice: price } : {}),
+        ...(variantResult.variants.length
+          ? { variants: variantResult.variants }
+          : {}),
         expectedUpdatedAt: baselineUpdatedAt,
         ...(force ? { force: true } : {}),
       });
@@ -325,7 +413,7 @@ export function ShopProductDetailDrawer({
               {detail?.title || (loading ? "加载中…" : "商品详情")}
             </h2>
             <p className="mt-1 text-[11px] text-ink-muted">
-              阶段 3 · 编辑同步 + 冲突检测
+              阶段 4 · 多变体价格 / 库存写回
             </p>
           </div>
           <Button
@@ -449,106 +537,123 @@ export function ShopProductDetailDrawer({
                     <option value="ARCHIVED">ARCHIVED（归档）</option>
                   </Select>
                 </Field>
-                <Field label={`默认变体价格（${detail.currency || "店铺币种"}）`}>
-                  <Input
-                    value={form.defaultVariantPrice}
-                    onChange={(e) =>
-                      patchForm({ defaultVariantPrice: e.target.value })
-                    }
-                    disabled={saving || (detail.variants?.length ?? 0) === 0}
-                    inputMode="decimal"
-                    placeholder={
-                      (detail.variants?.length ?? 0) === 0
-                        ? "无变体镜像，请先同步商品"
-                        : undefined
-                    }
-                  />
-                </Field>
                 <Field label="描述（纯文本，保存时转为 HTML）">
                   <textarea
                     value={form.description}
                     onChange={(e) => patchForm({ description: e.target.value })}
                     disabled={saving}
-                    rows={6}
+                    rows={5}
                     className="w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
                   />
                 </Field>
-                {saveError ? (
-                  <div className="rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                    {saveError}
-                  </div>
-                ) : null}
-                <div className="flex items-center justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={!dirty || saving}
-                    onClick={() => {
-                      if (conflict && detail) {
-                        applyDetail(detail, true);
-                        return;
-                      }
-                      if (baseline) setForm(baseline);
-                      setSaveError(null);
-                    }}
-                  >
-                    {conflict ? "放弃并重新加载" : "重置"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={!dirty || saving || conflict}
-                    onClick={() => void handleSave(false)}
-                  >
-                    {saving ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    {saving ? "同步中…" : "保存并同步到 Shopify"}
-                  </Button>
-                </div>
               </section>
 
               <section>
                 <h3 className="text-xs font-semibold text-ink">
-                  变体（{detail.variants?.length ?? 0}）
+                  变体价格 / 库存（{form.variants.length}）
                 </h3>
-                {(detail.variants?.length ?? 0) === 0 ? (
-                  <p className="mt-1.5 text-xs text-ink-subtle">暂无变体镜像</p>
+                <p className="mt-1 text-[11px] text-ink-subtle">
+                  库存写入店铺第一个启用地点；未追踪库存的变体会自动开启追踪。
+                </p>
+                {form.variants.length === 0 ? (
+                  <p className="mt-1.5 text-xs text-ink-subtle">
+                    暂无变体镜像，请先同步商品
+                  </p>
                 ) : (
-                  <div className="mt-1.5 overflow-hidden rounded-[var(--radius-control)] border border-hairline">
-                    <table className="w-full text-left text-[11px]">
+                  <div className="mt-1.5 overflow-x-auto rounded-[var(--radius-control)] border border-hairline">
+                    <table className="w-full min-w-[22rem] text-left text-[11px]">
                       <thead className="bg-surface-muted text-ink-muted">
                         <tr>
                           <th className="px-2.5 py-1.5 font-medium">规格</th>
                           <th className="px-2.5 py-1.5 font-medium">SKU</th>
-                          <th className="px-2.5 py-1.5 font-medium">价格</th>
+                          <th className="px-2.5 py-1.5 font-medium">
+                            价格（{detail.currency || "币种"}）
+                          </th>
                           <th className="px-2.5 py-1.5 font-medium">库存</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {detail.variants.map((v) => (
-                          <tr
-                            key={v.thirdPlatformSkuId}
-                            className="border-t border-hairline"
-                          >
-                            <td className="max-w-[8rem] truncate px-2.5 py-1.5 text-ink">
-                              {optionLabel(v)}
-                            </td>
-                            <td className="max-w-[6rem] truncate px-2.5 py-1.5 text-ink-muted">
-                              {v.sku || "—"}
-                            </td>
-                            <td className="px-2.5 py-1.5 text-ink">
-                              {money(v.price, detail.currency)}
-                            </td>
-                            <td className="px-2.5 py-1.5 text-ink-muted">
-                              {v.inventoryQuantity ?? "—"}
-                            </td>
-                          </tr>
-                        ))}
+                        {form.variants.map((row, idx) => {
+                          const meta = detail.variants[idx];
+                          return (
+                            <tr
+                              key={row.thirdPlatformSkuId}
+                              className="border-t border-hairline"
+                            >
+                              <td className="max-w-[7rem] truncate px-2.5 py-1.5 text-ink">
+                                {meta ? optionLabel(meta) : "—"}
+                              </td>
+                              <td className="max-w-[5rem] truncate px-2.5 py-1.5 text-ink-muted">
+                                {meta?.sku || "—"}
+                              </td>
+                              <td className="px-2 py-1">
+                                <Input
+                                  value={row.price}
+                                  onChange={(e) =>
+                                    patchVariant(row.thirdPlatformSkuId, {
+                                      price: e.target.value,
+                                    })
+                                  }
+                                  disabled={saving}
+                                  inputMode="decimal"
+                                  className="h-8 text-xs"
+                                />
+                              </td>
+                              <td className="px-2 py-1">
+                                <Input
+                                  value={row.inventoryQuantity}
+                                  onChange={(e) =>
+                                    patchVariant(row.thirdPlatformSkuId, {
+                                      inventoryQuantity: e.target.value,
+                                    })
+                                  }
+                                  disabled={saving}
+                                  inputMode="numeric"
+                                  className="h-8 text-xs"
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 )}
               </section>
+
+              {saveError ? (
+                <div className="rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {saveError}
+                </div>
+              ) : null}
+
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!dirty || saving}
+                  onClick={() => {
+                    if (conflict && detail) {
+                      applyDetail(detail, true);
+                      return;
+                    }
+                    if (baseline) setForm(baseline);
+                    setSaveError(null);
+                  }}
+                >
+                  {conflict ? "放弃并重新加载" : "重置"}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!dirty || saving || conflict}
+                  onClick={() => void handleSave(false)}
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  {saving ? "同步中…" : "保存并同步到 Shopify"}
+                </Button>
+              </div>
 
               {(detail.media?.length ?? 0) > 0 ? (
                 <section>
