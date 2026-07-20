@@ -345,14 +345,17 @@ function SelectContent() {
           </div>
 
           {tab === "shop" ? (
-            <ShopProductsPanel
-              onActivity={loadSummary}
-              filter={shopFilter}
-              onFilterChange={setShopFilter}
-            />
-          ) : (
+            <div>
+              <ShopProductsPanel
+                onActivity={loadSummary}
+                filter={shopFilter}
+                onFilterChange={setShopFilter}
+              />
+            </div>
+          ) : null}
+          <div className={tab === "catalog" ? undefined : "hidden"}>
             <CatalogPublishPanel onActivity={loadSummary} />
-          )}
+          </div>
         </div>
       </WorkbenchPanel>
     </WorkbenchShell>

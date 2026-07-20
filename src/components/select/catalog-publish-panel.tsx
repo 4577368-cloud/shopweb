@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -103,40 +103,45 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
     Record<string, PublishCellState>
   >({});
 
+  const templateRef = useRef<PricingTemplate | null>(null);
+  templateRef.current = template;
+
   const hasNextPage = recommendations.length >= PAGE_SIZE;
 
-  const loadPage = useCallback(
-    async (pageNum: number, tpl?: PricingTemplate | null) => {
-      const effectiveTemplate = tpl ?? template;
-      if (!effectiveTemplate) return;
-      const items = await fetchRecommendations(
-        shopName,
-        PAGE_SIZE,
-        (pageNum - 1) * PAGE_SIZE,
-        effectiveTemplate
-      );
-      setRecommendations(items);
-      setPage(pageNum);
-    },
-    [shopName, template]
-  );
+  const loadPage = useCallback(async (pageNum: number, tpl?: PricingTemplate | null) => {
+    const effectiveTemplate = tpl ?? templateRef.current;
+    if (!effectiveTemplate) return;
+    const items = await fetchRecommendations(
+      shopName,
+      PAGE_SIZE,
+      (pageNum - 1) * PAGE_SIZE,
+      effectiveTemplate
+    );
+    setRecommendations(items);
+    setPage(pageNum);
+  }, [shopName]);
 
-  const loadAll = useCallback(async () => {
-    setPageLoading(true);
-    setPageError(null);
-    try {
-      const tpl = await api.getPricingTemplate(shopName);
-      setTemplate(tpl);
-      const f = toForm(tpl);
-      setForm(f);
-      setBaseline(f);
-      await loadPage(1, tpl);
-    } catch (err) {
-      setPageError(readableError(err));
-    } finally {
-      setPageLoading(false);
-    }
-  }, [shopName, loadPage]);
+  const loadAll = useCallback(
+    async (opts?: { showSkeleton?: boolean }) => {
+      const showSkeleton = opts?.showSkeleton ?? templateRef.current === null;
+      if (showSkeleton) setPageLoading(true);
+      setPageError(null);
+      try {
+        const tpl = await api.getPricingTemplate(shopName);
+        templateRef.current = tpl;
+        setTemplate(tpl);
+        const f = toForm(tpl);
+        setForm(f);
+        setBaseline(f);
+        await loadPage(1, tpl);
+      } catch (err) {
+        setPageError(readableError(err));
+      } finally {
+        if (showSkeleton) setPageLoading(false);
+      }
+    },
+    [shopName, loadPage]
+  );
 
   const goToPage = useCallback(
     async (nextPage: number) => {
@@ -155,8 +160,8 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
   );
 
   useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+    void loadAll({ showSkeleton: true });
+  }, [shopName]); // eslint-disable-line react-hooks/exhaustive-deps -- init per shop only
 
   const isDirty = useMemo(() => {
     if (!form || !baseline) return false;
@@ -277,8 +282,8 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
         <Button
           variant="secondary"
           size="sm"
-          onClick={() => void loadAll()}
-          disabled={pageLoading}
+          onClick={() => void loadAll({ showSkeleton: false })}
+          disabled={pageLoading || pageTurning}
         >
           {pageLoading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -357,14 +362,20 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
         <Card>
           <TableSkeleton rows={5} />
         </Card>
-      ) : recommendations.length === 0 ? (
+      ) : recommendations.length === 0 && !pageTurning ? (
         <EmptyState
           title="暂无可上架的货源商品"
           description="Tangbuy 商城当前为空，或后端未返回数据。"
         />
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            className={
+              pageTurning
+                ? "grid grid-cols-1 gap-3 opacity-60 transition-opacity sm:grid-cols-2 lg:grid-cols-3"
+                : "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+            }
+          >
             {recommendations.map((item) => (
               <RecommendationCard
                 key={item.candidateId}
