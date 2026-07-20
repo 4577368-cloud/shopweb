@@ -132,7 +132,7 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
       const [tpl, items, cnt] = await Promise.all([
         api.getPricingTemplate(shopName),
         api.getRecommendations(shopName, PAGE_SIZE, 0),
-        api.getRecommendationsCount().catch(() => ({ count: 0 })),
+        api.getRecommendationsCount(),
       ]);
       setTemplate(tpl);
       const f = toForm(tpl);
