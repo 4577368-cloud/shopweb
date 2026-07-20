@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api } from "@/lib/api";
-import { fetchRecommendationsCount } from "@/lib/catalog-recommendations";
 import {
   ShopProductsPanel,
   type ShopFilter,
@@ -38,7 +37,6 @@ interface ProductsSummary {
   shopProducts: number;
   confirmedProducts: number;
   pendingProducts: number;
-  recommendations: number;
 }
 
 function SelectContent() {
@@ -86,10 +84,9 @@ function SelectContent() {
   // Independent, read-only aggregation for the header. Panels keep their own interactive fetches;
   // this only powers the metric strip + copilot, and is refreshed when a panel reports activity.
   const loadSummary = useCallback(async () => {
-    const [products, bindings, recCount, tpl] = await Promise.all([
+    const [products, bindings, tpl] = await Promise.all([
       api.getShopProducts(shopName).catch(() => []),
       api.listImageBindings(shopName).catch(() => []),
-      fetchRecommendationsCount().catch(() => 0),
       api.getPricingTemplate(shopName).catch(() => null),
     ]);
     const confirmed = new Set<string>();
@@ -104,7 +101,6 @@ function SelectContent() {
       shopProducts: products.length,
       confirmedProducts: confirmed.size,
       pendingProducts: pending.size,
-      recommendations: recCount,
     });
   }, [shopName]);
 
@@ -174,9 +170,7 @@ function SelectContent() {
     summary: summary
       ? `已分析 ${summary.shopProducts} 个商品，AI 自动匹配 ${
           summary.confirmedProducts + summary.pendingProducts
-        } 个货源，其中 ${summary.pendingProducts} 个待你确认；发现新品可上架 ${
-          summary.recommendations
-        } 条。`
+        } 个货源，其中 ${summary.pendingProducts} 个待你确认。`
       : "正在读取店铺商品与货源关联…",
     bullets: summary
       ? [
@@ -300,7 +294,7 @@ function SelectContent() {
 
   const tabs = [
     { id: "shop", label: "我的 Shopify 商品", count: summary?.shopProducts },
-    { id: "catalog", label: "发现新品", count: summary?.recommendations },
+    { id: "catalog", label: "发现新品" },
   ];
 
   return (
@@ -333,7 +327,6 @@ function SelectContent() {
             pending={pendingCount}
             confirmed={summary?.confirmedProducts ?? 0}
             unbound={unbound}
-            recommendations={summary?.recommendations ?? 0}
             onRefresh={restartScan}
           />
 

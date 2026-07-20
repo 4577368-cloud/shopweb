@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Coins, Loader2, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Coins, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -20,7 +20,6 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import {
   fetchRecommendations,
-  fetchRecommendationsCount,
   repriceRecommendations,
 } from "@/lib/catalog-recommendations";
 import {
@@ -98,81 +97,62 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
   const [recommendations, setRecommendations] = useState<
     CatalogRecommendation[]
   >([]);
-  const [total, setTotal] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageTurning, setPageTurning] = useState(false);
   const [publishState, setPublishState] = useState<
     Record<string, PublishCellState>
   >({});
 
-  // Re-fetch every page currently on screen so estimatedSalePrice reflects a just-saved template,
-  // without dropping the user's scroll depth.
-  const loadRecommendations = useCallback(async () => {
-    if (!template) return;
-    if (isMallGatewayConfigured()) {
-      const pages = Math.max(1, Math.ceil(recommendations.length / PAGE_SIZE));
-      const collected: CatalogRecommendation[] = [];
-      for (let i = 0; i < pages; i++) {
-        collected.push(
-          ...(await fetchRecommendations(
-            shopName,
-            PAGE_SIZE,
-            i * PAGE_SIZE,
-            template
-          ))
-        );
-      }
-      setRecommendations(collected);
-      return;
-    }
-    const pages = Math.max(1, Math.ceil(recommendations.length / PAGE_SIZE));
-    const collected: CatalogRecommendation[] = [];
-    for (let i = 0; i < pages; i++) {
-      collected.push(
-        ...(await fetchRecommendations(shopName, PAGE_SIZE, i * PAGE_SIZE))
-      );
-    }
-    setRecommendations(collected);
-  }, [shopName, recommendations.length, template]);
+  const hasNextPage = recommendations.length >= PAGE_SIZE;
 
-  const loadMore = useCallback(async () => {
-    if (loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const next = await fetchRecommendations(
+  const loadPage = useCallback(
+    async (pageNum: number, tpl?: PricingTemplate | null) => {
+      const effectiveTemplate = tpl ?? template;
+      if (!effectiveTemplate) return;
+      const items = await fetchRecommendations(
         shopName,
         PAGE_SIZE,
-        recommendations.length,
-        template
+        (pageNum - 1) * PAGE_SIZE,
+        effectiveTemplate
       );
-      setRecommendations((prev) => [...prev, ...next]);
-    } catch (err) {
-      showToast(readableError(err));
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [shopName, recommendations.length, loadingMore, template]);
+      setRecommendations(items);
+      setPage(pageNum);
+    },
+    [shopName, template]
+  );
 
   const loadAll = useCallback(async () => {
     setPageLoading(true);
     setPageError(null);
     try {
       const tpl = await api.getPricingTemplate(shopName);
-      const [items, cnt] = await Promise.all([
-        fetchRecommendations(shopName, PAGE_SIZE, 0, tpl),
-        fetchRecommendationsCount(),
-      ]);
       setTemplate(tpl);
       const f = toForm(tpl);
       setForm(f);
       setBaseline(f);
-      setRecommendations(items);
-      setTotal(cnt || items.length);
+      await loadPage(1, tpl);
     } catch (err) {
       setPageError(readableError(err));
     } finally {
       setPageLoading(false);
     }
-  }, [shopName]);
+  }, [shopName, loadPage]);
+
+  const goToPage = useCallback(
+    async (nextPage: number) => {
+      if (nextPage < 1 || pageTurning) return;
+      if (nextPage > page && !hasNextPage) return;
+      setPageTurning(true);
+      try {
+        await loadPage(nextPage);
+      } catch (err) {
+        showToast(readableError(err));
+      } finally {
+        setPageTurning(false);
+      }
+    },
+    [hasNextPage, loadPage, page, pageTurning, showToast]
+  );
 
   useEffect(() => {
     void loadAll();
@@ -232,11 +212,7 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
       const f = toForm(saved);
       setForm(f);
       setBaseline(f);
-      if (isMallGatewayConfigured()) {
-        setRecommendations((prev) => repriceRecommendations(prev, saved));
-      } else {
-        await loadRecommendations();
-      }
+      setRecommendations((prev) => repriceRecommendations(prev, saved));
       showToast("定价模板已保存，预估售价已按新模板重算");
     } catch (err) {
       setFormError(readableError(err));
@@ -370,16 +346,11 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
         </button>
       )}
 
-      <div className="mb-2 mt-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold text-ink">Tangbuy 商城 · 可上架</h2>
-          <p className="mt-0.5 text-xs text-ink-subtle">
-            预估售价由上方定价模板推算 · 已加载 {recommendations.length}/{total} 条
-          </p>
-        </div>
-        {!pageLoading ? (
-          <Badge variant="outline">{total} 条</Badge>
-        ) : null}
+      <div className="mb-2 mt-4">
+        <h2 className="text-sm font-semibold text-ink">Tangbuy 商城 · 可上架</h2>
+        <p className="mt-0.5 text-xs text-ink-subtle">
+          预估售价由上方定价模板推算 · 每页 {PAGE_SIZE} 条
+        </p>
       </div>
 
       {pageLoading ? (
@@ -403,19 +374,29 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
               />
             ))}
           </div>
-          {recommendations.length < total ? (
-            <div className="mt-4 flex justify-center">
-              <Button
-                variant="secondary"
-                onClick={() => void loadMore()}
-                disabled={loadingMore}
-              >
-                {loadingMore
-                  ? "加载中…"
-                  : `加载更多（还有 ${total - recommendations.length} 条）`}
-              </Button>
-            </div>
-          ) : null}
+          <div className="mt-4 flex items-center justify-center gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void goToPage(page - 1)}
+              disabled={page <= 1 || pageTurning}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              上一页
+            </Button>
+            <span className="min-w-[4.5rem] text-center text-xs text-ink-subtle">
+              {pageTurning ? "加载中…" : `第 ${page} 页`}
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void goToPage(page + 1)}
+              disabled={!hasNextPage || pageTurning}
+            >
+              下一页
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </>
       )}
     </>

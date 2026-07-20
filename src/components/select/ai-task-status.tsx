@@ -15,7 +15,6 @@ export interface AiTaskStatusProps {
   pending: number;
   confirmed: number;
   unbound: number;
-  recommendations: number;
   /** Re-run analysis (sync + auto-match). Rendered as icon-only next to the title. */
   onRefresh?: () => void;
 }
@@ -27,7 +26,6 @@ export function AiTaskStatus({
   pending,
   confirmed,
   unbound,
-  recommendations,
   onRefresh,
 }: AiTaskStatusProps) {
   const pct = analyzed > 0 ? Math.round((matched / analyzed) * 100) : 0;
@@ -95,7 +93,6 @@ export function AiTaskStatus({
           </span>
           <span>已确认 {ready ? confirmed : "—"}</span>
           <span>未匹配 {ready ? unbound : "—"}</span>
-          <span>发现新品可上架 {ready ? recommendations : "—"}</span>
         </div>
       </div>
     </section>
