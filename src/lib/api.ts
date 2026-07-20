@@ -20,6 +20,7 @@ import type {
   PublishResult,
   ShopMirrorProduct,
   ShopProductDetail,
+  ShopProductUpdatePayload,
   SkuAutoAlignResult,
   SkuProductOverview,
   UploadedImage,
@@ -322,6 +323,17 @@ export const api = {
       `/api/plugin/product/detail?shopName=${encodeURIComponent(
         shop
       )}&itemId=${encodeURIComponent(itemId)}`
+    ),
+
+  /** Phase 2: write editable fields back to Shopify and refresh the local mirror. */
+  updateShopProduct: (shop: string, body: ShopProductUpdatePayload) =>
+    request<ShopProductDetail>(
+      `/api/plugin/product/detail?shopName=${encodeURIComponent(shop)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
     ),
 
   /** Trigger a Shopify product pull into the mirror; omit windowMinutes for a full pull. */

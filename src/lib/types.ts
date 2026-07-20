@@ -418,6 +418,15 @@ export interface ShopProductDetail {
   media: ShopMirrorMedia[];
 }
 
+/** PUT /api/plugin/product/detail — Phase 2 write-back body. */
+export interface ShopProductUpdatePayload {
+  itemId: string;
+  title?: string;
+  description?: string;
+  status?: string;
+  defaultVariantPrice?: number | null;
+}
+
 // ---------------------------------------------------------------------------
 // A3-1 路径A（在售商品匹配）：1688 图搜预览（无状态，不落库）。
 // 对应后端 ImageSearchProductVO；price 为网关原始字符串。

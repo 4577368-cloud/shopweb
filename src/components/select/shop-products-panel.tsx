@@ -464,6 +464,10 @@ export function ShopProductsPanel({
         shopName={shopName}
         itemId={detailItemId}
         onClose={() => setDetailItemId(null)}
+        onSaved={() => {
+          void load();
+          onActivity?.();
+        }}
       />
     </>
   );
