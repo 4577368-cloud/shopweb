@@ -77,7 +77,7 @@ export function SegmentedTabs({
             type="button"
             onClick={() => onValueChange(tab.id)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-xs font-medium transition-colors",
+              "relative z-10 inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-xs font-medium transition-colors",
               active
                 ? "bg-brand text-white shadow-card"
                 : "text-ink-muted hover:text-ink"

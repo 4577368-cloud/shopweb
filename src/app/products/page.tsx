@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, startTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Coins } from "lucide-react";
@@ -46,8 +46,26 @@ function SelectContent() {
   const { shop, isAuthorized } = useOnboarding();
   const shopName = shop.name;
 
-  const tab: Tab = searchParams.get("tab") === "catalog" ? "catalog" : "shop";
-  const setTab = (t: Tab) => router.replace(`/products?tab=${t}`, { scroll: false });
+  const urlTab: Tab = searchParams.get("tab") === "catalog" ? "catalog" : "shop";
+  // Optimistic local tab so clicks switch immediately even if soft-nav / searchParams lag.
+  const [tab, setTabLocal] = useState<Tab>(urlTab);
+  useEffect(() => {
+    setTabLocal(urlTab);
+  }, [urlTab]);
+
+  const setTab = useCallback(
+    (t: Tab) => {
+      setTabLocal(t);
+      const current = searchParams.get("tab");
+      const already =
+        current === t || (t === "shop" && (current == null || current === ""));
+      if (already) return;
+      startTransition(() => {
+        router.replace(`/products?tab=${t}`, { scroll: false });
+      });
+    },
+    [router, searchParams]
+  );
 
   // Filter is lifted so the top status CTA can jump to e.g. 待确认 / 未关联.
   const [shopFilter, setShopFilter] = useState<ShopFilter>("all");
@@ -141,9 +159,7 @@ function SelectContent() {
       setShopFilter(f);
       setTab("shop");
     },
-    // setTab is a stable router.replace closure; intentionally not in deps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [setTab]
   );
   const statusCta: { label: string; href?: string; onClick?: () => void } =
     pendingCount > 0
@@ -320,7 +336,7 @@ function SelectContent() {
             onRefresh={restartScan}
           />
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
             <SegmentedTabs
               variant="solid"
               tabs={tabs}
@@ -330,7 +346,7 @@ function SelectContent() {
             <p className="text-xs text-ink-subtle">
               {tab === "shop"
                 ? "优化已有商品 · 为在售商品关联货源"
-                : "发现新品 · 从 Tangbuy 商城选品上架（开发中）"}
+                : "发现新品 · 从 Tangbuy 商城选品上架"}
             </p>
           </div>
 
