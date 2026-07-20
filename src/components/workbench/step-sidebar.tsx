@@ -4,12 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CheckCircle2,
-  ChevronDown,
   AlertCircle,
-  Store,
 } from "lucide-react";
 import { APP_NAME, APP_SUBTITLE } from "@/data/mock";
 import { useOnboarding } from "@/context/onboarding-context";
+import { ShopSwitcher } from "@/components/workbench/shop-switcher";
 import { cn } from "@/lib/utils";
 import type { StepStatus } from "@/lib/types";
 
@@ -56,7 +55,6 @@ export function StepSidebar() {
   const pathname = usePathname();
   const {
     steps,
-    shop,
     syncCompleted,
     syncPhase,
     isAuthorized,
@@ -122,19 +120,7 @@ export function StepSidebar() {
         </Link>
       </div>
 
-      {/* Shop switcher — visual only this round (single connected shop). */}
-      <div className="px-4">
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface px-2.5 py-2 text-left transition-colors hover:bg-slate-50"
-        >
-          <Store className="h-3.5 w-3.5 shrink-0 text-brand" />
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink">
-            {isAuthorized ? shop.name : "未连接店铺"}
-          </span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-ink-subtle" />
-        </button>
-      </div>
+      <ShopSwitcher />
 
       <div className="px-4 pb-3 pt-3">
         <div className="mb-1 flex items-center justify-between text-[11px] text-ink-muted">

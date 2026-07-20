@@ -156,7 +156,8 @@ interface MarginEstimate {
 
 /**
  * Only produced when sale price, cost and rate are all known and the product's currency matches the
- * template's target currency — otherwise null (we never fabricate a margin %). Uses only the exchange
+ * template's target currency — otherwise null (we never fabricate a margin %). Cost is converted as
+ * CNY ÷ exchangeRate (rate = source units per 1 target, e.g. 6.5 CNY/USD). Uses only the exchange
  * rate (not multiplier/addend, which shape a *new* sale price for publishing, not an existing one).
  */
 function marginEstimate(
@@ -173,7 +174,7 @@ function marginEstimate(
   const target = (template.targetCurrency ?? "").toUpperCase();
   const cur = (shopCurrency ?? "").toUpperCase();
   if (cur && target && cur !== target) return null;
-  const costInTarget = costCny * rate;
+  const costInTarget = costCny / rate;
   return {
     pct: Math.round(((shopPrice - costInTarget) / shopPrice) * 100),
     costInTarget,

@@ -119,6 +119,14 @@ export interface ShopStatusResponse {
   productCount?: number;
 }
 
+/** One row from GET /api/plugin/shopify/auth/shops (never includes tokens). */
+export interface AuthorizedShopSummary {
+  shopName: string;
+  shopDomain: string;
+  authorizedAt?: string;
+  productCount?: number;
+}
+
 export const api = {
   /** Backend health probe — used to validate connectivity (and CORS) end to end. */
   getHealth: () => request<HealthResponse>("/api/plugin/health"),
@@ -128,6 +136,10 @@ export const api = {
     request<ShopStatusResponse>(
       `/api/plugin/shopify/auth/status?shop=${encodeURIComponent(shop)}`
     ),
+
+  /** All active authorized shops — sidebar multi-shop switcher. */
+  listAuthorizedShops: () =>
+    request<AuthorizedShopSummary[]>("/api/plugin/shopify/auth/shops"),
 
   /** Read-only Tangbuy catalog recommendations with backend-computed estimatedSalePrice (M1-5). */
   getRecommendations: (shop: string, limit: number, offset = 0) =>

@@ -7,7 +7,6 @@ import {
   ArrowRight,
   CheckCircle2,
   CircleDashed,
-  FileDown,
   Layers,
   Loader2,
   RefreshCw,
@@ -28,7 +27,6 @@ import {
   type MetricSummaryItem,
 } from "@/components/workbench/metric-summary-cards";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
-import { StickyActionBar } from "@/components/workbench/sticky-action-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -211,8 +209,8 @@ export default function SkuAlignPage() {
       `自动匹配完成：${stats.full} 个商品`,
       stats.partial > 0 ? `需要手动处理：${stats.partial} 个商品` : "无需手动处理",
       "点每个商品的「自动对齐 SKU」按货源矩阵逐变体绑定",
+      "下一步：用页面上方「进入物流确认」继续",
     ],
-    nextAction: { label: "确认并进入物流确认", href: "/logistics" },
   };
 
   const rail = (
@@ -319,8 +317,6 @@ export default function SkuAlignPage() {
     );
   }
 
-  const showFooter = !loading && !error && products.length > 0;
-
   return (
     <WorkbenchShell sidebar={<StepSidebar />} rail={rail}>
       <WorkbenchPanel
@@ -345,35 +341,6 @@ export default function SkuAlignPage() {
               </Button>
             </Link>
           </div>
-        }
-        footer={
-          showFooter ? (
-            <StickyActionBar
-              info={
-                <>
-                  已匹配{" "}
-                  <span className="font-semibold text-ink">
-                    {stats.boundVariants} / {stats.totalVariants}
-                  </span>{" "}
-                  个变体
-                </>
-              }
-            >
-              <Button
-                variant="secondary"
-                onClick={() => showToast("匹配报告导出功能即将上线")}
-              >
-                <FileDown className="h-4 w-4" />
-                导出报告
-              </Button>
-              <Link href="/logistics">
-                <Button>
-                  确认并进入物流
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-            </StickyActionBar>
-          ) : undefined
         }
       >
         <div className="space-y-4">

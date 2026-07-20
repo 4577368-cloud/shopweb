@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Coins, RefreshCw } from "lucide-react";
+import { ArrowRight, Coins } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -135,7 +135,7 @@ function SelectContent() {
       ? Math.max(summary.shopProducts - summary.confirmedProducts - summary.pendingProducts, 0)
       : 0;
 
-  // Real-state-driven main CTA: 处理待确认 → 查找货源 → 进入 SKU 绑定.
+  // Header-only primary CTA: 处理待确认 → 查找货源 → 进入 SKU 绑定.
   const jumpToShopFilter = useCallback(
     (f: ShopFilter) => {
       setShopFilter(f);
@@ -150,14 +150,6 @@ function SelectContent() {
       ? { label: `处理 ${pendingCount} 个待确认`, onClick: () => jumpToShopFilter("pending") }
       : unbound > 0
         ? { label: `为 ${unbound} 个商品查找货源`, onClick: () => jumpToShopFilter("unbound") }
-        : { label: "进入 SKU 绑定", href: "/sku-align" };
-
-  // 运营顾问的下一步 CTA，与顶部主 CTA 同一套真实逻辑（处理待确认 → 查找货源 → 进入 SKU 绑定）。
-  const copilotNext: AiPanelContent["nextAction"] =
-    pendingCount > 0
-      ? { label: `处理 ${pendingCount} 个待确认`, action: "pending" }
-      : unbound > 0
-        ? { label: `查找 ${unbound} 个未匹配货源`, action: "unbound" }
         : { label: "进入 SKU 绑定", href: "/sku-align" };
 
   const copilot: AiPanelContent = {
@@ -178,6 +170,7 @@ function SelectContent() {
           unbound > 0
             ? `未匹配：${unbound} 个，可用图搜查找货源`
             : "未匹配：0 个",
+          `下一步：用页面上方「${statusCta.label}」继续`,
         ]
       : ["读取中…"],
     // 重点洞察仅在有待办时以「需注意」呈现；全部就绪则不报警，交由摘要与下一步表达。
@@ -199,7 +192,6 @@ function SelectContent() {
               },
             ]
           : undefined,
-    nextAction: copilotNext,
   };
 
   const scanStatusLabel = (s: ScanTaskStatus, resultText?: string | null) => {
@@ -220,14 +212,7 @@ function SelectContent() {
 
   const rail = (
     <AssistantRail>
-      <CopilotCard
-        content={copilot}
-        heading="AI 运营顾问"
-        onNextAction={(a) => {
-          if (a === "pending") jumpToShopFilter("pending");
-          else if (a === "unbound") jumpToShopFilter("unbound");
-        }}
-      />
+      <CopilotCard content={copilot} heading="AI 运营顾问" />
       <PricingStrategyCard template={template} onAdjust={() => setTab("catalog")} />
     </AssistantRail>
   );
@@ -308,23 +293,19 @@ function SelectContent() {
         description="为在售商品关联货源（路径 A），或从 Tangbuy 商城选品上架（路径 B）。"
         breadcrumbs={BREADCRUMBS}
         actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              onClick={restartScan}
-              className="w-9 px-0"
-              title="重新分析（同步商品并自动关联货源）"
-              aria-label="重新分析"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-            <Link href="/sku-align">
+          statusCta.href ? (
+            <Link href={statusCta.href}>
               <Button>
-                进入 SKU 绑定
+                {statusCta.label}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
-          </div>
+          ) : (
+            <Button onClick={statusCta.onClick}>
+              {statusCta.label}
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          )
         }
       >
         <div className="space-y-4">
@@ -336,7 +317,7 @@ function SelectContent() {
             confirmed={summary?.confirmedProducts ?? 0}
             unbound={unbound}
             recommendations={summary?.recommendations ?? 0}
-            cta={statusCta}
+            onRefresh={restartScan}
           />
 
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -394,13 +375,14 @@ function PricingStrategyCard({
         <div className="space-y-1.5">
           <p>
             采购价（{template.sourceCurrency}）按汇率{" "}
-            <span className="font-medium text-ink">{template.exchangeRate}</span> 自动换算为{" "}
-            {template.targetCurrency}。
+            <span className="font-medium text-ink">{template.exchangeRate}</span>{" "}
+            除法换算为 {template.targetCurrency}。
           </p>
           <p>
-            售价 = round(采购价 × 汇率 × {template.multiplier} + {template.addend})
+            售价 = round(采购价 ÷ 汇率 × {template.multiplier} + {template.addend})
           </p>
           <p className="text-[11px] text-ink-subtle">
+            汇率为「多少源币种 = 1 目标币种」（如 6.5 表示 6.5 CNY = 1 USD）。
             该规则将决定上架到 Shopify 的售价
             {template.isDefault ? "（当前为系统默认，未保存）" : ""}。
           </p>

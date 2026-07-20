@@ -172,11 +172,13 @@ export default function AuthorizePage() {
   }, [isAuthorized, shopDomainInput, setShopDomainInput, hydrateAuthorizedShop]);
 
   // Once authorized, read the real "已关联货源数" from the same source /products uses.
+  // Re-run whenever the active shop changes (multi-shop switcher).
   useEffect(() => {
-    if (!isAuthorized || boundCount !== null) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot read of real post-auth stats
+    if (!isAuthorized) return;
+    setBoundCount(null);
+    setPublishedCount(null);
     void loadStats(shop.name);
-  }, [isAuthorized, boundCount, shop.name, loadStats]);
+  }, [isAuthorized, shop.name, loadStats]);
 
   // Re-check status + bound count so the async post-auth product sync can surface without a reload.
   const refresh = useCallback(async () => {
@@ -294,9 +296,28 @@ export default function AuthorizePage() {
         <div className="space-y-4">
           <section className="rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">
             <div className="border-b border-hairline px-5 py-4">
-              <h2 className="text-lg font-semibold tracking-tight text-ink">
-                连接你的 Shopify 店铺
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold tracking-tight text-ink">
+                  连接你的 Shopify 店铺
+                </h2>
+                {phase === "authorized" ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void refresh()}
+                    disabled={refreshing}
+                    className="h-7 w-7 shrink-0 px-0"
+                    title="刷新接入摘要"
+                    aria-label="刷新"
+                  >
+                    {refreshing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                ) : null}
+              </div>
               <p className="mt-0.5 text-xs text-ink-muted">
                 只需 2 步，即可开始 AI 分析并优化你的店铺
               </p>
@@ -314,8 +335,6 @@ export default function AuthorizePage() {
                   boundCount={boundCount}
                   publishedCount={publishedCount}
                   syncing={syncing}
-                  refreshing={refreshing}
-                  onRefresh={() => void refresh()}
                 />
               ) : phase === "restoring" ? (
                 <RestoringBlock />
@@ -672,8 +691,6 @@ function ConnectSummary({
   boundCount,
   publishedCount,
   syncing,
-  refreshing,
-  onRefresh,
 }: {
   name: string;
   domain: string;
@@ -682,29 +699,10 @@ function ConnectSummary({
   boundCount: number | null;
   publishedCount: number | null;
   syncing: boolean;
-  refreshing: boolean;
-  onRefresh: () => void;
 }) {
   return (
-    <div className="mt-5 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft px-4 py-3.5">
-      <div className="flex justify-end">
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={onRefresh}
-          disabled={refreshing}
-          className="w-8 px-0"
-          title="刷新接入摘要"
-          aria-label="刷新"
-        >
-          {refreshing ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <RefreshCw className="h-3.5 w-3.5" />
-          )}
-        </Button>
-      </div>
-      <div className="mt-2 grid grid-cols-2 gap-2.5 text-xs sm:grid-cols-3">
+    <div className="mt-4 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft px-3 py-2">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs sm:grid-cols-3">
         <SummaryStat label="店铺" value={name} />
         <SummaryStat label="店铺域名" value={domain} />
         <SummaryStat label="授权时间" value={authorizedAt || "—"} />
@@ -727,9 +725,9 @@ function ConnectSummary({
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0">
-      <p className="text-brand/70">{label}</p>
-      <p className="mt-0.5 truncate font-medium text-ink">{value}</p>
+    <div className="min-w-0 leading-tight">
+      <p className="text-[11px] text-brand/70">{label}</p>
+      <p className="truncate text-xs font-medium text-ink">{value}</p>
     </div>
   );
 }

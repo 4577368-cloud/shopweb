@@ -321,7 +321,7 @@ export function CatalogPublishPanel({ onActivity }: { onActivity?: () => void })
             <Coins className="h-4 w-4 shrink-0 text-brand" />
             {template ? (
               <span className="truncate">
-                定价策略 · 采购价（{template.sourceCurrency}）按汇率 {template.exchangeRate} 换算为{" "}
+                定价策略 · 采购价（{template.sourceCurrency}）÷ 汇率 {template.exchangeRate} 换算为{" "}
                 {template.targetCurrency} · 倍率 ×{template.multiplier}
                 {template.isDefault ? " · 系统默认" : ""}
               </span>
@@ -412,7 +412,7 @@ function PricingTemplateCard({
         <div>
           <CardTitle>定价模板</CardTitle>
           <CardDescription>
-            售价 = round((采购价 × 汇率 × 倍率) + 加价)。采购价为人民币时会按汇率自动换算为目标币种（美元），该规则将决定上架到 Shopify 的售价。修改保存后，预估售价会自动重算。
+            售价 = round((采购价 ÷ 汇率 × 倍率) + 加价)。汇率表示「多少源币种 = 1 目标币种」（如 6.5 CNY = 1 USD），采购价会按除法换算为目标币种后再乘倍率、加加价；该规则将决定上架到 Shopify 的售价。修改保存后，预估售价会自动重算。
           </CardDescription>
         </div>
         {template ? (
