@@ -516,6 +516,7 @@ function CompareTile({
                 sizes="180px"
                 className="object-cover"
                 unoptimized
+                referrerPolicy="no-referrer"
                 onError={() => setImgError(true)}
               />
             ) : (
@@ -1022,6 +1023,7 @@ function ShopProductCard({
                         sizes="36px"
                         className="object-cover"
                         unoptimized
+                        referrerPolicy="no-referrer"
                       />
                     ) : null}
                   </div>

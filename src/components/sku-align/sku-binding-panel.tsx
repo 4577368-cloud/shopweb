@@ -143,7 +143,15 @@ function Thumb({
       )}
     >
       {src ? (
-        <Image src={src} alt={alt} fill sizes="72px" className="object-cover" unoptimized />
+        <Image
+          src={src}
+          alt={alt}
+          fill
+          sizes="72px"
+          className="object-cover"
+          unoptimized
+          referrerPolicy="no-referrer"
+        />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-ink-subtle">
           <ImageOff className="h-4 w-4" />

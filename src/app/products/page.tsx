@@ -380,7 +380,7 @@ function PricingStrategyCard({
     <InfoCard
       title="定价策略"
       icon={<Coins className="h-3.5 w-3.5 text-brand" />}
-      footer={
+      action={
         <button
           type="button"
           onClick={onAdjust}

@@ -540,11 +540,12 @@ function RecommendationCard({
   const result = state?.result;
   const published = result?.publishStatus === "PUBLISHED";
   const publishing = state?.loading || result?.publishStatus === "PUBLISHING";
+  const [imgError, setImgError] = useState(false);
 
   return (
     <article className="flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface p-3 shadow-card">
       <div className="relative aspect-square w-full overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
-        {item.imageUrl ? (
+        {item.imageUrl && !imgError ? (
           <Image
             src={item.imageUrl}
             alt={item.title}
@@ -552,10 +553,12 @@ function RecommendationCard({
             sizes="240px"
             className="object-cover"
             unoptimized
+            referrerPolicy="no-referrer"
+            onError={() => setImgError(true)}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-[10px] text-ink-subtle">
-            无图
+            {item.imageUrl ? "货源图暂不可用" : "无图"}
           </div>
         )}
         {result ? (

@@ -14,6 +14,8 @@ interface InfoCardProps {
   title: string;
   icon?: ReactNode;
   tone?: InfoCardTone;
+  /** Optional action on the right of the title row (e.g. 「调整定价 →」). */
+  action?: ReactNode;
   /** Optional footer link/action row. */
   footer?: ReactNode;
   children: ReactNode;
@@ -28,6 +30,7 @@ export function InfoCard({
   title,
   icon,
   tone = "default",
+  action,
   footer,
   children,
   className,
@@ -43,7 +46,8 @@ export function InfoCard({
     >
       <div className={cn("mb-2 flex items-center gap-1.5 text-sm font-semibold", t.title)}>
         {icon}
-        {title}
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+        {action ? <div className="ml-auto shrink-0 text-xs font-medium">{action}</div> : null}
       </div>
       <div className="text-xs leading-5 text-ink-muted">{children}</div>
       {footer ? <div className="mt-2.5 text-xs">{footer}</div> : null}
