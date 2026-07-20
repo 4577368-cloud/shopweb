@@ -86,7 +86,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text();
   const data = text ? safeJsonParse(text) : undefined;
   if (!res.ok) {
-    throw new ApiError(`Request failed (${res.status}): ${url}`, res.status, data);
+    let message = `Request failed (${res.status}): ${url}`;
+    if (data && typeof data === "object" && data !== null && "message" in data) {
+      const m = (data as { message: unknown }).message;
+      if (typeof m === "string" && m.trim()) message = m;
+    }
+    throw new ApiError(message, res.status, data);
   }
   return data as T;
 }

@@ -1,15 +1,17 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { api, readableError } from "@/lib/api";
+import { ApiError, api, readableError } from "@/lib/api";
 import type { ShopProductDetail } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const POLL_MS = 8000;
 
 function money(value?: number | null, currency?: string | null): string {
   if (value == null) return "—";
@@ -54,6 +56,34 @@ function toHtml(text: string): string {
     .join("");
 }
 
+function formFromDetail(d: ShopProductDetail): EditForm {
+  const firstPrice = d.variants?.[0]?.price;
+  return {
+    title: d.title ?? "",
+    description: stripHtml(d.description),
+    status: (d.status ?? "ACTIVE").toUpperCase(),
+    defaultVariantPrice: firstPrice != null ? String(firstPrice) : "",
+  };
+}
+
+function sameUpdatedAt(a?: string | null, b?: string | null): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isFinite(ta) && Number.isFinite(tb)) return ta === tb;
+  return a === b;
+}
+
+function isProductConflict(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 409) return false;
+  const body = err.body;
+  if (body && typeof body === "object" && body !== null && "code" in body) {
+    return (body as { code?: unknown }).code === "PRODUCT_CONFLICT";
+  }
+  return /PRODUCT_CONFLICT|updated elsewhere|force overwrite/i.test(err.message);
+}
+
 interface EditForm {
   title: string;
   description: string;
@@ -62,7 +92,7 @@ interface EditForm {
 }
 
 /**
- * Shopify product detail drawer — Phase 2: edit title/description/status/default price and write back.
+ * Shopify product detail drawer — Phase 2 edit + Phase 3 conflict UX.
  */
 export function ShopProductDetailDrawer({
   open,
@@ -85,35 +115,52 @@ export function ShopProductDetailDrawer({
   const [detail, setDetail] = useState<ShopProductDetail | null>(null);
   const [form, setForm] = useState<EditForm | null>(null);
   const [baseline, setBaseline] = useState<EditForm | null>(null);
+  /** Mirror updatedAt when form baseline was last aligned (optimistic concurrency token). */
+  const [baselineUpdatedAt, setBaselineUpdatedAt] = useState<string | null>(
+    null
+  );
+  /** Mirror changed while local edits are dirty (poll or 409). */
+  const [conflict, setConflict] = useState(false);
+
+  const dirtyRef = useRef(false);
+  const mirrorUpdatedAtRef = useRef<string | null | undefined>(null);
+  const savingRef = useRef(false);
+
+  const applyDetail = (d: ShopProductDetail, resetForm: boolean) => {
+    setDetail(d);
+    mirrorUpdatedAtRef.current = d.updatedAt;
+    if (resetForm) {
+      const next = formFromDetail(d);
+      setBaseline(next);
+      setForm(next);
+      setBaselineUpdatedAt(d.updatedAt ?? null);
+      setConflict(false);
+      setSaveError(null);
+    }
+  };
 
   useEffect(() => {
     if (!open || !itemId) {
       setDetail(null);
       setForm(null);
       setBaseline(null);
+      setBaselineUpdatedAt(null);
       setError(null);
       setSaveError(null);
+      setConflict(false);
+      mirrorUpdatedAtRef.current = null;
       return;
     }
     let cancelled = false;
     setLoading(true);
     setError(null);
     setSaveError(null);
+    setConflict(false);
     api
       .getShopProductDetail(shopName, itemId)
       .then((d) => {
         if (cancelled) return;
-        setDetail(d);
-        const firstPrice = d.variants?.[0]?.price;
-        const next: EditForm = {
-          title: d.title ?? "",
-          description: stripHtml(d.description),
-          status: (d.status ?? "ACTIVE").toUpperCase(),
-          defaultVariantPrice:
-            firstPrice != null ? String(firstPrice) : "",
-        };
-        setForm(next);
-        setBaseline(next);
+        applyDetail(d, true);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -150,12 +197,52 @@ export function ShopProductDetailDrawer({
     );
   }, [form, baseline]);
 
+  dirtyRef.current = dirty;
+  savingRef.current = saving;
+
+  // Phase 3: while the drawer is open, poll the mirror for webhook / Admin updates.
+  useEffect(() => {
+    if (!open || !itemId || loading || error) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled || savingRef.current) return;
+      try {
+        const d = await api.getShopProductDetail(shopName, itemId);
+        if (cancelled) return;
+        if (sameUpdatedAt(d.updatedAt, mirrorUpdatedAtRef.current)) return;
+        if (dirtyRef.current) {
+          // Keep form + baselineUpdatedAt; only refresh displayed mirror meta.
+          setDetail(d);
+          mirrorUpdatedAtRef.current = d.updatedAt;
+          setConflict(true);
+        } else {
+          applyDetail(d, true);
+        }
+      } catch {
+        // Ignore transient poll errors; save path still gates on expectedUpdatedAt.
+      }
+    };
+    const id = window.setInterval(() => {
+      void tick();
+    }, POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [open, shopName, itemId, loading, error]);
+
   const patchForm = (patch: Partial<EditForm>) => {
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
     setSaveError(null);
   };
 
-  const handleSave = async () => {
+  const handleReload = () => {
+    if (!detail) return;
+    applyDetail(detail, true);
+    onSaved?.();
+  };
+
+  const handleSave = async (force = false) => {
     if (!form || !itemId || saving || !dirty) return;
     const title = form.title.trim();
     if (!title) {
@@ -186,20 +273,27 @@ export function ShopProductDetailDrawer({
         description: toHtml(form.description),
         status: form.status,
         ...(price !== undefined ? { defaultVariantPrice: price } : {}),
+        expectedUpdatedAt: baselineUpdatedAt,
+        ...(force ? { force: true } : {}),
       });
-      setDetail(saved);
-      const firstPrice = saved.variants?.[0]?.price;
-      const next: EditForm = {
-        title: saved.title ?? "",
-        description: stripHtml(saved.description),
-        status: (saved.status ?? "ACTIVE").toUpperCase(),
-        defaultVariantPrice: firstPrice != null ? String(firstPrice) : "",
-      };
-      setForm(next);
-      setBaseline(next);
+      applyDetail(saved, true);
       onSaved?.();
     } catch (err) {
-      setSaveError(readableError(err));
+      if (isProductConflict(err)) {
+        setConflict(true);
+        setSaveError(
+          "镜像已在其他处更新（Shopify 后台或 webhook）。可重新加载，或强制覆盖。"
+        );
+        try {
+          const fresh = await api.getShopProductDetail(shopName, itemId);
+          setDetail(fresh);
+          mirrorUpdatedAtRef.current = fresh.updatedAt;
+        } catch {
+          // keep existing detail
+        }
+      } else {
+        setSaveError(readableError(err));
+      }
     } finally {
       setSaving(false);
     }
@@ -231,7 +325,7 @@ export function ShopProductDetailDrawer({
               {detail?.title || (loading ? "加载中…" : "商品详情")}
             </h2>
             <p className="mt-1 text-[11px] text-ink-muted">
-              阶段 2 · 可编辑并同步回 Shopify
+              阶段 3 · 编辑同步 + 冲突检测
             </p>
           </div>
           <Button
@@ -258,6 +352,36 @@ export function ShopProductDetailDrawer({
             </div>
           ) : detail && form ? (
             <div className="space-y-5">
+              {conflict ? (
+                <div className="rounded-[var(--radius-control)] border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-950">
+                  <p className="font-medium">检测到外部更新</p>
+                  <p className="mt-1 text-amber-900/90">
+                    Shopify 后台或 webhook
+                    已更新此商品。重新加载会丢弃本地未保存改动；强制保存会覆盖远端。
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={saving}
+                      onClick={handleReload}
+                    >
+                      重新加载
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={saving || !dirty}
+                      onClick={() => void handleSave(true)}
+                    >
+                      {saving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : null}
+                      强制覆盖保存
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="flex gap-3">
                 <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
                   {hero ? (
@@ -360,16 +484,20 @@ export function ShopProductDetailDrawer({
                     variant="secondary"
                     disabled={!dirty || saving}
                     onClick={() => {
+                      if (conflict && detail) {
+                        applyDetail(detail, true);
+                        return;
+                      }
                       if (baseline) setForm(baseline);
                       setSaveError(null);
                     }}
                   >
-                    重置
+                    {conflict ? "放弃并重新加载" : "重置"}
                   </Button>
                   <Button
                     size="sm"
-                    disabled={!dirty || saving}
-                    onClick={() => void handleSave()}
+                    disabled={!dirty || saving || conflict}
+                    onClick={() => void handleSave(false)}
                   >
                     {saving ? (
                       <Loader2 className="h-4 w-4 animate-spin" />

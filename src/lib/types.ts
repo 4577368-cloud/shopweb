@@ -425,6 +425,10 @@ export interface ShopProductUpdatePayload {
   description?: string;
   status?: string;
   defaultVariantPrice?: number | null;
+  /** Mirror updatedAt from last GET; server returns 409 PRODUCT_CONFLICT on mismatch. */
+  expectedUpdatedAt?: string | null;
+  /** Skip concurrency check and overwrite Shopify. */
+  force?: boolean;
 }
 
 // ---------------------------------------------------------------------------
