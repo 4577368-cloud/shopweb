@@ -19,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
+import { ShopProductDetailDrawer } from "@/components/select/shop-product-detail-drawer";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, ApiError, readableError } from "@/lib/api";
 import type {
@@ -253,6 +254,7 @@ export function ShopProductsPanel({
   );
   // 回显: itemId -> ACTIVE binding. Server is the source of truth; refreshed on load/sync.
   const [bindings, setBindings] = useState<Record<string, ImageBindingView>>({});
+  const [detailItemId, setDetailItemId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -451,10 +453,18 @@ export function ShopProductsPanel({
               binding={bindings[p.thirdPlatformItemId] ?? null}
               template={template}
               onBound={handleBound}
+              onOpenDetail={() => setDetailItemId(p.thirdPlatformItemId)}
             />
           ))}
         </div>
       )}
+
+      <ShopProductDetailDrawer
+        open={detailItemId != null}
+        shopName={shopName}
+        itemId={detailItemId}
+        onClose={() => setDetailItemId(null)}
+      />
     </>
   );
 }
@@ -543,12 +553,14 @@ function ShopProductCard({
   binding,
   template,
   onBound,
+  onOpenDetail,
 }: {
   item: ShopMirrorProduct;
   shopName: string;
   binding: ImageBindingView | null;
   template: PricingTemplate | null;
   onBound: (itemId: string, view: ImageBindingView) => void;
+  onOpenDetail: () => void;
 }) {
   const { showToast } = useOnboarding();
   const active = (item.status ?? "").toUpperCase() === "ACTIVE";
@@ -880,21 +892,25 @@ function ShopProductCard({
 
       {/* Action row */}
       <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-hairline pt-2.5">
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => void runSearch()}
-          disabled={searching || !hasImage}
-          title={!hasImage ? "该商品无主图，无法图搜" : undefined}
-        >
-          {searching ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Search className="h-4 w-4" />
-          )}
-          {searching ? "搜索中…" : boundOfferId ? "重新查找" : "查找货源"}
-        </Button>
-
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={onOpenDetail}>
+            详情
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void runSearch()}
+            disabled={searching || !hasImage}
+            title={!hasImage ? "该商品无主图，无法图搜" : undefined}
+          >
+            {searching ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="h-4 w-4" />
+            )}
+            {searching ? "搜索中…" : boundOfferId ? "重新查找" : "查找货源"}
+          </Button>
+        </div>
         <div className="flex items-center gap-2">
           {boundOfferId && binding?.detailUrl ? (
             <a

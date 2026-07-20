@@ -19,6 +19,7 @@ import type {
   ProductSyncResult,
   PublishResult,
   ShopMirrorProduct,
+  ShopProductDetail,
   SkuAutoAlignResult,
   SkuProductOverview,
   UploadedImage,
@@ -313,6 +314,14 @@ export const api = {
   getShopProducts: (shop: string) =>
     request<ShopMirrorProduct[]>(
       `/api/plugin/product/list?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  /** Phase 1 read-only product detail (SPU + variants + media) from the local mirror. */
+  getShopProductDetail: (shop: string, itemId: string) =>
+    request<ShopProductDetail>(
+      `/api/plugin/product/detail?shopName=${encodeURIComponent(
+        shop
+      )}&itemId=${encodeURIComponent(itemId)}`
     ),
 
   /** Trigger a Shopify product pull into the mirror; omit windowMinutes for a full pull. */

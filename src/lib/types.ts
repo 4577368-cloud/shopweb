@@ -373,6 +373,51 @@ export interface ShopMirrorProduct {
   updatedAt?: string | null;
 }
 
+/** GET /api/plugin/product/detail — Phase 1 read-only mirror detail. */
+export interface ShopMirrorSku {
+  id: number;
+  thirdPlatformSkuId: string;
+  sku?: string | null;
+  title?: string | null;
+  price?: number | null;
+  priceLocal?: number | null;
+  weightGrams?: number | null;
+  option1?: string | null;
+  option2?: string | null;
+  option3?: string | null;
+  imageUrl?: string | null;
+  barcode?: string | null;
+  inventoryQuantity?: number | null;
+  position?: number | null;
+}
+
+export interface ShopMirrorMedia {
+  id: number;
+  mediaId?: string | null;
+  url?: string | null;
+  alt?: string | null;
+  position?: number | null;
+}
+
+export interface ShopProductDetail {
+  id: number;
+  shopName?: string | null;
+  thirdPlatformItemId: string;
+  handle?: string | null;
+  title?: string | null;
+  description?: string | null;
+  status?: string | null;
+  currency?: string | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  minWeightGrams?: number | null;
+  maxWeightGrams?: number | null;
+  primaryImageUrl?: string | null;
+  updatedAt?: string | null;
+  variants: ShopMirrorSku[];
+  media: ShopMirrorMedia[];
+}
+
 // ---------------------------------------------------------------------------
 // A3-1 路径A（在售商品匹配）：1688 图搜预览（无状态，不落库）。
 // 对应后端 ImageSearchProductVO；price 为网关原始字符串。
