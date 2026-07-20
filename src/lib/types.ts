@@ -300,6 +300,8 @@ export interface CatalogRecommendation {
   candidateId: string;
   title: string;
   imageUrl?: string | null;
+  /** 货源图列表（列表接口 itemImages）；上架时整组同步到 Shopify */
+  imageUrls?: string[] | null;
   /** 采购原价（货源币种，如 CNY） */
   price?: number | null;
   currency?: string | null;

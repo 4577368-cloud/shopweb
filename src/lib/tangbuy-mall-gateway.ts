@@ -4,6 +4,7 @@ import type { PricingTemplate } from "@/lib/types";
 
 const GATEWAY_PATH = "/gateway/plugin/item/allSubScriptionSearch";
 const DEFAULT_CURRENCY = "CNY";
+const MAX_IMAGES = 10;
 
 interface MallGatewayRow {
   itemId?: number | string;
@@ -85,6 +86,22 @@ export async function fetchMallPage(
   return { total: data.total ?? 0, rows: data.rows ?? [] };
 }
 
+function collectImageUrls(row: MallGatewayRow): string[] {
+  const raw = row.imageList?.length ? row.imageList : row.itemImages;
+  if (!raw?.length) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const u of raw) {
+    const url = typeof u === "string" ? u.trim() : "";
+    if (!url || seen.has(url)) continue;
+    if (!/^https?:\/\//i.test(url)) continue;
+    seen.add(url);
+    out.push(url);
+    if (out.length >= MAX_IMAGES) break;
+  }
+  return out;
+}
+
 /** Map one gateway row; mirrors backend TangbuyCatalogService.fromMallRow. */
 export function rowToCatalogBase(
   row: MallGatewayRow
@@ -98,8 +115,7 @@ export function rowToCatalogBase(
   const candidateId = String(rawId).trim();
   if (!candidateId || candidateId === "null") return null;
 
-  const images = row.imageList?.length ? row.imageList : row.itemImages;
-  const imageUrl = images?.[0]?.trim() || null;
+  const imageUrls = collectImageUrls(row);
   const price =
     row.price != null && Number.isFinite(row.price)
       ? row.price
@@ -110,7 +126,8 @@ export function rowToCatalogBase(
   return {
     candidateId,
     title: row.itemName ?? candidateId,
-    imageUrl,
+    imageUrl: imageUrls[0] ?? null,
+    imageUrls: imageUrls.length ? imageUrls : null,
     price,
     currency: DEFAULT_CURRENCY,
     supplierShop: row.providerShopName?.trim() || null,
@@ -141,6 +158,7 @@ export type CatalogPublishSnapshot = {
   price?: number | null;
   currency?: string | null;
   imageUrl?: string | null;
+  imageUrls?: string[] | null;
   tangbuyUrl?: string | null;
   supplierShop?: string | null;
   upstreamPlatform?: string | null;
@@ -149,11 +167,15 @@ export type CatalogPublishSnapshot = {
 export function toPublishSnapshot(
   item: CatalogRecommendation
 ): CatalogPublishSnapshot {
+  const imageUrls =
+    item.imageUrls?.filter((u) => Boolean(u?.trim())) ??
+    (item.imageUrl ? [item.imageUrl] : []);
   return {
     title: item.title,
     price: item.price,
     currency: item.currency,
-    imageUrl: item.imageUrl,
+    imageUrl: imageUrls[0] ?? item.imageUrl,
+    imageUrls: imageUrls.length ? imageUrls : null,
     tangbuyUrl: item.tangbuyUrl,
     supplierShop: item.supplierShop,
     upstreamPlatform: item.upstreamPlatform,

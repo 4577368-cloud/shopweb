@@ -602,7 +602,19 @@ function RecommendationCard({
       </div>
 
       <h3 className="mt-2.5 line-clamp-2 min-h-[2.5rem] text-xs font-semibold leading-5 text-ink">
-        {item.title}
+        {item.tangbuyUrl ? (
+          <a
+            href={item.tangbuyUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-ink hover:text-brand-strong hover:underline"
+            title="在 Tangbuy 打开货源"
+          >
+            {item.title}
+          </a>
+        ) : (
+          item.title
+        )}
       </h3>
 
       <div className="mt-1.5">

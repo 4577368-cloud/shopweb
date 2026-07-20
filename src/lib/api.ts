@@ -208,6 +208,7 @@ export const api = {
       price?: number | null;
       currency?: string | null;
       imageUrl?: string | null;
+      imageUrls?: string[] | null;
       tangbuyUrl?: string | null;
       supplierShop?: string | null;
       upstreamPlatform?: string | null;
