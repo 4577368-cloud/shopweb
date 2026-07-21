@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -12,9 +12,36 @@ import { InfoCard } from "@/components/workbench/info-card";
 import { AiCopilotScanStage } from "@/components/workbench/ai-copilot-scan-stage";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { useProductsScan } from "@/hooks/use-products-scan";
+import { useAutoNewArrivalAnalysis } from "@/hooks/use-auto-new-arrival-analysis";
 import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
 import { consumeScanHandoff, markScanHandoff } from "@/lib/scan/handoff";
 import { scanBriefingLine } from "@/lib/scan/copilot-workflow";
+import {
+  aiFieldEditKey,
+  applyListingEditsToProducts,
+  formatListingMoney,
+  type AiFieldEditRecord,
+  type AiFieldId,
+} from "@/lib/ai-field-edit-feedback";
+import {
+  computeShopProductBindingStats,
+  indexImageBindings,
+} from "@/lib/shop-product-binding-stats";
+import {
+  computeNewArrivalStats,
+  readProductBaseline,
+  seedProductBaselineIfEmpty,
+  writeProductBaseline,
+  type NewArrivalStats,
+} from "@/lib/shop-product-mirror-baseline";
+import {
+  formatNewArrivalAnalysisSummary,
+  type NewArrivalAnalysisResult,
+  type NewArrivalAnalysisSource,
+} from "@/lib/new-arrival-analysis-result";
+import { runNewArrivalAnalysis, isNewArrivalNotReadyError } from "@/lib/run-new-arrival-analysis";
+import { formatBatchLinkSummary } from "@/lib/batch-link/types";
+import type { BatchLinkProgress } from "@/lib/batch-link/types";
 import { SmartSourcingSummaryBar } from "@/components/select/smart-sourcing-summary-bar";
 import { PricingStrategyRailCard } from "@/components/select/pricing-strategy-rail-card";
 import { PricingTemplateDrawer } from "@/components/select/pricing-template-drawer";
@@ -24,6 +51,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
+import { mergeListingPriceRow, writeShopListingPrice } from "@/lib/shop-product-write";
 import {
   ShopProductsPanel,
   type ShopFilter,
@@ -84,6 +112,17 @@ function SelectContent() {
   );
 
   const [shopFilter, setShopFilter] = useState<ShopFilter>("all");
+  const emptyNewArrivals = useMemo<NewArrivalStats>(
+    () => ({
+      newArrivalCount: 0,
+      pendingNewAnalysisCount: 0,
+      newArrivalIds: new Set(),
+      pendingNewAnalysisIds: new Set(),
+    }),
+    []
+  );
+  const [newArrivalStats, setNewArrivalStats] =
+    useState<NewArrivalStats>(emptyNewArrivals);
   const [summary, setSummary] = useState<ProductsSummary | null>(null);
   const [template, setTemplate] = useState<PricingTemplate | null>(null);
   const [shopProducts, setShopProducts] = useState<ShopMirrorProduct[]>([]);
@@ -108,6 +147,17 @@ function SelectContent() {
     null
   );
   const [rematchUnboundSignal, setRematchUnboundSignal] = useState(0);
+  const [mirrorRefreshSignal, setMirrorRefreshSignal] = useState(0);
+  const [aiFieldEdits, setAiFieldEdits] = useState<
+    Record<string, AiFieldEditRecord>
+  >({});
+  const aiFieldEditsRef = useRef(aiFieldEdits);
+  useEffect(() => {
+    aiFieldEditsRef.current = aiFieldEdits;
+  }, [aiFieldEdits]);
+  const bumpMirrorRefresh = useCallback(() => {
+    setMirrorRefreshSignal((n) => n + 1);
+  }, []);
   const [pendingMinis, setPendingMinis] = useState<
     import("@/lib/agents/products/shop-minis").ShopProductMini[]
   >([]);
@@ -134,30 +184,59 @@ function SelectContent() {
     [shopProducts]
   );
 
+  const refreshNewArrivalAwareness = useCallback(
+    (
+      products: ShopMirrorProduct[],
+      bindings: Record<string, ImageBindingView>
+    ) => {
+      if (!hasScanned("products", shopName)) {
+        setNewArrivalStats(emptyNewArrivals);
+        return;
+      }
+      if (seedProductBaselineIfEmpty(shopName, products)) {
+        setNewArrivalStats(emptyNewArrivals);
+        return;
+      }
+      const baseline = readProductBaseline(shopName);
+      setNewArrivalStats(computeNewArrivalStats(products, bindings, baseline));
+    },
+    [shopName, emptyNewArrivals]
+  );
+
+  const commitAnalysisBaseline = useCallback(
+    (products: ShopMirrorProduct[]) => {
+      writeProductBaseline(
+        shopName,
+        products.map((p) => p.thirdPlatformItemId)
+      );
+      setNewArrivalStats(emptyNewArrivals);
+    },
+    [shopName, emptyNewArrivals]
+  );
+
   const loadSummary = useCallback(async () => {
     const [products, bindings, tpl] = await Promise.all([
       api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
       api.listImageBindings(shopName).catch(() => []),
       api.getPricingTemplate(shopName).catch(() => null),
     ]);
-    const confirmed = new Set<string>();
-    const pending = new Set<string>();
-    const map: Record<string, ImageBindingView> = {};
-    for (const b of bindings) {
-      if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
-      if (!b.bound || !b.thirdPlatformItemId) continue;
-      if (b.bindStatus === "PENDING") pending.add(b.thirdPlatformItemId);
-      else confirmed.add(b.thirdPlatformItemId);
-    }
+    const map = indexImageBindings(bindings);
+    const stats = computeShopProductBindingStats(products, map);
+    const merged = applyListingEditsToProducts(
+      products,
+      aiFieldEditsRef.current
+    );
     setBindingsMap(map);
-    setShopProducts(products);
+    setShopProducts(merged);
     setTemplate(tpl);
     setSummary({
-      shopProducts: products.length,
-      confirmedProducts: confirmed.size,
-      pendingProducts: pending.size,
+      shopProducts: stats.analyzed,
+      confirmedProducts: stats.confirmed,
+      pendingProducts: stats.pending,
     });
-  }, [shopName]);
+    refreshNewArrivalAwareness(merged, map);
+    return { products: merged, bindings: map };
+  }, [shopName, refreshNewArrivalAwareness]);
 
   const finishedRef = useRef(false);
   const finishToResult = useCallback(async () => {
@@ -166,9 +245,10 @@ function SelectContent() {
     cancelScan();
     markScanned("products", shopName);
     markScanHandoff(shopName, scanStats);
-    await loadSummary();
+    const { products } = await loadSummary();
+    if (products) commitAnalysisBaseline(products);
     setPhase("result");
-  }, [cancelScan, shopName, loadSummary, scanStats]);
+  }, [cancelScan, shopName, loadSummary, scanStats, commitAnalysisBaseline]);
 
   const startedForShopRef = useRef<string | null>(null);
   useEffect(() => {
@@ -198,9 +278,130 @@ function SelectContent() {
   }, [phase, isAuthorized, shopName]);
 
   useEffect(() => {
+    if (phase !== "result" || !isAuthorized) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadSummary();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [phase, isAuthorized, loadSummary]);
+
+  useEffect(() => {
     setFocusCandidateId(null);
     setFocusCandidates([]);
   }, [focusProductId]);
+
+  const [analyzingSource, setAnalyzingSource] =
+    useState<NewArrivalAnalysisSource | null>(null);
+  const analyzingNewArrivals = analyzingSource != null;
+  const [newArrivalAnalysisResult, setNewArrivalAnalysisResult] =
+    useState<NewArrivalAnalysisResult | null>(null);
+  const [unboundMatching, setUnboundMatching] = useState(false);
+  const [batchLinkProgress, setBatchLinkProgress] = useState<BatchLinkProgress | null>(
+    null
+  );
+  const [batchLinkSignal, setBatchLinkSignal] = useState(0);
+
+  const runNewArrivalAnalysisFlow = useCallback(
+    async (itemIds: string[], source: NewArrivalAnalysisSource) => {
+      if (itemIds.length === 0) {
+        if (source === "manual") showToast("暂无待关联新商品");
+        return;
+      }
+      if (analyzingSource != null) return;
+
+      setAnalyzingSource(source);
+      setNewArrivalAnalysisResult(null);
+      try {
+        if (source === "manual") {
+          showToast(`开始关联 ${itemIds.length} 个新商品…`);
+        } else {
+          showToast(`检测到 ${itemIds.length} 个新商品，等待主图就绪后自动关联…`);
+        }
+        const result = await runNewArrivalAnalysis({
+          shopName,
+          itemIds,
+          source,
+          loadSummary,
+        });
+        await loadSummary();
+        bumpMirrorRefresh();
+        setNewArrivalAnalysisResult(result);
+        showToast(formatNewArrivalAnalysisSummary(result));
+      } catch (err) {
+        if (source === "auto" && isNewArrivalNotReadyError(err)) {
+          return;
+        }
+        showToast(readableError(err) || "新商品关联失败");
+      } finally {
+        setAnalyzingSource(null);
+      }
+    },
+    [analyzingSource, bumpMirrorRefresh, loadSummary, shopName, showToast]
+  );
+
+  const handleAutoAnalyzeNewArrivals = useCallback(
+    (itemIds: string[]) => {
+      void runNewArrivalAnalysisFlow(itemIds, "auto");
+    },
+    [runNewArrivalAnalysisFlow]
+  );
+
+  const autoAnalysisEnabled =
+    phase === "result" &&
+    isAuthorized &&
+    hasScanned("products", shopName) &&
+    tab === "shop";
+
+  const pendingAwarenessKeyRef = useRef("");
+  const refreshAwareness = useCallback(async () => {
+    const { products, bindings } = await loadSummary();
+    const baseline = readProductBaseline(shopName);
+    const stats = computeNewArrivalStats(products, bindings, baseline);
+    const key = Array.from(stats.pendingNewAnalysisIds).sort().join(",");
+    if (key !== pendingAwarenessKeyRef.current) {
+      pendingAwarenessKeyRef.current = key;
+      bumpMirrorRefresh();
+    }
+  }, [bumpMirrorRefresh, loadSummary, shopName]);
+
+  const { autoScheduled, autoScheduledCount, cancelAutoSchedule } =
+    useAutoNewArrivalAnalysis({
+      enabled: autoAnalysisEnabled,
+      pendingIds: newArrivalStats.pendingNewAnalysisIds,
+      isAnalyzing: analyzingNewArrivals,
+      onAutoRun: handleAutoAnalyzeNewArrivals,
+      onRefresh: () => void refreshAwareness(),
+    });
+
+  const handleAnalyzeNewArrivals = useCallback(() => {
+    cancelAutoSchedule();
+    void runNewArrivalAnalysisFlow(
+      Array.from(newArrivalStats.pendingNewAnalysisIds),
+      "manual"
+    );
+  }, [
+    cancelAutoSchedule,
+    newArrivalStats.pendingNewAnalysisIds,
+    runNewArrivalAnalysisFlow,
+  ]);
+
+  const viewNewArrivalResult = useCallback(
+    (target: "pending" | "unbound") => {
+      if (!newArrivalAnalysisResult) return;
+      const itemIds =
+        target === "pending"
+          ? newArrivalAnalysisResult.pendingItemIds
+          : newArrivalAnalysisResult.unmatchedItemIds;
+      setTab("shop");
+      setShopFilter(target === "pending" ? "pending" : "unbound");
+      if (itemIds[0]) {
+        setFocusProductId(itemIds[0]);
+        setScrollToProductId(itemIds[0]);
+      }
+    },
+    [newArrivalAnalysisResult, setTab]
+  );
 
   const restartScan = useCallback(() => {
     finishedRef.current = false;
@@ -210,12 +411,9 @@ function SelectContent() {
   }, [shopName, startScan]);
 
   const pendingCount = summary?.pendingProducts ?? 0;
-  const unbound =
-    summary != null
-      ? Math.max(summary.shopProducts - summary.confirmedProducts - summary.pendingProducts, 0)
-      : 0;
-  const matched =
-    summary != null ? summary.confirmedProducts + summary.pendingProducts : 0;
+  const analyzed = summary?.shopProducts ?? 0;
+  const matched = summary != null ? summary.confirmedProducts + summary.pendingProducts : 0;
+  const unbound = summary != null ? Math.max(analyzed - matched, 0) : 0;
 
   const analysisReady = phase === "result" && summary != null;
   const previewPricingGuide = searchParams.get("previewPricingGuide") === "1";
@@ -240,6 +438,15 @@ function SelectContent() {
     setPricingOpen(true);
   }, [isAuthorized, showToast]);
 
+  const productCatalog = useMemo(
+    () =>
+      shopProducts.map((p) => ({
+        productId: p.thirdPlatformItemId,
+        title: (p.title ?? "").trim() || p.thirdPlatformItemId,
+      })),
+    [shopProducts]
+  );
+
   const pageContext = useMemo(
     () =>
       buildProductsPageContext({
@@ -260,6 +467,7 @@ function SelectContent() {
         focusCandidateId,
         focusProduct: focusProductSnapshot,
         focusCandidates,
+        productCatalog,
         scanHandoff,
         shopCurrencyHint,
       }),
@@ -281,6 +489,7 @@ function SelectContent() {
       focusCandidateId,
       focusProductSnapshot,
       focusCandidates,
+      productCatalog,
       scanHandoff,
       shopCurrencyHint,
     ]
@@ -291,22 +500,17 @@ function SelectContent() {
       products: ShopMirrorProduct[],
       bindings: Record<string, ImageBindingView>
     ) => {
-      const confirmed = new Set<string>();
-      const pending = new Set<string>();
-      for (const b of Object.values(bindings)) {
-        if (!b.bound || !b.thirdPlatformItemId) continue;
-        if (b.bindStatus === "PENDING") pending.add(b.thirdPlatformItemId);
-        else confirmed.add(b.thirdPlatformItemId);
-      }
+      const stats = computeShopProductBindingStats(products, bindings);
       setShopProducts(products);
       setBindingsMap(bindings);
       setSummary({
-        shopProducts: products.length,
-        confirmedProducts: confirmed.size,
-        pendingProducts: pending.size,
+        shopProducts: stats.analyzed,
+        confirmedProducts: stats.confirmed,
+        pendingProducts: stats.pending,
       });
+      refreshNewArrivalAwareness(products, bindings);
     },
-    []
+    [refreshNewArrivalAwareness]
   );
 
   const agentPanelContext = useMemo(() => {
@@ -415,7 +619,6 @@ function SelectContent() {
       }
       if (action.kind === "rematch_unbound") {
         setTab("shop");
-        setShopFilter("unbound");
         setRematchUnboundSignal((n) => n + 1);
       }
       if (action.kind === "apply_filter_preset") {
@@ -427,6 +630,91 @@ function SelectContent() {
       }
     },
     [openPricingDrawer, setTab, focusProduct, pendingMinis, unboundMinis]
+  );
+
+  const clearAiFieldEdit = useCallback((productId: string, field: AiFieldId) => {
+    setAiFieldEdits((prev) => {
+      const key = aiFieldEditKey(productId, field);
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
+  const markAiFieldEdit = useCallback(
+    (record: Omit<AiFieldEditRecord, "createdAt">) => {
+      const key = aiFieldEditKey(record.productId, record.field);
+      setAiFieldEdits((prev) => ({
+        ...prev,
+        [key]: { ...record, createdAt: Date.now() },
+      }));
+    },
+    []
+  );
+
+  const executeListingPriceUpdate = useCallback(
+    async (req: {
+      productId: string;
+      price: number;
+      currency: string;
+      variantScope: "all" | "one";
+      variantSkuId?: string;
+    }) => {
+      const target =
+        req.variantScope === "all"
+          ? ({ scope: "all" } as const)
+          : ({
+              scope: "one",
+              thirdPlatformSkuId: req.variantSkuId!,
+            } as const);
+      const { detail, previousPrice, variantScope } = await writeShopListingPrice(
+        shopName,
+        req.productId,
+        req.price,
+        target
+      );
+      const currency = req.currency || detail.currency || "USD";
+      const editRecord: AiFieldEditRecord = {
+        productId: req.productId,
+        field: "listingPrice",
+        previousValue: previousPrice,
+        nextValue: req.price,
+        previousDisplay: formatListingMoney(previousPrice, currency),
+        nextDisplay: formatListingMoney(req.price, currency),
+        currency,
+        createdAt: Date.now(),
+      };
+      const editsWithCurrent = {
+        ...aiFieldEditsRef.current,
+        [aiFieldEditKey(req.productId, "listingPrice")]: editRecord,
+      };
+      aiFieldEditsRef.current = editsWithCurrent;
+      setAiFieldEdits(editsWithCurrent);
+
+      await loadSummary();
+      setShopProducts((prev) =>
+        applyListingEditsToProducts(
+          prev.map((p) =>
+            p.thirdPlatformItemId === req.productId
+              ? mergeListingPriceRow(
+                  p,
+                  detail,
+                  req.price,
+                  previousPrice,
+                  variantScope
+                )
+              : p
+          ),
+          editsWithCurrent
+        )
+      );
+      bumpMirrorRefresh();
+      showToast(
+        `已将「${detail.title ?? "商品"}」售价更新为 ${currency} ${req.price.toFixed(2)}`
+      );
+    },
+    [bumpMirrorRefresh, loadSummary, shopName, showToast]
   );
 
   // Real reset: soft-delete stored template so isDefault becomes true again.
@@ -530,12 +818,32 @@ function SelectContent() {
     },
     [setTab]
   );
-  const statusCta: { label: string; href?: string; onClick?: () => void } =
+  const enqueueUnboundMatch = useCallback(() => {
+    if (unboundMatching || unbound <= 0) return;
+    setTab("shop");
+    setShopFilter("unbound");
+    setUnboundMatching(true);
+    setBatchLinkProgress(null);
+    setBatchLinkSignal((n) => n + 1);
+  }, [unbound, unboundMatching, setTab]);
+
+  const statusCta: {
+    label: string;
+    href?: string;
+    onClick?: () => void;
+    loading?: boolean;
+    queueAction?: boolean;
+  } =
     pendingCount > 0
-      ? { label: `处理 ${pendingCount} 个待确认`, onClick: () => jumpToShopFilter("pending") }
+      ? { label: `确认 ${pendingCount} 个`, onClick: () => jumpToShopFilter("pending") }
       : unbound > 0
-        ? { label: `为 ${unbound} 个商品查找货源`, onClick: () => jumpToShopFilter("unbound") }
-        : { label: "进入 SKU 绑定", href: "/sku-align" };
+        ? {
+            label: unboundMatching ? "一键关联中…" : "一键关联",
+            onClick: () => void enqueueUnboundMatch(),
+            loading: unboundMatching,
+            queueAction: true,
+          }
+        : { label: "SKU 绑定", href: "/sku-align" };
 
   const scanCopilot: AiPanelContent = {
     title: scanDone ? "首轮分析已完成" : "AI 正在分析",
@@ -568,6 +876,10 @@ function SelectContent() {
             })
           }
           onFocusProduct={focusProduct}
+          onRequestAgentIntent={(intent, productId) =>
+            requestAgentIntent(intent, productId)
+          }
+          onExecuteListingPriceUpdate={executeListingPriceUpdate}
         />
       }
       strategyCards={
@@ -686,9 +998,15 @@ function SelectContent() {
               </Button>
             </Link>
           ) : (
-            <Button onClick={statusCta.onClick}>
+            <Button
+              size="sm"
+              onClick={statusCta.onClick}
+              disabled={statusCta.loading}
+            >
+              {statusCta.loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
               {statusCta.label}
-              <ArrowRight className="h-4 w-4" />
             </Button>
           )
         }
@@ -711,8 +1029,21 @@ function SelectContent() {
                 matched={matched}
                 pending={pendingCount}
                 unbound={unbound}
+                pendingNewAnalysis={newArrivalStats.pendingNewAnalysisCount}
                 recommendedCategories={recommendedCategories}
                 onRefresh={restartScan}
+                onViewNewArrivals={() => setShopFilter("new_arrivals")}
+                onAnalyzeNewArrivals={handleAnalyzeNewArrivals}
+                analyzingNewArrivals={analyzingNewArrivals}
+                analyzingNewArrivalsSource={analyzingSource}
+                autoNewArrivalScheduled={autoScheduled}
+                autoNewArrivalScheduledCount={autoScheduledCount}
+                newArrivalAnalysisResult={newArrivalAnalysisResult}
+                onDismissNewArrivalResult={() => setNewArrivalAnalysisResult(null)}
+                onViewNewArrivalPending={() => viewNewArrivalResult("pending")}
+                onViewNewArrivalUnmatched={() => viewNewArrivalResult("unbound")}
+                unboundMatchJob={null}
+                batchLinkProgress={batchLinkProgress}
               />
             ) : (
               <div ref={setFiltersMountEl} />
@@ -726,11 +1057,22 @@ function SelectContent() {
                 onActivity={loadSummary}
                 filter={shopFilter}
                 onFilterChange={setShopFilter}
+                pendingNewAnalysisIds={newArrivalStats.pendingNewAnalysisIds}
+                onMirrorAnalysisCommitted={commitAnalysisBaseline}
                 focusProductId={focusProductId}
                 scrollToProductId={scrollToProductId}
                 onScrollToConsumed={() => setScrollToProductId(null)}
                 searchModeProductId={searchModeProductId}
                 rematchUnboundSignal={rematchUnboundSignal}
+                batchLinkSignal={batchLinkSignal}
+                mirrorRefreshSignal={mirrorRefreshSignal}
+                onBatchLinkProgressChange={setBatchLinkProgress}
+                onBatchLinkFinished={(progress) => {
+                  setUnboundMatching(false);
+                  void loadSummary().then(() => bumpMirrorRefresh());
+                  showToast(formatBatchLinkSummary(progress));
+                  window.setTimeout(() => setBatchLinkProgress(null), 2000);
+                }}
                 onSearchModeConsumed={() => setSearchModeProductId(null)}
                 onProductFocus={(id) => setFocusProductId(id)}
                 onBindingsChange={setBindingsMap}
@@ -745,6 +1087,8 @@ function SelectContent() {
                   setPendingMinis(pending);
                   setUnboundMinis(unbound);
                 }}
+                aiFieldEdits={aiFieldEdits}
+                onAiFieldEditConsumed={clearAiFieldEdit}
               />
             </div>
           ) : null}

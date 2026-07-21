@@ -16,11 +16,17 @@ import {
   splitProductChips,
 } from "@/lib/agents/products/active-task";
 import type { ShopProductMini } from "@/lib/agents/products/shop-minis";
+import { classifyProductsShortInput, fetchProductsAgentResponse, type ClientAgentResponse } from "@/lib/agents/products/client";
+import { classifyProductCommandInput } from "@/lib/agents/products/command-client";
+import { readableError } from "@/lib/api";
 import {
-  classifyProductsShortInput,
-  fetchProductsAgentResponse,
-  type ClientAgentResponse,
-} from "@/lib/agents/products/client";
+  commandRequiresConfirmation,
+  planProductCommand,
+  resolveCommandExecution,
+} from "@/lib/agents/products/plan-command";
+import type { ProductCommandExecution, ProductCommandPlan } from "@/lib/agents/products/command-schema";
+import { ProductCommandCard } from "@/components/select/product-command-card";
+import { ListingPriceConfirmCard } from "@/components/select/listing-price-confirm-card";
 import { PRODUCTS_SHORT_INPUT_MAX } from "@/lib/agents/products/classify-intent";
 import {
   ActiveTaskCard,
@@ -39,6 +45,17 @@ export interface ProductsAgentPanelProps {
   onIntentRequestConsumed?: () => void;
   onApplySuggestedAction?: (action: AgentSuggestedAction) => void;
   onFocusProduct?: (productId: string, opts?: { openSearch?: boolean }) => void;
+  onRequestAgentIntent?: (
+    intent: ProductsIntentId,
+    productId: string
+  ) => void;
+  onExecuteListingPriceUpdate?: (req: {
+    productId: string;
+    price: number;
+    currency: string;
+    variantScope: "all" | "one";
+    variantSkuId?: string;
+  }) => Promise<void>;
   className?: string;
 }
 
@@ -58,12 +75,16 @@ export function ProductsAgentPanel({
   onIntentRequestConsumed,
   onApplySuggestedAction,
   onFocusProduct,
+  onRequestAgentIntent,
+  onExecuteListingPriceUpdate,
   className,
 }: ProductsAgentPanelProps) {
   const [activeIntent, setActiveIntent] = useState<ProductsIntentId | null>(
     null
   );
   const [response, setResponse] = useState<ClientAgentResponse | null>(null);
+  const [commandPlan, setCommandPlan] = useState<ProductCommandPlan | null>(null);
+  const [commandExecuting, setCommandExecuting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [input, setInput] = useState("");
   const [clarify, setClarify] = useState<string | null>(null);
@@ -94,16 +115,7 @@ export function ProductsAgentPanel({
     onApplySuggestedAction?.(action);
   };
 
-  const runIntent = (id: ProductsIntentId) => {
-    // Pricing chip: open drawer directly — no verbose execution card.
-    if (id === "explain_pricing" || id === "configure_pricing") {
-      setMoreOpen(false);
-      setClarify(null);
-      dispatchAction({ kind: "open_pricing_drawer", label: "定价策略" });
-      setActiveIntent(id);
-      setResponse(null);
-      return;
-    }
+  const runAgentIntent = (id: ProductsIntentId) => {
     const seq = ++requestSeq.current;
     setActiveIntent(id);
     setClarify(null);
@@ -118,6 +130,168 @@ export function ProductsAgentPanel({
       .finally(() => {
         if (requestSeq.current === seq) setLoading(false);
       });
+  };
+
+  const executeCommand = async (plan: ProductCommandPlan) => {
+    const execution = resolveCommandExecution(plan);
+    if (!execution) {
+      setClarify(plan.clarify ?? "无法执行该命令。");
+      return;
+    }
+    setCommandExecuting(true);
+    setCommandPlan(null);
+    setClarify(null);
+    try {
+      await applyCommandExecution(plan, execution);
+    } catch (err) {
+      setClarify(readableError(err) || "命令执行失败，请稍后重试。");
+    } finally {
+      setCommandExecuting(false);
+    }
+  };
+
+  const applyCommandExecution = async (
+    plan: ProductCommandPlan,
+    execution: ProductCommandExecution
+  ) => {
+    const productId = plan.draft.productId ?? plan.draft.params.productId;
+
+    if (execution.type === "agent_action") {
+      if (
+        productId &&
+        execution.action.kind !== "set_shop_filter" &&
+        execution.action.kind !== "open_pricing_drawer"
+      ) {
+        onFocusProduct?.(
+          productId,
+          execution.action.kind === "open_candidate_search"
+            ? { openSearch: true }
+            : undefined
+        );
+      }
+      dispatchAction(execution.action);
+      setActiveIntent(null);
+      setResponse(null);
+      return;
+    }
+    if (execution.type === "agent_intent") {
+      if (productId) {
+        onRequestAgentIntent?.(execution.intent, productId);
+        return;
+      }
+      runAgentIntent(execution.intent);
+      return;
+    }
+    if (execution.type === "listing_price_update") {
+      if (!onExecuteListingPriceUpdate) {
+        setClarify("售价修改执行器未就绪。");
+        return;
+      }
+      if (execution.variantScope === "one" && !execution.variantSkuId) {
+        setClarify("请选择要修改的规格。");
+        return;
+      }
+      await onExecuteListingPriceUpdate({
+        productId: execution.productId,
+        price: execution.price,
+        currency: execution.currency,
+        variantScope: execution.variantScope,
+        variantSkuId: execution.variantSkuId,
+      });
+      setActiveIntent(null);
+      setResponse(null);
+    }
+  };
+
+  const applyListingPriceExecution = async (
+    execution: Extract<ProductCommandExecution, { type: "listing_price_update" }>
+  ) => {
+    setCommandExecuting(true);
+    setCommandPlan(null);
+    setClarify(null);
+    try {
+      if (!onExecuteListingPriceUpdate) {
+        setClarify("售价修改执行器未就绪。");
+        return;
+      }
+      if (execution.variantScope === "one" && !execution.variantSkuId) {
+        setClarify("请选择要修改的规格。");
+        return;
+      }
+      await onExecuteListingPriceUpdate({
+        productId: execution.productId,
+        price: execution.price,
+        currency: execution.currency,
+        variantScope: execution.variantScope,
+        variantSkuId: execution.variantSkuId,
+      });
+      setActiveIntent(null);
+      setResponse(null);
+    } catch (err) {
+      setClarify(readableError(err) || "命令执行失败，请稍后重试。");
+    } finally {
+      setCommandExecuting(false);
+    }
+  };
+
+  const handleCommandClassified = async (text: string, seq: number) => {
+    const classified = await classifyProductCommandInput(text);
+    if (requestSeq.current !== seq) return;
+
+    if (classified.confidence === "high" && classified.draft) {
+      const plan = planProductCommand(classified.draft, context);
+      if (!plan.executable) {
+        setActiveIntent(null);
+        setResponse(null);
+        setCommandPlan(null);
+        setClarify(plan.clarify ?? "无法执行该命令。");
+        setLoading(false);
+        return;
+      }
+      setInput("");
+      setActiveIntent(null);
+      setResponse(null);
+      if (commandRequiresConfirmation(plan)) {
+        setCommandPlan(plan);
+        setLoading(false);
+        return;
+      }
+      await executeCommand(plan);
+      if (requestSeq.current === seq) setLoading(false);
+      return;
+    }
+
+    const qa = await classifyProductsShortInput(text);
+    if (requestSeq.current !== seq) return;
+    if (qa.confidence === "none") {
+      setActiveIntent(null);
+      setCommandPlan(null);
+      setClarify(
+        classified.clarify ?? qa.clarify ?? "请换个说法或点击上方任务。"
+      );
+      setLoading(false);
+      return;
+    }
+    setInput("");
+    setCommandPlan(null);
+    setActiveIntent(qa.intent);
+    const result = await fetchProductsAgentResponse(qa.intent, context);
+    if (requestSeq.current !== seq) return;
+    setResponse(result);
+    setLoading(false);
+  };
+
+  const runIntent = (id: ProductsIntentId) => {
+    setCommandPlan(null);
+    if (id === "explain_pricing" || id === "configure_pricing") {
+      setMoreOpen(false);
+      setClarify(null);
+      dispatchAction({ kind: "open_pricing_drawer", label: "定价策略" });
+      setActiveIntent(id);
+      setResponse(null);
+      return;
+    }
+    runAgentIntent(id);
   };
 
   // First ready: auto-load shop status (includes scan handoff when present).
@@ -151,30 +325,12 @@ export function ProductsAgentPanel({
     setLoading(true);
     setClarify(null);
     setResponse(null);
-    void classifyProductsShortInput(text)
-      .then(async (classified) => {
-        if (requestSeq.current !== seq) return;
-        if (classified.confidence === "none") {
-          setActiveIntent(null);
-          setClarify(classified.clarify ?? "请换个说法或点击上方任务。");
-          setLoading(false);
-          return;
-        }
-        setInput("");
-        setActiveIntent(classified.intent);
-        const result = await fetchProductsAgentResponse(
-          classified.intent,
-          context
-        );
-        if (requestSeq.current !== seq) return;
-        setResponse(result);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (requestSeq.current !== seq) return;
-        setClarify("分类暂时不可用，请点击上方任务芯片。");
-        setLoading(false);
-      });
+    setCommandPlan(null);
+    void handleCommandClassified(text, seq).catch(() => {
+      if (requestSeq.current !== seq) return;
+      setClarify("命令识别暂时不可用，请点击上方任务芯片。");
+      setLoading(false);
+    });
   };
 
   const chipLabel = (id: ProductsIntentId) =>
@@ -208,8 +364,13 @@ export function ProductsAgentPanel({
           <span className="text-slate-400">已选</span>
           <span className="mx-1 text-slate-300">·</span>
           {context.focusProduct.title}
+          <span className="ml-1 text-slate-400">（可说「这个商品…」）</span>
         </p>
-      ) : null}
+      ) : (
+        <p className="text-[10px] leading-snug text-slate-400">
+          未选中商品：请点列表中的商品，或在命令里写商品名（如「把拖鞋的售价改成 9.9」）
+        </p>
+      )}
 
       {primary.length > 0 || more.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1">
@@ -269,7 +430,7 @@ export function ProductsAgentPanel({
           value={input}
           maxLength={PRODUCTS_SHORT_INPUT_MAX}
           disabled={loading}
-          placeholder="补充提问…"
+          placeholder="输入命令或提问…"
           onChange={(e) => setInput(e.target.value)}
           className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none disabled:opacity-60"
           aria-label="短命令输入"
@@ -298,8 +459,27 @@ export function ProductsAgentPanel({
         </p>
       ) : null}
 
-      {loading ? (
-        <p className="text-[11px] text-slate-400">正在切换任务…</p>
+      {commandPlan ? (
+        commandPlan.draft.intent === "update_listing_price" ? (
+          <ListingPriceConfirmCard
+            plan={commandPlan}
+            shopName={context.shopName}
+            executing={commandExecuting}
+            onConfirm={(execution) => void applyListingPriceExecution(execution)}
+            onCancel={() => setCommandPlan(null)}
+          />
+        ) : (
+          <ProductCommandCard
+            plan={commandPlan}
+            executing={commandExecuting}
+            onConfirm={() => void executeCommand(commandPlan)}
+            onCancel={() => setCommandPlan(null)}
+          />
+        )
+      ) : null}
+
+      {loading && !commandPlan ? (
+        <p className="text-[11px] text-slate-400">正在识别…</p>
       ) : response && activeIntent ? (
         <ProductsIntentResult
           intent={activeIntent}

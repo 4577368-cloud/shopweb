@@ -285,10 +285,21 @@ export const api = {
     });
   },
 
-  /** Start (or return) the server-side image-auto-match queue for a shop or single product. */
-  startMatchQueue: (shop: string, thirdPlatformItemId?: string) => {
+  /** Start (or return) the server-side image-auto-match queue for a shop or scoped products. */
+  startMatchQueue: (
+    shop: string,
+    opts?: string | { thirdPlatformItemId?: string; thirdPlatformItemIds?: string[] }
+  ) => {
     const params = new URLSearchParams({ shopName: shop });
-    if (thirdPlatformItemId) params.set("thirdPlatformItemId", thirdPlatformItemId);
+    if (typeof opts === "string") {
+      params.set("thirdPlatformItemId", opts);
+    } else if (opts?.thirdPlatformItemId) {
+      params.set("thirdPlatformItemId", opts.thirdPlatformItemId);
+    } else if (opts?.thirdPlatformItemIds?.length) {
+      for (const id of opts.thirdPlatformItemIds) {
+        params.append("thirdPlatformItemIds", id);
+      }
+    }
     return request<MatchJobProgress>(`/api/plugin/match/queue/start?${params.toString()}`, {
       method: "POST",
     });
@@ -344,6 +355,22 @@ export const api = {
     const params = new URLSearchParams({ shopName: shop, thirdPlatformSkuId });
     return request<void>(`/api/plugin/match/sku/unbind?${params.toString()}`, { method: "POST" });
   },
+
+  /** Manual SKU pick from /sku-align picker; writes ACTIVE binding. */
+  bindSkuBinding: (body: {
+    shopName: string;
+    thirdPlatformItemId: string;
+    thirdPlatformSkuId: string;
+    tangbuyProductId: string;
+    tangbuySkuId: string;
+    tangbuySkuSpec?: string | null;
+    detailUrl?: string | null;
+  }) =>
+    request<void>(`/api/plugin/match/sku/bind`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
 
   /**
    * S1-a: SKU binding overview — products with at least one ACTIVE binding, aggregated per product
