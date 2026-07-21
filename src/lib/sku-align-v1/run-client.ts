@@ -1,5 +1,5 @@
-import { api } from "@/lib/api";
-import { isSkuAlignV1Unavailable } from "@/lib/sku-align-v1/compat";
+import { api, ApiError } from "@/lib/api";
+import { isSkuAlignV1Unavailable, shouldFallbackToLegacyAlign } from "@/lib/sku-align-v1/compat";
 import type {
   SkuAlignRunRequest,
   SkuAlignRunStatus,
@@ -29,13 +29,17 @@ export async function pollSkuAlignRun(
 
 async function legacyAutoAlignBatch(
   shopName: string,
-  productIds: string[]
+  productIds: string[],
+  shouldAbort?: () => boolean
 ): Promise<SkuAlignRunStatus> {
   let matched = 0;
   let totalVariants = 0;
   let failed = 0;
+  let processed = 0;
   for (const productId of productIds) {
+    if (shouldAbort?.()) break;
     if (!productId?.trim()) continue;
+    processed++;
     try {
       const result = await api.autoAlignSku(shopName, productId.trim());
       matched += result.matchedCount ?? 0;
@@ -45,10 +49,16 @@ async function legacyAutoAlignBatch(
     }
   }
   const unmapped = Math.max(0, totalVariants - matched);
-  const allFailed = failed > 0 && failed >= productIds.length;
+  const allFailed = processed > 0 && failed >= processed;
   return {
     runId: 0,
-    runStatus: allFailed ? "FAILED" : failed > 0 ? "PARTIAL" : "SUCCEEDED",
+    runStatus: shouldAbort?.()
+      ? "PARTIAL"
+      : allFailed
+        ? "FAILED"
+        : failed > 0
+          ? "PARTIAL"
+          : "SUCCEEDED",
     matchedCount: matched,
     suggestedCount: matched,
     unmappedCount: unmapped,
@@ -60,7 +70,8 @@ async function legacyAutoAlignBatch(
 
 export async function enqueueSkuAlignRun(
   shopName: string,
-  body: Omit<SkuAlignRunRequest, "shopName">
+  body: Omit<SkuAlignRunRequest, "shopName">,
+  shouldAbort?: () => boolean
 ): Promise<SkuAlignRunStatus | null> {
   try {
     const accepted = await api.skuAlignV1EnqueueRun({ shopName, ...body });
@@ -69,8 +80,8 @@ export async function enqueueSkuAlignRun(
     }
     return pollSkuAlignRun(shopName, accepted.runId);
   } catch (err) {
-    if (!isSkuAlignV1Unavailable(err)) throw err;
+    if (!shouldFallbackToLegacyAlign(err)) throw err;
     if (!body.scopeIds?.length) return null;
-    return legacyAutoAlignBatch(shopName, body.scopeIds);
+    return legacyAutoAlignBatch(shopName, body.scopeIds, shouldAbort);
   }
 }

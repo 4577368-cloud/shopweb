@@ -61,8 +61,8 @@ export function useSkuAlignScan(shopName: string) {
         status: "done",
         resultText: `发现 ${overview.length} 个已绑定商品 · ${variants} 个变体`,
       });
-      // Repair legacy IMAGE bindings missing title/spec/image snapshots before align/display.
-      await api.backfillBindingSnapshots(shopName).catch(() => null);
+      // Repair snapshots in the background — must not block step 2 (can take minutes for large shops).
+      void api.backfillBindingSnapshots(shopName).catch(() => null);
     } catch (err) {
       patch(TASK_IDS.overview, { status: "failed", error: readableError(err) });
       patch(TASK_IDS.align, { status: "skipped" });
@@ -85,11 +85,15 @@ export function useSkuAlignScan(shopName: string) {
     patch(TASK_IDS.align, { status: "running" });
     try {
       const productIds = overview.map((p) => p.thirdPlatformItemId);
-      const run = await enqueueSkuAlignRun(shopName, {
-        triggerType: "PAGE_ENTER",
-        scopeType: "PRODUCT_BATCH",
-        scopeIds: productIds,
-      });
+      const run = await enqueueSkuAlignRun(
+        shopName,
+        {
+          triggerType: "PAGE_ENTER",
+          scopeType: "PRODUCT_BATCH",
+          scopeIds: productIds,
+        },
+        () => cancelRef.current
+      );
       if (!run) {
         patch(TASK_IDS.align, {
           status: "skipped",

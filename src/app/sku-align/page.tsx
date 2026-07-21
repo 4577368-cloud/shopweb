@@ -96,14 +96,11 @@ export default function SkuAlignPage() {
 
   // Move to the result view once (guarded), pulling the freshly-aligned overview. Non-blocking:
   // callable while the scan is still running ("直接查看当前结果") — cancels remaining work first.
-  const finishedRef = useRef(false);
-  const finishToResult = useCallback(async () => {
-    if (finishedRef.current) return;
-    finishedRef.current = true;
+  const finishToResult = useCallback(() => {
     cancelScan();
     markScanned("sku-align", shopName);
-    await load();
     setPhase("result");
+    void load();
   }, [cancelScan, shopName, load]);
 
   // Decide once per shop: first session visit → play the scan; otherwise straight to result.
@@ -112,7 +109,6 @@ export default function SkuAlignPage() {
     if (!isAuthorized) return;
     if (startedForShopRef.current === shopName) return;
     startedForShopRef.current = shopName;
-    finishedRef.current = false;
     if (hasScanned("sku-align", shopName)) {
       setPhase("result");
       void load();
@@ -147,7 +143,6 @@ export default function SkuAlignPage() {
 
   const restartScan = useCallback(() => {
     pageEnterDoneRef.current = null;
-    finishedRef.current = false;
     clearScanned("sku-align", shopName);
     setPhase("scan");
     void startScan().then(() => {

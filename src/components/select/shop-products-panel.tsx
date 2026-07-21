@@ -1100,10 +1100,14 @@ function ShopProductCard({
       setOffer(null);
       return;
     }
+    if (hasSnapshot) {
+      setOffer(null);
+      setOfferLoading(false);
+      return;
+    }
     let cancelled = false;
-    // Snapshot covers image/price; still fetch detail for title when missing.
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy fetch of bound offer detail
-    setOfferLoading(!hasSnapshot);
+    // Legacy bindings without snapshot: lazy-fetch offer detail for 货源图/价 fallback.
+    setOfferLoading(true);
     api
       .getOfferDetail(boundOfferId)
       .then((d) => {
