@@ -651,11 +651,21 @@ export const api = {
       `/api/plugin/logistics/template?shopName=${encodeURIComponent(shop)}`
     ),
 
-  upsertLogisticsTemplate: (body: LogisticsTemplateUpsert) =>
-    request<LogisticsTemplate>("/api/plugin/logistics/template", {
-      method: "POST",
+  listLogisticsTemplates: (shop: string) =>
+    request<LogisticsTemplate[]>(
+      `/api/logistics/templates?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  upsertLogisticsTemplate: (body: LogisticsTemplateUpsert, id?: string) =>
+    localRequest<LogisticsTemplate>("/api/logistics/templates", {
+      method: id ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, id }),
+    }),
+
+  deleteLogisticsTemplate: (shop: string, id: string) =>
+    localRequest<void>(`/api/logistics/templates/${id}?shopName=${encodeURIComponent(shop)}`, {
+      method: "DELETE",
     }),
 
   /**

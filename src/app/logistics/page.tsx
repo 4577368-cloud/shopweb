@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Loader2, RefreshCw } from "lucide-react";
+import { ArrowRight, Loader2, RefreshCw, Settings, Plus } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -16,7 +16,7 @@ import { InfoCard } from "@/components/workbench/info-card";
 import { StickyActionBar } from "@/components/workbench/sticky-action-bar";
 import { Button } from "@/components/ui/button";
 import { LogisticsTypeSummary } from "@/components/logistics/logistics-type-summary";
-import { LogisticsTemplateForm } from "@/components/logistics/logistics-template-form";
+import { LogisticsTemplateDrawer } from "@/components/logistics/logistics-template-drawer";
 import { codesFromSelections } from "@/components/logistics/market-multi-select";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
@@ -28,6 +28,7 @@ import type {
   LogisticsTemplate,
   LogisticsTypeCode,
 } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 const BREADCRUMBS = [
   { label: "工作台", href: "/" },
@@ -36,17 +37,15 @@ const BREADCRUMBS = [
 ];
 
 const DEFAULT_TEMPLATE = (shopName: string): LogisticsTemplate => ({
+  id: "default",
   shopName,
+  name: "默认模板",
   packaging: "MINIMAL",
   speedPreference: "BALANCED",
   markets: [{ marketGroupId: "north_america", countryCodes: ["US"] }],
-  defaultTemplate: true,
+  isActive: true,
 });
 
-/**
- * Logistics Phase 1: reuse bindings already persisted from 选品 / SKU 对齐.
- * No product re-sync / re-read scan — only classify types + configure the strategy template.
- */
 function LogisticsContent() {
   const router = useRouter();
   const { shop, isAuthorized, saveLogistics, showToast, skuReadyForNext } =
@@ -55,13 +54,14 @@ function LogisticsContent() {
   const wb = useWorkbenchPage("logistics");
 
   const [analysis, setAnalysis] = useState<LogisticsAnalysis | null>(null);
-  const [template, setTemplate] = useState<LogisticsTemplate | null>(null);
+  const [templates, setTemplates] = useState<LogisticsTemplate[]>([]);
+  const [activeTemplate, setActiveTemplate] = useState<LogisticsTemplate | null>(null);
   const [loading, setLoading] = useState(true);
   const [classifying, setClassifying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [correctingId, setCorrectingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showDrawer, setShowDrawer] = useState(false);
 
   const load = useCallback(
     async (forceClassify: boolean) => {
@@ -69,18 +69,24 @@ function LogisticsContent() {
       setError(null);
       try {
         setClassifying(true);
-        // Uses existing shop_product_binding + product mirror — does not pull Shopify again.
-        const [a, t] = await Promise.all([
+        const [a, ts] = await Promise.all([
           forceClassify
             ? api.analyzeLogistics(shopName, true)
             : api.analyzeLogistics(shopName, false),
-          api.getLogisticsTemplate(shopName),
+          api.listLogisticsTemplates(shopName),
         ]);
         setAnalysis(a);
-        setTemplate(t);
+        setTemplates(ts);
+        if (ts.length > 0) {
+          setActiveTemplate(ts[0]);
+        } else {
+          setActiveTemplate(DEFAULT_TEMPLATE(shopName));
+        }
       } catch (err) {
         setError(readableError(err));
-        setTemplate((prev) => prev ?? DEFAULT_TEMPLATE(shopName));
+        const ts = await api.listLogisticsTemplates(shopName).catch(() => []);
+        setTemplates(ts);
+        setActiveTemplate(ts.length > 0 ? ts[0] : DEFAULT_TEMPLATE(shopName));
       } finally {
         setClassifying(false);
         setLoading(false);
@@ -105,7 +111,6 @@ function LogisticsContent() {
           p.thirdPlatformItemId === itemId ? updated : p
         );
 
-        // 重新计算全局统计
         const totalVariants = productProfiles.reduce(
           (sum, p) => sum + p.totalVariants,
           0
@@ -147,31 +152,55 @@ function LogisticsContent() {
     }
   };
 
-  const handleSave = async (goSync = false) => {
-    if (!template || saving) return;
-    const codes = codesFromSelections(template.markets);
-    if (codes.length === 0) {
-      setSaveError("请至少选择一个销售国家");
-      return;
-    }
+  const handleSaveTemplate = async (upsertData: { shopName: string; name?: string; packaging: string; speedPreference: string; markets: { marketGroupId: string; countryCodes: string[] }[] }, id?: string) => {
     setSaving(true);
-    setSaveError(null);
     try {
-      const saved = await api.upsertLogisticsTemplate({
-        shopName,
-        packaging: template.packaging,
-        speedPreference: template.speedPreference,
-        markets: template.markets,
+      const saved = await api.upsertLogisticsTemplate(upsertData as any, id);
+      setTemplates((prev) => {
+        if (id) {
+          return prev.map((t) => (t.id === id ? saved : t));
+        }
+        return [saved, ...prev];
       });
-      setTemplate(saved);
-      saveLogistics();
+      setActiveTemplate(saved);
       showToast("物流模板已保存");
-      if (goSync) router.push("/sync");
+      return saved;
     } catch (err) {
-      setSaveError(readableError(err));
+      showToast(readableError(err));
+      throw err;
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    try {
+      await api.deleteLogisticsTemplate(shopName, id);
+      setTemplates((prev) => prev.filter((t) => t.id !== id));
+      if (activeTemplate?.id === id) {
+        const remaining = templates.filter((t) => t.id !== id);
+        setActiveTemplate(remaining.length > 0 ? remaining[0] : DEFAULT_TEMPLATE(shopName));
+      }
+      showToast("模板已删除");
+    } catch (err) {
+      showToast(readableError(err));
+    }
+  };
+
+  const handleSelectTemplate = (template: LogisticsTemplate) => {
+    setActiveTemplate(template);
+    setShowDrawer(false);
+  };
+
+  const handleSave = async (goSync = false) => {
+    if (!activeTemplate || saving) return;
+    const codes = codesFromSelections(activeTemplate.markets);
+    if (codes.length === 0) {
+      showToast("请先配置物流模板并选择销售国家");
+      return;
+    }
+    saveLogistics();
+    if (goSync) router.push("/sync");
   };
 
   const ai: AiPanelContent = useMemo(() => {
@@ -205,7 +234,7 @@ function LogisticsContent() {
         return `${label[status as LogisticsDecisionStatus] ?? status} ${count}`;
       })
       .join(" · ");
-    const countries = codesFromSelections(template?.markets ?? [])
+    const countries = codesFromSelections(activeTemplate?.markets ?? [])
       .slice(0, 4)
       .map(countryLabel)
       .join("、");
@@ -242,7 +271,7 @@ function LogisticsContent() {
     loading,
     classifying,
     analysis,
-    template,
+    activeTemplate,
     skuReadyForNext,
   ]);
 
@@ -307,15 +336,17 @@ function LogisticsContent() {
         breadcrumbs={BREADCRUMBS}
         {...wb.panelProps}
         actions={
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => void load(true)}
-            disabled={loading || classifying}
-            title="重新归类"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void load(true)}
+              disabled={loading || classifying}
+              title="重新归类"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         }
         footer={
           <StickyActionBar
@@ -338,6 +369,51 @@ function LogisticsContent() {
           </StickyActionBar>
         }
       >
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              {templates.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setActiveTemplate(t)}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                    activeTemplate?.id === t.id
+                      ? "bg-brand text-white"
+                      : "bg-surface-muted text-ink-subtle hover:bg-surface-muted/80"
+                  )}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-ink-subtle"
+              onClick={() => {
+                setActiveTemplate(null);
+                setShowDrawer(true);
+              }}
+            >
+              <Plus className="mr-1 h-3 w-3" />
+              新增模板
+            </Button>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-ink-subtle"
+            onClick={() => {
+              setShowDrawer(true);
+            }}
+          >
+            <Settings className="mr-1 h-3 w-3" />
+            模板配置
+          </Button>
+        </div>
+
         {loading && !analysis ? (
           <div className="flex items-center gap-2 py-12 text-sm text-ink-subtle">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -364,18 +440,20 @@ function LogisticsContent() {
                 onCorrect={(id, type) => void handleCorrect(id, type)}
               />
             ) : null}
-            {template ? (
-              <LogisticsTemplateForm
-                value={template}
-                saving={saving}
-                error={saveError}
-                onChange={setTemplate}
-                onSave={() => void handleSave(false)}
-              />
-            ) : null}
           </div>
         )}
       </WorkbenchPanel>
+
+      {showDrawer && (
+        <LogisticsTemplateDrawer
+          templates={templates}
+          activeTemplate={activeTemplate}
+          onSave={handleSaveTemplate}
+          onDelete={handleDeleteTemplate}
+          onSelect={handleSelectTemplate}
+          onClose={() => setShowDrawer(false)}
+        />
+      )}
     </WorkbenchShell>
   );
 }
