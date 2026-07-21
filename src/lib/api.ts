@@ -221,6 +221,17 @@ export const api = {
       tangbuyUrl?: string | null;
       supplierShop?: string | null;
       upstreamPlatform?: string | null;
+      skuAttr?: string | null;
+      barcode?: string | null;
+      descriptionHtml?: string | null;
+      offerId1688?: string | null;
+      variants?: Array<{
+        skuId: string;
+        price?: number | null;
+        barcode?: string | null;
+        imageUrl?: string | null;
+        optionValues: Array<{ optionName: string; value: string }>;
+      }> | null;
     }
   ) =>
     request<PublishResult>("/api/plugin/catalog/publish", {

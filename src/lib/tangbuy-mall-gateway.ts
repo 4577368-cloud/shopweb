@@ -162,7 +162,280 @@ export type CatalogPublishSnapshot = {
   tangbuyUrl?: string | null;
   supplierShop?: string | null;
   upstreamPlatform?: string | null;
+  skuAttr?: string | null;
+  barcode?: string | null;
+  /** Rich HTML from itemGet description; preferred over backend-generated stub. */
+  descriptionHtml?: string | null;
+  offerId1688?: string | null;
+  /** Tangbuy SKUs mapped to Shopify variants (from itemGet). */
+  variants?: CatalogPublishVariant[] | null;
 };
+
+export type CatalogPublishVariant = {
+  skuId: string;
+  price?: number | null;
+  barcode?: string | null;
+  imageUrl?: string | null;
+  optionValues: Array<{ optionName: string; value: string }>;
+};
+
+interface ItemGetTieredPrice {
+  minQuantity?: number;
+  procurementFinalUnitPrice?: number | null;
+}
+
+interface ItemGetSku {
+  skuId?: string;
+  price?: number | null;
+  tieredPriceConfigList?: ItemGetTieredPrice[] | null;
+  skuAttributes?: Array<{
+    attrName?: string | null;
+    attrNameTrans?: string | null;
+    attrValue?: string | null;
+    attrValueTrans?: string | null;
+    skuImageList?: Array<string | null> | null;
+  }> | null;
+}
+
+interface ItemGetProduct {
+  itemId?: string | number;
+  itemName?: string | null;
+  itemNameTrans?: string | null;
+  description?: string | null;
+  productImageList?: string[] | null;
+  productAttributes?: Array<{
+    attributeName?: string | null;
+    attributeNameTrans?: string | null;
+    attrValue?: string | null;
+    attrValueTrans?: string | null;
+  }> | null;
+  productSkus?: ItemGetSku[] | null;
+  detailUrl?: string | null;
+  price?: number | null;
+  providerType?: string | null;
+  dataSource?: string | null;
+  providerShopName?: string | null;
+}
+
+interface ItemGetResponse {
+  code?: number;
+  msg?: string | null;
+  data?: { item?: ItemGetProduct | null } | null;
+}
+
+const ITEM_GET_PATH = "/gateway/product/v3/itemGet";
+
+/** Build a Tangbuy product URL when the list row omitted detailUrl. */
+export function buildTangbuyProductUrl(
+  candidateId: string,
+  dataSource = "SHOP"
+): string {
+  const id = candidateId.trim();
+  return `https://www.tangbuy.cc/product?dataSource=${encodeURIComponent(dataSource)}&id=${encodeURIComponent(id)}`;
+}
+
+/** GET /gateway/product/v3/itemGet — full product detail for publish enrichment. */
+export async function fetchItemDetail(
+  productUrl: string
+): Promise<ItemGetProduct | null> {
+  const url = productUrl.trim();
+  if (!url) return null;
+  const endpoint = `${gatewayBaseUrl()}${ITEM_GET_PATH}?url=${encodeURIComponent(url)}`;
+  const res = await fetch(endpoint, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${gatewayToken()}`,
+      currency: "USD",
+      device: "pc",
+      lang: "cn",
+      "tang-request-device": "web",
+    },
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as ItemGetResponse;
+  if (data.code != null && data.code !== 200) return null;
+  return data.data?.item ?? null;
+}
+
+function mergeImageUrls(...groups: Array<string[] | null | undefined>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const group of groups) {
+    if (!group?.length) continue;
+    for (const raw of group) {
+      const u = typeof raw === "string" ? raw.trim() : "";
+      if (!u || seen.has(u) || !/^https?:\/\//i.test(u)) continue;
+      seen.add(u);
+      out.push(u);
+      if (out.length >= MAX_IMAGES) return out;
+    }
+  }
+  return out;
+}
+
+function formatProductAttributes(
+  attrs: ItemGetProduct["productAttributes"]
+): string | null {
+  if (!attrs?.length) return null;
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  for (const a of attrs) {
+    const name = (a.attributeNameTrans ?? a.attributeName)?.trim();
+    const val = (a.attrValueTrans ?? a.attrValue)?.trim();
+    if (!name || !val) continue;
+    const key = `${name}:${val}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push(`${name}: ${val}`);
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function resolveSkuProcurementPrice(sku: ItemGetSku, detail: ItemGetProduct): number | null {
+  const tiers = sku.tieredPriceConfigList;
+  const tier =
+    tiers?.find((t) => t.minQuantity === 1) ??
+    (tiers?.length ? tiers[0] : undefined);
+  const fromTier = tier?.procurementFinalUnitPrice;
+  if (fromTier != null && Number.isFinite(fromTier)) return fromTier;
+  if (sku.price != null && Number.isFinite(sku.price)) return sku.price;
+  if (detail.price != null && Number.isFinite(detail.price)) return detail.price;
+  return null;
+}
+
+function mapSkuOptionValues(
+  sku: ItemGetSku
+): Array<{ optionName: string; value: string }> {
+  const out: Array<{ optionName: string; value: string }> = [];
+  const seen = new Set<string>();
+  for (const a of sku.skuAttributes ?? []) {
+    const optionName = (a.attrNameTrans ?? a.attrName ?? "规格").trim();
+    const value = (a.attrValueTrans ?? a.attrValue ?? "").trim();
+    if (!optionName || !value) continue;
+    const key = `${optionName}:${value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ optionName, value });
+  }
+  return out;
+}
+
+function firstSkuImage(sku: ItemGetSku): string | null {
+  for (const a of sku.skuAttributes ?? []) {
+    for (const raw of a.skuImageList ?? []) {
+      const u = typeof raw === "string" ? raw.trim() : "";
+      if (u && /^https?:\/\//i.test(u)) return u;
+    }
+  }
+  return null;
+}
+
+const MAX_PUBLISH_VARIANTS = 100;
+
+/** Map itemGet productSkus → Shopify variant snapshots. */
+export function mapProductSkus(
+  detail: ItemGetProduct
+): CatalogPublishVariant[] | null {
+  const skus = detail.productSkus;
+  if (!skus?.length) return null;
+
+  const variants: CatalogPublishVariant[] = [];
+  const seenCombos = new Set<string>();
+
+  for (const sku of skus) {
+    const skuId = sku.skuId != null ? String(sku.skuId).trim() : "";
+    if (!skuId) continue;
+    const optionValues = mapSkuOptionValues(sku);
+    if (!optionValues.length) continue;
+    const comboKey = optionValues.map((o) => `${o.optionName}=${o.value}`).join("|");
+    if (seenCombos.has(comboKey)) continue;
+    seenCombos.add(comboKey);
+    variants.push({
+      skuId,
+      price: resolveSkuProcurementPrice(sku, detail),
+      imageUrl: firstSkuImage(sku),
+      optionValues,
+    });
+    if (variants.length >= MAX_PUBLISH_VARIANTS) break;
+  }
+
+  return variants.length ? variants : null;
+}
+
+function resolveProcurementPrice(detail: ItemGetProduct): number | null {
+  const sku = detail.productSkus?.[0];
+  if (sku) return resolveSkuProcurementPrice(sku, detail);
+  if (detail.price != null && Number.isFinite(detail.price)) return detail.price;
+  return null;
+}
+
+/** Merge itemGet detail into the list-row publish snapshot. */
+export function enrichPublishSnapshot(
+  item: CatalogRecommendation,
+  detail: ItemGetProduct,
+  base: CatalogPublishSnapshot
+): CatalogPublishSnapshot {
+  const title =
+    detail.itemNameTrans?.trim() ||
+    detail.itemName?.trim() ||
+    base.title;
+  const procurement = resolveProcurementPrice(detail);
+  const skuAttr = formatProductAttributes(detail.productAttributes) ?? base.skuAttr;
+  const tangbuyUrl =
+    base.tangbuyUrl?.trim() ||
+    detail.detailUrl?.trim() ||
+    buildTangbuyProductUrl(String(detail.itemId ?? item.candidateId));
+  const upstream =
+    base.upstreamPlatform?.trim() ||
+    [detail.providerType, detail.dataSource].filter(Boolean).join(":") ||
+    null;
+  const variants = mapProductSkus(detail);
+  const variantImages = variants
+    ?.map((v) => v.imageUrl)
+    .filter((u): u is string => Boolean(u?.trim()));
+  const allImageUrls = mergeImageUrls(
+    detail.productImageList,
+    variantImages,
+    base.imageUrls,
+    base.imageUrl ? [base.imageUrl] : null
+  );
+
+  return {
+    ...base,
+    title,
+    price: procurement ?? base.price,
+    imageUrl: allImageUrls[0] ?? base.imageUrl,
+    imageUrls: allImageUrls.length ? allImageUrls : base.imageUrls,
+    tangbuyUrl,
+    supplierShop: base.supplierShop ?? detail.providerShopName?.trim() ?? null,
+    upstreamPlatform: upstream,
+    skuAttr,
+    descriptionHtml: detail.description?.trim() || base.descriptionHtml,
+    offerId1688:
+      base.offerId1688 ??
+      (detail.providerType === "alibaba" && detail.itemId != null
+        ? String(detail.itemId)
+        : null),
+    variants,
+  };
+}
+
+export async function resolvePublishSnapshot(
+  item: CatalogRecommendation
+): Promise<CatalogPublishSnapshot> {
+  const base = toPublishSnapshot(item);
+  if (!isMallGatewayConfigured()) return base;
+  const productUrl =
+    item.tangbuyUrl?.trim() ||
+    buildTangbuyProductUrl(item.candidateId);
+  try {
+    const detail = await fetchItemDetail(productUrl);
+    if (!detail) return base;
+    return enrichPublishSnapshot(item, detail, base);
+  } catch {
+    return base;
+  }
+}
 
 export function toPublishSnapshot(
   item: CatalogRecommendation
@@ -179,5 +452,8 @@ export function toPublishSnapshot(
     tangbuyUrl: item.tangbuyUrl,
     supplierShop: item.supplierShop,
     upstreamPlatform: item.upstreamPlatform,
+    skuAttr: item.skuAttr,
+    barcode: item.barcode,
+    offerId1688: item.offerId1688,
   };
 }

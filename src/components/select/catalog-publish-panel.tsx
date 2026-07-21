@@ -31,7 +31,7 @@ import type {
   RecommendedCategory,
   SavedCatalogSearch,
 } from "@/lib/catalog-sourcing-types";
-import { toPublishSnapshot } from "@/lib/tangbuy-mall-gateway";
+import { resolvePublishSnapshot } from "@/lib/tangbuy-mall-gateway";
 import type { CatalogRecommendation, PricingTemplate } from "@/lib/types";
 
 const PAGE_SIZE = 30;
@@ -347,10 +347,11 @@ export function CatalogPublishPanel({
       [item.candidateId]: { loading: true },
     }));
     try {
+      const snapshot = await resolvePublishSnapshot(item);
       const result = await api.publishCatalogItem(
         shopName,
         item.candidateId,
-        toPublishSnapshot(item)
+        snapshot
       );
       setPublishState((prev) => ({
         ...prev,
