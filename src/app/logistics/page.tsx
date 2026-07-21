@@ -518,6 +518,7 @@ function LogisticsContent() {
               onAcceptAi={(v, pid) => void handleAcceptAi(v, pid)}
               accepting={accepting}
               onClearFocus={() => setFocusTarget(null)}
+              pricing={pricingTemplate}
             />
           ) : null}
         </div>

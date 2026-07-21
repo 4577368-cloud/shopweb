@@ -5,18 +5,6 @@ import {
   countNeedsReviewInProducts,
 } from "@/lib/sku-align/display";
 
-/** Promote every needs_review variant in the shop (V1 PAGE scope + legacy ack fallback). */
-export async function confirmAllNeedsReview(
-  shopName: string,
-  products: SkuProductOverview[]
-) {
-  const legacyPendingVariantIds = collectNeedsReviewVariantIds(products);
-  return confirmSuggestionsWithFallback(
-    { shopName, targetScope: "PAGE" },
-    legacyPendingVariantIds
-  );
-}
-
 /** Promote needs_review variants visible on the current workbench page. */
 export async function confirmPageNeedsReview(
   shopName: string,

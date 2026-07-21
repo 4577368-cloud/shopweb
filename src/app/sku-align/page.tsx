@@ -44,12 +44,11 @@ import {
   countNeedsReviewInProducts,
 } from "@/lib/sku-align/display";
 import {
-  confirmAllNeedsReview,
   confirmPageNeedsReview,
 } from "@/lib/sku-align/batch-confirm";
+import { autoAlignUnboundProducts } from "@/lib/sku-align/auto-align-unresolved";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
-import { pollSkuAlignRun } from "@/lib/sku-align-v1/run-client";
 import type { AiPanelContent, SkuProductOverview } from "@/lib/types";
 
 const BREADCRUMBS = [
@@ -76,10 +75,20 @@ export default function SkuAlignPage() {
   const wb = useWorkbenchPage("sku-align");
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [products, setProducts] = useState<SkuProductOverview[]>([]);
+  const hasLoadedOnceRef = useRef(false);
+
+  useEffect(() => {
+    hasLoadedOnceRef.current = false;
+  }, [shopName]);
+  const autoAlignStartedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    autoAlignStartedRef.current = null;
+  }, [shopName]);
   const [filter, setFilter] = useState<FilterId>("issues");
-  const [confirmingAll, setConfirmingAll] = useState(false);
   const [confirmingPage, setConfirmingPage] = useState(false);
   // "result" is the SSR/hydration-safe default; the mount effect flips to "scan" on first visit.
   const [phase, setPhase] = useState<"scan" | "result">("result");
@@ -93,15 +102,21 @@ export default function SkuAlignPage() {
   } = useSkuAlignScan(shopName);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const silent = hasLoadedOnceRef.current;
+    if (!silent) setLoading(true);
+    else setRefreshing(true);
     setError(null);
     try {
-      await api.backfillBindingSnapshots(shopName).catch(() => null);
-      setProducts(await api.getSkuOverview(shopName));
+      // Snapshot repair can take minutes — never block overview refresh on it.
+      void api.backfillBindingSnapshots(shopName).catch(() => null);
+      const next = await api.getSkuOverview(shopName);
+      setProducts(next);
+      hasLoadedOnceRef.current = true;
     } catch (err) {
       setError(readableError(err));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [shopName]);
 
@@ -131,29 +146,31 @@ export default function SkuAlignPage() {
     }
   }, [isAuthorized, shopName, load, startScan, finishToResult]);
 
-  // Step 3 — silent PAGE_ENTER for stale unresolved products on result view.
-  const pageEnterDoneRef = useRef<string | null>(null);
+  // Entering the workbench: silently align variants that still have no binding at all.
   useEffect(() => {
-    if (phase !== "result" || !isAuthorized) return;
-    if (pageEnterDoneRef.current === shopName) return;
-    pageEnterDoneRef.current = shopName;
-
+    if (phase !== "result" || !isAuthorized || loading) return;
+    if (!hasLoadedOnceRef.current || loading) return;
+    if (autoAlignStartedRef.current === shopName) return;
+    autoAlignStartedRef.current = shopName;
+    if (products.length === 0) return;
     void (async () => {
       try {
-        const accepted = await api.skuAlignV1PageEnter(shopName);
-        if (!accepted.accepted || !accepted.runId) return;
-        const status = await pollSkuAlignRun(shopName, accepted.runId);
-        if (status.runStatus === "SUCCEEDED" || status.runStatus === "PARTIAL") {
-          setProducts(await api.getSkuOverview(shopName));
+        const status = await autoAlignUnboundProducts(shopName, products);
+        if (
+          status &&
+          (status.runStatus === "SUCCEEDED" || status.runStatus === "PARTIAL")
+        ) {
+          const next = await api.getSkuOverview(shopName);
+          setProducts(next);
         }
       } catch {
-        // Silent — no stale unresolved products or run already active.
+        // Fail-open — user can still tap per-product align.
       }
     })();
-  }, [phase, isAuthorized, shopName]);
+  }, [phase, isAuthorized, loading, products, shopName]);
 
   const restartScan = useCallback(() => {
-    pageEnterDoneRef.current = null;
+    autoAlignStartedRef.current = null;
     clearScanned("sku-align", shopName);
     setPhase("scan");
     void startScan().then(() => {
@@ -174,32 +191,6 @@ export default function SkuAlignPage() {
     () => countNeedsReviewInProducts(filtered),
     [filtered]
   );
-
-  const handleConfirmAllNeedsReview = useCallback(async () => {
-    if (confirmingAll || metricsSnapshot.needsReview === 0) return;
-    setConfirmingAll(true);
-    try {
-      const result = await confirmAllNeedsReview(shopName, products);
-      const confirmed = result.confirmedCount ?? 0;
-      if (confirmed <= 0) {
-        showToast("没有可确认的待确认建议");
-        return;
-      }
-      showToast(`已接受 ${confirmed} 个 AI 建议`);
-      await load();
-    } catch (err) {
-      showToast(readableError(err));
-    } finally {
-      setConfirmingAll(false);
-    }
-  }, [
-    confirmingAll,
-    metricsSnapshot.needsReview,
-    shopName,
-    products,
-    load,
-    showToast,
-  ]);
 
   const handleConfirmPageNeedsReview = useCallback(async () => {
     if (confirmingPage || needsReviewOnPage === 0) return;
@@ -299,11 +290,8 @@ export default function SkuAlignPage() {
           <CopilotCard content={copilot} />
           {phase === "result" && products.length > 0 ? (
             <SkuAlignAiPanel
-              needsReviewTotal={metricsSnapshot.needsReview}
               needsReviewOnPage={needsReviewOnPage}
-              confirmingAll={confirmingAll}
-              confirmingPage={confirmingPage}
-              onConfirmAll={() => void handleConfirmAllNeedsReview()}
+              confirming={confirmingPage}
               onConfirmPage={() => void handleConfirmPageNeedsReview()}
             />
           ) : null}
@@ -457,9 +445,9 @@ export default function SkuAlignPage() {
               variant="secondary"
               className="shrink-0"
               onClick={() => void load()}
-              disabled={loading}
+              disabled={loading || refreshing}
             >
-              {loading ? (
+              {loading || refreshing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <RefreshCw className="h-4 w-4" />

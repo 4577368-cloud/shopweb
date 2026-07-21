@@ -4,6 +4,7 @@ import type {
   LogisticsSpeedPreference,
   LogisticsTemplate,
   PackagingType,
+  PricingTemplate,
   ProductLogisticsProfile,
   QuoteStatus,
   VariantLogisticsDecision,
@@ -155,12 +156,38 @@ export function statusBadgeClass(status: LogisticsDecisionStatus): string {
   }
 }
 
-function formatFee(line?: LogisticsLine | null): string | null {
+function formatFee(
+  line?: LogisticsLine | null,
+  pricing?: PricingTemplate | null
+): string | null {
   if (!line) return null;
-  const fee = line.estimatedFee;
-  const cur = line.currency?.trim() || "";
+  let fee = line.estimatedFee;
   if (fee == null) return null;
-  return `${cur}${fee}`;
+
+  if (pricing) {
+    fee = convertCurrency(fee, pricing);
+  }
+
+  const cur = pricing?.targetCurrency?.trim() || line.currency?.trim() || "";
+  return `${cur}${fee.toFixed(pricing?.decimals ?? 2)}`;
+}
+
+function convertCurrency(fee: number, pricing: PricingTemplate): number {
+  let result = fee * pricing.exchangeRate;
+  result = result * pricing.multiplier + pricing.addend;
+
+  const decimals = pricing.decimals ?? 2;
+  const factor = Math.pow(10, decimals);
+
+  switch (pricing.roundingStrategy) {
+    case "UP":
+      return Math.ceil(result * factor) / factor;
+    case "DOWN":
+      return Math.floor(result * factor) / factor;
+    case "ROUND":
+    default:
+      return Math.round(result * factor) / factor;
+  }
 }
 
 function resolveLines(
@@ -193,7 +220,8 @@ export interface QuoteColumnView {
 
 export function buildQuoteColumn(
   decision: VariantLogisticsDecision,
-  quoteResult?: LogisticsEstimateResult
+  quoteResult?: LogisticsEstimateResult,
+  pricing?: PricingTemplate | null
 ): QuoteColumnView {
   const { recommended, alternatives, quoteStatus } = resolveLines(
     decision,
@@ -215,7 +243,7 @@ export function buildQuoteColumn(
       if (!recommended) {
         return { primary: "可报价", secondary: "待拉取线路" };
       }
-      const fee = formatFee(recommended);
+      const fee = formatFee(recommended, pricing);
       const days =
         recommended.estimatedDays != null
           ? `${recommended.estimatedDays}天`
@@ -226,7 +254,7 @@ export function buildQuoteColumn(
         primary: recommended.lineName,
         secondary: [fee, days].filter(Boolean).join(" · ") || undefined,
         tertiary: alt
-          ? `备选: ${alt.lineName}${formatFee(alt) ? ` ${formatFee(alt)}` : ""}${
+          ? `备选: ${alt.lineName}${formatFee(alt, pricing) ? ` ${formatFee(alt, pricing)}` : ""}${
               altCount > 1 ? ` · +${altCount - 1}条` : ""
             }`
           : altCount > 0

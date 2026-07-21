@@ -658,28 +658,28 @@ export function ShopProductsPanel({
       return;
     }
     setBatchAcking(true);
-    let ok = 0;
-    let fail = 0;
-    for (const id of pendingIds) {
-      try {
-        await api.ackImageBinding(shopName, id);
-        setBindings((b) => {
-          const prev = b[id];
-          if (!prev?.bound) return b;
-          return { ...b, [id]: { ...prev, bindStatus: "ACTIVE" as const } };
-        });
-        ok += 1;
-      } catch {
-        fail += 1;
+    try {
+      const result = await api.batchAckImageBindings(shopName, pendingIds);
+      for (const id of pendingIds) {
+        if (!result.failed.includes(id)) {
+          setBindings((b) => {
+            const prev = b[id];
+            if (!prev?.bound) return b;
+            return { ...b, [id]: { ...prev, bindStatus: "ACTIVE" as const } };
+          });
+        }
       }
+      onActivity?.();
+      showToast(
+        result.failed.length > 0
+          ? `已确认 ${result.ok} 个，失败 ${result.failed.length} 个`
+          : `已批量确认 ${result.ok} 个待关联`
+      );
+    } catch (err) {
+      showToast(readableError(err));
+    } finally {
+      setBatchAcking(false);
     }
-    onActivity?.();
-    showToast(
-      fail > 0
-        ? `已确认 ${ok} 个，失败 ${fail} 个`
-        : `已批量确认 ${ok} 个待关联`
-    );
-    setBatchAcking(false);
   };
 
   const filtered = useMemo(() => {

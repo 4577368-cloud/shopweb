@@ -377,6 +377,17 @@ export const api = {
     });
   },
 
+  /** Batch-acknowledge multiple pending image bindings. */
+  batchAckImageBindings: (shop: string, thirdPlatformItemIds: string[]) =>
+    request<{ success: boolean; ok: number; failed: string[] }>(
+      `/api/plugin/match/image-search/batch-ack`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shopName: shop, thirdPlatformItemIds }),
+      }
+    ),
+
   /** "取消关联": soft-unbind a product's image binding (PENDING or ACTIVE). */
   unbindImageBinding: (shop: string, thirdPlatformItemId: string) => {
     const params = new URLSearchParams({ shopName: shop, thirdPlatformItemId });

@@ -25,6 +25,7 @@ import type {
   LogisticsAnalysis,
   LogisticsDecisionStatus,
   LogisticsTypeCode,
+  PricingTemplate,
   ProductLogisticsProfile,
   VariantLogisticsDecision,
 } from "@/lib/types";
@@ -95,6 +96,7 @@ function VariantDecisionRow({
   highlighted,
   onCorrectType,
   onAcceptAi,
+  pricing,
 }: {
   decision: VariantLogisticsDecision;
   quoteResult?: LogisticsEstimateResult;
@@ -104,9 +106,10 @@ function VariantDecisionRow({
   highlighted: boolean;
   onCorrectType: () => void;
   onAcceptAi: () => void;
+  pricing?: PricingTemplate | null;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
-  const quote = buildQuoteColumn(decision, quoteResult);
+  const quote = buildQuoteColumn(decision, quoteResult, pricing);
   const status = decision.decisionStatus;
   const showMeta =
     !decision.decisionConfirmed &&
@@ -220,6 +223,7 @@ function ProductDecisionCard({
   accepting,
   onCorrect,
   onAcceptAi,
+  pricing,
 }: {
   profile: ProductLogisticsProfile;
   filterMode: LogisticsFilterMode;
@@ -231,6 +235,7 @@ function ProductDecisionCard({
   accepting?: boolean;
   onCorrect: (itemId: string, type: LogisticsTypeCode) => void;
   onAcceptAi: (variant: VariantLogisticsDecision) => void;
+  pricing?: PricingTemplate | null;
 }) {
   const variants = filterVariants(profile.variantDecisions ?? [], filterMode);
   const ready = countReady(profile);
@@ -313,6 +318,7 @@ function ProductDecisionCard({
                 el?.focus();
               }}
               onAcceptAi={() => onAcceptAi(v)}
+              pricing={pricing}
             />
           ))
         : null}
@@ -330,6 +336,7 @@ export function LogisticsDecisionList({
   onAcceptAi,
   onClearFocus,
   accepting,
+  pricing,
 }: {
   analysis: LogisticsAnalysis;
   filterMode: LogisticsFilterMode;
@@ -340,6 +347,7 @@ export function LogisticsDecisionList({
   onAcceptAi: (variant: VariantLogisticsDecision, productId: string) => void;
   onClearFocus: () => void;
   accepting?: boolean;
+  pricing?: PricingTemplate | null;
 }) {
   const profiles = useMemo(
     () => filterProfiles(analysis.productProfiles ?? [], filterMode),
@@ -438,6 +446,7 @@ export function LogisticsDecisionList({
             accepting={accepting}
             onCorrect={onCorrect}
             onAcceptAi={(v) => onAcceptAi(v, p.thirdPlatformItemId)}
+            pricing={pricing}
           />
         );
       })}
