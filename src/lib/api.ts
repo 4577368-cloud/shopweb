@@ -8,8 +8,8 @@ import type {
   ConfirmImageMatchRequest,
   ImageBindingView,
   ImageSearchResult,
-  MatchJobProgress,
   LogisticsAnalysis,
+  LogisticsLine,
   LogisticsTemplate,
   LogisticsTemplateUpsert,
   LogisticsTypeCode,
@@ -18,6 +18,7 @@ import type {
   PricingTemplateUpsert,
   ProductLogisticsProfile,
   ProductSyncResult,
+  QuoteStatus,
   PublishResult,
   ShopMirrorProduct,
   ShopOrderHeader,
@@ -26,7 +27,21 @@ import type {
   SkuAutoAlignResult,
   SkuProductOverview,
   UploadedImage,
+  MatchJobProgress,
 } from "@/lib/types";
+import type {
+  SkuAlignAliasKnowledgeRequest,
+  SkuAlignBlockVariantRequest,
+  SkuAlignConfirmResult,
+  SkuAlignConfirmSuggestionsRequest,
+  SkuAlignManualBindRequest,
+  SkuAlignOverview,
+  SkuAlignProductDetail,
+  SkuAlignRunAccepted,
+  SkuAlignRunRequest,
+  SkuAlignRunStatus,
+  SkuAlignSupplementSourceRequest,
+} from "@/lib/sku-align-v1/types";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
 
@@ -98,12 +113,73 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+async function localRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const url = path.startsWith("/") ? path : `/${path}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      headers: {
+        Accept: "application/json",
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (cause) {
+    throw new ApiError(`Local request failed: ${url}`, 0, cause);
+  }
+
+  const text = await res.text();
+  const data = text ? safeJsonParse(text) : undefined;
+  if (!res.ok) {
+    let message = `Request failed (${res.status}): ${url}`;
+    if (data && typeof data === "object" && data !== null && "message" in data) {
+      const m = (data as { message: unknown }).message;
+      if (typeof m === "string" && m.trim()) message = m;
+    }
+    throw new ApiError(message, res.status, data);
+  }
+  return data as T;
+}
+
 export interface HealthResponse {
   app: string;
   status: string;
   persistence?: string;
   persistenceStatus?: string;
   [key: string]: unknown;
+}
+
+export interface LogisticsEstimateRequest {
+  shopName: string;
+  countryId: string;
+  countryCode: string;
+  shippingOption: number;
+  variants: Array<{
+    thirdPlatformSkuId: string;
+    tangbuySkuId: string;
+    tangbuyGoodsId: string;
+    incrementList: string[];
+    quantity: number;
+  }>;
+  needOtherLine?: boolean;
+  needMeasure?: boolean;
+}
+
+export interface LogisticsEstimateResult {
+  thirdPlatformSkuId: string;
+  quoteStatus: QuoteStatus;
+  errorMessage?: string;
+  recommendedLine?: LogisticsLine;
+  alternativeLines?: LogisticsLine[];
+  estimatedWeightG?: number;
+  estimatedVolumeCm3?: number;
+}
+
+export interface LogisticsEstimateResponse {
+  success: boolean;
+  message?: string;
+  results: LogisticsEstimateResult[];
 }
 
 /**
@@ -381,6 +457,94 @@ export const api = {
       `/api/plugin/match/sku/overview?shopName=${encodeURIComponent(shop)}`
     ),
 
+  // ---------------------------------------------------------------------------
+  // SKU Align V1 — /api/plugin/sku-align/v1/** (legacy /match/sku/* retained)
+  // ---------------------------------------------------------------------------
+
+  skuAlignV1Overview: (shop: string, tab?: string) => {
+    const params = new URLSearchParams({ shopName: shop });
+    if (tab) params.set("tab", tab);
+    return request<SkuAlignOverview>(`/api/plugin/sku-align/v1/overview?${params}`);
+  },
+
+  skuAlignV1ProductDetail: (shop: string, productId: string) =>
+    request<SkuAlignProductDetail>(
+      `/api/plugin/sku-align/v1/products/${encodeURIComponent(productId)}?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  skuAlignV1EnqueueRun: (body: SkuAlignRunRequest) =>
+    request<SkuAlignRunAccepted>(`/api/plugin/sku-align/v1/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
+  skuAlignV1RunStatus: (shop: string, runId: number) =>
+    request<SkuAlignRunStatus>(
+      `/api/plugin/sku-align/v1/runs/${runId}?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  /** Step 3 — silent stale refresh when entering /sku-align result view. */
+  skuAlignV1PageEnter: (shop: string) =>
+    request<SkuAlignRunAccepted>(
+      `/api/plugin/sku-align/v1/page-enter?shopName=${encodeURIComponent(shop)}`,
+      { method: "POST" }
+    ),
+
+  /** Step 3 — card expand refresh for a single unresolved product. */
+  skuAlignV1CardExpand: (shop: string, productId: string) =>
+    request<SkuAlignRunAccepted>(
+      `/api/plugin/sku-align/v1/products/${encodeURIComponent(productId)}/expand?shopName=${encodeURIComponent(shop)}`,
+      { method: "POST" }
+    ),
+
+  skuAlignV1ConfirmSuggestions: (body: SkuAlignConfirmSuggestionsRequest) =>
+    request<SkuAlignConfirmResult>(`/api/plugin/sku-align/v1/confirm-suggestions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
+  skuAlignV1ManualBind: (variantId: string, body: SkuAlignManualBindRequest) =>
+    request<void>(
+      `/api/plugin/sku-align/v1/variants/${encodeURIComponent(variantId)}/bind`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    ),
+
+  skuAlignV1BlockVariant: (variantId: string, body: SkuAlignBlockVariantRequest) =>
+    request<void>(
+      `/api/plugin/sku-align/v1/variants/${encodeURIComponent(variantId)}/block`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    ),
+
+  skuAlignV1AddSupplementSource: (
+    productId: string,
+    body: SkuAlignSupplementSourceRequest
+  ) =>
+    request<SkuAlignRunAccepted>(
+      `/api/plugin/sku-align/v1/products/${encodeURIComponent(productId)}/supplement-source`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    ),
+
+  skuAlignV1RecordAlias: (body: SkuAlignAliasKnowledgeRequest) =>
+    request<void>(`/api/plugin/sku-align/v1/knowledge/alias`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
   /**
    * S1-b1: auto-align a bound product's Shopify variants to the 1688 offer's SKU matrix, writing
    * per-variant RULE bindings. offerId is resolved server-side from the product-level binding.
@@ -453,15 +617,15 @@ export const api = {
       shopName: shop,
       force: String(force),
     });
-    return request<LogisticsAnalysis>(
-      `/api/plugin/logistics/analyze?${params.toString()}`,
+    return localRequest<LogisticsAnalysis>(
+      `/api/logistics/analyze?${params.toString()}`,
       { method: "POST" }
     );
   },
 
   getLogisticsAnalysis: (shop: string) =>
-    request<LogisticsAnalysis>(
-      `/api/plugin/logistics/analysis?shopName=${encodeURIComponent(shop)}`
+    localRequest<LogisticsAnalysis>(
+      `/api/logistics/analysis?shopName=${encodeURIComponent(shop)}`
     ),
 
   correctLogisticsType: (
@@ -469,10 +633,17 @@ export const api = {
     thirdPlatformItemId: string,
     logisticsType: LogisticsTypeCode
   ) =>
-    request<ProductLogisticsProfile>("/api/plugin/logistics/correct-type", {
+    localRequest<ProductLogisticsProfile>("/api/logistics/correct-type", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shopName: shop, thirdPlatformItemId, logisticsType }),
+    }),
+
+  estimateLogistics: (body: LogisticsEstimateRequest) =>
+    localRequest<LogisticsEstimateResponse>("/api/logistics/estimate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     }),
 
   getLogisticsTemplate: (shop: string) =>

@@ -1,7 +1,15 @@
 import {
   buildTangbuyProductUrl,
   fetchItemDetail,
+  isMallGatewayConfigured,
 } from "@/lib/tangbuy-mall-gateway";
+
+export type SkuDisplayStatus = "LOADING" | "READY" | "ERROR";
+
+export interface SourceSkuMatrixFetchResult {
+  rows: SourceSkuRow[];
+  error: string | null;
+}
 
 /**
  * Normalized SKU row from itemGet.productSkus — single shape for SKU picker UI.
@@ -172,10 +180,63 @@ export function mapItemGetToSourceSkuMatrix(
   return rows;
 }
 
-/** Resolve right-column display: itemGet matrix first, then offer-detail, then binding audit. */
+/** Find matrix row by skuId (exact or string-normalized). */
+export function findSourceSkuRow(
+  matrix: SourceSkuRow[],
+  skuId?: string | null
+): SourceSkuRow | undefined {
+  const id = skuId?.trim();
+  if (!id || !matrix.length) return undefined;
+  const exact = matrix.find((r) => r.skuId === id);
+  if (exact) return exact;
+  return matrix.find((r) => String(r.skuId) === String(id));
+}
+
+export function validateOfferSkuInMatrix(
+  matrix: SourceSkuRow[],
+  skuId: string
+): boolean {
+  return Boolean(findSourceSkuRow(matrix, skuId));
+}
+
+export type BoundSkuDisplay = {
+  imageUrl: string | null;
+  specLabel: string | null;
+  priceLabel: string | null;
+  priceKind: "procurement" | "wholesale" | null;
+  dataSource: "itemGet" | "offer-detail" | "binding" | null;
+  displayStatus: SkuDisplayStatus;
+  displayError?: string | null;
+};
+
+function emptyDisplay(status: SkuDisplayStatus, error?: string | null): BoundSkuDisplay {
+  return {
+    imageUrl: null,
+    specLabel: null,
+    priceLabel: null,
+    priceKind: null,
+    dataSource: null,
+    displayStatus: status,
+    displayError: error ?? null,
+  };
+}
+
+/** Whether any bound variant sku is missing from the itemGet matrix. */
+export function needsOfferDetailFallback(
+  matrix: SourceSkuRow[],
+  boundSkuIds: Array<string | null | undefined>
+): boolean {
+  if (!boundSkuIds.some((id) => id?.trim())) return false;
+  if (!matrix.length) return true;
+  return boundSkuIds.some((id) => id?.trim() && !findSourceSkuRow(matrix, id));
+}
+
+/** Resolve right-column display: itemGet matrix first, offer-detail fallback, then binding audit. */
 export function resolveBoundSkuDisplay(input: {
   tangbuySkuId?: string | null;
   sourceMatrix: SourceSkuRow[];
+  sourceMatrixLoading: boolean;
+  sourceMatrixError?: string | null;
   offerSku?: {
     skuAttributes?: Array<{
       value?: string | null;
@@ -186,19 +247,19 @@ export function resolveBoundSkuDisplay(input: {
     consignPrice?: string | null;
   } | null;
   offerWhiteImage?: string | null;
+  offerLoading: boolean;
+  offerFallbackAttempted?: boolean;
   boundSpec?: string | null;
-}): {
-  imageUrl: string | null;
-  specLabel: string | null;
-  priceLabel: string | null;
-  priceKind: "procurement" | "wholesale" | null;
-  dataSource: "itemGet" | "offer-detail" | "binding" | null;
-} {
+  boundImageUrl?: string | null;
+  boundPriceLabel?: string | null;
+}): BoundSkuDisplay {
   const id = input.tangbuySkuId?.trim();
-  const sourceRow = id
-    ? input.sourceMatrix.find((r) => r.skuId === id)
-    : undefined;
 
+  if (input.sourceMatrixLoading) {
+    return emptyDisplay("LOADING");
+  }
+
+  const sourceRow = id ? findSourceSkuRow(input.sourceMatrix, id) : undefined;
   if (sourceRow) {
     return {
       imageUrl: sourceRow.imageUrl ?? null,
@@ -209,7 +270,12 @@ export function resolveBoundSkuDisplay(input: {
           : null,
       priceKind: sourceRow.procurementPrice != null ? "procurement" : null,
       dataSource: "itemGet",
+      displayStatus: "READY",
     };
+  }
+
+  if (input.offerLoading) {
+    return emptyDisplay("LOADING");
   }
 
   const offer = input.offerSku;
@@ -218,6 +284,7 @@ export function resolveBoundSkuDisplay(input: {
       ?.map((a) => a.valueTrans || a.value)
       .filter((v): v is string => Boolean(v?.trim()));
     const rawPrice = offer.price?.trim() || offer.consignPrice?.trim() || null;
+    const ok = Boolean(parts?.length || rawPrice);
     return {
       imageUrl:
         offer.skuAttributes?.map((a) => a.skuImageUrl).find(Boolean) ??
@@ -227,34 +294,75 @@ export function resolveBoundSkuDisplay(input: {
       priceLabel: rawPrice ? `¥${rawPrice}` : null,
       priceKind: rawPrice ? "wholesale" : null,
       dataSource: "offer-detail",
+      displayStatus: ok ? "READY" : "ERROR",
+      displayError: ok ? null : "offer-detail 未返回可用规格",
     };
   }
 
-  if (input.boundSpec?.trim()) {
+  if (input.boundSpec?.trim() || input.boundImageUrl || input.boundPriceLabel) {
     return {
-      imageUrl: null,
-      specLabel: input.boundSpec.trim(),
-      priceLabel: null,
-      priceKind: null,
+      imageUrl: input.boundImageUrl ?? null,
+      specLabel: input.boundSpec?.trim() ?? null,
+      priceLabel: input.boundPriceLabel ?? null,
+      priceKind: input.boundPriceLabel ? "wholesale" : null,
       dataSource: "binding",
+      displayStatus: "READY",
     };
   }
 
-  return {
-    imageUrl: null,
-    specLabel: null,
-    priceLabel: null,
-    priceKind: null,
-    dataSource: null,
-  };
+  if (input.sourceMatrixError) {
+    return { ...emptyDisplay("ERROR"), displayError: input.sourceMatrixError };
+  }
+
+  if (id && input.sourceMatrix.length > 0) {
+    return {
+      ...emptyDisplay("ERROR"),
+      displayError: `绑定 skuId ${id} 不在 itemGet 规格表中，请重选 SKU`,
+    };
+  }
+
+  if (id && input.sourceMatrix.length === 0) {
+    const detail = input.sourceMatrixError?.trim();
+    return {
+      ...emptyDisplay("ERROR"),
+      displayError:
+        detail ??
+        (input.offerFallbackAttempted
+          ? "无法从 itemGet 或 offer-detail 加载规格"
+          : "货源规格表为空，请稍后重试"),
+    };
+  }
+
+  return emptyDisplay("ERROR", "规格未加载");
+}
+
+export async function fetchSourceSkuMatrixResult(
+  detailUrl: string
+): Promise<SourceSkuMatrixFetchResult> {
+  if (!isMallGatewayConfigured()) {
+    return { rows: [], error: "商城货源暂不可用，无法加载 itemGet 规格表" };
+  }
+  try {
+    const detail = await fetchItemDetail(detailUrl);
+    if (!detail) {
+      return { rows: [], error: "itemGet 未返回商品详情" };
+    }
+    const rows = mapItemGetToSourceSkuMatrix(detail);
+    if (!rows.length) {
+      return { rows: [], error: "itemGet 未返回可用 SKU 规格" };
+    }
+    return { rows, error: null };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "加载 itemGet 规格表失败";
+    return { rows: [], error: msg };
+  }
 }
 
 export async function fetchSourceSkuMatrix(
   detailUrl: string
 ): Promise<SourceSkuRow[]> {
-  const detail = await fetchItemDetail(detailUrl);
-  if (!detail) return [];
-  return mapItemGetToSourceSkuMatrix(detail);
+  const { rows } = await fetchSourceSkuMatrixResult(detailUrl);
+  return rows;
 }
 
 /** Resolve the Tangbuy URL used for itemGet when overview omits detailUrl. */
@@ -277,7 +385,7 @@ export function resolveItemGetProcurementFromMatrix(
   if (!rows.length) return null;
   const id = tangbuySkuId?.trim();
   if (id) {
-    const row = rows.find((r) => r.skuId === id);
+    const row = findSourceSkuRow(rows, id);
     if (row?.procurementPrice != null) return row.procurementPrice;
   }
   const prices = rows

@@ -104,9 +104,11 @@ function TextLink({
 export function StatusFactSummary({
   context,
   onExpand,
+  onCollapse,
 }: {
   context: ProductsPageContext;
   onExpand?: () => void;
+  onCollapse?: () => void;
 }) {
   const p = context.pricing;
   const pricingLine = p.configured
@@ -116,12 +118,20 @@ export function StatusFactSummary({
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50/60 px-2.5 py-2">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-semibold text-slate-800">店铺状态</p>
-        {onExpand ? (
+        <p className="text-xs font-semibold text-slate-800">店铺状态</p>
+        {onCollapse ? (
+          <button
+            type="button"
+            onClick={onCollapse}
+            className="text-[11px] font-medium text-emerald-700 underline-offset-2 hover:text-emerald-800 hover:underline"
+          >
+            收起分析
+          </button>
+        ) : onExpand ? (
           <button
             type="button"
             onClick={onExpand}
-            className="text-[11px] font-medium text-slate-500 underline-offset-2 hover:text-slate-700 hover:underline"
+            className="text-[11px] font-medium text-emerald-700 underline-offset-2 hover:text-emerald-800 hover:underline"
           >
             查看完整分析
           </button>
@@ -150,7 +160,6 @@ export function StatusFactSummary({
 }
 
 function StatusExpanded({ response, context }: IntentResultProps) {
-  const [open, setOpen] = useState(true);
   return (
     <ExecShell title="状态详情" eyebrow="任务">
       <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-700">
@@ -170,22 +179,11 @@ function StatusExpanded({ response, context }: IntentResultProps) {
         <FactCell label="未匹配" value={String(context.unboundCount)} />
       </div>
       {response.explanation.length > 0 ? (
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <button
-            type="button"
-            className="text-[11px] font-medium text-slate-500"
-            onClick={() => setOpen((v) => !v)}
-          >
-            {open ? "收起分析" : "展开分析摘要"}
-          </button>
-          {open ? (
-            <ul className="mt-1 space-y-0.5 text-[11px] text-slate-600">
-              {response.explanation.slice(0, 4).map((line, i) => (
-                <li key={`${i}-${line.slice(0, 20)}`}>· {line}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
+        <ul className="mt-2 space-y-0.5 text-[11px] text-slate-600">
+          {response.explanation.slice(0, 4).map((line, i) => (
+            <li key={`${i}-${line.slice(0, 20)}`}>· {line}</li>
+          ))}
+        </ul>
       ) : null}
     </ExecShell>
   );

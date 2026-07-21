@@ -64,9 +64,17 @@ import {
   fetchItemGetProcurementPrice,
   resolveSkuDetailUrl,
 } from "@/lib/source-sku-matrix";
+import { ManualMatchDrawer } from "@/components/select/manual-match-drawer";
+import { isManualImageBinding } from "@/lib/manual-image-match";
+import { fetchItemDetail, isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
-import type { BatchLinkCardDrive, BatchLinkProgress } from "@/lib/batch-link/types";
+import { sortProductsForBatchLink } from "@/lib/batch-link/sort-products";
+import type { BatchLinkCardDrive, BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
 import { INITIAL_BATCH_LINK_PROGRESS } from "@/lib/batch-link/types";
+import {
+  loadVariantReadyIds,
+  preflightBatchLinkScope,
+} from "@/lib/batch-link/preflight";
 import { useBatchLinkQueue } from "@/hooks/use-batch-link-queue";
 
 export interface AgentIntentRequest {
@@ -321,7 +329,7 @@ export function ShopProductsPanel({
   onScrollToConsumed,
   searchModeProductId = null,
   rematchUnboundSignal = 0,
-  batchLinkSignal = 0,
+  batchLinkRequest = null,
   mirrorRefreshSignal = 0,
   onSearchModeConsumed,
   onBatchLinkProgressChange,
@@ -330,12 +338,12 @@ export function ShopProductsPanel({
   onMinisChange,
   onBindingsChange,
   onShopProductsChange,
-  onAgentIntent,
   onCandidateContextChange,
   pendingNewAnalysisIds,
   onMirrorAnalysisCommitted,
   aiFieldEdits,
   onAiFieldEditConsumed,
+  linkingLocked = false,
 }: {
   onActivity?: () => void;
   /** Optional controlled filter — lets the page's top CTA jump straight to e.g. 待确认. */
@@ -347,8 +355,8 @@ export function ShopProductsPanel({
   searchModeProductId?: string | null;
   /** Increment to force re-image-search all unbound products (never touches existing binds). */
   rematchUnboundSignal?: number;
-  /** Increment to start client-side per-card batch link for unbound products. */
-  batchLinkSignal?: number;
+  /** Start client-side batch link (shared by 一键关联 + 自动/手动新入库关联). */
+  batchLinkRequest?: BatchLinkRequest | null;
   /** Increment after out-of-panel binding changes (auto queue / page-level match). */
   mirrorRefreshSignal?: number;
   onSearchModeConsumed?: () => void;
@@ -364,14 +372,6 @@ export function ShopProductsPanel({
     products: ShopMirrorProduct[],
     bindings: Record<string, ImageBindingView>
   ) => void;
-  onAgentIntent?: (
-    intent: ProductsIntentId,
-    productId: string,
-    opts?: {
-      focusCandidateId?: string | null;
-      focusCandidates?: CandidateSummary[];
-    }
-  ) => void;
   onCandidateContextChange?: (
     productId: string,
     ctx: { candidateId: string | null; candidates: CandidateSummary[] }
@@ -383,6 +383,8 @@ export function ShopProductsPanel({
   /** Transient AI field-edit highlights keyed by productId:field */
   aiFieldEdits?: Record<string, AiFieldEditRecord>;
   onAiFieldEditConsumed?: (productId: string, field: AiFieldId) => void;
+  /** True while batch link is running — locks sync / ack / per-card actions. */
+  linkingLocked?: boolean;
 }) {
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
@@ -406,9 +408,12 @@ export function ShopProductsPanel({
   const [bindings, setBindings] = useState<Record<string, ImageBindingView>>({});
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
 
-  const load = useCallback(async (): Promise<ShopMirrorProduct[] | null> => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (opts?: { silent?: boolean }): Promise<ShopMirrorProduct[] | null> => {
+    const silent = opts?.silent ?? false;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const [items, bound] = await Promise.all([
         api.getShopProducts(shopName),
@@ -423,17 +428,21 @@ export function ShopProductsPanel({
       onShopProductsChange?.(items, map);
       return items;
     } catch (err) {
-      setError(readableError(err));
+      if (!silent) setError(readableError(err));
       return null;
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [shopName, onShopProductsChange]);
+
+  const batchLinkBusyRef = useRef(false);
+  const batchWasActiveRef = useRef(false);
 
   const handleBound = useCallback(
     (itemId: string, view: ImageBindingView) => {
       setBindings((prev) => ({ ...prev, [itemId]: view }));
-      onActivity?.();
+      // Avoid full-list skeleton reload between per-card steps — sync at batch end.
+      if (!batchLinkBusyRef.current) onActivity?.();
     },
     [onActivity]
   );
@@ -456,32 +465,85 @@ export function ShopProductsPanel({
       onScrollToProduct: scrollToCard,
     });
 
-  const batchLinkActiveRef = useRef(false);
   useEffect(() => {
+    const busy = batchLinkProgress.active || batchLinkRunning;
+    batchLinkBusyRef.current = busy;
     onBatchLinkProgressChange?.(batchLinkProgress);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- parent often passes inline fn
-  }, [batchLinkProgress]);
 
-  useEffect(() => {
-    if (batchLinkActiveRef.current && !batchLinkProgress.active && batchLinkProgress.done) {
+    if (batchWasActiveRef.current && !batchLinkProgress.active && batchLinkProgress.done) {
       onBatchLinkFinished?.(batchLinkProgress);
     }
-    batchLinkActiveRef.current = batchLinkProgress.active;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- finish edge only
-  }, [batchLinkProgress.active, batchLinkProgress.done]);
+    batchWasActiveRef.current = batchLinkProgress.active;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- progress edge only
+  }, [batchLinkProgress, batchLinkRunning]);
+
+  const runBatchLink = useCallback(
+    async (scope: ShopMirrorProduct[], source: BatchLinkRequest["source"]) => {
+      if (batchLinkRunning) return;
+      const pendingSet = pendingNewAnalysisIds ?? new Set<string>();
+
+      if (scope.length === 0) {
+        if (source !== "auto") showToast("暂无可关联商品");
+        onBatchLinkFinished?.({ ...INITIAL_BATCH_LINK_PROGRESS, source, done: true });
+        return;
+      }
+
+      const variantReady = await loadVariantReadyIds(
+        shopName,
+        scope.map((p) => p.thirdPlatformItemId)
+      );
+      const preflight = preflightBatchLinkScope(scope, pendingSet, variantReady);
+
+      if (preflight.readyProducts.length === 0) {
+        if (source === "auto") {
+          onBatchLinkFinished?.({
+            ...INITIAL_BATCH_LINK_PROGRESS,
+            source,
+            deferredIds: preflight.deferredIds,
+            done: true,
+          });
+          return;
+        }
+        showToast(
+          preflight.deferredIds.length > 0
+            ? "主图尚未就绪，请稍后再试"
+            : "暂无可关联商品"
+        );
+        onBatchLinkFinished?.({
+          ...INITIAL_BATCH_LINK_PROGRESS,
+          source,
+          deferredIds: preflight.deferredIds,
+          done: true,
+        });
+        return;
+      }
+
+      setFilter("all");
+      if (source === "manual") {
+        showToast(`开始为 ${preflight.readyProducts.length} 个商品逐个图搜关联…`);
+      }
+
+      void startBatchLink(preflight.readyProducts, {
+        source,
+        deferredIds: preflight.deferredIds,
+      });
+    },
+    [
+      batchLinkRunning,
+      onBatchLinkFinished,
+      pendingNewAnalysisIds,
+      setFilter,
+      shopName,
+      showToast,
+      startBatchLink,
+    ]
+  );
 
   const runBatchLinkForUnbound = useCallback(
     (scope: ShopMirrorProduct[]) => {
-      if (batchLinkRunning) return;
-      if (scope.length === 0) {
-        showToast("暂无未关联商品");
-        onBatchLinkFinished?.(INITIAL_BATCH_LINK_PROGRESS);
-        return;
-      }
-      showToast(`开始为 ${scope.length} 个未关联商品逐个图搜…`);
-      void startBatchLink(scope);
+      void runBatchLink(scope, "manual");
     },
-    [batchLinkRunning, onBatchLinkFinished, showToast, startBatchLink]
+    [runBatchLink]
   );
 
   // Propagate binding map to the page after local state commits — never inside a setState updater.
@@ -502,6 +564,7 @@ export function ShopProductsPanel({
       return;
     }
     mirrorRefreshSeen.current = mirrorRefreshSignal;
+    if (batchLinkBusyRef.current) return;
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- signal edge only
   }, [mirrorRefreshSignal]);
@@ -575,6 +638,7 @@ export function ShopProductsPanel({
     if (!pendingNewAnalysisKey) return;
     if (pendingNewAnalysisKey === pendingNewAnalysisKeySeen.current) return;
     pendingNewAnalysisKeySeen.current = pendingNewAnalysisKey;
+    if (batchLinkBusyRef.current) return;
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when awareness ids change
   }, [pendingNewAnalysisKey]);
@@ -633,6 +697,7 @@ export function ShopProductsPanel({
   // Rail「重搜候选」+ page「一键关联」: client-side per-card batch link.
   const rematchSignalSeen = useRef(0);
   useEffect(() => {
+    if (linkingLocked) return;
     if (!rematchUnboundSignal || rematchUnboundSignal === rematchSignalSeen.current) {
       return;
     }
@@ -642,19 +707,29 @@ export function ShopProductsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- signal edge only
   }, [rematchUnboundSignal]);
 
-  const batchLinkSignalSeen = useRef(0);
+  const batchLinkRequestSeen = useRef(0);
   useEffect(() => {
-    if (!batchLinkSignal || batchLinkSignal === batchLinkSignalSeen.current) {
+    if (!batchLinkRequest?.signal || batchLinkRequest.signal === batchLinkRequestSeen.current) {
       return;
     }
-    batchLinkSignalSeen.current = batchLinkSignal;
-    const scope =
-      filter === "unbound"
-        ? filtered
-        : products.filter((p) => stateOf(p) === null);
-    runBatchLinkForUnbound(scope);
+    batchLinkRequestSeen.current = batchLinkRequest.signal;
+    const scope = batchLinkRequest.productIds?.length
+      ? products.filter((p) =>
+          batchLinkRequest.productIds!.includes(p.thirdPlatformItemId)
+        )
+      : products.filter((p) => stateOf(p) === null);
+    void runBatchLink(scope, batchLinkRequest.source);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- signal edge only
-  }, [batchLinkSignal]);
+  }, [batchLinkRequest]);
+
+  const batchLinkSessionActive =
+    batchLinkProgress.sessionOrder.length > 0 &&
+    (batchLinkProgress.active || batchLinkProgress.done);
+
+  const displayProducts = useMemo(() => {
+    if (!batchLinkSessionActive || filter !== "all") return filtered;
+    return sortProductsForBatchLink(filtered, batchLinkProgress);
+  }, [batchLinkProgress, batchLinkSessionActive, filter, filtered]);
 
   useEffect(() => {
     if (!onMinisChange) return;
@@ -678,7 +753,7 @@ export function ShopProductsPanel({
     );
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
     onScrollToConsumed?.();
-  }, [scrollToProductId, filtered, onScrollToConsumed]);
+  }, [scrollToProductId, displayProducts, onScrollToConsumed]);
 
   return (
     <>
@@ -687,21 +762,15 @@ export function ShopProductsPanel({
           variant="chip"
           tabs={[
             { id: "all", label: "全部", count: counts.all },
-            ...(counts.new_arrivals > 0
-              ? [
-                  {
-                    id: "new_arrivals" as const,
-                    label: "新入库",
-                    count: counts.new_arrivals,
-                  },
-                ]
-              : []),
-            { id: "pending", label: "AI 待确认", count: counts.pending },
+            { id: "pending", label: "待确认", count: counts.pending },
             { id: "confirmed", label: "已确认", count: counts.confirmed },
             { id: "unbound", label: "未关联", count: counts.unbound },
           ]}
           value={filter}
-          onValueChange={(id) => setFilter(id as ShopFilter)}
+          onValueChange={(id) => {
+            if (linkingLocked) return;
+            setFilter(id as ShopFilter);
+          }}
         />
         <div className="flex items-center gap-2">
           {counts.pending > 0 ? (
@@ -709,7 +778,7 @@ export function ShopProductsPanel({
               size="sm"
               variant="secondary"
               onClick={() => void handleBatchAck()}
-              disabled={batchAcking || syncing}
+              disabled={batchAcking || syncing || linkingLocked}
             >
               {batchAcking ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -717,7 +786,11 @@ export function ShopProductsPanel({
               {batchAcking ? "确认中…" : `批量确认 (${counts.pending})`}
             </Button>
           ) : null}
-          <Button size="sm" onClick={() => void handleSync()} disabled={syncing || batchAcking}>
+          <Button
+            size="sm"
+            onClick={() => void handleSync()}
+            disabled={syncing || batchAcking || linkingLocked}
+          >
             {syncing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -763,7 +836,7 @@ export function ShopProductsPanel({
             </Button>
           }
         />
-      ) : filtered.length === 0 ? (
+      ) : displayProducts.length === 0 ? (
         <EmptyState
           title={filter === "new_arrivals" ? "暂无新入库商品" : "该筛选下暂无商品"}
           description={
@@ -774,7 +847,7 @@ export function ShopProductsPanel({
         />
       ) : (
         <div className="grid grid-cols-1 gap-3">
-          {filtered.map((p) => (
+          {displayProducts.map((p) => (
             <ShopProductCard
               key={p.id}
               item={p}
@@ -795,9 +868,9 @@ export function ShopProductsPanel({
               searchModeRequested={searchModeProductId === p.thirdPlatformItemId}
               onSearchModeConsumed={onSearchModeConsumed}
               onFocus={() => onProductFocus?.(p.thirdPlatformItemId)}
-              onAgentIntent={onAgentIntent}
               onCandidateContextChange={onCandidateContextChange}
               batchLinkDrive={batchLinkProgress.cardStates[p.thirdPlatformItemId]}
+              linkingLocked={linkingLocked}
             />
           ))}
         </div>
@@ -827,12 +900,12 @@ function ShopProductCard({
   searchModeRequested = false,
   onSearchModeConsumed,
   onFocus,
-  onAgentIntent,
   onCandidateContextChange,
   isNewArrival = false,
   listingPriceEdit = null,
   onListingPriceEditConsumed,
   batchLinkDrive = undefined,
+  linkingLocked = false,
 }: {
   item: ShopMirrorProduct;
   shopName: string;
@@ -843,14 +916,6 @@ function ShopProductCard({
   searchModeRequested?: boolean;
   onSearchModeConsumed?: () => void;
   onFocus?: () => void;
-  onAgentIntent?: (
-    intent: ProductsIntentId,
-    productId: string,
-    opts?: {
-      focusCandidateId?: string | null;
-      focusCandidates?: CandidateSummary[];
-    }
-  ) => void;
   onCandidateContextChange?: (
     productId: string,
     ctx: { candidateId: string | null; candidates: CandidateSummary[] }
@@ -859,6 +924,7 @@ function ShopProductCard({
   listingPriceEdit?: AiFieldEditRecord | null;
   onListingPriceEditConsumed?: () => void;
   batchLinkDrive?: BatchLinkCardDrive;
+  linkingLocked?: boolean;
 }) {
   const { showToast } = useOnboarding();
   const listingPriceEditPhases = useAiFieldEditPhases(listingPriceEdit);
@@ -887,7 +953,6 @@ function ShopProductCard({
   const [result, setResult] = useState<ImageSearchResult | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [trayOpen, setTrayOpen] = useState(false);
-  const [trayCompareMode, setTrayCompareMode] = useState(false);
   const [searchPhase, setSearchPhase] = useState<string | null>(null);
   const [matchScores, setMatchScores] = useState<Record<string, number>>({});
   const [recommendedIdx, setRecommendedIdx] = useState(0);
@@ -955,6 +1020,7 @@ function ShopProductCard({
   const [acking, setAcking] = useState(false);
   const [unbinding, setUnbinding] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [manualDrawerOpen, setManualDrawerOpen] = useState(false);
 
   const boundOfferId =
     binding?.bound && binding.tangbuyProductId ? binding.tangbuyProductId : null;
@@ -963,12 +1029,14 @@ function ShopProductCard({
   const bindConfirmed = Boolean(binding?.bound) && !bindPending;
   // Published from the Tangbuy catalog → already a 1:1 source link; no matching needed.
   const fromPublish = Boolean(binding?.bound) && binding?.bindSource === "FROM_PUBLISH";
+  const fromManual = isManualImageBinding(binding);
 
   // Snapshot captured at confirm time: the exact candidate image/price the user matched. Preferred for
   // 回显 so we don't depend on (and don't re-hit) offer-detail, whose cross-border payload often has a
   // null white image and an empty SKU matrix.
   const snapImage = binding?.bound ? (binding.offerImageUrl ?? null) : null;
   const snapPrice = binding?.bound ? (binding.offerPrice ?? null) : null;
+  const snapTitle = binding?.bound ? (binding.offerTitle ?? null) : null;
   const hasSnapshot = Boolean(snapImage && snapPrice);
 
   // Bound cards lazily fetch the real offer detail only when there's no snapshot, so the right tile can
@@ -977,6 +1045,7 @@ function ShopProductCard({
   const [offerLoading, setOfferLoading] = useState(false);
   const [itemGetCostCny, setItemGetCostCny] = useState<number | null>(null);
   const [itemGetCostLoading, setItemGetCostLoading] = useState(false);
+  const [itemGetTitle, setItemGetTitle] = useState<string | null>(null);
 
   const boundDetailUrl = resolveSkuDetailUrl(
     binding?.detailUrl,
@@ -1006,6 +1075,27 @@ function ShopProductCard({
   }, [boundOfferId, boundDetailUrl, binding?.tangbuySkuId]);
 
   useEffect(() => {
+    if (!boundOfferId || !boundDetailUrl || snapTitle) {
+      setItemGetTitle(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchItemDetail(boundDetailUrl)
+      .then((detail) => {
+        if (cancelled || !detail) return;
+        const title =
+          detail.itemNameTrans?.trim() || detail.itemName?.trim() || null;
+        setItemGetTitle(title);
+      })
+      .catch(() => {
+        if (!cancelled) setItemGetTitle(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [boundOfferId, boundDetailUrl, snapTitle]);
+
+  useEffect(() => {
     if (!boundOfferId) {
       setOffer(null);
       return;
@@ -1030,7 +1120,7 @@ function ShopProductCard({
     };
   }, [boundOfferId, hasSnapshot]);
 
-  const runSearchWithPhases = async (opts?: { compareMode?: boolean }) => {
+  const runSearchWithPhases = async () => {
     if (searching) return;
     setSearching(true);
     setSearchError(null);
@@ -1058,13 +1148,7 @@ function ShopProductCard({
       const ranked = pipeline.rankedItems;
       setRecommendedIdx(0);
       setResult(pipeline.result);
-      const compare = opts?.compareMode ?? trayCompareMode;
-      if (compare && boundOfferId) {
-        const boundIdx = ranked.findIndex((c) => c.productId === boundOfferId);
-        setCurrentIdx(boundIdx >= 0 ? boundIdx : 0);
-      } else {
-        setCurrentIdx(0);
-      }
+      setCurrentIdx(0);
     } catch (err) {
       setResult(null);
       setMatchScores({});
@@ -1079,33 +1163,11 @@ function ShopProductCard({
   /** Open existing tray, or run a fresh search. */
   const openOrRunSearch = async (forceRefresh: boolean) => {
     onFocus?.();
-    setTrayCompareMode(false);
     if (!forceRefresh && result && result.items.length > 0) {
       setTrayOpen(true);
       return;
     }
     await runSearchWithPhases();
-  };
-
-  const focusBoundCandidate = useCallback(
-    (items: ImageSearchProduct[]) => {
-      if (!boundOfferId) return;
-      const idx = items.findIndex((c) => c.productId === boundOfferId);
-      if (idx >= 0) setCurrentIdx(idx);
-    },
-    [boundOfferId]
-  );
-
-  /** Open图搜托盘对比多个候选（非 Agent 面板）。 */
-  const openCandidateCompare = async () => {
-    onFocus?.();
-    setTrayCompareMode(true);
-    setTrayOpen(true);
-    if (result && result.items.length > 0) {
-      focusBoundCandidate(result.items);
-      return;
-    }
-    await runSearchWithPhases({ compareMode: true });
   };
 
   const runSearch = async () => {
@@ -1129,6 +1191,7 @@ function ShopProductCard({
         appliedQuery: result?.appliedQuery,
         offerImageUrl: candidate.imageUrl,
         offerPrice: candidate.price,
+        offerTitle: candidate.title?.trim() || null,
       });
       onBound(item.thirdPlatformItemId, view);
       setTrayOpen(false);
@@ -1197,6 +1260,16 @@ function ShopProductCard({
     }
   };
 
+  const handleManualBound = (view: ImageBindingView) => {
+    onBound(item.thirdPlatformItemId, view);
+    if (view.offerTitle?.trim()) {
+      setItemGetTitle(view.offerTitle.trim());
+    }
+    setResult(null);
+    setCurrentIdx(0);
+    setTrayOpen(false);
+  };
+
   const candidates = result?.items ?? null;
   const current = candidates?.[currentIdx] ?? null;
 
@@ -1258,14 +1331,6 @@ function ShopProductCard({
     onCandidateContextChange,
   ]);
 
-  const triggerAgentIntent = (intent: ProductsIntentId) => {
-    onFocus?.();
-    onAgentIntent?.(intent, item.thirdPlatformItemId, {
-      focusCandidateId: current?.productId ?? null,
-      focusCandidates: candidateSummaries,
-    });
-  };
-
   // Right tile: preview a tray candidate only while the tray is open; otherwise show bound source.
   const rightMode: "candidate" | "bound" | "empty" = trayOpen && current
     ? "candidate"
@@ -1282,7 +1347,11 @@ function ShopProductCard({
   // —— 货源采购价（成本展示；与右侧定价策略无关） ——
   const boundImage = snapImage ?? offerImage(offer);
   const boundTitle =
-    offer?.subjectTrans ?? offer?.subject ?? null;
+    snapTitle ??
+    itemGetTitle ??
+    offer?.subjectTrans ??
+    offer?.subject ??
+    null;
   const boundCostCny =
     itemGetCostCny ??
     parseGatewayPrice(snapPrice) ??
@@ -1345,6 +1414,12 @@ function ShopProductCard({
       batchLinkDrive.state
     );
   const batchQueued = batchLinkDrive?.state === "queued";
+  const batchCardActive =
+    batchLinkDrive != null &&
+    ["queued", "searching", "candidates_ready", "auto_selecting", "binding"].includes(
+      batchLinkDrive.state
+    );
+  const cardActionsLocked = linkingLocked && !batchCardActive;
 
   const headerBadge = useMemo(() => {
     if (batchQueued) {
@@ -1361,7 +1436,11 @@ function ShopProductCard({
     }
     if (boundOfferId) {
       return {
-        label: fromPublish ? "商城上架关联" : "已自动匹配",
+        label: fromPublish
+          ? "商城上架关联"
+          : fromManual
+            ? "人工匹配"
+            : "已自动匹配",
         variant: "matched" as const,
       };
     }
@@ -1369,7 +1448,7 @@ function ShopProductCard({
       return { label: "已选货源", variant: "selected" as const };
     }
     return { label: "未匹配", variant: "unbound" as const };
-  }, [batchLinkDrive?.state, batchLinking, batchQueued, bindPending, boundOfferId, fromPublish, current]);
+  }, [batchLinkDrive?.state, batchLinking, batchQueued, bindPending, boundOfferId, fromPublish, fromManual, current]);
 
   const displayScore = resolveCardMatchScore(
     binding ?? undefined,
@@ -1381,28 +1460,6 @@ function ShopProductCard({
     Boolean(current),
     displayScore
   );
-
-  const candidateCompareSummary = useMemo(() => {
-    if (!candidates?.length || !boundOfferId) return null;
-    const boundIdx = candidates.findIndex((c) => c.productId === boundOfferId);
-    const top = candidates[0];
-    const topScore =
-      matchScores[top?.productId ?? ""] ??
-      normalizeMatchScore(top?.similarityScore);
-    const boundScore =
-      boundIdx >= 0
-        ? matchScores[candidates[boundIdx]!.productId] ??
-          normalizeMatchScore(candidates[boundIdx]!.similarityScore)
-        : displayScore;
-    return {
-      total: candidates.length,
-      boundIdx,
-      boundRank: boundIdx >= 0 ? boundIdx + 1 : null,
-      topScore,
-      boundScore,
-      isTopPick: boundIdx === 0,
-    };
-  }, [candidates, boundOfferId, matchScores, displayScore]);
 
   const tags = evidenceTags({
     unbound: cardState === "unbound" && !current,
@@ -1486,7 +1543,9 @@ function ShopProductCard({
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
               headerBadge.variant === "matched"
-                ? "bg-emerald-50 text-emerald-700"
+                ? headerBadge.label === "人工匹配"
+                  ? "bg-violet-50 text-violet-700"
+                  : "bg-emerald-50 text-emerald-700"
                 : headerBadge.variant === "pending"
                   ? "bg-amber-50 text-amber-700"
                   : headerBadge.variant === "linking"
@@ -1693,53 +1752,6 @@ function ShopProductCard({
         </div>
       </div>
 
-      {(onAgentIntent || (hasImage && boundOfferId)) ? (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-          {onAgentIntent && (cardState !== "unbound" || current) ? (
-            <>
-              <button
-                type="button"
-                className="font-medium text-sky-700 hover:underline"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  triggerAgentIntent("explain_match_reason");
-                }}
-              >
-                为何推荐
-              </button>
-              <span className="text-slate-300">·</span>
-              <button
-                type="button"
-                className="font-medium text-sky-700 hover:underline"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  triggerAgentIntent("explain_match_risk");
-                }}
-              >
-                不确定点
-              </button>
-            </>
-          ) : null}
-          {hasImage && boundOfferId ? (
-            <>
-              {onAgentIntent && (cardState !== "unbound" || current) ? (
-                <span className="text-slate-300">·</span>
-              ) : null}
-              <button
-                type="button"
-                className="font-medium text-sky-700 hover:underline"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void openCandidateCompare();
-                }}
-              >
-                候选对比
-              </button>
-            </>
-          ) : null}
-        </div>
-      ) : null}
-
       {/* Footer actions — secondary links + primary on the right */}
       <div className="mt-3 flex flex-wrap items-center justify-end gap-x-2 gap-y-2 border-t border-slate-100 pt-3">
         <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[12px]">
@@ -1789,8 +1801,45 @@ function ShopProductCard({
               >
                 {searching ? "匹配中…" : "重新匹配"}
               </button>
+              <span className="text-slate-300">|</span>
+              <button
+                type="button"
+                className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+                disabled={cardActionsLocked || !isMallGatewayConfigured()}
+                title={
+                  !isMallGatewayConfigured()
+                    ? "商城货源暂不可用"
+                    : "粘贴发现新品链接手动关联货源"
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setManualDrawerOpen(true);
+                }}
+              >
+                手动匹配
+              </button>
             </>
-          ) : null}
+          ) : (
+            <>
+              <span className="text-slate-300">|</span>
+              <button
+                type="button"
+                className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+                disabled={cardActionsLocked || !isMallGatewayConfigured()}
+                title={
+                  !isMallGatewayConfigured()
+                    ? "商城货源暂不可用"
+                    : "粘贴发现新品链接手动关联货源"
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setManualDrawerOpen(true);
+                }}
+              >
+                手动匹配
+              </button>
+            </>
+          )}
           {boundOfferId ? (
             <>
               {cardState === "pending" ? (
@@ -1832,6 +1881,7 @@ function ShopProductCard({
             size="sm"
             className="h-8 min-w-[4.5rem]"
             disabled={
+              cardActionsLocked ||
               searching ||
               (cardState === "unbound" && !hasImage && !current) ||
               confirmingId != null ||
@@ -1878,92 +1928,51 @@ function ShopProductCard({
       {trayOpen || searching ? (
         <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
           <div className="flex items-center justify-between gap-2">
-            {trayOpen && !searching ? (
-              <button
-                type="button"
-                className="shrink-0 text-[11px] font-medium text-slate-600 underline underline-offset-2"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setTrayOpen(false);
-                  setTrayCompareMode(false);
-                }}
-              >
-                收起
-              </button>
-            ) : (
-              <span className="text-[11px] text-slate-400">
-                {searching ? "匹配中…" : "候选"}
-              </span>
-            )}
+            <span
+              className="inline-block h-7 w-7 shrink-0"
+              aria-hidden
+            />
             <p className="min-w-0 flex-1 text-center text-[12px] font-semibold text-slate-800">
               {searching
                 ? searchPhase ?? "正在搜索…"
-                : trayCompareMode && candidates && candidates.length > 0
-                  ? `候选对比 · ${candidates.length} 个图搜结果`
-                  : candidates && candidates.length > 0
-                    ? `${candidates.length} 个候选`
-                    : result
-                      ? "未召回候选"
-                      : "图搜候选"}
+                : candidates && candidates.length > 0
+                  ? `${candidates.length} 个候选`
+                  : result
+                    ? "未召回候选"
+                    : "图搜候选"}
             </p>
             {trayOpen && !searching ? (
-              <button
-                type="button"
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                disabled={!hasImage}
-                title="刷新图搜"
-                aria-label="刷新图搜"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void runSearch();
-                }}
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  disabled={!hasImage}
+                  title="刷新图搜"
+                  aria-label="刷新图搜"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void runSearch();
+                  }}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  title="收起候选"
+                  aria-label="收起候选"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTrayOpen(false);
+                  }}
+                >
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </button>
+              </div>
             ) : (
-              <span className="inline-block h-7 w-7 shrink-0" aria-hidden />
+              <span className="inline-block h-7 w-[3.75rem] shrink-0" aria-hidden />
             )}
           </div>
-
-          {trayCompareMode && candidateCompareSummary ? (
-            <div className="mt-2 rounded-md border border-slate-200 bg-white px-2.5 py-2 text-[11px] leading-relaxed text-slate-600">
-              {candidateCompareSummary.boundRank != null ? (
-                <>
-                  当前关联在{" "}
-                  <span className="font-semibold text-slate-800">
-                    {candidateCompareSummary.total}
-                  </span>{" "}
-                  个图搜候选中排第{" "}
-                  <span className="font-semibold text-slate-800">
-                    {candidateCompareSummary.boundRank}
-                  </span>
-                  {candidateCompareSummary.boundScore != null ? (
-                    <>
-                      ，匹配度{" "}
-                      <span className="font-semibold text-emerald-700">
-                        {candidateCompareSummary.boundScore}%
-                      </span>
-                    </>
-                  ) : null}
-                  {candidateCompareSummary.topScore != null ? (
-                    <>
-                      ；首推候选{" "}
-                      <span className="font-semibold text-emerald-700">
-                        {candidateCompareSummary.topScore}%
-                      </span>
-                    </>
-                  ) : null}
-                  {candidateCompareSummary.isTopPick
-                    ? "（与首推一致）"
-                    : "（非首推，可对比后改绑）"}
-                </>
-              ) : (
-                <>
-                  当前关联未出现在本次图搜结果中，请对比其他候选或重新匹配。
-                </>
-              )}
-            </div>
-          ) : null}
 
           {candidates && candidates.length > 0 ? (
             <div className="mt-2.5 flex items-stretch gap-2 overflow-x-auto pb-1">
@@ -2075,14 +2084,18 @@ function ShopProductCard({
                     </div>
                     <div className="mt-auto flex justify-end pt-1.5">
                       {isBoundCand ? (
-                        <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                        <Button
+                          size="sm"
+                          className="h-6 min-w-[3rem] px-2.5 text-[10px] shadow-sm"
+                          disabled
+                        >
                           已选用
-                        </span>
+                        </Button>
                       ) : (
                         <Button
                           size="sm"
                           className={cn(
-                            "h-6 px-2.5 text-[10px] shadow-sm transition-transform",
+                            "h-6 min-w-[3rem] px-2.5 text-[10px] shadow-sm transition-transform",
                             isBatchSelectTarget &&
                               batchLinkDrive?.selectButtonPhase === "pressed" &&
                               "batch-link-select-pressed",
@@ -2091,6 +2104,7 @@ function ShopProductCard({
                               "pointer-events-none opacity-80"
                           )}
                           disabled={
+                            cardActionsLocked ||
                             confirmingId === c.productId ||
                             batchLinkDrive?.selectButtonPhase === "loading"
                           }
@@ -2116,6 +2130,15 @@ function ShopProductCard({
           ) : null}
         </div>
       ) : null}
+
+      <ManualMatchDrawer
+        open={manualDrawerOpen}
+        shopName={shopName}
+        thirdPlatformItemId={item.thirdPlatformItemId}
+        onClose={() => setManualDrawerOpen(false)}
+        onBound={handleManualBound}
+        showToast={showToast}
+      />
     </article>
   );
 }

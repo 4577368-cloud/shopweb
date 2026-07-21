@@ -194,6 +194,48 @@ export type LogisticsTypeCode =
   | "BLADE"
   | "OTHER";
 
+export type LogisticsDecisionStatus =
+  | "pending_sku"
+  | "pending_postal_meta"
+  | "ready_for_quote"
+  | "restricted"
+  | "needs_review";
+
+export type QuoteStatus = "NOT_REQUESTED" | "PENDING" | "SUCCESS" | "FAILED";
+
+export interface LogisticsLine {
+  lineCode: string;
+  lineName: string;
+  estimatedFee: number;
+  currency: string;
+  estimatedDays: number;
+  carrier: string;
+  supportsBattery?: boolean;
+  trackingAvailable: boolean;
+  priority: number;
+}
+
+export interface VariantLogisticsDecision {
+  thirdPlatformSkuId: string;
+  optionLabel: string;
+  tangbuySkuId?: string | null;
+  tangbuyGoodsId?: string | null;
+  postalLimitClass?: string;
+  postalLimitLabel?: string;
+  postalLimitConfidence?: number;
+  estimatedWeightG?: number;
+  estimatedVolumeCm3?: number;
+  estimatedLengthCm?: number;
+  estimatedWidthCm?: number;
+  estimatedHeightCm?: number;
+  measureSource?: string;
+  decisionStatus: LogisticsDecisionStatus;
+  decisionReason?: string;
+  quoteStatus?: QuoteStatus;
+  recommendedLine?: LogisticsLine;
+  alternativeLines?: LogisticsLine[];
+}
+
 export type PackagingType = "MINIMAL" | "CARTON";
 export type LogisticsSpeedPreference = "ECONOMY" | "FAST" | "BALANCED";
 
@@ -203,16 +245,19 @@ export interface MarketSelection {
 }
 
 export interface LogisticsTemplate {
+  id: string;
   shopName: string;
+  name: string;
   packaging: PackagingType;
   speedPreference: LogisticsSpeedPreference;
   markets: MarketSelection[];
-  defaultTemplate?: boolean;
+  isActive: boolean;
   updatedAt?: string | null;
 }
 
 export interface LogisticsTemplateUpsert {
   shopName: string;
+  name?: string;
   packaging: PackagingType;
   speedPreference: LogisticsSpeedPreference;
   markets: MarketSelection[];
@@ -221,12 +266,14 @@ export interface LogisticsTemplateUpsert {
 export interface ProductLogisticsProfile {
   thirdPlatformItemId: string;
   title?: string | null;
-  logisticsType: LogisticsTypeCode;
-  logisticsTypeLabel: string;
-  confidence: number;
-  signals: string[];
-  classifySource: string;
-  reviewed: boolean;
+  primaryImageUrl?: string | null;
+  dominantLogisticsType: LogisticsTypeCode;
+  dominantLogisticsTypeLabel: string;
+  totalVariants: number;
+  decisionStatusCounts: Record<LogisticsDecisionStatus, number>;
+  tangbuyProductId?: string | null;
+  detailUrl?: string | null;
+  variantDecisions: VariantLogisticsDecision[];
 }
 
 export interface LogisticsTypeCount {
@@ -240,9 +287,10 @@ export interface LogisticsAnalysis {
   status: string;
   analyzedCount: number;
   skippedUnboundCount: number;
-  distribution: LogisticsTypeCount[];
+  productProfiles: ProductLogisticsProfile[];
+  totalVariants: number;
+  decisionStatusCounts: Record<LogisticsDecisionStatus, number>;
   highRiskTypes: LogisticsTypeCode[];
-  profiles: ProductLogisticsProfile[];
 }
 
 export interface SyncResultItem {
@@ -513,6 +561,8 @@ export interface ConfirmImageMatchRequest {
   offerImageUrl?: string | null;
   /** 命中候选的价格快照（网关原始串，如 "12.00"）。 */
   offerPrice?: string | null;
+  /** 命中候选的标题快照，落库后回显直接用。 */
+  offerTitle?: string | null;
   /** true=扫描自动关联，落 PENDING 待确认；false/缺省=人工确认，落 ACTIVE。 */
   auto?: boolean;
 }
@@ -532,7 +582,7 @@ export interface ImageBindingView {
   matchScore?: number | null;
   /** PENDING = AI 自动关联待确认；ACTIVE = 已确认。老数据可能为空。 */
   bindStatus?: BindingStatus | null;
-  /** FROM_CANDIDATE = 图搜关联；FROM_PUBLISH = 从 Tangbuy 商城上架建立的 1:1 绑定。 */
+  /** FROM_CANDIDATE = 图搜关联；FROM_PUBLISH = 商城上架；FROM_MANUAL = 人工粘贴链接匹配。 */
   bindSource?: string | null;
   imageSource?: ImageSearchImageSource | null;
   querySource?: ImageSearchQuerySource | null;
@@ -542,6 +592,8 @@ export interface ImageBindingView {
   offerImageUrl?: string | null;
   /** 确认时落库的命中候选价快照（网关原始串）。 */
   offerPrice?: string | null;
+  /** 确认时落库的货源标题快照。 */
+  offerTitle?: string | null;
 }
 
 /** Persisted Shopify order header (GET /api/plugin/order/header/list). */
@@ -594,8 +646,12 @@ export interface SkuVariantBinding {
   tangbuySkuId?: string | null;
   /** PENDING = AI 自动对齐待确认；ACTIVE = 已确认。老数据可能为空。 */
   bindStatus?: BindingStatus | null;
-  /** S1-b1 自动对齐命中的 1688 规格（如 "Red / M"）；IMAGE 绑定为空 */
+  /** S1-b1 自动对齐 / 图搜快照的 1688 规格或标题（如 "Red / M" 或货源标题） */
   tangbuySkuSpec?: string | null;
+  /** 图搜确认时的候选图快照 — itemGet 不可用时的展示回退 */
+  offerImageUrl?: string | null;
+  /** 图搜确认时的候选价快照（网关原始串，如 "12.00"） */
+  offerPrice?: string | null;
   /** 绑定来源：IMAGE（图搜确认）/ RULE / AI（自动对齐） */
   matchSource?: string | null;
   matchScore?: number | null;
@@ -619,6 +675,10 @@ export interface SkuProductOverview {
   thirdPlatformItemId: string;
   title?: string | null;
   imageUrl?: string | null;
+  /** Product-level Tangbuy offer id (from bound variants). */
+  tangbuyProductId?: string | null;
+  /** Tangbuy detail URL for itemGet SKU matrix. */
+  detailUrl?: string | null;
   variants: SkuVariant[];
 }
 

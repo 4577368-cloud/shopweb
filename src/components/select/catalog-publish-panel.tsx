@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CatalogProductGrid } from "@/components/select/catalog-product-grid";
+import { CatalogLinkDrawer } from "@/components/select/catalog-link-drawer";
 import type { PublishCellState } from "@/components/select/catalog-product-card";
 import { SmartSourcingFilters } from "@/components/select/smart-sourcing-filters";
 import { useOnboarding } from "@/context/onboarding-context";
@@ -73,6 +74,7 @@ export function CatalogPublishPanel({
   /** Agent one-click preset: apply recommended category by name */
   filterPresetRequest = null,
   onFilterPresetConsumed,
+  onBindingLinked,
 }: {
   onActivity?: () => void;
   recommendedCategories?: RecommendedCategory[];
@@ -81,6 +83,8 @@ export function CatalogPublishPanel({
   onAppliedFilterSummaryChange?: (chips: string[]) => void;
   filterPresetRequest?: { categoryName?: string; keywords?: string } | null;
   onFilterPresetConsumed?: () => void;
+  /** Called after catalog item is linked to an existing shop product. */
+  onBindingLinked?: (thirdPlatformItemId: string) => void;
 }) {
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
@@ -96,6 +100,7 @@ export function CatalogPublishPanel({
   const [publishState, setPublishState] = useState<Record<string, PublishCellState>>(
     {}
   );
+  const [linkItem, setLinkItem] = useState<CatalogRecommendation | null>(null);
 
   const [filters, setFilters] = useState<CatalogFilterState>(DEFAULT_CATALOG_FILTERS);
   const [appliedFilters, setAppliedFilters] =
@@ -443,8 +448,22 @@ export function CatalogPublishPanel({
         targetCurrency={targetCurrency}
         publishState={publishState}
         onPublish={(item) => void handlePublish(item)}
+        onLink={(item) => setLinkItem(item)}
         onPrevPage={() => void goToPage(page - 1)}
         onNextPage={() => void goToPage(page + 1)}
+      />
+
+      <CatalogLinkDrawer
+        open={linkItem != null}
+        catalogItem={linkItem}
+        shopName={shopName}
+        onClose={() => setLinkItem(null)}
+        showToast={showToast}
+        onLinked={(thirdPlatformItemId) => {
+          setLinkItem(null);
+          onActivity?.();
+          onBindingLinked?.(thirdPlatformItemId);
+        }}
       />
     </div>
   );

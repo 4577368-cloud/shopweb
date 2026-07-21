@@ -66,7 +66,7 @@ export function formatNewArrivalAnalysisSummary(result: NewArrivalAnalysisResult
   if (result.unmatched > 0) {
     detail.push(`${result.unmatched} 个未能自动关联，可手动查找候选`);
   }
-  if (result.deferred > 0) detail.push(`${result.deferred} 个待主图/变体就绪后自动重试`);
+  if (result.deferred > 0) detail.push(`${result.deferred} 个待主图就绪后将自动关联`);
   if (detail.length > 0) parts.push(`其中 ${detail.join("，")}`);
   return parts.join("，");
 }

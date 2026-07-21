@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { ApiError, api, readableError } from "@/lib/api";
+import { api, readableError } from "@/lib/api";
+import { isProductConflict } from "@/lib/shop-product-write";
 import type {
   ShopProductDetail,
   ShopProductVariantUpdatePayload,
@@ -93,15 +94,6 @@ function sameUpdatedAt(a?: string | null, b?: string | null): boolean {
   const tb = Date.parse(b);
   if (Number.isFinite(ta) && Number.isFinite(tb)) return ta === tb;
   return a === b;
-}
-
-function isProductConflict(err: unknown): boolean {
-  if (!(err instanceof ApiError) || err.status !== 409) return false;
-  const body = err.body;
-  if (body && typeof body === "object" && body !== null && "code" in body) {
-    return (body as { code?: unknown }).code === "PRODUCT_CONFLICT";
-  }
-  return /PRODUCT_CONFLICT|updated elsewhere|force overwrite/i.test(err.message);
 }
 
 function variantsEqual(a: VariantEdit[], b: VariantEdit[]): boolean {
@@ -359,7 +351,12 @@ export function ShopProductDetailDrawer({
         description: toHtml(form.description),
         status: form.status,
         ...(variantResult.variants.length
-          ? { variants: variantResult.variants }
+          ? {
+              variants: variantResult.variants,
+              ...(variantResult.variants[0]?.price != null
+                ? { defaultVariantPrice: variantResult.variants[0].price }
+                : {}),
+            }
           : {}),
         expectedUpdatedAt: baselineUpdatedAt,
         ...(force ? { force: true } : {}),

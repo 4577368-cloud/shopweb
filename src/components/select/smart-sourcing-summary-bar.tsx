@@ -6,9 +6,7 @@ import type { RecommendedCategory } from "@/lib/catalog-sourcing-types";
 import {
   formatNewArrivalAnalysisSummary,
   type NewArrivalAnalysisResult,
-  type NewArrivalAnalysisSource,
 } from "@/lib/new-arrival-analysis-result";
-import { AUTO_NEW_ARRIVAL_DEBOUNCE_MS } from "@/hooks/use-auto-new-arrival-analysis";
 import { isMatchJobActive } from "@/lib/match-queue-poll";
 import type { MatchJobProgress } from "@/lib/types";
 import {
@@ -30,12 +28,6 @@ export interface SmartSourcingSummaryBarProps {
   onViewDetails?: () => void;
   /** Jump to new-arrival filter in the product list. */
   onViewNewArrivals?: () => void;
-  /** Enqueue image search for pending new arrivals only. */
-  onAnalyzeNewArrivals?: () => void;
-  analyzingNewArrivals?: boolean;
-  analyzingNewArrivalsSource?: NewArrivalAnalysisSource | null;
-  autoNewArrivalScheduled?: boolean;
-  autoNewArrivalScheduledCount?: number;
   newArrivalAnalysisResult?: NewArrivalAnalysisResult | null;
   onDismissNewArrivalResult?: () => void;
   onViewNewArrivalPending?: () => void;
@@ -44,6 +36,8 @@ export interface SmartSourcingSummaryBarProps {
   unboundMatchJob?: MatchJobProgress | null;
   /** Client-side per-card batch link progress (preferred over server queue). */
   batchLinkProgress?: BatchLinkProgress | null;
+  /** Disable new-arrival CTA while any batch link run is active. */
+  batchLinkBusy?: boolean;
   className?: string;
 }
 
@@ -59,17 +53,13 @@ export function SmartSourcingSummaryBar({
   onRefresh,
   onViewDetails,
   onViewNewArrivals,
-  onAnalyzeNewArrivals,
-  analyzingNewArrivals = false,
-  analyzingNewArrivalsSource = null,
-  autoNewArrivalScheduled = false,
-  autoNewArrivalScheduledCount = 0,
   newArrivalAnalysisResult = null,
   onDismissNewArrivalResult,
   onViewNewArrivalPending,
   onViewNewArrivalUnmatched,
   unboundMatchJob = null,
   batchLinkProgress = null,
+  batchLinkBusy = false,
   className,
 }: SmartSourcingSummaryBarProps) {
   const pct = analyzed > 0 ? Math.round((matched / analyzed) * 100) : 0;
@@ -104,6 +94,10 @@ export function SmartSourcingSummaryBar({
         : 0;
   const showQueueStrip =
     (batchActive || batchDone || (unboundMatchJob != null && (queueActive || queueDone)));
+  const batchLinkSessionActive =
+    batchLinkProgress != null &&
+    (batchActive || batchDone);
+  const batchLinkLabel = "正在一键关联";
 
   return (
     <section
@@ -160,7 +154,7 @@ export function SmartSourcingSummaryBar({
               查看详情
             </button>
           ) : null}
-          {onRefresh ? (
+          {onRefresh && !batchLinkBusy ? (
             <Button
               variant="secondary"
               size="sm"
@@ -201,7 +195,7 @@ export function SmartSourcingSummaryBar({
               {queueActive ? (
                 <>
                   <span className="font-semibold text-ink">
-                    正在逐个图搜关联
+                    {batchLinkLabel}
                     {queueTotal > 0 ? ` ${queueProcessed}/${queueTotal}` : ""}
                   </span>
                   {batchLinkProgress && batchLinkProgress.linked > 0 ? (
@@ -310,33 +304,11 @@ export function SmartSourcingSummaryBar({
         </div>
       ) : null}
 
-      {ready && pendingNewAnalysis > 0 ? (
+      {ready && pendingNewAnalysis > 0 && !batchLinkSessionActive ? (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-sky-200 bg-sky-50/80 px-2.5 py-2">
           <p className="min-w-0 flex-1 text-[11px] leading-snug text-sky-900">
-            {analyzingNewArrivals && analyzingNewArrivalsSource === "auto" ? (
-              <>
-                <span className="inline-flex items-center gap-1.5 font-semibold">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  正在自动关联 {pendingNewAnalysis} 个新商品…
-                </span>
-              </>
-            ) : analyzingNewArrivals ? (
-              <span className="font-semibold">
-                正在关联 {pendingNewAnalysis} 个新商品…
-              </span>
-            ) : autoNewArrivalScheduled ? (
-              <>
-                <span className="font-semibold">
-                  {autoNewArrivalScheduledCount || pendingNewAnalysis} 个新商品
-                </span>
-                已入库，约 {Math.round(AUTO_NEW_ARRIVAL_DEBOUNCE_MS / 1000)} 秒后将自动关联货源。
-              </>
-            ) : (
-              <>
-                <span className="font-semibold">{pendingNewAnalysis} 个新商品</span>
-                已入库，稍后将自动关联货源。
-              </>
-            )}
+            <span className="font-semibold">{pendingNewAnalysis} 个新商品</span>
+            已入库，进入页面后将自动一键关联（主图就绪后执行）。
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
             {onViewNewArrivals ? (
@@ -347,21 +319,6 @@ export function SmartSourcingSummaryBar({
               >
                 查看新商品
               </button>
-            ) : null}
-            {onAnalyzeNewArrivals ? (
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-7 px-2 text-[11px]"
-                onClick={onAnalyzeNewArrivals}
-                disabled={analyzingNewArrivals}
-              >
-                {analyzingNewArrivals && analyzingNewArrivalsSource === "manual" ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  `立即关联`
-                )}
-              </Button>
             ) : null}
           </div>
         </div>

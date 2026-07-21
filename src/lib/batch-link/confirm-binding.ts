@@ -25,5 +25,6 @@ export async function confirmCandidateBinding(
     appliedQuery: result.appliedQuery,
     offerImageUrl: candidate.imageUrl,
     offerPrice: candidate.price,
+    offerTitle: candidate.title?.trim() || null,
   });
 }

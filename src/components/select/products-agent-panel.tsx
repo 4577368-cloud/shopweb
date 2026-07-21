@@ -451,6 +451,14 @@ export function ProductsAgentPanel({
       <StatusFactSummary
         context={context}
         onExpand={() => runIntent("summarize_shop_status")}
+        onCollapse={
+          activeIntent === "summarize_shop_status"
+            ? () => {
+                setActiveIntent(null);
+                setResponse(null);
+              }
+            : undefined
+        }
       />
 
       {clarify ? (

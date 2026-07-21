@@ -12,7 +12,6 @@ import { InfoCard } from "@/components/workbench/info-card";
 import { AiCopilotScanStage } from "@/components/workbench/ai-copilot-scan-stage";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { useProductsScan } from "@/hooks/use-products-scan";
-import { useAutoNewArrivalAnalysis } from "@/hooks/use-auto-new-arrival-analysis";
 import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
 import { consumeScanHandoff, markScanHandoff } from "@/lib/scan/handoff";
 import { scanBriefingLine } from "@/lib/scan/copilot-workflow";
@@ -37,11 +36,15 @@ import {
 import {
   formatNewArrivalAnalysisSummary,
   type NewArrivalAnalysisResult,
-  type NewArrivalAnalysisSource,
 } from "@/lib/new-arrival-analysis-result";
-import { runNewArrivalAnalysis, isNewArrivalNotReadyError } from "@/lib/run-new-arrival-analysis";
+import { mergeProductBaseline } from "@/lib/shop-product-mirror-baseline";
 import { formatBatchLinkSummary } from "@/lib/batch-link/types";
-import type { BatchLinkProgress } from "@/lib/batch-link/types";
+import type { BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
+import { buildNewArrivalResultFromBatch } from "@/lib/batch-link/build-new-arrival-result";
+import {
+  batchLinkScopeIds,
+  buildBatchLinkScope,
+} from "@/lib/batch-link/scope";
 import { SmartSourcingSummaryBar } from "@/components/select/smart-sourcing-summary-bar";
 import { PricingStrategyRailCard } from "@/components/select/pricing-strategy-rail-card";
 import { PricingTemplateDrawer } from "@/components/select/pricing-template-drawer";
@@ -291,99 +294,80 @@ function SelectContent() {
     setFocusCandidates([]);
   }, [focusProductId]);
 
-  const [analyzingSource, setAnalyzingSource] =
-    useState<NewArrivalAnalysisSource | null>(null);
-  const analyzingNewArrivals = analyzingSource != null;
   const [newArrivalAnalysisResult, setNewArrivalAnalysisResult] =
     useState<NewArrivalAnalysisResult | null>(null);
-  const [unboundMatching, setUnboundMatching] = useState(false);
   const [batchLinkProgress, setBatchLinkProgress] = useState<BatchLinkProgress | null>(
     null
   );
-  const [batchLinkSignal, setBatchLinkSignal] = useState(0);
+  const [batchLinkRequest, setBatchLinkRequest] = useState<BatchLinkRequest | null>(null);
+  const batchLinkRequestSeq = useRef(0);
+  const autoLinkVisitRef = useRef(false);
 
-  const runNewArrivalAnalysisFlow = useCallback(
-    async (itemIds: string[], source: NewArrivalAnalysisSource) => {
-      if (itemIds.length === 0) {
-        if (source === "manual") showToast("暂无待关联新商品");
+  const fireBatchLink = useCallback((source: BatchLinkRequest["source"], productIds?: string[]) => {
+    batchLinkRequestSeq.current += 1;
+    setBatchLinkRequest({
+      signal: batchLinkRequestSeq.current,
+      source,
+      productIds,
+    });
+  }, []);
+
+  const batchLinkActive = batchLinkProgress?.active ?? false;
+
+  const linkableScope = useMemo(
+    () =>
+      buildBatchLinkScope(
+        shopProducts,
+        bindingsMap,
+        newArrivalStats.pendingNewAnalysisIds
+      ),
+    [shopProducts, bindingsMap, newArrivalStats.pendingNewAnalysisIds]
+  );
+  const linkableCount = linkableScope.length;
+
+  const enqueueBatchLink = useCallback(
+    (source: BatchLinkRequest["source"]) => {
+      if (batchLinkActive) return;
+      const ids = batchLinkScopeIds(linkableScope);
+      if (ids.length === 0) {
+        showToast("暂无可关联商品（需有主图）");
         return;
       }
-      if (analyzingSource != null) return;
-
-      setAnalyzingSource(source);
+      setTab("shop");
+      setShopFilter("all");
       setNewArrivalAnalysisResult(null);
-      try {
-        if (source === "manual") {
-          showToast(`开始关联 ${itemIds.length} 个新商品…`);
-        } else {
-          showToast(`检测到 ${itemIds.length} 个新商品，等待主图就绪后自动关联…`);
-        }
-        const result = await runNewArrivalAnalysis({
-          shopName,
-          itemIds,
-          source,
-          loadSummary,
-        });
-        await loadSummary();
-        bumpMirrorRefresh();
-        setNewArrivalAnalysisResult(result);
-        showToast(formatNewArrivalAnalysisSummary(result));
-      } catch (err) {
-        if (source === "auto" && isNewArrivalNotReadyError(err)) {
-          return;
-        }
-        showToast(readableError(err) || "新商品关联失败");
-      } finally {
-        setAnalyzingSource(null);
-      }
+      fireBatchLink(source, ids);
     },
-    [analyzingSource, bumpMirrorRefresh, loadSummary, shopName, showToast]
+    [batchLinkActive, fireBatchLink, linkableScope, setTab, showToast]
   );
 
-  const handleAutoAnalyzeNewArrivals = useCallback(
-    (itemIds: string[]) => {
-      void runNewArrivalAnalysisFlow(itemIds, "auto");
-    },
-    [runNewArrivalAnalysisFlow]
-  );
+  const batchLinkActiveRef = useRef(false);
+  useEffect(() => {
+    batchLinkActiveRef.current = batchLinkActive;
+  }, [batchLinkActive]);
 
-  const autoAnalysisEnabled =
-    phase === "result" &&
-    isAuthorized &&
-    hasScanned("products", shopName) &&
-    tab === "shop";
+  // Enter page → auto-run one batch for all linkable unbound products (once per visit).
+  useEffect(() => {
+    autoLinkVisitRef.current = false;
+  }, [shopName]);
 
-  const pendingAwarenessKeyRef = useRef("");
-  const refreshAwareness = useCallback(async () => {
-    const { products, bindings } = await loadSummary();
-    const baseline = readProductBaseline(shopName);
-    const stats = computeNewArrivalStats(products, bindings, baseline);
-    const key = Array.from(stats.pendingNewAnalysisIds).sort().join(",");
-    if (key !== pendingAwarenessKeyRef.current) {
-      pendingAwarenessKeyRef.current = key;
-      bumpMirrorRefresh();
-    }
-  }, [bumpMirrorRefresh, loadSummary, shopName]);
+  useEffect(() => {
+    if (phase !== "result" || !isAuthorized || tab !== "shop" || batchLinkActive) return;
+    if (autoLinkVisitRef.current) return;
+    if (summary == null || linkableCount === 0) return;
 
-  const { autoScheduled, autoScheduledCount, cancelAutoSchedule } =
-    useAutoNewArrivalAnalysis({
-      enabled: autoAnalysisEnabled,
-      pendingIds: newArrivalStats.pendingNewAnalysisIds,
-      isAnalyzing: analyzingNewArrivals,
-      onAutoRun: handleAutoAnalyzeNewArrivals,
-      onRefresh: () => void refreshAwareness(),
-    });
-
-  const handleAnalyzeNewArrivals = useCallback(() => {
-    cancelAutoSchedule();
-    void runNewArrivalAnalysisFlow(
-      Array.from(newArrivalStats.pendingNewAnalysisIds),
-      "manual"
-    );
+    autoLinkVisitRef.current = true;
+    setShopFilter("all");
+    fireBatchLink("auto", batchLinkScopeIds(linkableScope));
   }, [
-    cancelAutoSchedule,
-    newArrivalStats.pendingNewAnalysisIds,
-    runNewArrivalAnalysisFlow,
+    batchLinkActive,
+    fireBatchLink,
+    isAuthorized,
+    linkableCount,
+    linkableScope,
+    phase,
+    summary,
+    tab,
   ]);
 
   const viewNewArrivalResult = useCallback(
@@ -819,31 +803,33 @@ function SelectContent() {
     [setTab]
   );
   const enqueueUnboundMatch = useCallback(() => {
-    if (unboundMatching || unbound <= 0) return;
-    setTab("shop");
-    setShopFilter("unbound");
-    setUnboundMatching(true);
-    setBatchLinkProgress(null);
-    setBatchLinkSignal((n) => n + 1);
-  }, [unbound, unboundMatching, setTab]);
+    enqueueBatchLink("manual");
+  }, [enqueueBatchLink]);
 
   const statusCta: {
     label: string;
     href?: string;
     onClick?: () => void;
     loading?: boolean;
+    disabled?: boolean;
     queueAction?: boolean;
   } =
-    pendingCount > 0
-      ? { label: `确认 ${pendingCount} 个`, onClick: () => jumpToShopFilter("pending") }
-      : unbound > 0
+    batchLinkActive
+      ? {
+          label: "一键关联中…",
+          loading: true,
+          disabled: true,
+          queueAction: true,
+        }
+      : linkableCount > 0
         ? {
-            label: unboundMatching ? "一键关联中…" : "一键关联",
+            label: "一键关联",
             onClick: () => void enqueueUnboundMatch(),
-            loading: unboundMatching,
             queueAction: true,
           }
-        : { label: "SKU 绑定", href: "/sku-align" };
+        : pendingCount > 0
+          ? { label: `确认 ${pendingCount} 个`, onClick: () => jumpToShopFilter("pending") }
+          : { label: "SKU 绑定", href: "/sku-align" };
 
   const scanCopilot: AiPanelContent = {
     title: scanDone ? "首轮分析已完成" : "AI 正在分析",
@@ -1001,7 +987,7 @@ function SelectContent() {
             <Button
               size="sm"
               onClick={statusCta.onClick}
-              disabled={statusCta.loading}
+              disabled={statusCta.disabled || statusCta.loading}
             >
               {statusCta.loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1033,17 +1019,12 @@ function SelectContent() {
                 recommendedCategories={recommendedCategories}
                 onRefresh={restartScan}
                 onViewNewArrivals={() => setShopFilter("new_arrivals")}
-                onAnalyzeNewArrivals={handleAnalyzeNewArrivals}
-                analyzingNewArrivals={analyzingNewArrivals}
-                analyzingNewArrivalsSource={analyzingSource}
-                autoNewArrivalScheduled={autoScheduled}
-                autoNewArrivalScheduledCount={autoScheduledCount}
                 newArrivalAnalysisResult={newArrivalAnalysisResult}
                 onDismissNewArrivalResult={() => setNewArrivalAnalysisResult(null)}
                 onViewNewArrivalPending={() => viewNewArrivalResult("pending")}
                 onViewNewArrivalUnmatched={() => viewNewArrivalResult("unbound")}
-                unboundMatchJob={null}
                 batchLinkProgress={batchLinkProgress}
+                batchLinkBusy={batchLinkActive}
               />
             ) : (
               <div ref={setFiltersMountEl} />
@@ -1064,20 +1045,32 @@ function SelectContent() {
                 onScrollToConsumed={() => setScrollToProductId(null)}
                 searchModeProductId={searchModeProductId}
                 rematchUnboundSignal={rematchUnboundSignal}
-                batchLinkSignal={batchLinkSignal}
+                batchLinkRequest={batchLinkRequest}
                 mirrorRefreshSignal={mirrorRefreshSignal}
+                linkingLocked={batchLinkActive}
                 onBatchLinkProgressChange={setBatchLinkProgress}
                 onBatchLinkFinished={(progress) => {
-                  setUnboundMatching(false);
-                  void loadSummary().then(() => bumpMirrorRefresh());
-                  showToast(formatBatchLinkSummary(progress));
+                  void loadSummary().then(({ bindings }) => {
+                    bumpMirrorRefresh();
+                    if (progress.sessionOrder.length > 0) {
+                      mergeProductBaseline(shopName, progress.sessionOrder);
+                    }
+                    if (progress.processed > 0) {
+                      const result = buildNewArrivalResultFromBatch(progress, bindings);
+                      setNewArrivalAnalysisResult(result);
+                      showToast(
+                        progress.source === "auto"
+                          ? formatNewArrivalAnalysisSummary(result)
+                          : formatBatchLinkSummary(progress)
+                      );
+                    }
+                  });
                   window.setTimeout(() => setBatchLinkProgress(null), 2000);
                 }}
                 onSearchModeConsumed={() => setSearchModeProductId(null)}
                 onProductFocus={(id) => setFocusProductId(id)}
                 onBindingsChange={setBindingsMap}
                 onShopProductsChange={syncSummaryFromShopData}
-                onAgentIntent={requestAgentIntent}
                 onCandidateContextChange={(productId, ctx) => {
                   if (productId !== focusProductId) return;
                   setFocusCandidateId(ctx.candidateId);
@@ -1095,6 +1088,7 @@ function SelectContent() {
           <div className={tab === "catalog" ? undefined : "hidden"}>
             <CatalogPublishPanel
               onActivity={loadSummary}
+              onBindingLinked={() => bumpMirrorRefresh()}
               recommendedCategories={recommendedCategories}
               filtersMountEl={tab === "catalog" ? filtersMountEl : null}
               sharedTemplate={template}

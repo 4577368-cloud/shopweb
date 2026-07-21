@@ -1,6 +1,16 @@
 import type { ImageSearchResult } from "@/lib/types";
 
-/** Per-card queue state for「一键关联」. */
+/** Who triggered the shared batch-link pipeline. */
+export type BatchLinkSource = "auto" | "manual";
+
+export type BatchLinkRequest = {
+  signal: number;
+  source: BatchLinkSource;
+  /** When omitted, panel resolves all unbound products in the shop. */
+  productIds?: string[];
+};
+
+/** Per-card queue state for batch link (一键关联 / 自动关联). */
 export type BatchLinkCardState =
   | "idle"
   | "queued"
@@ -27,6 +37,9 @@ export interface BatchLinkCardDrive {
 export interface BatchLinkProgress {
   active: boolean;
   done: boolean;
+  source: BatchLinkSource | null;
+  /** New arrivals skipped because primary image / variant is not ready yet. */
+  deferredIds: string[];
   total: number;
   processed: number;
   linked: number;
@@ -34,6 +47,10 @@ export interface BatchLinkProgress {
   failed: number;
   currentProductId: string | null;
   currentProductTitle: string | null;
+  /** Product ids enqueued in this batch run (display order baseline). */
+  sessionOrder: string[];
+  /** Product ids in the order they finished processing. */
+  completionOrder: string[];
   cardStates: Record<string, BatchLinkCardDrive>;
   recent: string[];
 }
@@ -41,6 +58,8 @@ export interface BatchLinkProgress {
 export const INITIAL_BATCH_LINK_PROGRESS: BatchLinkProgress = {
   active: false,
   done: false,
+  source: null,
+  deferredIds: [],
   total: 0,
   processed: 0,
   linked: 0,
@@ -48,6 +67,8 @@ export const INITIAL_BATCH_LINK_PROGRESS: BatchLinkProgress = {
   failed: 0,
   currentProductId: null,
   currentProductTitle: null,
+  sessionOrder: [],
+  completionOrder: [],
   cardStates: {},
   recent: [],
 };

@@ -2,10 +2,14 @@
 
 import { useCallback, useRef, useState } from "react";
 import { api, readableError } from "@/lib/api";
+import {
+  fetchSourceSkuMatrixResult,
+  resolveSkuDetailUrl,
+} from "@/lib/source-sku-matrix";
+import { enqueueSkuAlignRun } from "@/lib/sku-align-v1/run-client";
 import type { SkuProductOverview } from "@/lib/types";
 import type { ScanTaskView } from "@/components/workbench/scan-stage";
 
-const CONCURRENCY = 3;
 const RECENT_MAX = 6;
 
 const TASK_IDS = { overview: "overview", align: "align", prewarm: "prewarm" } as const;
@@ -13,16 +17,16 @@ const TASK_IDS = { overview: "overview", align: "align", prewarm: "prewarm" } as
 function initialTasks(): ScanTaskView[] {
   return [
     { id: TASK_IDS.overview, label: "读取已绑定商品", status: "pending" },
-    { id: TASK_IDS.align, label: "自动尝试对齐 SKU", status: "pending" },
-    { id: TASK_IDS.prewarm, label: "预热货源明细", status: "pending" },
+    { id: TASK_IDS.align, label: "静默对齐 SKU（V1）", status: "pending" },
+    { id: TASK_IDS.prewarm, label: "预热 itemGet 规格表", status: "pending" },
   ];
 }
 
 /**
  * Phase 1 client-orchestrated real scan for /sku-align. Runs three real steps over existing endpoints:
  *   1) getSkuOverview — find bound products/variants
- *   2) autoAlignSku per bound product (concurrency-limited, persists RULE bindings, streams "最近完成")
- *   3) re-read overview + prewarm getOfferDetail so the result view's 图/价 are ready
+ *   2) POST /sku-align/v1/runs — V1 engine writes review + legacy bindings, poll until done
+ *   3) re-read overview + prewarm itemGet SKU matrix so the result view's 图/价 are ready
  * Fail-open: any per-product failure is skipped, never blocks; cancel stops scheduling further work.
  * No backend/job — progress is tracked from the real calls themselves.
  */
@@ -57,6 +61,8 @@ export function useSkuAlignScan(shopName: string) {
         status: "done",
         resultText: `发现 ${overview.length} 个已绑定商品 · ${variants} 个变体`,
       });
+      // Repair legacy IMAGE bindings missing title/spec/image snapshots before align/display.
+      await api.backfillBindingSnapshots(shopName).catch(() => null);
     } catch (err) {
       patch(TASK_IDS.overview, { status: "failed", error: readableError(err) });
       patch(TASK_IDS.align, { status: "skipped" });
@@ -75,65 +81,56 @@ export function useSkuAlignScan(shopName: string) {
       return;
     }
 
-    // Step 2 — auto-align per product (concurrency-limited, real streaming)
+    // Step 2 — V1 alignment run (review + legacy dual-write)
     patch(TASK_IDS.align, { status: "running" });
-    const queue = [...overview];
-    let processed = 0;
-    let alignedVariants = 0;
-    const worker = async () => {
-      while (queue.length > 0) {
-        if (cancelRef.current) return;
-        const p = queue.shift();
-        if (!p) return;
-        const name = p.title ?? p.thirdPlatformItemId;
-        try {
-          const res = await api.autoAlignSku(shopName, p.thirdPlatformItemId);
-          alignedVariants += res.matchedCount;
-          setRecent((prev) =>
-            [`${name}：已对齐 ${res.matchedCount}/${res.totalVariants}`, ...prev].slice(
-              0,
-              RECENT_MAX
-            )
-          );
-        } catch {
-          setRecent((prev) => [`${name}：对齐跳过`, ...prev].slice(0, RECENT_MAX));
-        } finally {
-          processed += 1;
-          patch(TASK_IDS.align, {
-            resultText: `已处理 ${processed}/${overview.length} 个商品 · 对齐 ${alignedVariants} 个变体`,
-          });
-        }
+    try {
+      const productIds = overview.map((p) => p.thirdPlatformItemId);
+      const run = await enqueueSkuAlignRun(shopName, {
+        triggerType: "PAGE_ENTER",
+        scopeType: "PRODUCT_BATCH",
+        scopeIds: productIds,
+      });
+      if (!run) {
+        patch(TASK_IDS.align, {
+          status: "skipped",
+          resultText: "对齐任务未受理",
+        });
+      } else {
+        const summary = `建议 ${run.suggestedCount} · 未匹配 ${run.unmappedCount} · 无货源 ${run.noSourceCount}`;
+        setRecent((prev) =>
+          [`对齐完成：${summary}`, ...prev].slice(0, RECENT_MAX)
+        );
+        patch(TASK_IDS.align, {
+          status: cancelRef.current ? "skipped" : run.runStatus === "FAILED" ? "failed" : "done",
+          resultText: `已对齐 ${run.matchedCount} 个变体 · ${summary}`,
+          error: run.runStatus === "FAILED" ? run.errorSummary ?? "对齐失败" : undefined,
+        });
       }
-    };
-    await Promise.all(
-      Array.from({ length: Math.min(CONCURRENCY, overview.length) }, () => worker())
-    );
-    patch(TASK_IDS.align, {
-      status: cancelRef.current ? "skipped" : "done",
-      resultText: `已对齐 ${alignedVariants} 个变体（${processed}/${overview.length} 个商品）`,
-    });
+    } catch (err) {
+      patch(TASK_IDS.align, { status: "failed", error: readableError(err) });
+    }
     if (cancelRef.current) {
       finalize();
       return;
     }
 
-    // Step 3 — re-read overview + prewarm offer details for the comparison view
+    // Step 3 — re-read overview + prewarm itemGet matrices for the comparison view
     patch(TASK_IDS.prewarm, { status: "running" });
     try {
       const fresh = await api.getSkuOverview(shopName);
-      const offerIds = Array.from(
+      const detailUrls = Array.from(
         new Set(
-          fresh.flatMap((p) =>
-            p.variants
-              .map((v) => v.bound?.tangbuyProductId)
-              .filter((id): id is string => Boolean(id))
-          )
+          fresh
+            .map((p) => resolveSkuDetailUrl(p.detailUrl, p.tangbuyProductId))
+            .filter((url): url is string => Boolean(url))
         )
       );
-      await Promise.all(offerIds.map((id) => api.getOfferDetail(id).catch(() => null)));
+      await Promise.all(
+        detailUrls.map((url) => fetchSourceSkuMatrixResult(url).catch(() => null))
+      );
       patch(TASK_IDS.prewarm, {
         status: "done",
-        resultText: `货源明细已就绪（${offerIds.length} 个货源）`,
+        resultText: `itemGet 规格表已预热（${detailUrls.length} 个货源）`,
       });
     } catch (err) {
       patch(TASK_IDS.prewarm, { status: "failed", error: readableError(err) });

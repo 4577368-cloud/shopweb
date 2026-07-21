@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
 import type { CatalogRecommendation, PublishResult, PublishStatus } from "@/lib/types";
 
 export interface PublishCellState {
@@ -35,6 +36,7 @@ export interface CatalogProductCardProps {
   targetCurrency: string;
   state?: PublishCellState;
   onPublish: () => void;
+  onLink: () => void;
 }
 
 export function CatalogProductCard({
@@ -43,6 +45,7 @@ export function CatalogProductCard({
   targetCurrency,
   state,
   onPublish,
+  onLink,
 }: CatalogProductCardProps) {
   const result = state?.result;
   const published = result?.publishStatus === "PUBLISHED";
@@ -104,29 +107,12 @@ export function CatalogProductCard({
         <p className="mt-0.5 text-xs font-medium text-ink">
           采购成本 {money(purchasePriceUsd, targetCurrency)}
         </p>
-        {item.price != null ? (
-          <p className="mt-0.5 text-[11px] text-ink-subtle">
-            ≈ {money(item.price, item.currency ?? "CNY")}
-          </p>
-        ) : null}
       </div>
 
-      {item.supplierShop || item.upstreamPlatform || item.skuAttr ? (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {item.supplierShop ? (
-            <Badge variant="outline">{item.supplierShop}</Badge>
-          ) : null}
-          {item.upstreamPlatform ? (
-            <Badge variant="outline">{item.upstreamPlatform}</Badge>
-          ) : null}
-          {item.skuAttr ? <Badge variant="outline">SKU {item.skuAttr}</Badge> : null}
-        </div>
-      ) : null}
-
-      <div className="mt-auto pt-3">
+      <div className="mt-auto flex gap-2 pt-3">
         <Button
           size="sm"
-          className="w-full"
+          className="min-w-0 flex-1"
           onClick={onPublish}
           disabled={publishing || published}
           variant={published ? "secondary" : "primary"}
@@ -138,8 +124,23 @@ export function CatalogProductCard({
               ? "上架中…"
               : state?.error
                 ? "重试上架"
-                : "上架到店铺"}
+                : "上架"}
         </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="min-w-0 flex-1"
+          disabled={publishing || !isMallGatewayConfigured()}
+          title={
+            !isMallGatewayConfigured()
+              ? "商城货源暂不可用"
+              : "关联到已有在售商品"
+          }
+          onClick={onLink}
+        >
+          关联
+        </Button>
+      </div>
         {published && result?.shopifyProductId ? (
           <p className="mt-1.5 break-all text-[10px] leading-tight text-ink-subtle">
             {result.shopifyProductId}
@@ -148,7 +149,6 @@ export function CatalogProductCard({
         {state?.error ? (
           <p className="mt-1.5 text-[10px] leading-tight text-red-500">{state.error}</p>
         ) : null}
-      </div>
     </article>
   );
 }

@@ -11,6 +11,7 @@ import {
   type BatchLinkProgress,
 } from "@/lib/batch-link/types";
 import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
+import type { BatchLinkSource } from "@/lib/batch-link/types";
 
 const CANDIDATES_READY_MS = 650;
 const SELECT_PRESSED_MS = 220;
@@ -65,8 +66,13 @@ export function useBatchLinkQueue({
   );
 
   const start = useCallback(
-    async (products: ShopMirrorProduct[]) => {
+    async (
+      products: ShopMirrorProduct[],
+      opts?: { source?: BatchLinkSource; deferredIds?: string[] }
+    ) => {
       if (runningRef.current) return;
+      const source = opts?.source ?? "manual";
+      const deferredIds = opts?.deferredIds ?? [];
       const eligible = products.filter((p) => Boolean(p.primaryImageUrl));
       const noImage = products.filter((p) => !p.primaryImageUrl);
 
@@ -87,9 +93,13 @@ export function useBatchLinkQueue({
         }
       }
 
+      const sessionOrder = products.map((p) => p.thirdPlatformItemId);
+
       setProgress({
         active: true,
         done: false,
+        source,
+        deferredIds,
         total: products.length,
         processed: 0,
         linked: 0,
@@ -97,6 +107,8 @@ export function useBatchLinkQueue({
         failed: noImage.length,
         currentProductId: null,
         currentProductTitle: null,
+        sessionOrder,
+        completionOrder: [],
         cardStates: initialStates,
         recent: noImage.length
           ? pushRecent([], `${noImage.length} 个商品无主图，已跳过`)
@@ -122,6 +134,7 @@ export function useBatchLinkQueue({
         else if (outcome === "needs_review") needsReview += 1;
         else failed += 1;
         recent = pushRecent(recent, line);
+        const finishedId = product.thirdPlatformItemId;
         setProgress((prev) => ({
           ...prev,
           processed,
@@ -131,6 +144,9 @@ export function useBatchLinkQueue({
           recent,
           currentProductId: null,
           currentProductTitle: null,
+          completionOrder: prev.completionOrder.includes(finishedId)
+            ? prev.completionOrder
+            : [...prev.completionOrder, finishedId],
         }));
       };
 
