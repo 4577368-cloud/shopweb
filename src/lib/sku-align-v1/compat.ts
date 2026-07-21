@@ -2,6 +2,7 @@ import { api, ApiError } from "@/lib/api";
 import type {
   SkuAlignConfirmResult,
   SkuAlignConfirmSuggestionsRequest,
+  SkuAlignManualBindRequest,
 } from "./types";
 
 /** Render / older backends return 500 with Spring static-resource miss for undeployed V1 routes. */
@@ -52,5 +53,30 @@ export async function confirmSuggestionsWithFallback(
       confirmed++;
     }
     return { confirmedCount: confirmed };
+  }
+}
+
+/** Prefer V1 manual bind; fall back to legacy /match/sku/bind when V1 route fails. */
+export async function manualBindWithFallback(
+  variantId: string,
+  body: SkuAlignManualBindRequest,
+  legacy: { detailUrl?: string | null }
+): Promise<void> {
+  try {
+    await api.skuAlignV1ManualBind(variantId, body);
+  } catch (err) {
+    const networkOrV1 =
+      shouldFallbackToLegacyAlign(err) ||
+      (err instanceof ApiError && err.status === 0);
+    if (!networkOrV1) throw err;
+    await api.bindSkuBinding({
+      shopName: body.shopName,
+      thirdPlatformItemId: body.thirdPlatformItemId,
+      thirdPlatformSkuId: variantId,
+      tangbuyProductId: body.offerId,
+      tangbuySkuId: body.offerSkuId,
+      tangbuySkuSpec: body.reason ?? null,
+      detailUrl: legacy.detailUrl ?? null,
+    });
   }
 }

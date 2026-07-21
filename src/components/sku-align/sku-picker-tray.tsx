@@ -6,6 +6,7 @@ import { ImageOff, Loader2, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api, readableError } from "@/lib/api";
+import { manualBindWithFallback } from "@/lib/sku-align-v1/compat";
 import {
   fetchSourceSkuMatrixResult,
   rankSourceSkuRows,
@@ -122,13 +123,17 @@ export function SkuPickerTray({
     if (bindingSkuId) return;
     setBindingSkuId(row.skuId);
     try {
-      await api.skuAlignV1ManualBind(thirdPlatformSkuId, {
-        shopName,
-        thirdPlatformItemId,
-        offerId: tangbuyProductId,
-        offerSkuId: row.skuId,
-        reason: row.specLabel,
-      });
+      await manualBindWithFallback(
+        thirdPlatformSkuId,
+        {
+          shopName,
+          thirdPlatformItemId,
+          offerId: tangbuyProductId,
+          offerSkuId: row.skuId,
+          reason: row.specLabel,
+        },
+        { detailUrl }
+      );
       showToast(`已手动绑定 · ${row.specLabel}（立即生效）`);
       onClose();
       await onBound();
