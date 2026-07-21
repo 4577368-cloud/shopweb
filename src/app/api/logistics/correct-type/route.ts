@@ -7,6 +7,7 @@ import {
 import type {
   LogisticsTypeCode,
   ProductLogisticsProfile,
+  SkuProductOverview,
   VariantLogisticsDecision,
 } from "@/lib/types";
 
@@ -48,48 +49,96 @@ export async function POST(request: Request) {
         body: JSON.stringify({ shopName, thirdPlatformItemId, logisticsType }),
       });
     } catch {
-      // 上游失败也继续返回前端需要的结构
     }
   }
 
   const typeLabel =
     POSTAL_LIMIT_LABELS[logisticsType] || logisticsType;
 
-  const baseVariant: Partial<VariantLogisticsDecision> = {
-    tangbuySkuId: null,
-    tangbuyGoodsId: null,
-    postalLimitClass: logisticsType,
-    postalLimitLabel: typeLabel,
-    postalLimitConfidence: 1,
-  };
+  let skuOverview: SkuProductOverview | null = null;
+  if (API_BASE) {
+    try {
+      const skuUrl = `${API_BASE}/api/plugin/match/sku/overview?shopName=${encodeURIComponent(shopName)}`;
+      const skuRes = await fetch(skuUrl, {
+        headers: { Accept: "application/json" },
+      });
+      const skuText = await skuRes.text();
+      const skuRaw = skuText ? JSON.parse(skuText) : undefined;
+      if (skuRes.ok && Array.isArray(skuRaw)) {
+        skuOverview =
+          (skuRaw as SkuProductOverview[]).find(
+            (p) => p.thirdPlatformItemId === thirdPlatformItemId
+          ) ?? null;
+      }
+    } catch {
+    }
+  }
 
-  const { status, reason } = computeVariantDecisionStatus(baseVariant);
+  const variantDecisions: VariantLogisticsDecision[] = [];
 
-  const singleVariant: VariantLogisticsDecision = {
-    thirdPlatformSkuId: `${thirdPlatformItemId}_default`,
-    optionLabel: "默认规格",
-    tangbuySkuId: baseVariant.tangbuySkuId ?? null,
-    tangbuyGoodsId: baseVariant.tangbuyGoodsId ?? null,
-    postalLimitClass: baseVariant.postalLimitClass,
-    postalLimitLabel: baseVariant.postalLimitLabel,
-    postalLimitConfidence: baseVariant.postalLimitConfidence,
-    decisionStatus: status,
-    decisionReason: reason,
-  };
+  if (skuOverview) {
+    for (const variant of skuOverview.variants) {
+      const bound = variant.bound;
+      const decision: Partial<VariantLogisticsDecision> = {
+        tangbuySkuId: bound?.tangbuySkuId ?? null,
+        tangbuyGoodsId: bound?.tangbuyProductId ?? null,
+        postalLimitClass: logisticsType,
+        postalLimitLabel: typeLabel,
+        postalLimitConfidence: 1,
+      };
 
-  const variantDecisions = [singleVariant];
+      const { status, reason } = computeVariantDecisionStatus(decision);
+
+      variantDecisions.push({
+        thirdPlatformSkuId: variant.thirdPlatformSkuId,
+        optionLabel: variant.optionLabel,
+        tangbuySkuId: decision.tangbuySkuId ?? null,
+        tangbuyGoodsId: decision.tangbuyGoodsId ?? null,
+        postalLimitClass: decision.postalLimitClass,
+        postalLimitLabel: decision.postalLimitLabel,
+        postalLimitConfidence: decision.postalLimitConfidence,
+        decisionStatus: status,
+        decisionReason: reason,
+      });
+    }
+  }
+
+  if (variantDecisions.length === 0) {
+    const baseVariant: Partial<VariantLogisticsDecision> = {
+      tangbuySkuId: null,
+      tangbuyGoodsId: null,
+      postalLimitClass: logisticsType,
+      postalLimitLabel: typeLabel,
+      postalLimitConfidence: 1,
+    };
+
+    const { status, reason } = computeVariantDecisionStatus(baseVariant);
+
+    variantDecisions.push({
+      thirdPlatformSkuId: `${thirdPlatformItemId}_default`,
+      optionLabel: "默认规格",
+      tangbuySkuId: baseVariant.tangbuySkuId ?? null,
+      tangbuyGoodsId: baseVariant.tangbuyGoodsId ?? null,
+      postalLimitClass: baseVariant.postalLimitClass,
+      postalLimitLabel: baseVariant.postalLimitLabel,
+      postalLimitConfidence: baseVariant.postalLimitConfidence,
+      decisionStatus: status,
+      decisionReason: reason,
+    });
+  }
+
   const decisionStatusCounts = aggregateDecisionCounts(variantDecisions);
 
   const result: ProductLogisticsProfile = {
     thirdPlatformItemId,
-    title: null,
-    primaryImageUrl: null,
+    title: skuOverview?.title ?? null,
+    primaryImageUrl: skuOverview?.imageUrl ?? null,
     dominantLogisticsType: logisticsType,
     dominantLogisticsTypeLabel: typeLabel,
-    totalVariants: 1,
+    totalVariants: variantDecisions.length,
     decisionStatusCounts,
-    tangbuyProductId: null,
-    detailUrl: null,
+    tangbuyProductId: skuOverview?.tangbuyProductId ?? null,
+    detailUrl: skuOverview?.detailUrl ?? null,
     variantDecisions,
   };
 

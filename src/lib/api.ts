@@ -13,6 +13,7 @@ import type {
   LogisticsTemplate,
   LogisticsTemplateUpsert,
   LogisticsTypeCode,
+  PackagingType,
   OfferDetail,
   PricingTemplate,
   PricingTemplateUpsert,
@@ -154,9 +155,11 @@ export interface HealthResponse {
 
 export interface LogisticsEstimateRequest {
   shopName: string;
-  countryId: string;
+  /** Optional when countryCode is provided — resolved server-side from template market. */
+  countryId?: string;
   countryCode: string;
   shippingOption: number;
+  packaging?: PackagingType;
   variants: Array<{
     thirdPlatformSkuId: string;
     tangbuySkuId: string;
@@ -182,6 +185,25 @@ export interface LogisticsEstimateResponse {
   success: boolean;
   message?: string;
   results: LogisticsEstimateResult[];
+}
+
+export interface LogisticsAcceptDecisionRequest {
+  shopName: string;
+  targetScope?: "VARIANTS" | "ALL_READY";
+  variantIds?: string[];
+  quotes?: Record<
+    string,
+    {
+      recommendedLine?: LogisticsLine;
+      alternativeLines?: LogisticsLine[];
+      quoteStatus?: QuoteStatus;
+    }
+  >;
+}
+
+export interface LogisticsAcceptDecisionResult {
+  acceptedCount: number;
+  analysis: LogisticsAnalysis;
 }
 
 /**
@@ -664,6 +686,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  acceptLogisticsDecision: (body: LogisticsAcceptDecisionRequest) =>
+    localRequest<LogisticsAcceptDecisionResult>("/api/logistics/accept-decision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
   getLogisticsTemplate: (shop: string) =>
     request<LogisticsTemplate>(
       `/api/plugin/logistics/template?shopName=${encodeURIComponent(shop)}`
@@ -674,12 +703,14 @@ export const api = {
       `/api/logistics/templates?shopName=${encodeURIComponent(shop)}`
     ),
 
-  upsertLogisticsTemplate: (body: LogisticsTemplateUpsert, id?: string) =>
-    localRequest<LogisticsTemplate>("/api/logistics/templates", {
+  upsertLogisticsTemplate: (body: LogisticsTemplateUpsert, id?: string) => {
+    const url = `/api/logistics/templates?shopName=${encodeURIComponent(body.shopName)}`;
+    return localRequest<LogisticsTemplate>(url, {
       method: id ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...body, id }),
-    }),
+    });
+  },
 
   deleteLogisticsTemplate: (shop: string, id: string) =>
     localRequest<void>(`/api/logistics/templates/${id}?shopName=${encodeURIComponent(shop)}`, {

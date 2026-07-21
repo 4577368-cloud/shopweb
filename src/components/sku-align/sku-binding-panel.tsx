@@ -36,8 +36,20 @@ import {
   needsSupplementSource,
   pollSkuAlignRun,
 } from "@/lib/sku-align-v1";
+import { confirmProductNeedsReview } from "@/lib/sku-align/batch-confirm";
 import type { SkuAlignProductDetail } from "@/lib/sku-align-v1/types";
 import { SkuPickerTray } from "@/components/sku-align/sku-picker-tray";
+import {
+  deriveDisplayStateFromBinding,
+  deriveVariantDisplayState,
+  countNeedsReview,
+  countUnbound,
+  DISPLAY_STATE_LABELS,
+  filterVariants,
+  shouldDefaultExpand,
+  type SkuFilterMode,
+  type SkuVariantDisplayState,
+} from "@/lib/sku-align/display";
 
 export type ProductMatchState = "full" | "partial" | "none";
 
@@ -49,6 +61,17 @@ export function productMatchState(product: SkuProductOverview): ProductMatchStat
   if (bound > 0) return "partial";
   return "none";
 }
+
+export type { SkuFilterMode, SkuVariantDisplayState };
+export {
+  countNeedsReview,
+  countUnbound,
+  deriveVariantDisplayState,
+  filterProducts,
+  hasIssues,
+  isFullyResolved,
+  sortProductsForWorkbench,
+} from "@/lib/sku-align/display";
 
 export function boundVariantCount(product: SkuProductOverview): number {
   return product.variants.filter((v) => v.bound).length;
@@ -92,70 +115,51 @@ function isImageBinding(source?: string | null): boolean {
   return source === "IMAGE" || source === "CATALOG";
 }
 
-type VariantBindingState =
-  | "unbound"
-  | "manual-active"
-  | "auto-pending"
-  | "auto-active"
-  | "image-active"
-  | "other-active";
-
-function variantBindingState(
-  bound?: SkuVariant["bound"] | null
-): VariantBindingState {
-  if (!bound) return "unbound";
-  const pending = bound.bindStatus === "PENDING";
-  if (isManualBinding(bound.matchSource) && !pending) return "manual-active";
-  if (isAutoAligned(bound.matchSource) && pending) return "auto-pending";
-  if (isAutoAligned(bound.matchSource) && !pending) return "auto-active";
-  if (isImageBinding(bound.matchSource) && !pending) return "image-active";
-  if (pending) return "auto-pending";
-  return "other-active";
-}
-
-/** Middle-column status badge — distinguishes manual vs auto vs unbound. */
+/** Middle-column status badge — 4-state display model. */
 function BindingStatusBadge({ bound }: { bound?: SkuVariant["bound"] | null }) {
-  switch (variantBindingState(bound)) {
+  const state = deriveDisplayStateFromBinding(bound);
+  switch (state) {
     case "unbound":
-      return <Badge variant="outline">未匹配</Badge>;
-    case "manual-active":
-      return <Badge variant="success">手动绑定 · 已生效</Badge>;
-    case "auto-pending":
-      return <Badge variant="warning">自动对齐 · 待确认</Badge>;
-    case "auto-active":
-      return <Badge variant="success">自动对齐 · 已确认</Badge>;
-    case "image-active":
-      return <Badge variant="success">图搜绑定 · 已确认</Badge>;
+      return <Badge variant="outline">{DISPLAY_STATE_LABELS.unbound}</Badge>;
+    case "manual_active":
+      return <Badge variant="success">{DISPLAY_STATE_LABELS.manual_active}</Badge>;
+    case "needs_review":
+      return <Badge variant="warning">{DISPLAY_STATE_LABELS.needs_review}</Badge>;
+    case "active_auto":
     default:
-      return <Badge variant="success">已绑定</Badge>;
+      return <Badge variant="success">{DISPLAY_STATE_LABELS.active_auto}</Badge>;
   }
 }
 
 function bindingStatusHint(
   bound?: SkuVariant["bound"] | null
 ): string | null {
-  switch (variantBindingState(bound)) {
+  switch (deriveDisplayStateFromBinding(bound)) {
     case "unbound":
       return "需从货源规格表选择对应 SKU";
-    case "manual-active":
+    case "manual_active":
       return "你已手动选择，无需再确认";
-    case "auto-pending":
-      return "系统推测，可确认或重选 SKU";
-    case "auto-active":
-      return "按规格自动对齐并已确认";
-    case "image-active":
-      return matchReason(bound!);
+    case "needs_review":
+      return "系统推测，可接受 AI 或换一个";
+    case "active_auto":
+      return bound ? matchReason(bound) : null;
     default:
       return bound ? matchReason(bound) : null;
   }
 }
 
 function bindingScoreLine(bound: NonNullable<SkuVariant["bound"]>): string | null {
-  const state = variantBindingState(bound);
-  if (state === "manual-active") return "手动确认";
-  if (state === "auto-pending") return `建议匹配度 ${formatScore(bound.matchScore)}`;
-  if (state === "auto-active") return `匹配度 ${formatScore(bound.matchScore)}`;
-  if (state === "image-active") return `相似度 ${formatScore(bound.matchScore)}`;
+  const state = deriveDisplayStateFromBinding(bound);
+  if (state === "manual_active") return "手动确认";
+  if (state === "needs_review") return `建议匹配度 ${formatScore(bound.matchScore)}`;
+  if (state === "active_auto") {
+    if (isAutoAligned(bound.matchSource)) {
+      return `匹配度 ${formatScore(bound.matchScore)}`;
+    }
+    if (isImageBinding(bound.matchSource)) {
+      return `相似度 ${formatScore(bound.matchScore)}`;
+    }
+  }
   return formatScore(bound.matchScore) !== "—"
     ? `相似度 ${formatScore(bound.matchScore)}`
     : null;
@@ -278,9 +282,11 @@ function VariantCompareRow({
   showToast: (message: string) => void;
 }) {
   const bound = variant.bound;
-  const bindingState = variantBindingState(bound);
-  const isPending = bindingState === "auto-pending";
-  const isUnbound = bindingState === "unbound";
+  const displayState = deriveVariantDisplayState(variant);
+  const isNeedsReview = displayState === "needs_review";
+  const isUnbound = displayState === "unbound";
+  const isManualActive = displayState === "manual_active";
+  const isActiveAuto = displayState === "active_auto";
   const [acking, setAcking] = useState(false);
   const [unbinding, setUnbinding] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -294,7 +300,7 @@ function VariantCompareRow({
   const canPickSku = Boolean(detailUrl && tangbuyProductId);
 
   const ackVariant = async () => {
-    if (acking || !isPending) return;
+    if (acking || !isNeedsReview) return;
     setAcking(true);
     try {
       const result = await confirmSuggestionsWithFallback(
@@ -309,7 +315,7 @@ function VariantCompareRow({
         showToast("没有可确认的待确认建议");
         return;
       }
-      showToast("已确认自动对齐，关联已生效");
+      showToast("已接受 AI 建议，关联已生效");
       await onMutated();
     } catch (err) {
       showToast(autoAlignError(err));
@@ -368,15 +374,16 @@ function VariantCompareRow({
   const statusHint = bindingStatusHint(bound);
   const scoreLine = bound ? bindingScoreLine(bound) : null;
   const showPickAction =
-    isUnbound || isPending || displayStatus === "ERROR";
+    isUnbound || isNeedsReview || displayStatus === "ERROR";
+  const showRowActions = !isActiveAuto;
 
   return (
     <>
     <div
       className={cn(
         "grid grid-cols-1 gap-3 py-3 md:grid-cols-[minmax(0,1fr)_148px_minmax(0,1fr)] md:items-center md:gap-4",
-        bindingState === "manual-active" && "rounded-[var(--radius-control)] bg-emerald-50/30 px-1",
-        bindingState === "auto-pending" && "rounded-[var(--radius-control)] bg-amber-50/25 px-1"
+        isManualActive && "rounded-[var(--radius-control)] bg-emerald-50/30 px-1",
+        isNeedsReview && "rounded-[var(--radius-control)] bg-amber-50/25 px-1"
       )}
     >
       {/* Left — Shopify variant */}
@@ -431,7 +438,7 @@ function VariantCompareRow({
               onClick={() => setPickerOpen(true)}
             >
               <Hand className="h-3.5 w-3.5" />
-              选择 SKU
+              手动选择…
             </Button>
           </div>
         ) : displayStatus === "LOADING" ? (
@@ -478,7 +485,7 @@ function VariantCompareRow({
                 <p className="text-[10px] font-medium uppercase tracking-wide text-brand-strong">
                   Tangbuy 货源
                 </p>
-                {bindingState === "manual-active" ? (
+                {isManualActive ? (
                   <Badge variant="success" className="text-[9px] px-1 py-0">
                     手动已绑定
                   </Badge>
@@ -516,7 +523,7 @@ function VariantCompareRow({
                 {bound?.tangbuySkuId ? <span>skuId {bound.tangbuySkuId}</span> : null}
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                {showPickAction && canPickSku ? (
+                {showRowActions && showPickAction && canPickSku ? (
                   <Button
                     size="sm"
                     variant="secondary"
@@ -525,27 +532,29 @@ function VariantCompareRow({
                     title="从 itemGet 规格表重新选择 SKU"
                   >
                     <Hand className="h-3.5 w-3.5" />
-                    {isPending ? "重选 SKU" : "选择 SKU"}
+                    {isNeedsReview ? "换一个" : "手动选择…"}
                   </Button>
                 ) : null}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => void unbindVariant()}
-                  disabled={unbinding || acking}
-                >
-                  {unbinding ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  取消关联
-                </Button>
-                {isPending ? (
+                {showRowActions ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void unbindVariant()}
+                    disabled={unbinding || acking}
+                  >
+                    {unbinding ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    取消关联
+                  </Button>
+                ) : null}
+                {isNeedsReview ? (
                   <Button
                     size="sm"
                     onClick={() => void ackVariant()}
                     disabled={acking || unbinding}
-                    title="接受自动对齐建议"
+                    title="接受 AI 对齐建议"
                   >
                     {acking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    确认自动对齐
+                    接受 AI
                   </Button>
                 ) : null}
               </div>
@@ -584,17 +593,19 @@ export function SkuProductCard({
   shopName,
   onAligned,
   showToast,
+  filterMode = "issues",
 }: {
   product: SkuProductOverview;
   shopName: string;
   onAligned: () => Promise<void>;
   showToast: (message: string) => void;
+  filterMode?: SkuFilterMode;
 }) {
   const total = product.variants.length;
   const bound = boundVariantCount(product);
   const state = productMatchState(product);
 
-  const [open, setOpen] = useState(() => state !== "full");
+  const [open, setOpen] = useState(() => shouldDefaultExpand(product, filterMode));
   const [aligning, setAligning] = useState(false);
   const [ackingAll, setAckingAll] = useState(false);
   const [alignError, setAlignError] = useState<string | null>(null);
@@ -644,13 +655,20 @@ export function SkuProductCard({
     }
   };
 
-  const pendingCount = product.variants.filter(
-    (v) => variantBindingState(v.bound) === "auto-pending"
-  ).length;
-  const unboundCount = product.variants.filter((v) => !v.bound).length;
+  const pendingCount = countNeedsReview(product);
+  const unboundCount = countUnbound(product);
   const manualCount = product.variants.filter(
-    (v) => variantBindingState(v.bound) === "manual-active"
+    (v) => deriveVariantDisplayState(v) === "manual_active"
   ).length;
+
+  const visibleVariants = useMemo(
+    () => filterVariants(product.variants, filterMode),
+    [product.variants, filterMode]
+  );
+
+  useEffect(() => {
+    setOpen(shouldDefaultExpand(product, filterMode));
+  }, [product.thirdPlatformItemId, filterMode, product]);
 
   const productDetailUrl = resolveSkuDetailUrl(
     product.detailUrl,
@@ -829,23 +847,13 @@ export function SkuProductCard({
     setAckingAll(true);
     setAlignError(null);
     try {
-      const pendingIds = product.variants
-        .filter((v) => variantBindingState(v.bound) === "auto-pending")
-        .map((v) => v.thirdPlatformSkuId);
-      const result = await confirmSuggestionsWithFallback(
-        {
-          shopName,
-          targetScope: "PRODUCT",
-          productIds: [product.thirdPlatformItemId],
-        },
-        pendingIds
-      );
+      const result = await confirmProductNeedsReview(shopName, product);
       const confirmed = result.confirmedCount ?? 0;
       if (confirmed <= 0) {
         showToast("没有可确认的待确认建议");
         return;
       }
-      showToast(`已确认 ${confirmed} 个自动对齐建议`);
+      showToast(`已接受本商品 ${confirmed} 个 AI 建议`);
       await onAligned();
     } catch (err) {
       setAlignError(autoAlignError(err));
@@ -900,10 +908,10 @@ export function SkuProductCard({
               size="sm"
               onClick={() => void ackAll()}
               disabled={ackingAll || aligning}
-              title="确认该商品下全部 AI 待确认的变体关联"
+              title="接受该商品下全部待确认的 AI 建议"
             >
               {ackingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              确认全部（{pendingCount}）
+              接受本商品全部待确认（{pendingCount}）
             </Button>
           ) : null}
           <Button
@@ -957,7 +965,7 @@ export function SkuProductCard({
       {/* Body — per-variant side-by-side comparison */}
       {open ? (
         <div className="border-t border-hairline bg-canvas/40 px-4 py-1 divide-y divide-slate-100">
-          {product.variants.map((v) => (
+          {visibleVariants.map((v) => (
             <VariantCompareRow
               key={v.thirdPlatformSkuId}
               variant={v}

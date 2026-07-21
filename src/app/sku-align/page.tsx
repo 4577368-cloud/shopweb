@@ -34,10 +34,19 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import {
   SkuProductCard,
-  boundVariantCount,
-  productMatchState,
-  type ProductMatchState,
+  filterProducts,
+  sortProductsForWorkbench,
+  type SkuFilterMode,
 } from "@/components/sku-align/sku-binding-panel";
+import { SkuAlignAiPanel } from "@/components/sku-align/sku-align-ai-panel";
+import {
+  computeSkuAlignMetrics,
+  countNeedsReviewInProducts,
+} from "@/lib/sku-align/display";
+import {
+  confirmAllNeedsReview,
+  confirmPageNeedsReview,
+} from "@/lib/sku-align/batch-confirm";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import { pollSkuAlignRun } from "@/lib/sku-align-v1/run-client";
@@ -59,7 +68,7 @@ const matchRules = [
   "类目与属性",
 ];
 
-type FilterId = "all" | ProductMatchState;
+type FilterId = SkuFilterMode;
 
 export default function SkuAlignPage() {
   const { shop, showToast, isAuthorized } = useOnboarding();
@@ -69,7 +78,9 @@ export default function SkuAlignPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [products, setProducts] = useState<SkuProductOverview[]>([]);
-  const [filter, setFilter] = useState<FilterId>("all");
+  const [filter, setFilter] = useState<FilterId>("issues");
+  const [confirmingAll, setConfirmingAll] = useState(false);
+  const [confirmingPage, setConfirmingPage] = useState(false);
   // "result" is the SSR/hydration-safe default; the mount effect flips to "scan" on first visit.
   const [phase, setPhase] = useState<"scan" | "result">("result");
 
@@ -150,72 +161,119 @@ export default function SkuAlignPage() {
     });
   }, [shopName, startScan, finishToResult]);
 
-  const stats = useMemo(() => {
-    let full = 0;
-    let partial = 0;
-    let none = 0;
-    let totalVariants = 0;
-    let boundVariants = 0;
-    for (const p of products) {
-      const state = productMatchState(p);
-      if (state === "full") full++;
-      else if (state === "partial") partial++;
-      else none++;
-      totalVariants += p.variants.length;
-      boundVariants += boundVariantCount(p);
-    }
-    return { full, partial, none, totalVariants, boundVariants };
-  }, [products]);
+  const metricsSnapshot = useMemo(
+    () => computeSkuAlignMetrics(products),
+    [products]
+  );
 
-  // Surface what needs human eyes: partial first, then unmatched, fully-matched last.
-  const stateOrder: Record<ProductMatchState, number> = { partial: 0, none: 1, full: 2 };
   const filtered = useMemo(() => {
-    const base =
-      filter === "all"
-        ? products
-        : products.filter((p) => productMatchState(p) === filter);
-    return [...base].sort(
-      (a, b) => stateOrder[productMatchState(a)] - stateOrder[productMatchState(b)]
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- stateOrder is a stable literal
+    return sortProductsForWorkbench(filterProducts(products, filter));
   }, [products, filter]);
+
+  const needsReviewOnPage = useMemo(
+    () => countNeedsReviewInProducts(filtered),
+    [filtered]
+  );
+
+  const handleConfirmAllNeedsReview = useCallback(async () => {
+    if (confirmingAll || metricsSnapshot.needsReview === 0) return;
+    setConfirmingAll(true);
+    try {
+      const result = await confirmAllNeedsReview(shopName, products);
+      const confirmed = result.confirmedCount ?? 0;
+      if (confirmed <= 0) {
+        showToast("没有可确认的待确认建议");
+        return;
+      }
+      showToast(`已接受 ${confirmed} 个 AI 建议`);
+      await load();
+    } catch (err) {
+      showToast(readableError(err));
+    } finally {
+      setConfirmingAll(false);
+    }
+  }, [
+    confirmingAll,
+    metricsSnapshot.needsReview,
+    shopName,
+    products,
+    load,
+    showToast,
+  ]);
+
+  const handleConfirmPageNeedsReview = useCallback(async () => {
+    if (confirmingPage || needsReviewOnPage === 0) return;
+    setConfirmingPage(true);
+    try {
+      const result = await confirmPageNeedsReview(shopName, filtered);
+      const confirmed = result.confirmedCount ?? 0;
+      if (confirmed <= 0) {
+        showToast("本页没有可确认的待确认建议");
+        return;
+      }
+      showToast(`已接受本页 ${confirmed} 个 AI 建议`);
+      await load();
+    } catch (err) {
+      showToast(readableError(err));
+    } finally {
+      setConfirmingPage(false);
+    }
+  }, [
+    confirmingPage,
+    needsReviewOnPage,
+    shopName,
+    filtered,
+    load,
+    showToast,
+  ]);
+
+  const stats = useMemo(() => {
+    const m = metricsSnapshot;
+    return {
+      issueProducts: m.issueProductCount,
+      doneProducts: m.doneProductCount,
+      needsReviewVariants: m.needsReview,
+      unboundVariants: m.unbound,
+      totalVariants: m.variantCount,
+      resolvedVariants: m.activeAuto + m.manualActive,
+    };
+  }, [metricsSnapshot]);
 
   const metrics: MetricSummaryItem[] = [
     {
-      label: "已自动匹配",
-      value: stats.full,
-      hint: "全部变体已匹配",
-      icon: <CheckCircle2 className="h-4 w-4" />,
-      tone: "brand",
-    },
-    {
-      label: "部分匹配",
-      value: stats.partial,
-      hint: "需要手动处理",
+      label: "问题项",
+      value: stats.issueProducts,
+      hint: `${stats.needsReviewVariants} 待确认 · ${stats.unboundVariants} 未匹配`,
       icon: <AlertTriangle className="h-4 w-4" />,
       tone: "warning",
     },
     {
-      label: "未匹配",
-      value: stats.none,
-      hint: stats.none > 0 ? "待建立绑定" : "暂无未匹配",
+      label: "已就绪",
+      value: stats.doneProducts,
+      hint: "全部变体已自动或手动对齐",
+      icon: <CheckCircle2 className="h-4 w-4" />,
+      tone: "brand",
+    },
+    {
+      label: "待确认变体",
+      value: stats.needsReviewVariants,
+      hint: stats.needsReviewVariants > 0 ? "中等置信度，需人工确认" : "暂无待确认",
       icon: <CircleDashed className="h-4 w-4" />,
-      tone: "neutral",
+      tone: stats.needsReviewVariants > 0 ? "warning" : "neutral",
     },
     {
       label: "变体总数",
       value: stats.totalVariants,
-      hint: `已处理 ${stats.boundVariants}/${stats.totalVariants}`,
+      hint: `已处理 ${stats.resolvedVariants}/${stats.totalVariants}`,
       icon: <Layers className="h-4 w-4" />,
       tone: "default",
     },
   ];
 
   const filterTabs = [
+    { id: "issues", label: "问题项", count: stats.issueProducts },
     { id: "all", label: "全部", count: products.length },
-    { id: "full", label: "全部匹配", count: stats.full },
-    { id: "partial", label: "部分匹配", count: stats.partial },
-    { id: "none", label: "未匹配", count: stats.none },
+    { id: "done", label: "已就绪", count: stats.doneProducts },
   ];
 
   const copilot: AiPanelContent = {
@@ -223,13 +281,13 @@ export default function SkuAlignPage() {
     summary:
       products.length === 0
         ? "确认匹配后的商品会在这里按变体展开，我会帮你把每个变体对齐到 Tangbuy 货源 SKU。"
-        : `我已帮你匹配 ${stats.boundVariants}/${stats.totalVariants} 个变体${
-            stats.partial > 0 ? `，还有 ${stats.partial} 个商品需要手动处理` : "，全部已就绪"
-          }。`,
+        : stats.issueProducts > 0
+          ? `还有 ${stats.issueProducts} 个商品需要处理（${stats.needsReviewVariants} 待确认 · ${stats.unboundVariants} 未匹配）。高置信和单 SKU 已自动生效。`
+          : `全部 ${stats.doneProducts} 个商品已就绪，可直接进入物流确认。`,
     bullets: [
-      `自动匹配完成：${stats.full} 个商品`,
-      stats.partial > 0 ? `需要手动处理：${stats.partial} 个商品` : "无需手动处理",
-      "点每个商品的「自动对齐 SKU」按货源矩阵逐变体绑定",
+      `问题项：${stats.issueProducts} 个商品`,
+      `已就绪：${stats.doneProducts} 个商品`,
+      "默认只展示待确认 / 未匹配变体",
       "下一步：用页面上方「进入物流确认」继续",
     ],
   };
@@ -239,6 +297,16 @@ export default function SkuAlignPage() {
       assistantContent={
         <>
           <CopilotCard content={copilot} />
+          {phase === "result" && products.length > 0 ? (
+            <SkuAlignAiPanel
+              needsReviewTotal={metricsSnapshot.needsReview}
+              needsReviewOnPage={needsReviewOnPage}
+              confirmingAll={confirmingAll}
+              confirmingPage={confirmingPage}
+              onConfirmAll={() => void handleConfirmAllNeedsReview()}
+              onConfirmPage={() => void handleConfirmPageNeedsReview()}
+            />
+          ) : null}
           <InfoCard title="匹配规则说明">
             <p className="mb-2">AI 基于以下维度进行匹配：</p>
             <ul className="space-y-1.5">
@@ -429,8 +497,12 @@ export default function SkuAlignPage() {
             />
           ) : filtered.length === 0 ? (
             <EmptyState
-              title="该筛选下暂无商品"
-              description="切换到「全部」查看所有已绑定商品。"
+              title={filter === "issues" ? "暂无问题项" : "该筛选下暂无商品"}
+              description={
+                filter === "issues"
+                  ? "高置信和单 SKU 变体已自动生效。切换到「全部」或「已就绪」查看完整列表。"
+                  : "切换到「问题项」查看待处理商品。"
+              }
             />
           ) : (
             <div className="space-y-2.5">
@@ -441,6 +513,7 @@ export default function SkuAlignPage() {
                   shopName={shopName}
                   onAligned={load}
                   showToast={showToast}
+                  filterMode={filter}
                 />
               ))}
             </div>

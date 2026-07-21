@@ -231,6 +231,9 @@ export interface VariantLogisticsDecision {
   measureSource?: string;
   decisionStatus: LogisticsDecisionStatus;
   decisionReason?: string;
+  /** User confirmed via accept-decision API. */
+  decisionConfirmed?: boolean;
+  acceptedAt?: string | null;
   quoteStatus?: QuoteStatus;
   recommendedLine?: LogisticsLine;
   alternativeLines?: LogisticsLine[];

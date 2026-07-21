@@ -3,6 +3,7 @@ import type {
   LogisticsTypeCode,
   ProductLogisticsProfile,
   VariantLogisticsDecision,
+  SkuProductOverview,
 } from "@/lib/types";
 
 export const DEFAULT_DECISION_COUNTS: Record<LogisticsDecisionStatus, number> = {
@@ -56,13 +57,6 @@ export function computeVariantDecisionStatus(
     return {
       status: "pending_postal_meta",
       reason: "缺少邮限分类",
-    };
-  }
-
-  if (variant.estimatedWeightG == null || variant.estimatedVolumeCm3 == null) {
-    return {
-      status: "pending_postal_meta",
-      reason: "缺少预估重量或体积",
     };
   }
 
@@ -120,16 +114,22 @@ export interface LegacyLogisticsAnalysis {
 }
 
 export function transformLegacyAnalysis(
-  legacy: LegacyLogisticsAnalysis
+  legacy: LegacyLogisticsAnalysis,
+  skuOverview: SkuProductOverview[] = []
 ): {
   productProfiles: ProductLogisticsProfile[];
   totalVariants: number;
   decisionStatusCounts: Record<LogisticsDecisionStatus, number>;
   highRiskTypes: LogisticsTypeCode[];
 } {
+  const skuMap = new Map<string, SkuProductOverview>();
+  for (const item of skuOverview) {
+    skuMap.set(item.thirdPlatformItemId, item);
+  }
+
   const productProfiles: ProductLogisticsProfile[] = (
     legacy.profiles ?? []
-  ).map((p) => transformLegacyProfile(p));
+  ).map((p) => transformLegacyProfile(p, skuMap));
 
   const totalVariants = productProfiles.reduce(
     (sum, p) => sum + p.totalVariants,
@@ -151,9 +151,12 @@ export function transformLegacyAnalysis(
 }
 
 function transformLegacyProfile(
-  legacy: LegacyLogisticsProfile
+  legacy: LegacyLogisticsProfile,
+  skuMap: Map<string, SkuProductOverview>
 ): ProductLogisticsProfile {
   const variantDecisions: VariantLogisticsDecision[] = [];
+
+  const skuItem = skuMap.get(legacy.thirdPlatformItemId);
 
   const baseDecision: Partial<VariantLogisticsDecision> = {
     tangbuySkuId: null,
@@ -163,34 +166,59 @@ function transformLegacyProfile(
     postalLimitConfidence: legacy.confidence,
   };
 
-  const { status, reason } = computeVariantDecisionStatus(baseDecision);
+  if (skuItem) {
+    for (const variant of skuItem.variants) {
+      const bound = variant.bound;
+      const decision: Partial<VariantLogisticsDecision> = {
+        ...baseDecision,
+        tangbuySkuId: bound?.tangbuySkuId ?? null,
+        tangbuyGoodsId: bound?.tangbuyProductId ?? null,
+      };
 
-  const singleVariant: VariantLogisticsDecision = {
-    thirdPlatformSkuId: `${legacy.thirdPlatformItemId}_default`,
-    optionLabel: "默认规格",
-    tangbuySkuId: baseDecision.tangbuySkuId ?? null,
-    tangbuyGoodsId: baseDecision.tangbuyGoodsId ?? null,
-    postalLimitClass: baseDecision.postalLimitClass,
-    postalLimitLabel: baseDecision.postalLimitLabel,
-    postalLimitConfidence: baseDecision.postalLimitConfidence,
-    decisionStatus: status,
-    decisionReason: reason,
-  };
+      const { status, reason } = computeVariantDecisionStatus(decision);
 
-  variantDecisions.push(singleVariant);
+      variantDecisions.push({
+        thirdPlatformSkuId: variant.thirdPlatformSkuId,
+        optionLabel: variant.optionLabel,
+        tangbuySkuId: decision.tangbuySkuId ?? null,
+        tangbuyGoodsId: decision.tangbuyGoodsId ?? null,
+        postalLimitClass: decision.postalLimitClass,
+        postalLimitLabel: decision.postalLimitLabel,
+        postalLimitConfidence: decision.postalLimitConfidence,
+        decisionStatus: status,
+        decisionReason: reason,
+      });
+    }
+  }
+
+  if (variantDecisions.length === 0) {
+    const { status, reason } = computeVariantDecisionStatus(baseDecision);
+
+    variantDecisions.push({
+      thirdPlatformSkuId: `${legacy.thirdPlatformItemId}_default`,
+      optionLabel: "默认规格",
+      tangbuySkuId: baseDecision.tangbuySkuId ?? null,
+      tangbuyGoodsId: baseDecision.tangbuyGoodsId ?? null,
+      postalLimitClass: baseDecision.postalLimitClass,
+      postalLimitLabel: baseDecision.postalLimitLabel,
+      postalLimitConfidence: baseDecision.postalLimitConfidence,
+      decisionStatus: status,
+      decisionReason: reason,
+    });
+  }
 
   const decisionStatusCounts = aggregateDecisionCounts(variantDecisions);
 
   return {
     thirdPlatformItemId: legacy.thirdPlatformItemId,
-    title: legacy.title ?? null,
-    primaryImageUrl: null,
+    title: skuItem?.title ?? legacy.title ?? null,
+    primaryImageUrl: skuItem?.imageUrl ?? null,
     dominantLogisticsType: legacy.logisticsType,
     dominantLogisticsTypeLabel: legacy.logisticsTypeLabel,
     totalVariants: variantDecisions.length,
     decisionStatusCounts,
-    tangbuyProductId: null,
-    detailUrl: null,
+    tangbuyProductId: skuItem?.tangbuyProductId ?? null,
+    detailUrl: skuItem?.detailUrl ?? null,
     variantDecisions,
   };
 }

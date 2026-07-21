@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { X, Plus, Check, ChevronRight, Save, Trash2 } from "lucide-react";
+import { X, Save, Trash2, Plus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { MARKET_GROUPS } from "@/lib/logistics/markets";
 import {
@@ -168,224 +169,206 @@ export function LogisticsTemplateDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={onClose} />
-      <div className="absolute right-0 top-0 h-full w-full max-w-lg flex flex-col shadow-2xl">
-        <div className="flex items-center justify-between border-b border-hairline px-4 py-3 bg-surface">
-          <h2 className="text-sm font-semibold text-ink">物流模板</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded p-1 hover:bg-surface-muted"
-          >
-            <X className="h-4 w-4 text-ink-subtle" />
-          </button>
-        </div>
-
-        <div className="flex-1 flex overflow-hidden">
-          <div className="w-36 border-r border-hairline bg-surface-muted/40 flex flex-col">
-            <div className="p-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full h-7 text-xs"
-                onClick={handleNewTemplate}
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <button
+        type="button"
+        className="absolute inset-0 bg-ink/30"
+        aria-label="关闭物流模板面板"
+        onClick={onClose}
+      />
+      <aside className="relative z-10 flex h-full w-full max-w-md flex-col border-l border-hairline bg-surface shadow-xl">
+        <header className="flex items-center justify-between border-b border-hairline px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-ink">物流模板</h2>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-ink-subtle">
+              配置目标市场、包装方式与时效偏好，将用于后续线路与价格推荐。
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {templates.length > 0 ? (
+              <select
+                value={activeTemplate?.id ?? ""}
+                onChange={(e) => {
+                  const selected = templates.find((t) => t.id === e.target.value);
+                  if (selected) onSelect(selected);
+                }}
+                className="rounded-[var(--radius-control)] border border-hairline bg-surface px-2 py-1 text-xs text-ink"
               >
-                <Plus className="mr-1 h-3 w-3" />
-                新增模板
-              </Button>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              <div className="space-y-1">
                 {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleNewTemplate}
+              className="rounded p-1 text-ink-muted hover:bg-surface-muted hover:text-ink"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded p-1 text-ink-muted hover:bg-surface-muted hover:text-ink"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div className="space-y-4">
+            <div>
+              <label className="block mb-1 text-xs font-medium text-ink">模板名称</label>
+              <input
+                type="text"
+                value={formData.name ?? ""}
+                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="自动命名"
+                className="w-full rounded-[var(--radius-control)] border border-hairline px-3 py-2 text-xs bg-surface"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 text-xs font-medium text-ink">目标市场</label>
+              <div className="flex flex-wrap gap-1.5">
+                {MARKET_GROUPS.map((group) => (
                   <button
-                    key={t.id}
+                    key={group.id}
                     type="button"
-                    onClick={() => onSelect(t)}
+                    onClick={() => setSelectedGroupId(group.id)}
                     className={cn(
-                      "w-full px-2 py-1.5 text-left text-[11px] truncate transition-colors",
-                      activeTemplate?.id === t.id
-                        ? "bg-surface text-ink font-medium"
-                        : "text-ink-subtle hover:bg-surface/60"
+                      "rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
+                      selectedGroupId === group.id
+                        ? "bg-brand text-white"
+                        : "bg-surface-muted text-ink-subtle hover:bg-surface-muted/80"
                     )}
                   >
-                    <div className="flex items-center gap-1">
-                      <ChevronRight className={cn("h-3 w-3", activeTemplate?.id === t.id ? "opacity-100" : "opacity-0")} />
-                      {t.name}
-                    </div>
+                    {group.labelZh}
+                  </button>
+                ))}
+              </div>
+
+              {selectedGroup && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] text-ink-subtle">{selectedGroup.labelZh}</span>
+                    <button
+                      type="button"
+                      onClick={selectAllInGroup}
+                      className="text-[10px] text-brand hover:underline"
+                    >
+                      全选
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {selectedGroup.countries.map((country) => {
+                      const isSelected = countryCodes.includes(country.code);
+                      return (
+                        <button
+                          key={country.code}
+                          type="button"
+                          onClick={() => toggleCountry(country.code)}
+                          className={cn(
+                            "rounded-[var(--radius-control)] border px-1.5 py-1.5 text-center text-[10px] font-medium transition-colors overflow-hidden truncate",
+                            isSelected
+                              ? "border-brand bg-brand-soft text-brand-strong"
+                              : "border-hairline bg-surface text-ink-subtle hover:border-hairline-strong"
+                          )}
+                        >
+                          {isSelected && <Check className="inline mr-0.5 h-2.5 w-2.5" />}
+                          {country.nameZh}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block mb-2 text-xs font-medium text-ink">包装方式</label>
+              <div className="grid grid-cols-2 gap-2">
+                {PACKAGING.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setFormData((prev) => ({ ...prev, packaging: o.value }))}
+                    className={cn(
+                      "rounded-[var(--radius-control)] border px-3 py-2 text-left transition-colors",
+                      formData.packaging === o.value
+                        ? "border-brand bg-brand-soft"
+                        : "border-hairline bg-surface hover:border-hairline-strong"
+                    )}
+                  >
+                    <p
+                      className={cn(
+                        "text-xs font-semibold",
+                        formData.packaging === o.value ? "text-brand-strong" : "text-ink"
+                      )}
+                    >
+                      {o.label}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-ink-subtle">{o.hint}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block mb-2 text-xs font-medium text-ink">时效偏好</label>
+              <div className="grid grid-cols-3 gap-2">
+                {SPEEDS.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setFormData((prev) => ({ ...prev, speedPreference: o.value }))}
+                    className={cn(
+                      "rounded-[var(--radius-control)] border px-3 py-2 text-left transition-colors",
+                      formData.speedPreference === o.value
+                        ? "border-brand bg-brand-soft"
+                        : "border-hairline bg-surface hover:border-hairline-strong"
+                    )}
+                  >
+                    <p
+                      className={cn(
+                        "text-xs font-semibold",
+                        formData.speedPreference === o.value ? "text-brand-strong" : "text-ink"
+                      )}
+                    >
+                      {o.label}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-ink-subtle">{o.hint}</p>
                   </button>
                 ))}
               </div>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
-            <div className="space-y-4">
-              <div>
-                <label className="block mb-1 text-xs font-medium text-ink">模板名称</label>
-                <input
-                  type="text"
-                  value={formData.name ?? ""}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="自动命名"
-                  className="w-full rounded-[var(--radius-control)] border border-hairline px-3 py-2 text-xs bg-surface"
-                />
-              </div>
-
-              <div>
-                <label className="block mb-2 text-xs font-medium text-ink">目标市场</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {MARKET_GROUPS.map((group) => (
-                    <button
-                      key={group.id}
-                      type="button"
-                      onClick={() => setSelectedGroupId(group.id)}
-                      className={cn(
-                        "rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
-                        selectedGroupId === group.id
-                          ? "bg-brand text-white"
-                          : "bg-surface-muted text-ink-subtle hover:bg-surface-muted/80"
-                      )}
-                    >
-                      {group.labelZh}
-                    </button>
-                  ))}
-                </div>
-
-                {selectedGroup && (
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] text-ink-subtle">{selectedGroup.labelZh}</span>
-                      <button
-                        type="button"
-                        onClick={selectAllInGroup}
-                        className="text-[10px] text-brand hover:underline"
-                      >
-                        全选
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {selectedGroup.countries.map((country) => {
-                        const isSelected = countryCodes.includes(country.code);
-                        return (
-                          <button
-                            key={country.code}
-                            type="button"
-                            onClick={() => toggleCountry(country.code)}
-                            className={cn(
-                              "rounded px-2 py-1 text-[10px] font-medium transition-colors",
-                              isSelected
-                                ? "bg-brand-soft text-brand-strong"
-                                : "bg-surface-muted text-ink-subtle hover:bg-surface-muted/80"
-                            )}
-                          >
-                            {isSelected && <Check className="inline mr-0.5 h-2.5 w-2.5" />}
-                            {country.nameZh}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block mb-2 text-xs font-medium text-ink">包装方式</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {PACKAGING.map((o) => (
-                    <button
-                      key={o.value}
-                      type="button"
-                      onClick={() => setFormData((prev) => ({ ...prev, packaging: o.value }))}
-                      className={cn(
-                        "rounded-[var(--radius-control)] border px-3 py-2 text-left transition-colors",
-                        formData.packaging === o.value
-                          ? "border-brand bg-brand-soft"
-                          : "border-hairline bg-surface hover:border-hairline-strong"
-                      )}
-                    >
-                      <p
-                        className={cn(
-                          "text-xs font-semibold",
-                          formData.packaging === o.value ? "text-brand-strong" : "text-ink"
-                        )}
-                      >
-                        {o.label}
-                      </p>
-                      <p className="mt-0.5 text-[10px] text-ink-subtle">{o.hint}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block mb-2 text-xs font-medium text-ink">时效偏好</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {SPEEDS.map((o) => (
-                    <button
-                      key={o.value}
-                      type="button"
-                      onClick={() => setFormData((prev) => ({ ...prev, speedPreference: o.value }))}
-                      className={cn(
-                        "rounded-[var(--radius-control)] border px-3 py-2 text-left transition-colors",
-                        formData.speedPreference === o.value
-                          ? "border-brand bg-brand-soft"
-                          : "border-hairline bg-surface hover:border-hairline-strong"
-                      )}
-                    >
-                      <p
-                        className={cn(
-                          "text-xs font-semibold",
-                          formData.speedPreference === o.value ? "text-brand-strong" : "text-ink"
-                        )}
-                      >
-                        {o.label}
-                      </p>
-                      <p className="mt-0.5 text-[10px] text-ink-subtle">{o.hint}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {error ? (
-              <p className="mt-3 text-xs text-amber-700">{error}</p>
-            ) : null}
-
-            <div className="mt-6 flex gap-2">
-              {activeTemplate && templates.length > 1 ? (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={handleDelete}
-                >
-                  <Trash2 className="mr-1 h-3 w-3" />
-                  删除
-                </Button>
-              ) : null}
-              <div className="flex-1" />
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={onClose}
-              >
-                取消
-              </Button>
-              <Button
-                size="sm"
-                className="h-8 text-xs"
-                onClick={handleSave}
-                disabled={isSaving || countryCodes.length === 0}
-              >
-                <Save className="mr-1 h-3 w-3" />
-                {isSaving ? "保存中…" : "保存模板"}
-              </Button>
-            </div>
-          </div>
+          {error ? (
+            <p className="mt-2 text-[11px] text-red-600">{error}</p>
+          ) : null}
         </div>
-      </div>
+
+        <footer className="flex items-center gap-2 border-t border-hairline px-4 py-3">
+          {activeTemplate && templates.length > 1 ? (
+            <Button variant="danger" size="sm" onClick={handleDelete}>
+              <Trash2 className="mr-1 h-3 w-3" />
+              删除
+            </Button>
+          ) : null}
+          <div className="flex-1" />
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            取消
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={isSaving || countryCodes.length === 0}>
+            <Save className="mr-1 h-3 w-3" />
+            {isSaving ? "保存中…" : "保存模板"}
+          </Button>
+        </footer>
+      </aside>
     </div>
   );
 }

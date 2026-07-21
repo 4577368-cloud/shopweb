@@ -3,32 +3,38 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Loader2, RefreshCw, Settings, Plus } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
-import {
-  AssistantRail,
-  CopilotCard,
-} from "@/components/workbench/assistant-rail";
-import { InfoCard } from "@/components/workbench/info-card";
+import { AssistantRail } from "@/components/workbench/assistant-rail";
 import { StickyActionBar } from "@/components/workbench/sticky-action-bar";
 import { Button } from "@/components/ui/button";
-import { LogisticsTypeSummary } from "@/components/logistics/logistics-type-summary";
+import { LogisticsAiPanel } from "@/components/logistics/logistics-ai-panel";
+import {
+  LogisticsDecisionList,
+  type LogisticsFocusTarget,
+} from "@/components/logistics/logistics-decision-list";
+import { LogisticsSummaryHeader } from "@/components/logistics/logistics-summary-header";
 import { LogisticsTemplateDrawer } from "@/components/logistics/logistics-template-drawer";
 import { codesFromSelections } from "@/components/logistics/market-multi-select";
 import { useOnboarding } from "@/context/onboarding-context";
-import { api, readableError } from "@/lib/api";
-import { countryLabel } from "@/lib/logistics/markets";
+import { api, readableError, type LogisticsAcceptDecisionRequest, type LogisticsEstimateResult } from "@/lib/api";
+import type { LogisticsFilterMode } from "@/lib/logistics/display";
+import {
+  buildEstimateParams,
+  listTemplateCountryCodes,
+  resolveQuoteMarketCode,
+} from "@/lib/logistics/template-params";
 import type {
-  AiPanelContent,
   LogisticsAnalysis,
   LogisticsDecisionStatus,
   LogisticsTemplate,
   LogisticsTypeCode,
+  PricingTemplate,
+  VariantLogisticsDecision,
 } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 const BREADCRUMBS = [
   { label: "工作台", href: "/" },
@@ -62,6 +68,31 @@ function LogisticsContent() {
   const [correctingId, setCorrectingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
+  const [filterMode, setFilterMode] = useState<LogisticsFilterMode>("issues");
+  const [quoteResults, setQuoteResults] = useState<
+    Map<string, LogisticsEstimateResult>
+  >(new Map());
+  const [quoting, setQuoting] = useState(false);
+  const [accepting, setAccepting] = useState(false);
+  const [focusTarget, setFocusTarget] = useState<LogisticsFocusTarget | null>(
+    null
+  );
+  const [quoteMarketCode, setQuoteMarketCode] = useState<string | null>(null);
+  const [pricingTemplate, setPricingTemplate] = useState<PricingTemplate | null>(null);
+
+  const templateScopeKey = useMemo(() => {
+    if (!activeTemplate) return "";
+    return [
+      activeTemplate.id,
+      activeTemplate.speedPreference,
+      JSON.stringify(activeTemplate.markets ?? []),
+    ].join("|");
+  }, [activeTemplate]);
+
+  useEffect(() => {
+    setQuoteMarketCode(resolveQuoteMarketCode(activeTemplate, null));
+    setQuoteResults(new Map());
+  }, [templateScopeKey]);
 
   const load = useCallback(
     async (forceClassify: boolean) => {
@@ -69,14 +100,16 @@ function LogisticsContent() {
       setError(null);
       try {
         setClassifying(true);
-        const [a, ts] = await Promise.all([
+        const [a, ts, pt] = await Promise.all([
           forceClassify
             ? api.analyzeLogistics(shopName, true)
             : api.analyzeLogistics(shopName, false),
           api.listLogisticsTemplates(shopName),
+          api.getPricingTemplate(shopName),
         ]);
         setAnalysis(a);
         setTemplates(ts);
+        setPricingTemplate(pt);
         if (ts.length > 0) {
           setActiveTemplate(ts[0]);
         } else {
@@ -152,7 +185,16 @@ function LogisticsContent() {
     }
   };
 
-  const handleSaveTemplate = async (upsertData: { shopName: string; name?: string; packaging: string; speedPreference: string; markets: { marketGroupId: string; countryCodes: string[] }[] }, id?: string) => {
+  const handleSaveTemplate = async (
+    upsertData: {
+      shopName: string;
+      name?: string;
+      packaging: string;
+      speedPreference: string;
+      markets: { marketGroupId: string; countryCodes: string[] }[];
+    },
+    id?: string
+  ) => {
     setSaving(true);
     try {
       const saved = await api.upsertLogisticsTemplate(upsertData as any, id);
@@ -179,7 +221,9 @@ function LogisticsContent() {
       setTemplates((prev) => prev.filter((t) => t.id !== id));
       if (activeTemplate?.id === id) {
         const remaining = templates.filter((t) => t.id !== id);
-        setActiveTemplate(remaining.length > 0 ? remaining[0] : DEFAULT_TEMPLATE(shopName));
+        setActiveTemplate(
+          remaining.length > 0 ? remaining[0] : DEFAULT_TEMPLATE(shopName)
+        );
       }
       showToast("模板已删除");
     } catch (err) {
@@ -189,6 +233,7 @@ function LogisticsContent() {
 
   const handleSelectTemplate = (template: LogisticsTemplate) => {
     setActiveTemplate(template);
+    setQuoteMarketCode(resolveQuoteMarketCode(template, null));
     setShowDrawer(false);
   };
 
@@ -203,77 +248,141 @@ function LogisticsContent() {
     if (goSync) router.push("/sync");
   };
 
-  const ai: AiPanelContent = useMemo(() => {
-    if (!isAuthorized) {
-      return {
-        title: "需先授权",
-        summary: "请先完成店铺授权。",
-        bullets: [],
-        nextAction: { label: "去授权店铺", href: "/authorize" },
+  const collectReadyVariants = useCallback(() => {
+    const variants: Array<{
+      thirdPlatformSkuId: string;
+      tangbuySkuId: string;
+      tangbuyGoodsId: string;
+      incrementList: string[];
+      quantity: number;
+    }> = [];
+    for (const p of analysis?.productProfiles ?? []) {
+      for (const v of p.variantDecisions ?? []) {
+        if (
+          v.decisionStatus === "ready_for_quote" &&
+          v.tangbuySkuId &&
+          v.tangbuyGoodsId
+        ) {
+          variants.push({
+            thirdPlatformSkuId: v.thirdPlatformSkuId,
+            tangbuySkuId: v.tangbuySkuId,
+            tangbuyGoodsId: v.tangbuyGoodsId,
+            incrementList: [],
+            quantity: 1,
+          });
+        }
+      }
+    }
+    return variants;
+  }, [analysis?.productProfiles]);
+
+  const handleFetchQuotes = async () => {
+    const variants = collectReadyVariants();
+    if (quoting || variants.length === 0) return;
+
+    const params = buildEstimateParams(activeTemplate, quoteMarketCode);
+    if (!params) {
+      showToast("请先在模板中配置销售市场");
+      return;
+    }
+
+    setQuoting(true);
+    try {
+      const response = await api.estimateLogistics({
+        shopName,
+        countryCode: params.countryCode,
+        shippingOption: params.shippingOption,
+        packaging: params.packaging,
+        variants,
+        needOtherLine: true,
+        needMeasure: true,
+      });
+      const resultsMap = new Map<string, LogisticsEstimateResult>();
+      for (const r of response.results) {
+        resultsMap.set(r.thirdPlatformSkuId, r);
+      }
+      setQuoteResults(resultsMap);
+      showToast(
+        `已拉取 ${resultsMap.size} 条线路（${params.countryCode} · 时效${params.shippingOption}）`
+      );
+    } catch (err) {
+      showToast(readableError(err));
+    } finally {
+      setQuoting(false);
+    }
+  };
+
+  const buildQuotesPayload = useCallback(() => {
+    const quotes: LogisticsAcceptDecisionRequest["quotes"] = {};
+    for (const [skuId, result] of quoteResults.entries()) {
+      quotes[skuId] = {
+        recommendedLine: result.recommendedLine,
+        alternativeLines: result.alternativeLines,
+        quoteStatus: result.quoteStatus,
       };
     }
-    if (loading || classifying) {
-      return {
-        title: "正在归类物流类型",
-        summary:
-          "直接使用选品 / SKU 对齐已落库的关联关系，按标题规则识别普货、服装、带电等类型。",
-        bullets: ["不再重新同步店铺商品", "识别结果可手动修正", "接着配置物流策略模板"],
-      };
-    }
-    const dist = Object.entries(analysis?.decisionStatusCounts ?? {})
-      .filter(([, count]) => count > 0)
-      .slice(0, 4)
-      .map(([status, count]) => {
-        const label: Record<LogisticsDecisionStatus, string> = {
-          pending_sku: "待对齐",
-          pending_postal_meta: "待补充",
-          ready_for_quote: "可报价",
-          restricted: "需确认",
-          needs_review: "需审核",
-        };
-        return `${label[status as LogisticsDecisionStatus] ?? status} ${count}`;
-      })
-      .join(" · ");
-    const countries = codesFromSelections(activeTemplate?.markets ?? [])
-      .slice(0, 4)
-      .map(countryLabel)
-      .join("、");
-    const alerts = [];
-    if (!skuReadyForNext) {
-      alerts.push({
-        id: "sku",
-        text: "部分商品可能尚未完成 SKU 对齐；仍可先配置物流模板。",
+    return quotes;
+  }, [quoteResults]);
+
+  const handleAcceptAllReady = async () => {
+    if (accepting) return;
+    setAccepting(true);
+    try {
+      const result = await api.acceptLogisticsDecision({
+        shopName,
+        targetScope: "ALL_READY",
+        quotes: buildQuotesPayload(),
       });
+      setAnalysis(result.analysis);
+      showToast(
+        result.acceptedCount > 0
+          ? `已接受 ${result.acceptedCount} 条可报价决策`
+          : "没有可接受的可报价项"
+      );
+    } catch (err) {
+      showToast(readableError(err));
+    } finally {
+      setAccepting(false);
     }
-    if ((analysis?.highRiskTypes?.length ?? 0) > 0) {
-      alerts.push({
-        id: "risk",
-        text: "检测到带电 / 食品 / 刀具等特殊类型，后续线路匹配会更严格。",
+  };
+
+  const handleAcceptAi = async (
+    variant: VariantLogisticsDecision,
+    _productId: string
+  ) => {
+    if (accepting) return;
+    setAccepting(true);
+    try {
+      const quote = quoteResults.get(variant.thirdPlatformSkuId);
+      const result = await api.acceptLogisticsDecision({
+        shopName,
+        targetScope: "VARIANTS",
+        variantIds: [variant.thirdPlatformSkuId],
+        quotes: quote
+          ? {
+              [variant.thirdPlatformSkuId]: {
+                recommendedLine: quote.recommendedLine,
+                alternativeLines: quote.alternativeLines,
+                quoteStatus: quote.quoteStatus,
+              },
+            }
+          : undefined,
       });
+      setAnalysis(result.analysis);
+      showToast(
+        result.acceptedCount > 0 ? "已接受 AI 决策" : "该规格暂不可接受"
+      );
+    } catch (err) {
+      showToast(readableError(err));
+    } finally {
+      setAccepting(false);
     }
-    return {
-      title: "物流策略顾问",
-      summary:
-        "已基于现有关联完成归类。请确认包装、销售市场与时效偏好。",
-      bullets: [
-        analysis
-          ? `基于 ${analysis.analyzedCount} 个已关联商品`
-          : "暂无已关联商品",
-        dist ? `类型分布：${dist}` : "暂无类型分布",
-        countries ? `销售市场：${countries}` : "尚未选择销售市场",
-        "模板将作为后续线路与报价推荐的输入（本页暂不展示线路）",
-      ],
-      alerts,
-      nextAction: { label: "保存并进入同步", action: "save-sync" },
-    };
-  }, [
-    isAuthorized,
-    loading,
-    classifying,
-    analysis,
-    activeTemplate,
-    skuReadyForNext,
-  ]);
+  };
+
+  const handleFocusStatus = (status: LogisticsDecisionStatus) => {
+    setFilterMode("issues");
+    setFocusTarget({ status });
+  };
 
   if (!isAuthorized) {
     return (
@@ -282,7 +391,9 @@ function LogisticsContent() {
         rail={
           <AssistantRail
             assistantContent={
-              <CopilotCard heading="AI 物流顾问" content={ai} />
+              <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-xs text-ink-subtle">
+                请先完成店铺授权。
+              </div>
             }
           />
         }
@@ -313,19 +424,18 @@ function LogisticsContent() {
       rail={
         <AssistantRail
           assistantContent={
-            <>
-              <CopilotCard
-                heading="AI 物流顾问"
-                content={ai}
-                onNextAction={(action) => {
-                  if (action === "save-sync") void handleSave(true);
-                }}
-              />
-              <InfoCard title="下一步">
-                保存模板后进入「同步到店铺」。线路与运费推荐将在 Phase 2
-                基于本模板与已归类类型生成。
-              </InfoCard>
-            </>
+            <LogisticsAiPanel
+              decisionStatusCounts={analysis?.decisionStatusCounts}
+              highRiskTypes={analysis?.highRiskTypes}
+              skuReadyForNext={skuReadyForNext}
+              quoting={quoting}
+              accepting={accepting}
+              saving={saving}
+              onFocusStatus={handleFocusStatus}
+              onAcceptAllReady={() => void handleAcceptAllReady()}
+              onFetchQuotes={() => void handleFetchQuotes()}
+              onSaveSync={() => void handleSave(true)}
+            />
           }
         />
       }
@@ -335,25 +445,12 @@ function LogisticsContent() {
         title="物流选择"
         breadcrumbs={BREADCRUMBS}
         {...wb.panelProps}
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => void load(true)}
-              disabled={loading || classifying}
-              title="重新归类"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        }
         footer={
           <StickyActionBar
             info={
               analysis
                 ? `基于 ${analysis.analyzedCount} 个已关联商品`
-                : "配置物流策略模板"
+                : "物流决策工作台"
             }
           >
             <Button
@@ -369,82 +466,64 @@ function LogisticsContent() {
           </StickyActionBar>
         }
       >
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2">
-              {templates.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setActiveTemplate(t)}
-                  className={cn(
-                    "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                    activeTemplate?.id === t.id
-                      ? "bg-brand text-white"
-                      : "bg-surface-muted text-ink-subtle hover:bg-surface-muted/80"
-                  )}
-                >
-                  {t.name}
-                </button>
-              ))}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-ink-subtle"
-              onClick={() => {
-                setActiveTemplate(null);
-                setShowDrawer(true);
-              }}
-            >
-              <Plus className="mr-1 h-3 w-3" />
-              新增模板
-            </Button>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-ink-subtle"
-            onClick={() => {
+        <div className="space-y-3">
+          <LogisticsSummaryHeader
+            analysis={analysis}
+            templates={templates}
+            activeTemplate={activeTemplate}
+            filterMode={filterMode}
+            onFilterModeChange={setFilterMode}
+            onSelectTemplate={setActiveTemplate}
+            onAddTemplate={() => {
+              setActiveTemplate(null);
               setShowDrawer(true);
             }}
-          >
-            <Settings className="mr-1 h-3 w-3" />
-            模板配置
-          </Button>
-        </div>
+            onOpenTemplateConfig={() => setShowDrawer(true)}
+            onReclassify={() => void load(true)}
+            reclassifying={loading || classifying}
+            quoteMarketCode={quoteMarketCode}
+            onQuoteMarketChange={(code) => {
+              if (listTemplateCountryCodes(activeTemplate).includes(code)) {
+                setQuoteMarketCode(code);
+                setQuoteResults(new Map());
+              }
+            }}
+          />
 
-        {loading && !analysis ? (
-          <div className="flex items-center gap-2 py-12 text-sm text-ink-subtle">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            正在按已有关联归类物流类型…
-          </div>
-        ) : error && !analysis ? (
-          <div className="rounded-[var(--radius-card)] border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
-            {error}
-            <Button
-              size="sm"
-              variant="secondary"
-              className="ml-3"
-              onClick={() => void load(false)}
-            >
-              重试
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {analysis ? (
-              <LogisticsTypeSummary
-                analysis={analysis}
-                correctingId={correctingId}
-                onCorrect={(id, type) => void handleCorrect(id, type)}
-              />
-            ) : null}
-          </div>
-        )}
+          {loading && !analysis ? (
+            <div className="flex items-center gap-2 py-12 text-sm text-ink-subtle">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              正在生成物流决策…
+            </div>
+          ) : error && !analysis ? (
+            <div className="rounded-[var(--radius-card)] border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
+              {error}
+              <Button
+                size="sm"
+                variant="secondary"
+                className="ml-3"
+                onClick={() => void load(false)}
+              >
+                重试
+              </Button>
+            </div>
+          ) : analysis ? (
+            <LogisticsDecisionList
+              analysis={analysis}
+              filterMode={filterMode}
+              quoteResults={quoteResults}
+              correctingId={correctingId}
+              focusTarget={focusTarget}
+              onCorrect={(id, type) => void handleCorrect(id, type)}
+              onAcceptAi={(v, pid) => void handleAcceptAi(v, pid)}
+              accepting={accepting}
+              onClearFocus={() => setFocusTarget(null)}
+            />
+          ) : null}
+        </div>
       </WorkbenchPanel>
 
-      {showDrawer && (
+      {showDrawer ? (
         <LogisticsTemplateDrawer
           templates={templates}
           activeTemplate={activeTemplate}
@@ -453,7 +532,7 @@ function LogisticsContent() {
           onSelect={handleSelectTemplate}
           onClose={() => setShowDrawer(false)}
         />
-      )}
+      ) : null}
     </WorkbenchShell>
   );
 }

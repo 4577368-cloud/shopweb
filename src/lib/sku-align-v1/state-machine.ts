@@ -60,11 +60,10 @@ export function isProtectedFromAutoOverwrite(binding?: SkuAlignCurrentBinding | 
 }
 
 export function mayAutoActivateBinding(
-  productOrigin: "INTERNAL" | "EXTERNAL",
+  _productOrigin: "INTERNAL" | "EXTERNAL",
   level: ConfidenceLevel
 ): boolean {
-  if (level !== "HIGH") return false;
-  return productOrigin === "INTERNAL";
+  return level === "HIGH";
 }
 
 export function confidenceLevelFromScore(

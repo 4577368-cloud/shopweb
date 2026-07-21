@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveCountryId } from "@/lib/logistics/template-params";
 import type {
   LogisticsLine,
   QuoteStatus,
@@ -11,9 +12,10 @@ const TANGBUY_GATEWAY_URL = "https://tangbuy.cc/gateway/plugin/logistic/estimate
 
 export interface LogisticsEstimateRequest {
   shopName: string;
-  countryId: string;
+  countryId?: string;
   countryCode: string;
   shippingOption: number;
+  packaging?: string;
   variants: Array<{
     thirdPlatformSkuId: string;
     tangbuySkuId: string;
@@ -49,24 +51,38 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请求体需为 JSON" }, { status: 400 });
   }
 
-  const { shopName, countryId, countryCode, shippingOption, variants } = body;
+  const { shopName, countryCode, shippingOption, variants } = body;
+  const code = countryCode?.trim().toUpperCase();
 
-  if (!shopName || !countryId || !countryCode) {
-    return NextResponse.json({ error: "缺少必要参数：shopName, countryId, countryCode" }, { status: 400 });
+  if (!shopName || !code) {
+    return NextResponse.json(
+      { error: "缺少必要参数：shopName, countryCode" },
+      { status: 400 }
+    );
+  }
+
+  const countryId = body.countryId?.trim() || resolveCountryId(code);
+  if (!countryId) {
+    return NextResponse.json(
+      {
+        error: `未配置国家 ${code} 的 countryId，请在模板中选择已支持市场或配置 TANGBUY_COUNTRY_IDS`,
+      },
+      { status: 400 }
+    );
   }
 
   if (!variants || variants.length === 0) {
     return NextResponse.json({ error: "请提供至少一个 variant" }, { status: 400 });
   }
 
-  const authToken = process.env.TANGBUY_AUTH_TOKEN;
+  const authToken = process.env.TANG_PLUGIN_TANGBUY_MALL_TOKEN;
   if (!authToken) {
     return NextResponse.json({ error: "网关配置未就绪" }, { status: 500 });
   }
 
   const tangbuyRequest = {
     countryId,
-    countryCode,
+    countryCode: code,
     shippingOption: shippingOption ?? 2,
     skuList: variants.map((v) => ({
       providerType: "alibaba",
@@ -86,10 +102,10 @@ export async function POST(request: Request) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${authToken}`,
-        "currency": "CNY",
-        "device": "pc",
-        "lang": "cn",
+        Authorization: `Bearer ${authToken}`,
+        currency: "CNY",
+        device: "pc",
+        lang: "cn",
         "tang-request-device": "web",
         "tang-request-render": "csr",
         "tang-request-rewrite": "true",
