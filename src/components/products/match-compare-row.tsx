@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useMemo } from "react";
 import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,16 +54,76 @@ export function MatchCompareRow({
   const resolved =
     isProductResolved(item.status) && item.status !== "flagged";
 
+  const statusConfig = useMemo(() => {
+    if (item.status === "confirmed") {
+      return {
+        label: "已确认",
+        bg: "bg-emerald-500",
+        text: "text-white",
+        border: "border-emerald-300",
+        bgLight: "bg-emerald-50/30",
+      };
+    }
+    if (item.status === "needs_review") {
+      return {
+        label: "待确认",
+        bg: "bg-amber-500",
+        text: "text-white",
+        border: "border-amber-300",
+        bgLight: "bg-amber-50/30",
+      };
+    }
+    if (item.status === "deferred") {
+      return {
+        label: "暂不处理",
+        bg: "bg-slate-400",
+        text: "text-white",
+        border: "border-slate-300",
+        bgLight: "bg-slate-50/30",
+      };
+    }
+    if (item.status === "rejected") {
+      return {
+        label: "已排除",
+        bg: "bg-red-400",
+        text: "text-white",
+        border: "border-red-300",
+        bgLight: "bg-red-50/30",
+      };
+    }
+    if (item.status === "flagged") {
+      return {
+        label: "已标记",
+        bg: "bg-violet-500",
+        text: "text-white",
+        border: "border-violet-300",
+        bgLight: "bg-violet-50/30",
+      };
+    }
+    return {
+      label: "未关联",
+      bg: "bg-slate-400",
+      text: "text-white",
+      border: "border-slate-300",
+      bgLight: "bg-slate-50/30",
+    };
+  }, [item.status]);
+
   return (
     <article
       id={`product-row-${item.id}`}
       data-focused={focused || undefined}
       className={cn(
-        "rounded-lg border border-slate-200 bg-white px-3.5 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors",
-        focused && "border-teal-300 ring-1 ring-teal-200 bg-teal-50/30",
-        item.status === "confirmed" && "border-emerald-200 bg-emerald-50/20"
+        "relative rounded-lg border shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors",
+        focused && "border-teal-300 ring-1 ring-teal-200",
+        resolved && statusConfig.bgLight,
+        statusConfig.border,
+        !focused && !resolved && "border-slate-200 bg-white"
       )}
     >
+      <div className={cn("absolute -top-2 -left-1 rounded-full px-2 py-0.5 text-[10px] font-semibold", statusConfig.bg, statusConfig.text)}>
+        {statusConfig.label}
+      </div>
       <div className="grid grid-cols-[1fr_28px_1fr_148px_132px] items-stretch gap-3">
         {/* 左：店铺商品 */}
         <div className="flex min-w-0 gap-3">

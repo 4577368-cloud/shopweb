@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2, Search, X } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -300,6 +300,7 @@ function SelectContent() {
     null
   );
   const [batchLinkRequest, setBatchLinkRequest] = useState<BatchLinkRequest | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const batchLinkRequestSeq = useRef(0);
   const autoLinkVisitRef = useRef(false);
 
@@ -976,25 +977,46 @@ function SelectContent() {
         breadcrumbs={BREADCRUMBS}
         {...wb.panelProps}
         actions={
-          statusCta.href ? (
-            <Link href={statusCta.href}>
-              <Button>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索商品标题/SKU…"
+                className="h-7 w-48 rounded-[var(--radius-control)] border border-hairline bg-surface pl-7 pr-8 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+            {statusCta.href ? (
+              <Link href={statusCta.href}>
+                <Button>
+                  {statusCta.label}
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+            ) : (
+              <Button
+                size="sm"
+                onClick={statusCta.onClick}
+                disabled={statusCta.disabled || statusCta.loading}
+              >
+                {statusCta.loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
                 {statusCta.label}
-                <ArrowRight className="h-4 w-4" />
               </Button>
-            </Link>
-          ) : (
-            <Button
-              size="sm"
-              onClick={statusCta.onClick}
-              disabled={statusCta.disabled || statusCta.loading}
-            >
-              {statusCta.loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : null}
-              {statusCta.label}
-            </Button>
-          )
+            )}
+          </div>
         }
       >
         <div className="space-y-3">
@@ -1025,6 +1047,8 @@ function SelectContent() {
                 onViewNewArrivalUnmatched={() => viewNewArrivalResult("unbound")}
                 batchLinkProgress={batchLinkProgress}
                 batchLinkBusy={batchLinkActive}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
               />
             ) : (
               <div ref={setFiltersMountEl} />
@@ -1082,6 +1106,7 @@ function SelectContent() {
                 }}
                 aiFieldEdits={aiFieldEdits}
                 onAiFieldEditConsumed={clearAiFieldEdit}
+                searchQuery={searchQuery}
               />
             </div>
           ) : null}

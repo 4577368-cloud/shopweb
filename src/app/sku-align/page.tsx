@@ -459,7 +459,14 @@ export default function SkuAlignPage() {
           {error ? (
             <Card className="border-red-200">
               <CardContent className="flex items-center justify-between gap-3 py-3 text-sm text-red-700">
-                <span>加载失败：{error}</span>
+                <span>
+                  加载失败：{error}
+                  {error.includes("502") ? (
+                    <span className="mt-1 block text-xs text-red-600/90">
+                      智能选品侧的匹配数据仍在，但 SKU 概览接口未响应。请确认后端服务可用后重试。
+                    </span>
+                  ) : null}
+                </span>
                 <Button size="sm" variant="secondary" onClick={() => void load()}>
                   重试
                 </Button>
@@ -471,7 +478,7 @@ export default function SkuAlignPage() {
             <Card>
               <TableSkeleton rows={5} />
             </Card>
-          ) : products.length === 0 ? (
+          ) : error ? null : products.length === 0 ? (
             <EmptyState
               title="还没有已绑定的商品"
               description="请先到「智能选品」查找货源并确认匹配。绑定成功的商品会在这里按变体展开。"

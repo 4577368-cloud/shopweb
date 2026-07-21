@@ -260,9 +260,14 @@ export function AiCopilotScanStage({
                 </span>
               ) : null}
             </div>
-            <h2 className="mt-1.5 text-[17px] font-bold leading-snug text-ink">
-              {headline.title}
-            </h2>
+            <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <h2 className="text-[17px] font-bold leading-snug text-ink">
+                {headline.title}
+              </h2>
+              {done ? (
+                <p className="text-right text-sm text-ink-muted">{briefing}</p>
+              ) : null}
+            </div>
             {!done ? (
               <div className="mt-3 space-y-1.5">
                 <div className="flex items-baseline justify-between text-xs">
@@ -292,9 +297,7 @@ export function AiCopilotScanStage({
                   </p>
                 ) : null}
               </div>
-            ) : (
-              <p className="mt-2 text-sm text-ink-muted">{briefing}</p>
-            )}
+            ) : null}
           </div>
         </div>
       </section>
@@ -320,7 +323,6 @@ export function AiCopilotScanStage({
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-ink">首轮 AI 选品已完成</p>
-                  <p className="text-xs text-ink-muted">{briefing}</p>
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">

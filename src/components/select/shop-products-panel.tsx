@@ -344,6 +344,7 @@ export function ShopProductsPanel({
   aiFieldEdits,
   onAiFieldEditConsumed,
   linkingLocked = false,
+  searchQuery = "",
 }: {
   onActivity?: () => void;
   /** Optional controlled filter — lets the page's top CTA jump straight to e.g. 待确认. */
@@ -385,13 +386,14 @@ export function ShopProductsPanel({
   onAiFieldEditConsumed?: (productId: string, field: AiFieldId) => void;
   /** True while batch link is running — locks sync / ack / per-card actions. */
   linkingLocked?: boolean;
+  /** Search query from parent component */
+  searchQuery?: string;
 }) {
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const [batchAcking, setBatchAcking] = useState(false);
   const [products, setProducts] = useState<ShopMirrorProduct[]>([]);
   const [internalFilter, setInternalFilter] = useState<ShopFilter>("all");
@@ -569,32 +571,6 @@ export function ShopProductsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- signal edge only
   }, [mirrorRefreshSignal]);
 
-  const handleSync = async () => {
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      const result = await api.syncShopProducts(shopName);
-      const items = await load();
-      try {
-        const job = await api.startMatchQueue(shopName);
-        if (job.total > 0) {
-          showToast(`已同步 ${result.productCount} 个商品，图搜队列处理 ${job.total} 个未关联`);
-        } else {
-          showToast(`已同步，店铺共 ${result.productCount} 个商品`);
-        }
-      } catch {
-        showToast(`已同步，店铺共 ${result.productCount} 个商品`);
-      }
-      if (items) onMirrorAnalysisCommitted?.(items);
-      onActivity?.();
-    } catch (err) {
-      setError(readableError(err));
-      showToast("同步失败");
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   // null = unbound; "pending" = AI 待确认; "confirmed" = 已确认 (legacy rows without status = confirmed).
   const stateOf = useCallback(
     (p: ShopMirrorProduct): "pending" | "confirmed" | null => {
@@ -683,16 +659,31 @@ export function ShopProductsPanel({
   };
 
   const filtered = useMemo(() => {
+    let result = products;
     if (filter === "new_arrivals") {
-      return products.filter((p) =>
+      result = products.filter((p) =>
         pendingNewAnalysisIds?.has(p.thirdPlatformItemId)
       );
+    } else if (filter === "pending") {
+      result = products.filter((p) => stateOf(p) === "pending");
+    } else if (filter === "confirmed") {
+      result = products.filter((p) => stateOf(p) === "confirmed");
+    } else if (filter === "unbound") {
+      result = products.filter((p) => stateOf(p) === null);
     }
-    if (filter === "pending") return products.filter((p) => stateOf(p) === "pending");
-    if (filter === "confirmed") return products.filter((p) => stateOf(p) === "confirmed");
-    if (filter === "unbound") return products.filter((p) => stateOf(p) === null);
-    return products;
-  }, [products, filter, stateOf, pendingNewAnalysisIds]);
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      result = result.filter(
+        (p) =>
+          p.title?.toLowerCase().includes(query) ||
+          p.handle?.toLowerCase().includes(query) ||
+          p.thirdPlatformItemId.toLowerCase().includes(query)
+      );
+    }
+
+    return result;
+  }, [products, filter, stateOf, pendingNewAnalysisIds, searchQuery]);
 
   // Rail「重搜候选」+ page「一键关联」: client-side per-card batch link.
   const rematchSignalSeen = useRef(0);
@@ -778,7 +769,7 @@ export function ShopProductsPanel({
               size="sm"
               variant="secondary"
               onClick={() => void handleBatchAck()}
-              disabled={batchAcking || syncing || linkingLocked}
+              disabled={batchAcking || linkingLocked}
             >
               {batchAcking ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -786,18 +777,6 @@ export function ShopProductsPanel({
               {batchAcking ? "确认中…" : `批量确认 (${counts.pending})`}
             </Button>
           ) : null}
-          <Button
-            size="sm"
-            onClick={() => void handleSync()}
-            disabled={syncing || batchAcking || linkingLocked}
-          >
-            {syncing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            {syncing ? "同步中…" : "同步商品"}
-          </Button>
         </div>
       </div>
 
@@ -819,29 +798,14 @@ export function ShopProductsPanel({
       ) : products.length === 0 ? (
         <EmptyState
           title="暂无在售商品"
-          description="尚未同步到店铺商品，或店铺当前无商品。点击「同步商品」从 Shopify 拉取。"
-          action={
-            <Button
-              size="sm"
-              className="mt-1"
-              onClick={() => void handleSync()}
-              disabled={syncing}
-            >
-              {syncing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              同步商品
-            </Button>
-          }
+          description="尚未同步到店铺商品，或店铺当前无商品。点击上方刷新图标从 Shopify 拉取并分析。"
         />
       ) : displayProducts.length === 0 ? (
         <EmptyState
           title={filter === "new_arrivals" ? "暂无新入库商品" : "该筛选下暂无商品"}
           description={
             filter === "new_arrivals"
-              ? "新商品同步后会出现于此；也可点击「同步商品」刷新列表。"
+              ? "新商品同步后会出现于此；也可点击上方刷新图标重新拉取。"
               : "切换到「全部」查看所有在售商品。"
           }
         />

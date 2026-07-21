@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, Bot, Lightbulb, Send } from "lucide-react";
 import type { AiPanelContent } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { useBackendHealth } from "@/hooks/use-backend-health";
 import { cn } from "@/lib/utils";
 
 /** A guided question + its fixed, state-derived answer (Phase A: no free-text LLM). */
@@ -131,6 +132,8 @@ export function CopilotCard({
   className,
 }: CopilotCardProps) {
   const next = content.nextAction;
+  const backendHealth = useBackendHealth();
+  const backendOk = backendHealth === "ok";
   return (
     <section
       data-copilot-card
@@ -146,9 +149,17 @@ export function CopilotCard({
           </span>
           <span className="text-sm font-semibold text-ink">{heading}</span>
         </div>
-        <span className="flex items-center gap-1 text-[11px] text-ink-muted">
-          <span className="h-1.5 w-1.5 rounded-full bg-brand" />
-          在线
+        <span
+          className="flex items-center"
+          title={backendOk ? "plugin:ok" : "plugin:down"}
+          aria-label={backendOk ? "Backend reachable" : "Backend unreachable"}
+        >
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              backendOk ? "bg-brand" : "bg-amber-400"
+            )}
+          />
         </span>
       </div>
 
