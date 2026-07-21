@@ -8,6 +8,7 @@ import type {
   ConfirmImageMatchRequest,
   ImageBindingView,
   ImageSearchResult,
+  MatchJobProgress,
   LogisticsAnalysis,
   LogisticsTemplate,
   LogisticsTemplateUpsert,
@@ -19,6 +20,7 @@ import type {
   ProductSyncResult,
   PublishResult,
   ShopMirrorProduct,
+  ShopOrderHeader,
   ShopProductDetail,
   ShopProductUpdatePayload,
   SkuAutoAlignResult,
@@ -272,6 +274,34 @@ export const api = {
     });
   },
 
+  /** Start (or return) the server-side image-auto-match queue for a shop or single product. */
+  startMatchQueue: (shop: string, thirdPlatformItemId?: string) => {
+    const params = new URLSearchParams({ shopName: shop });
+    if (thirdPlatformItemId) params.set("thirdPlatformItemId", thirdPlatformItemId);
+    return request<MatchJobProgress>(`/api/plugin/match/queue/start?${params.toString()}`, {
+      method: "POST",
+    });
+  },
+
+  /** Poll the active RUNNING/PENDING job for a shop, if any. */
+  getActiveMatchJob: async (shop: string) => {
+    try {
+      return await request<MatchJobProgress | null>(
+        `/api/plugin/match/queue/active?shopName=${encodeURIComponent(shop)}`
+      );
+    } catch (err) {
+      // Older plugin builds may not expose this route yet — treat as no active job.
+      if (err instanceof ApiError && (err.status === 404 || err.status === 405)) {
+        return null;
+      }
+      throw err;
+    }
+  },
+
+  /** Poll progress for a specific match job. */
+  getMatchJob: (jobId: number) =>
+    request<MatchJobProgress>(`/api/plugin/match/queue/${jobId}`),
+
   /**
    * Repair legacy bindings missing the image/price snapshot (re-search → match bound offer → else
    * derive from offer detail). One-shot, idempotent; returns per-binding counts.
@@ -340,6 +370,12 @@ export const api = {
   getShopProducts: (shop: string) =>
     request<ShopMirrorProduct[]>(
       `/api/plugin/product/list?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  /** Persisted Shopify order headers for shop scan context (webhook-synced). */
+  listShopOrders: (shop: string) =>
+    request<ShopOrderHeader[]>(
+      `/api/plugin/order/header/list?shopName=${encodeURIComponent(shop)}`
     ),
 
   /** Phase 1 read-only product detail (SPU + variants + media) from the local mirror. */

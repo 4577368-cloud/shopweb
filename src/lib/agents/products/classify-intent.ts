@@ -30,9 +30,30 @@ export const PRODUCTS_CLASSIFY_RULES: IntentKeywordRule<ProductsIntentId>[] = [
     ],
   },
   {
+    intent: "explain_match_reason",
+    patterns: [
+      /为什么推荐|为何推荐|推荐依据|推荐原因|为什么是这个货源|匹配原因|为什么选这个/,
+      /why\s*recommend|match\s*reason/i,
+    ],
+  },
+  {
+    intent: "explain_match_risk",
+    patterns: [
+      /不确定|风险|哪里不稳|待确认原因|有什么问题|靠谱吗|不确定点/,
+      /risk|uncertain/i,
+    ],
+  },
+  {
+    intent: "compare_current_candidate",
+    patterns: [
+      /对比候选|候选对比|为什么排第一|排第一|和其他候选|优势在哪|哪个更好/,
+      /compare\s*candidat|why\s*first/i,
+    ],
+  },
+  {
     intent: "propose_candidate_search",
     patterns: [
-      /再找.*候选|重新搜索|重新查找|别的货源|其他货源|换个货源|便宜.*候选|候选.*搜索|搜索候选|还有别的/,
+      /再找.*候选|重新搜索|重新查找|别的货源|其他货源|换个货源|便宜.*候选|候选.*搜索|搜索候选|还有别的|更多候选/,
       /re-?search|other\s*sourc|more\s*candidat|cheaper\s*candidat/i,
     ],
   },
@@ -86,7 +107,7 @@ export function classifyProductsIntentByRules(
     fallbackIntent: "summarize_shop_status",
     emptyClarify: "请输入简短问题，或直接点击上方任务。",
     missClarify:
-      "暂时无法匹配到任务。可试试：当前状态 / 为什么要配定价 / 看待确认 / 去发现新品，或点击上方芯片。",
+      "暂时无法匹配到任务。可试试：当前状态 / 为什么推荐 / 看待确认 / 去发现新品，或点击上方芯片。",
   });
 }
 

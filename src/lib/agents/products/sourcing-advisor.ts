@@ -1,6 +1,7 @@
 import type { AgentResponse } from "@/lib/agents/types";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
+import { handleProductFocusIntent } from "@/lib/agents/products/product-focus-handlers";
 
 /**
  * Sourcing Advisor — rule skeleton for actions + template copy fallback.
@@ -25,6 +26,9 @@ export function handleSourcingAdvisor(
     };
   }
 
+  const focused = handleProductFocusIntent(intent, ctx, ctx.focusCandidates);
+  if (focused) return focused;
+
   switch (intent) {
     case "summarize_shop_status":
       return summarizeStatus(ctx);
@@ -44,13 +48,23 @@ export function handleSourcingAdvisor(
 }
 
 function summarizeStatus(ctx: ProductsPageContext): AgentResponse {
-  const explanation = [
+  const explanation: string[] = [];
+  if (ctx.scanHandoff) {
+    const h = ctx.scanHandoff;
+    explanation.push(
+      `首轮 AI 分析已完成：已分析 ${h.productCount} 个商品，找到 ${h.matchedCount} 个推荐匹配${
+        h.pendingCount > 0 ? `，其中 ${h.pendingCount} 个待你确认` : ""
+      }。`
+    );
+  }
+  explanation.push(
     `已分析在售商品 ${ctx.analyzedCount} 个`,
     `已匹配（含待确认） ${ctx.matchedCount} 个 · 待确认 ${ctx.pendingCount} · 未匹配 ${ctx.unboundCount}`,
+    ctx.purchaseDisplay.summaryLine,
     ctx.pricing.configured
-      ? `定价：${ctx.pricing.summaryLine}`
-      : "定价尚未完成有效配置，建议售价可能不准",
-  ];
+      ? `上架定价：${ctx.pricing.summaryLine}`
+      : "上架定价尚未完成有效配置（发现新品建议售价需先配定价）"
+  );
   if (ctx.recommendedCategoryNames.length > 0) {
     explanation.push(`推荐类目：${ctx.recommendedCategoryNames.join("、")}`);
   }
@@ -274,8 +288,15 @@ function goDiscover(ctx: ProductsPageContext): AgentResponse {
   };
 }
 
-/** Rematch all unbound products via real image search — never touches existing binds. */
+/** Rematch all unbound products — per-product search uses focus handlers. */
 function proposeCandidateSearch(ctx: ProductsPageContext): AgentResponse {
+  if (ctx.focusProductId && ctx.focusProduct) {
+    return handleProductFocusIntent(
+      "propose_candidate_search",
+      ctx,
+      ctx.focusCandidates
+    )!;
+  }
   if (ctx.unboundCount > 0) {
     return {
       agentId: "sourcing_advisor",

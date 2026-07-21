@@ -9,10 +9,12 @@ import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
 import { InfoCard } from "@/components/workbench/info-card";
-import { ScanStage, type ScanTaskStatus } from "@/components/workbench/scan-stage";
+import { AiCopilotScanStage } from "@/components/workbench/ai-copilot-scan-stage";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { useProductsScan } from "@/hooks/use-products-scan";
 import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
+import { consumeScanHandoff, markScanHandoff } from "@/lib/scan/handoff";
+import { scanBriefingLine } from "@/lib/scan/copilot-workflow";
 import { SmartSourcingSummaryBar } from "@/components/select/smart-sourcing-summary-bar";
 import { PricingStrategyRailCard } from "@/components/select/pricing-strategy-rail-card";
 import { PricingTemplateDrawer } from "@/components/select/pricing-template-drawer";
@@ -25,18 +27,28 @@ import { api, readableError } from "@/lib/api";
 import {
   ShopProductsPanel,
   type ShopFilter,
+  type AgentIntentRequest,
 } from "@/components/select/shop-products-panel";
 import { CatalogPublishPanel } from "@/components/select/catalog-publish-panel";
 import { buildProductsPageContext } from "@/lib/agents/products/page-context";
+import {
+  buildProductFocusSnapshot,
+  type CandidateSummary,
+} from "@/lib/agents/products/product-focus-snapshot";
+import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { AgentResponse } from "@/lib/agents/types";
 import { deriveRecommendedCategories } from "@/lib/recommended-categories";
-import type { AiPanelContent, PricingTemplate, ShopMirrorProduct } from "@/lib/types";
+import type {
+  AiPanelContent,
+  ImageBindingView,
+  PricingTemplate,
+  ShopMirrorProduct,
+} from "@/lib/types";
+import type { ScanHandoffPayload } from "@/lib/scan/handoff";
 
 type Tab = "shop" | "catalog";
 
 const BREADCRUMBS = [{ label: "工作台", href: "/" }, { label: "智能选品" }];
-
-const SCAN_DWELL_MS = 900;
 
 interface ProductsSummary {
   shopProducts: number;
@@ -83,9 +95,15 @@ function SelectContent() {
   const [clearingTemplate, setClearingTemplate] = useState(false);
   const [filterSummary, setFilterSummary] = useState<string[]>([]);
   const [focusProductId, setFocusProductId] = useState<string | null>(null);
-  const [highlightProductId, setHighlightProductId] = useState<string | null>(
-    null
+  const [scrollToProductId, setScrollToProductId] = useState<string | null>(null);
+  const [focusCandidateId, setFocusCandidateId] = useState<string | null>(null);
+  const [focusCandidates, setFocusCandidates] = useState<CandidateSummary[]>([]);
+  const [bindingsMap, setBindingsMap] = useState<Record<string, ImageBindingView>>(
+    {}
   );
+  const [scanHandoff, setScanHandoff] = useState<ScanHandoffPayload | null>(null);
+  const [agentIntentRequest, setAgentIntentRequest] =
+    useState<AgentIntentRequest | null>(null);
   const [searchModeProductId, setSearchModeProductId] = useState<string | null>(
     null
   );
@@ -103,9 +121,11 @@ function SelectContent() {
 
   const {
     tasks: scanTasks,
-    recent: scanRecent,
+    stats: scanStats,
+    progressPercent: scanProgressPercent,
     done: scanDone,
     start: startScan,
+    resumeActiveJob,
     cancel: cancelScan,
   } = useProductsScan(shopName);
 
@@ -122,11 +142,14 @@ function SelectContent() {
     ]);
     const confirmed = new Set<string>();
     const pending = new Set<string>();
+    const map: Record<string, ImageBindingView> = {};
     for (const b of bindings) {
+      if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
       if (!b.bound || !b.thirdPlatformItemId) continue;
       if (b.bindStatus === "PENDING") pending.add(b.thirdPlatformItemId);
       else confirmed.add(b.thirdPlatformItemId);
     }
+    setBindingsMap(map);
     setShopProducts(products);
     setTemplate(tpl);
     setSummary({
@@ -142,9 +165,10 @@ function SelectContent() {
     finishedRef.current = true;
     cancelScan();
     markScanned("products", shopName);
+    markScanHandoff(shopName, scanStats);
     await loadSummary();
     setPhase("result");
-  }, [cancelScan, shopName, loadSummary]);
+  }, [cancelScan, shopName, loadSummary, scanStats]);
 
   const startedForShopRef = useRef<string | null>(null);
   useEffect(() => {
@@ -152,25 +176,38 @@ function SelectContent() {
     if (startedForShopRef.current === shopName) return;
     startedForShopRef.current = shopName;
     finishedRef.current = false;
-    if (hasScanned("products", shopName)) {
-      setPhase("result");
-      void loadSummary();
-    } else {
+    void (async () => {
+      const resumed = await resumeActiveJob();
+      if (resumed) {
+        setPhase("scan");
+        return;
+      }
+      if (hasScanned("products", shopName)) {
+        setPhase("result");
+        void loadSummary();
+        return;
+      }
       setPhase("scan");
-      void startScan().then(() => {
-        window.setTimeout(() => void finishToResult(), SCAN_DWELL_MS);
-      });
-    }
-  }, [isAuthorized, shopName, loadSummary, startScan, finishToResult]);
+      await startScan();
+    })();
+  }, [isAuthorized, shopName, loadSummary, startScan, resumeActiveJob, finishToResult]);
+
+  useEffect(() => {
+    if (phase !== "result" || !isAuthorized) return;
+    setScanHandoff(consumeScanHandoff(shopName));
+  }, [phase, isAuthorized, shopName]);
+
+  useEffect(() => {
+    setFocusCandidateId(null);
+    setFocusCandidates([]);
+  }, [focusProductId]);
 
   const restartScan = useCallback(() => {
     finishedRef.current = false;
     clearScanned("products", shopName);
     setPhase("scan");
-    void startScan().then(() => {
-      window.setTimeout(() => void finishToResult(), SCAN_DWELL_MS);
-    });
-  }, [shopName, startScan, finishToResult]);
+    void startScan();
+  }, [shopName, startScan]);
 
   const pendingCount = summary?.pendingProducts ?? 0;
   const unbound =
@@ -182,6 +219,17 @@ function SelectContent() {
 
   const analysisReady = phase === "result" && summary != null;
   const previewPricingGuide = searchParams.get("previewPricingGuide") === "1";
+
+  const shopCurrencyHint = shopProducts[0]?.currency ?? null;
+
+  const focusProductSnapshot = useMemo(() => {
+    if (!focusProductId) return null;
+    const product = shopProducts.find(
+      (p) => p.thirdPlatformItemId === focusProductId
+    );
+    if (!product) return null;
+    return buildProductFocusSnapshot(product, bindingsMap[focusProductId]);
+  }, [focusProductId, shopProducts, bindingsMap]);
 
   const openPricingDrawer = useCallback(() => {
     if (!isAuthorized) {
@@ -209,6 +257,11 @@ function SelectContent() {
         filterSummary,
         template,
         focusProductId,
+        focusCandidateId,
+        focusProduct: focusProductSnapshot,
+        focusCandidates,
+        scanHandoff,
+        shopCurrencyHint,
       }),
     [
       phase,
@@ -225,7 +278,92 @@ function SelectContent() {
       filterSummary,
       template,
       focusProductId,
+      focusCandidateId,
+      focusProductSnapshot,
+      focusCandidates,
+      scanHandoff,
+      shopCurrencyHint,
     ]
+  );
+
+  const syncSummaryFromShopData = useCallback(
+    (
+      products: ShopMirrorProduct[],
+      bindings: Record<string, ImageBindingView>
+    ) => {
+      const confirmed = new Set<string>();
+      const pending = new Set<string>();
+      for (const b of Object.values(bindings)) {
+        if (!b.bound || !b.thirdPlatformItemId) continue;
+        if (b.bindStatus === "PENDING") pending.add(b.thirdPlatformItemId);
+        else confirmed.add(b.thirdPlatformItemId);
+      }
+      setShopProducts(products);
+      setBindingsMap(bindings);
+      setSummary({
+        shopProducts: products.length,
+        confirmedProducts: confirmed.size,
+        pendingProducts: pending.size,
+      });
+    },
+    []
+  );
+
+  const agentPanelContext = useMemo(() => {
+    if (!agentIntentRequest) return pageContext;
+    const {
+      productId,
+      focusCandidateId: reqCandidateId,
+      focusCandidates: reqCandidates,
+    } = agentIntentRequest;
+    const product = shopProducts.find(
+      (p) => p.thirdPlatformItemId === productId
+    );
+    if (!product) return pageContext;
+    return {
+      ...pageContext,
+      focusProductId: productId,
+      focusProduct: buildProductFocusSnapshot(product, bindingsMap[productId]),
+      focusCandidateId:
+        reqCandidateId ??
+        (productId === focusProductId ? focusCandidateId : null),
+      focusCandidates:
+        reqCandidates ??
+        (productId === focusProductId ? focusCandidates : []),
+    };
+  }, [
+    agentIntentRequest,
+    pageContext,
+    shopProducts,
+    bindingsMap,
+    focusProductId,
+    focusCandidateId,
+    focusCandidates,
+  ]);
+
+  const requestAgentIntent = useCallback(
+    (
+      intent: ProductsIntentId,
+      productId: string,
+      opts?: {
+        focusCandidateId?: string | null;
+        focusCandidates?: CandidateSummary[];
+      }
+    ) => {
+      setFocusProductId(productId);
+      setScrollToProductId(productId);
+      if (opts?.focusCandidates) {
+        setFocusCandidates(opts.focusCandidates);
+        setFocusCandidateId(opts.focusCandidateId ?? null);
+      }
+      setAgentIntentRequest({
+        intent,
+        productId,
+        focusCandidateId: opts?.focusCandidateId,
+        focusCandidates: opts?.focusCandidates,
+      });
+    },
+    []
   );
 
   const focusProduct = useCallback(
@@ -237,11 +375,10 @@ function SelectContent() {
         setShopFilter("unbound");
       }
       setFocusProductId(productId);
-      setHighlightProductId(productId);
+      setScrollToProductId(productId);
       if (opts?.openSearch) {
         setSearchModeProductId(productId);
       }
-      window.setTimeout(() => setHighlightProductId(null), 2800);
     },
     [setTab, pendingMinis, unboundMinis]
   );
@@ -262,14 +399,12 @@ function SelectContent() {
         if (action.tab) setTab(action.tab);
         if (action.shopFilter) setShopFilter(action.shopFilter);
         if (action.shopFilter === "pending" && pendingMinis[0]) {
-          setHighlightProductId(pendingMinis[0].productId);
           setFocusProductId(pendingMinis[0].productId);
-          window.setTimeout(() => setHighlightProductId(null), 2800);
+          setScrollToProductId(pendingMinis[0].productId);
         }
         if (action.shopFilter === "unbound" && unboundMinis[0]) {
-          setHighlightProductId(unboundMinis[0].productId);
           setFocusProductId(unboundMinis[0].productId);
-          window.setTimeout(() => setHighlightProductId(null), 2800);
+          setScrollToProductId(unboundMinis[0].productId);
         }
       }
       if (action.kind === "focus_product" && action.productId) {
@@ -402,29 +537,26 @@ function SelectContent() {
         ? { label: `为 ${unbound} 个商品查找货源`, onClick: () => jumpToShopFilter("unbound") }
         : { label: "进入 SKU 绑定", href: "/sku-align" };
 
-  const scanStatusLabel = (s: ScanTaskStatus, resultText?: string | null) => {
-    if (s === "running") return "进行中…";
-    if (s === "done") return resultText ?? "完成";
-    if (s === "failed") return "失败";
-    if (s === "skipped") return resultText ?? "跳过";
-    return "待处理";
-  };
   const scanCopilot: AiPanelContent = {
-    title: "正在自动选品",
+    title: scanDone ? "首轮分析已完成" : "AI 正在分析",
     summary: scanDone
-      ? "首轮自动处理已完成，正在进入智能选品结果。"
-      : "我正在同步店铺商品，并为未关联的在售商品自动图搜关联 Tangbuy 货源。",
-    bullets: scanTasks.map((t) => `${t.label}：${scanStatusLabel(t.status, t.resultText)}`),
-    nextAction: { label: scanDone ? "查看结果" : "直接查看当前结果", action: "view" },
+      ? scanBriefingLine(scanStats)
+      : "同步商品、匹配货源并读取订单",
+    bullets: [],
+    nextAction: scanDone
+      ? { label: "查看 AI 推荐结果", action: "view" }
+      : undefined,
   };
 
   const rail = (
     <AssistantRail
       assistantContent={
         <ProductsAgentPanel
-          context={pageContext}
+          context={agentPanelContext}
           pendingMinis={pendingMinis}
           unboundMinis={unboundMinis}
+          intentRequest={agentIntentRequest}
+          onIntentRequestConsumed={() => setAgentIntentRequest(null)}
           onApplySuggestedAction={(action) =>
             applyAgentAction({
               agentId: "orchestrator",
@@ -498,16 +630,9 @@ function SelectContent() {
                 <CopilotCard
                   content={scanCopilot}
                   onNextAction={(a) => {
-                    if (a === "view") void finishToResult();
+                    if (a === "view" && scanDone) void finishToResult();
                   }}
                 />
-                <InfoCard title="这一步在做什么">
-                  <ul className="space-y-1.5">
-                    <li>同步 Shopify 在售商品镜像</li>
-                    <li>为未关联商品自动图搜并绑定 Tangbuy 货源</li>
-                    <li>生成 Tangbuy 商城可上架候选</li>
-                  </ul>
-                </InfoCard>
               </>
             }
           />
@@ -515,15 +640,19 @@ function SelectContent() {
         {...wb.shellProps}
       >
         <WorkbenchPanel
-          title="智能选品"
+          title={scanDone ? "AI 已完成首轮选品分析" : "AI 正在分析你的店铺"}
+          description={
+            scanDone
+              ? undefined
+              : "正在同步商品、匹配供应链，并读取店铺经营数据。"
+          }
           breadcrumbs={BREADCRUMBS}
           {...wb.panelProps}
         >
-          <ScanStage
-            heading="首轮自动选品"
-            description="系统正在用真实接口同步商品并自动图搜关联货源，可随时直接查看当前结果。"
+          <AiCopilotScanStage
             tasks={scanTasks}
-            recent={scanRecent}
+            stats={scanStats}
+            progressPercent={scanProgressPercent}
             done={scanDone}
             onViewResult={() => void finishToResult()}
           />
@@ -597,11 +726,21 @@ function SelectContent() {
                 onActivity={loadSummary}
                 filter={shopFilter}
                 onFilterChange={setShopFilter}
-                highlightProductId={highlightProductId}
+                focusProductId={focusProductId}
+                scrollToProductId={scrollToProductId}
+                onScrollToConsumed={() => setScrollToProductId(null)}
                 searchModeProductId={searchModeProductId}
                 rematchUnboundSignal={rematchUnboundSignal}
                 onSearchModeConsumed={() => setSearchModeProductId(null)}
                 onProductFocus={(id) => setFocusProductId(id)}
+                onBindingsChange={setBindingsMap}
+                onShopProductsChange={syncSummaryFromShopData}
+                onAgentIntent={requestAgentIntent}
+                onCandidateContextChange={(productId, ctx) => {
+                  if (productId !== focusProductId) return;
+                  setFocusCandidateId(ctx.candidateId);
+                  setFocusCandidates(ctx.candidates);
+                }}
                 onMinisChange={({ pending, unbound }) => {
                   setPendingMinis(pending);
                   setUnboundMinis(unbound);

@@ -13,6 +13,17 @@ function isPricingIntent(id: ProductsIntentId): boolean {
   return id === "explain_pricing" || id === "configure_pricing";
 }
 
+export const PRODUCT_FOCUS_INTENTS: ProductsIntentId[] = [
+  "explain_match_reason",
+  "explain_match_risk",
+  "compare_current_candidate",
+];
+
+/** Per-product actions live on the product card — not duplicated in the rail. */
+export function productFocusChips(_ctx: ProductsPageContext): ProductsIntentId[] {
+  return [];
+}
+
 /**
  * Single top-priority task for the rail — short, one CTA.
  */
@@ -113,10 +124,7 @@ export function railTaskChips(
 
   push("summarize_shop_status");
   if (ctx.pendingCount > 0) push("go_pending");
-  if (ctx.unboundCount > 0) {
-    push("go_unbound");
-    push("propose_candidate_search");
-  }
+  if (ctx.unboundCount > 0) push("go_unbound");
   if (ctx.tab === "catalog" || (ctx.pendingCount === 0 && ctx.unboundCount === 0)) {
     push("suggest_filters");
     push("go_discover");
@@ -129,7 +137,9 @@ export function railTaskChips(
   if (!ordered.includes(pricingId)) ordered.push(pricingId);
 
   return ordered.filter(
-    (id) => id !== excludeIntent || isPricingIntent(id)
+    (id) =>
+      (id !== excludeIntent || isPricingIntent(id)) &&
+      !PRODUCT_FOCUS_INTENTS.includes(id)
   );
 }
 

@@ -49,5 +49,9 @@ export function productsContextFingerprint(ctx: ProductsPageContext): string {
     ctx.pricing.summaryLine,
     ctx.focusProductId ?? "",
     ctx.focusCandidateId ?? "",
+    ctx.focusProduct?.bindState ?? "",
+    ctx.focusCandidates.map((c) => c.productId).join(","),
+    ctx.purchaseDisplay.exchangeRate,
+    ctx.scanHandoff?.matchedCount ?? "",
   ].join("|");
 }

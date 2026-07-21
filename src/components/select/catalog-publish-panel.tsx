@@ -12,8 +12,11 @@ import { api, readableError } from "@/lib/api";
 import {
   fetchRecommendations,
   repriceRecommendations,
-  toPurchasePriceUsd,
 } from "@/lib/catalog-recommendations";
+import {
+  listingPurchaseCostDisplay,
+  resolveListingPricingContext,
+} from "@/lib/listing-pricing";
 import {
   createSavedSearch,
   loadFiltersCollapsed,
@@ -330,7 +333,7 @@ export function CatalogPublishPanel({
     if (current?.loading) return;
     if (
       !window.confirm(
-        `确认将「${item.title}」以 ${money(
+        `确认将「${item.title}」以建议售价 ${money(
           item.estimatedSalePrice,
           item.targetCurrency
         )} 上架到店铺 ${shopName}？`
@@ -371,15 +374,17 @@ export function CatalogPublishPanel({
   };
 
   const purchasePriceById = useMemo(() => {
-    const rate = template?.exchangeRate ?? 0;
+    const listingCtx = resolveListingPricingContext(template);
     const map: Record<string, number | null> = {};
+    if (!listingCtx) return map;
     for (const item of recommendations) {
-      map[item.candidateId] = toPurchasePriceUsd(item.price, rate);
+      map[item.candidateId] = listingPurchaseCostDisplay(item.price, listingCtx);
     }
     return map;
   }, [recommendations, template]);
 
-  const targetCurrency = template?.targetCurrency ?? "USD";
+  const listingCtx = resolveListingPricingContext(template);
+  const targetCurrency = listingCtx?.targetCurrency ?? "USD";
 
   const filtersNode = (
     <SmartSourcingFilters

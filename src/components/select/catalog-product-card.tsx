@@ -99,10 +99,10 @@ export function CatalogProductCard({
 
       <div className="mt-1.5">
         <p className="text-sm font-semibold text-brand-strong">
-          预估售价 {money(item.estimatedSalePrice, item.targetCurrency ?? targetCurrency)}
+          建议售价 {money(item.estimatedSalePrice, item.targetCurrency ?? targetCurrency)}
         </p>
         <p className="mt-0.5 text-xs font-medium text-ink">
-          采购价 {money(purchasePriceUsd, targetCurrency)}
+          采购成本 {money(purchasePriceUsd, targetCurrency)}
         </p>
         {item.price != null ? (
           <p className="mt-0.5 text-[11px] text-ink-subtle">

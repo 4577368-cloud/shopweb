@@ -8,6 +8,7 @@ import {
   type ProductsIntentId,
 } from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
+import type { AgentIntentRequest } from "@/components/select/shop-products-panel";
 import {
   computeActiveTask,
   railTaskChips,
@@ -33,6 +34,9 @@ export interface ProductsAgentPanelProps {
   context: ProductsPageContext;
   pendingMinis?: ShopProductMini[];
   unboundMinis?: ShopProductMini[];
+  /** External trigger (e.g. product card explain links). */
+  intentRequest?: AgentIntentRequest | null;
+  onIntentRequestConsumed?: () => void;
   onApplySuggestedAction?: (action: AgentSuggestedAction) => void;
   onFocusProduct?: (productId: string, opts?: { openSearch?: boolean }) => void;
   className?: string;
@@ -50,6 +54,8 @@ export function ProductsAgentPanel({
   context,
   pendingMinis = [],
   unboundMinis = [],
+  intentRequest = null,
+  onIntentRequestConsumed,
   onApplySuggestedAction,
   onFocusProduct,
   className,
@@ -72,9 +78,17 @@ export function ProductsAgentPanel({
     [context, activeTask.intent]
   );
   const { primary, more } = useMemo(
-    () => splitProductChips(orderedChips, 3),
+    () => splitProductChips(orderedChips, 2),
     [orderedChips]
   );
+
+  const chipClass = (active: boolean) =>
+    cn(
+      "rounded border px-1.5 py-0.5 text-[10px] font-medium leading-4 transition-colors disabled:opacity-50",
+      active
+        ? "border-slate-400 bg-slate-100 text-slate-800"
+        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+    );
 
   const dispatchAction = (action: AgentSuggestedAction) => {
     onApplySuggestedAction?.(action);
@@ -106,16 +120,29 @@ export function ProductsAgentPanel({
       });
   };
 
-  // First ready: only show fact summary; do not auto-open a report card.
+  // First ready: auto-load shop status (includes scan handoff when present).
   useEffect(() => {
     if (!context.authorized || !context.analysisReady) return;
-    const key = context.shopName;
+    const key = `${context.shopName}:${context.scanHandoff?.at ?? "steady"}`;
     if (autoKey.current === key) return;
     autoKey.current = key;
-    // Soft-load status into execution area once (facts + optional LLM lines, no CTA).
     runIntent("summarize_shop_status");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [context.authorized, context.analysisReady, context.shopName]);
+  }, [
+    context.authorized,
+    context.analysisReady,
+    context.shopName,
+    context.scanHandoff?.at,
+  ]);
+
+  useEffect(() => {
+    if (!intentRequest) return;
+    if (context.focusProductId !== intentRequest.productId) return;
+    if (!context.focusProduct) return;
+    runIntent(intentRequest.intent);
+    onIntentRequestConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intentRequest, context.focusProductId, context.focusProduct]);
 
   const submitShortInput = () => {
     const text = input.trim();
@@ -176,11 +203,16 @@ export function ProductsAgentPanel({
         }}
       />
 
-      <div>
-        <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-          相关任务
+      {context.focusProduct ? (
+        <p className="line-clamp-1 text-[10px] text-slate-500">
+          <span className="text-slate-400">已选</span>
+          <span className="mx-1 text-slate-300">·</span>
+          {context.focusProduct.title}
         </p>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+      ) : null}
+
+      {primary.length > 0 || more.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1">
           {primary.map((id) => {
             const active = activeIntent === id;
             return (
@@ -189,12 +221,7 @@ export function ProductsAgentPanel({
                 type="button"
                 disabled={loading}
                 onClick={() => runIntent(id)}
-                className={cn(
-                  "rounded-full border px-2.5 py-1 text-left text-xs transition-colors disabled:opacity-60",
-                  active
-                    ? "border-emerald-700 bg-emerald-700 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-                )}
+                className={chipClass(active)}
               >
                 {chipLabel(id)}
               </button>
@@ -206,18 +233,18 @@ export function ProductsAgentPanel({
                 type="button"
                 disabled={loading}
                 onClick={() => setMoreOpen((v) => !v)}
-                className="inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                className={cn(chipClass(false), "inline-flex items-center gap-0.5")}
               >
                 更多
-                <ChevronDown className="h-3 w-3" />
+                <ChevronDown className="h-2.5 w-2.5" />
               </button>
               {moreOpen ? (
-                <div className="absolute right-0 z-20 mt-1 min-w-[9rem] rounded-md border border-slate-200 bg-white py-1 shadow-md">
+                <div className="absolute right-0 z-20 mt-0.5 min-w-[7.5rem] rounded-md border border-slate-200 bg-white py-0.5 shadow-md">
                   {more.map((id) => (
                     <button
                       key={id}
                       type="button"
-                      className="block w-full px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50"
+                      className="block w-full px-2 py-1 text-left text-[10px] text-slate-700 hover:bg-slate-50"
                       onClick={() => runIntent(id)}
                     >
                       {chipLabel(id)}
@@ -228,7 +255,7 @@ export function ProductsAgentPanel({
             </div>
           ) : null}
         </div>
-      </div>
+      ) : null}
 
       <form
         className="flex items-center gap-1.5"

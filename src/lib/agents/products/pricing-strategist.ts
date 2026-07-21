@@ -76,7 +76,8 @@ export function handlePricingStrategist(
       summary: "定价已就绪",
       explanation: [
         pricing.summaryLine,
-        "建议售价路径：采购价（RMB）→ 乘汇率换成目标币 → 乘倍率 → 加固定加价 → 按取整规则。",
+        "上架定价路径：采购价（RMB）→ 乘汇率 → 乘倍率 → 加固定加价 → 取整（仅用于发现新品建议售价）。",
+        "我的 Shopify 已关联商品的采购成本展示不走倍率加价，见 purchaseDisplay 摘要。",
         "右侧策略卡可随时调整；主区继续负责选品与上架执行。",
       ],
       nextSteps: [
@@ -99,9 +100,10 @@ export function handlePricingStrategist(
     intent: "explain_pricing",
     summary: "为什么要先配定价",
     explanation: [
-      "未配置有效定价时，系统只能用默认汇率与倍率估算售价，容易偏离你的目标毛利。",
+      "未配置有效定价时，系统只能用默认汇率与倍率估算发现新品售价，容易偏离你的目标毛利。",
       pricing.summaryLine,
-      "先配好模板，再去做待确认、未匹配或发现新品，建议售价才会可信。",
+      ctx.purchaseDisplay.summaryLine,
+      "先配好上架定价模板，再去做发现新品筛选；已关联商品的采购价展示不受此模板倍率影响。",
     ],
     nextSteps: ["点击下方「去配置定价」或策略卡「立即配置」", "保存模板后再继续选品"],
     suggestedAction: {

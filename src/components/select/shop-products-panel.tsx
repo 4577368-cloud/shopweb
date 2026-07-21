@@ -26,7 +26,6 @@ import type {
   ImageSearchProduct,
   ImageSearchResult,
   OfferDetail,
-  PricingTemplate,
   ShopMirrorProduct,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -35,14 +34,27 @@ import {
   type ShopProductMini,
 } from "@/lib/agents/products/shop-minis";
 import {
-  costInTargetCurrency,
+  costInPurchaseDisplayCurrency,
+  formatPurchaseCostMoney,
+  resolvePurchaseCostDisplayContext,
+} from "@/lib/purchase-cost-display";
+import {
   formatTargetMoney,
   normalizeMatchScore,
   parseGatewayPrice,
-  pickBestCandidateIndex,
-  profitPerOrder,
+  profitPerOrderPurchaseDisplay,
   rankCandidates,
 } from "@/lib/agents/products/match-rank";
+import type { ProductsIntentId } from "@/lib/agents/products/intents";
+import type { CandidateSummary } from "@/lib/agents/products/product-focus-snapshot";
+import { buildTrayInlineReasons } from "@/lib/agents/products/candidate-tray-explain";
+
+export interface AgentIntentRequest {
+  intent: ProductsIntentId;
+  productId: string;
+  focusCandidateId?: string | null;
+  focusCandidates?: CandidateSummary[];
+}
 
 /**
  * Map backend image-search errors to a readable, category-specific message.
@@ -165,41 +177,19 @@ function parsePrice(raw?: string | null): number | null {
   return nums.length ? Math.min(...nums) : null;
 }
 
-/** 预估毛利:货源采购价(¥)按定价模板汇率换算成目标币成本,与当前 Shopify 售价对比。 */
-interface MarginEstimate {
-  pct: number;
-  costInTarget: number;
-  currency: string;
-  rate: number;
-}
-
-/**
- * Only produced when sale price, cost and rate are all known and the product's currency matches the
- * template's target currency — otherwise null (we never fabricate a margin %). Cost is converted as
- * CNY ÷ exchangeRate (rate = source units per 1 target, e.g. 6.5 CNY/USD). Uses only the exchange
- * rate (not multiplier/addend, which shape a *new* sale price for publishing, not an existing one).
- */
-function marginEstimate(
-  shopPrice: number | null,
-  shopCurrency: string | null | undefined,
+function formatPurchaseCostLabel(
   costCny: number | null,
-  template: PricingTemplate | null
-): MarginEstimate | null {
-  if (!template || shopPrice == null || shopPrice <= 0 || costCny == null || costCny <= 0) {
-    return null;
+  shopCurrency: string | null | undefined,
+  fallbackRaw?: string | null
+): string {
+  const ctx = resolvePurchaseCostDisplayContext(shopCurrency);
+  const inTarget = costInPurchaseDisplayCurrency(costCny, ctx);
+  if (inTarget != null) {
+    return `采购价 ${formatPurchaseCostMoney(inTarget, ctx.currency)}`;
   }
-  const rate = template.exchangeRate;
-  if (!Number.isFinite(rate) || rate <= 0) return null;
-  const target = (template.targetCurrency ?? "").toUpperCase();
-  const cur = (shopCurrency ?? "").toUpperCase();
-  if (cur && target && cur !== target) return null;
-  const costInTarget = costCny / rate;
-  return {
-    pct: Math.round(((shopPrice - costInTarget) / shopPrice) * 100),
-    costInTarget,
-    currency: target || cur || "",
-    rate,
-  };
+  if (fallbackRaw) return `采购价 ${formatCny(fallbackRaw)}`;
+  if (costCny != null) return `采购价 ¥${costCny}`;
+  return "采购价待取";
 }
 
 function fmtMoney(n: number, currency?: string): string {
@@ -283,18 +273,26 @@ export function ShopProductsPanel({
   onActivity,
   filter: filterProp,
   onFilterChange,
-  highlightProductId = null,
+  focusProductId = null,
+  scrollToProductId = null,
+  onScrollToConsumed,
   searchModeProductId = null,
   rematchUnboundSignal = 0,
   onSearchModeConsumed,
   onProductFocus,
   onMinisChange,
+  onBindingsChange,
+  onShopProductsChange,
+  onAgentIntent,
+  onCandidateContextChange,
 }: {
   onActivity?: () => void;
   /** Optional controlled filter — lets the page's top CTA jump straight to e.g. 待确认. */
   filter?: ShopFilter;
   onFilterChange?: (f: ShopFilter) => void;
-  highlightProductId?: string | null;
+  focusProductId?: string | null;
+  scrollToProductId?: string | null;
+  onScrollToConsumed?: () => void;
   searchModeProductId?: string | null;
   /** Increment to force re-image-search all unbound products (never touches existing binds). */
   rematchUnboundSignal?: number;
@@ -304,6 +302,23 @@ export function ShopProductsPanel({
     pending: ShopProductMini[];
     unbound: ShopProductMini[];
   }) => void;
+  onBindingsChange?: (bindings: Record<string, ImageBindingView>) => void;
+  onShopProductsChange?: (
+    products: ShopMirrorProduct[],
+    bindings: Record<string, ImageBindingView>
+  ) => void;
+  onAgentIntent?: (
+    intent: ProductsIntentId,
+    productId: string,
+    opts?: {
+      focusCandidateId?: string | null;
+      focusCandidates?: CandidateSummary[];
+    }
+  ) => void;
+  onCandidateContextChange?: (
+    productId: string,
+    ctx: { candidateId: string | null; candidates: CandidateSummary[] }
+  ) => void;
 }) {
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
@@ -314,7 +329,6 @@ export function ShopProductsPanel({
   const [batchAcking, setBatchAcking] = useState(false);
   const [products, setProducts] = useState<ShopMirrorProduct[]>([]);
   const [internalFilter, setInternalFilter] = useState<ShopFilter>("all");
-  const [template, setTemplate] = useState<PricingTemplate | null>(null);
   const minisFpRef = useRef("");
   const filter = filterProp ?? internalFilter;
   const setFilter = useCallback(
@@ -332,18 +346,18 @@ export function ShopProductsPanel({
     setLoading(true);
     setError(null);
     try {
-      const [items, bound, tpl] = await Promise.all([
+      const [items, bound] = await Promise.all([
         api.getShopProducts(shopName),
         api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
-        api.getPricingTemplate(shopName).catch(() => null),
       ]);
       setProducts(items);
-      setTemplate(tpl);
       const map: Record<string, ImageBindingView> = {};
       for (const b of bound) {
         if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
       }
       setBindings(map);
+      onBindingsChange?.(map);
+      onShopProductsChange?.(items, map);
     } catch (err) {
       setError(readableError(err));
     } finally {
@@ -353,140 +367,42 @@ export function ShopProductsPanel({
 
   const handleBound = useCallback(
     (itemId: string, view: ImageBindingView) => {
-      setBindings((prev) => ({ ...prev, [itemId]: view }));
+      setBindings((prev) => {
+        const next = { ...prev, [itemId]: view };
+        onBindingsChange?.(next);
+        return next;
+      });
       onActivity?.();
     },
-    [onActivity]
-  );
-
-  const autoMatchedShopRef = useRef<string | null>(null);
-
-  /** Enter page: real image-match only for unbound products; never rebind existing associations. */
-  const autoMatchUnbound = useCallback(
-    async (
-      items: ShopMirrorProduct[],
-      boundMap: Record<string, ImageBindingView>,
-      shouldAbort?: () => boolean
-    ) => {
-      const targets = items.filter(
-        (p) => !boundMap[p.thirdPlatformItemId]?.bound && p.primaryImageUrl
-      );
-      if (targets.length === 0) return 0;
-      let linked = 0;
-      const queue = [...targets];
-      const worker = async () => {
-        while (queue.length > 0) {
-          if (shouldAbort?.()) return;
-          const p = queue.shift();
-          if (!p) return;
-          try {
-            const res = await api.imageSearch(shopName, p.thirdPlatformItemId, 5);
-            if (shouldAbort?.()) return;
-            const bestIdx = pickBestCandidateIndex(res.items ?? []);
-            const cand = res.items?.[bestIdx];
-            if (!cand) continue;
-            const view = await api.confirmImageMatch({
-              shopName,
-              thirdPlatformItemId: p.thirdPlatformItemId,
-              offerProductId: cand.productId,
-              offerSkuId: cand.skuId,
-              detailUrl: cand.detailUrl,
-              similarityScore: cand.similarityScore,
-              imageSource: res.imageSource,
-              querySource: res.querySource,
-              appliedQuery: res.appliedQuery,
-              offerImageUrl: cand.imageUrl,
-              offerPrice: cand.price,
-              auto: true,
-            });
-            if (shouldAbort?.()) return;
-            setBindings((prev) => ({
-              ...prev,
-              [p.thirdPlatformItemId]: view,
-            }));
-            linked += 1;
-          } catch {
-            /* fail-open per product */
-          }
-        }
-      };
-      await Promise.all(
-        Array.from(
-          { length: Math.min(2, targets.length) },
-          () => worker()
-        )
-      );
-      return linked;
-    },
-    [shopName]
+    [onActivity, onBindingsChange]
   );
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      await load();
-      if (cancelled) return;
-      if (autoMatchedShopRef.current === shopName) return;
-      try {
-        const [items, bound] = await Promise.all([
-          api.getShopProducts(shopName),
-          api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
-        ]);
-        if (cancelled) return;
-        const map: Record<string, ImageBindingView> = {};
-        for (const b of bound) {
-          if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
-        }
-        const n = await autoMatchUnbound(items, map, () => cancelled);
-        if (cancelled) return;
-        autoMatchedShopRef.current = shopName;
-        if (n > 0) {
-          onActivity?.();
-          showToast(`已自动匹配 ${n} 个未关联商品`);
-        }
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount / shop change only
   }, [shopName]);
 
-  // Rail「重搜候选」: force rematch all currently unbound products.
+  // Rail「重搜候选」: enqueue server-side rematch for all unbound products.
   const rematchSignalSeen = useRef(0);
   useEffect(() => {
     if (!rematchUnboundSignal || rematchUnboundSignal === rematchSignalSeen.current) {
       return;
     }
     rematchSignalSeen.current = rematchUnboundSignal;
-    let cancelled = false;
     void (async () => {
       try {
-        const [items, bound] = await Promise.all([
-          api.getShopProducts(shopName),
-          api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
-        ]);
-        if (cancelled) return;
-        const map: Record<string, ImageBindingView> = {};
-        for (const b of bound) {
-          if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
-        }
         setFilter("unbound");
-        const n = await autoMatchUnbound(items, map, () => cancelled);
-        if (cancelled) return;
-        onActivity?.();
+        const job = await api.startMatchQueue(shopName);
         showToast(
-          n > 0 ? `已为 ${n} 个未匹配商品重新图搜` : "暂无未匹配商品可重搜"
+          job.total > 0
+            ? `已加入图搜队列（${job.total} 个商品）`
+            : "暂无未匹配商品可重搜"
         );
+        onActivity?.();
       } catch {
-        if (!cancelled) showToast("重搜失败，请稍后重试");
+        showToast("重搜失败，请稍后重试");
       }
     })();
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rematchUnboundSignal]);
 
@@ -496,19 +412,13 @@ export function ShopProductsPanel({
     try {
       const result = await api.syncShopProducts(shopName);
       await load();
-      // After sync, match any newly unbound products (never touch existing binds).
       try {
-        const [items, bound] = await Promise.all([
-          api.getShopProducts(shopName),
-          api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
-        ]);
-        const map: Record<string, ImageBindingView> = {};
-        for (const b of bound) {
-          if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
+        const job = await api.startMatchQueue(shopName);
+        if (job.total > 0) {
+          showToast(`已同步 ${result.productCount} 个商品，图搜队列处理 ${job.total} 个未关联`);
+        } else {
+          showToast(`已同步，店铺共 ${result.productCount} 个商品`);
         }
-        const n = await autoMatchUnbound(items, map);
-        if (n > 0) showToast(`已同步 ${result.productCount} 个商品，并自动匹配 ${n} 个`);
-        else showToast(`已同步，店铺共 ${result.productCount} 个商品`);
       } catch {
         showToast(`已同步，店铺共 ${result.productCount} 个商品`);
       }
@@ -604,12 +514,13 @@ export function ShopProductsPanel({
   }, [products, bindings]);
 
   useEffect(() => {
-    if (!highlightProductId) return;
+    if (!scrollToProductId) return;
     const el = document.querySelector(
-      `[data-product-id="${CSS.escape(highlightProductId)}"]`
+      `[data-product-id="${CSS.escape(scrollToProductId)}"]`
     );
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [highlightProductId, filtered]);
+    onScrollToConsumed?.();
+  }, [scrollToProductId, filtered, onScrollToConsumed]);
 
   return (
     <>
@@ -698,13 +609,14 @@ export function ShopProductsPanel({
               item={p}
               shopName={shopName}
               binding={bindings[p.thirdPlatformItemId] ?? null}
-              template={template}
               onBound={handleBound}
               onOpenDetail={() => setDetailItemId(p.thirdPlatformItemId)}
-              highlighted={highlightProductId === p.thirdPlatformItemId}
+              focused={focusProductId === p.thirdPlatformItemId}
               searchModeRequested={searchModeProductId === p.thirdPlatformItemId}
               onSearchModeConsumed={onSearchModeConsumed}
               onFocus={() => onProductFocus?.(p.thirdPlatformItemId)}
+              onAgentIntent={onAgentIntent}
+              onCandidateContextChange={onCandidateContextChange}
             />
           ))}
         </div>
@@ -728,24 +640,36 @@ function ShopProductCard({
   item,
   shopName,
   binding,
-  template,
   onBound,
   onOpenDetail,
-  highlighted = false,
+  focused = false,
   searchModeRequested = false,
   onSearchModeConsumed,
   onFocus,
+  onAgentIntent,
+  onCandidateContextChange,
 }: {
   item: ShopMirrorProduct;
   shopName: string;
   binding: ImageBindingView | null;
-  template: PricingTemplate | null;
   onBound: (itemId: string, view: ImageBindingView) => void;
   onOpenDetail: () => void;
-  highlighted?: boolean;
+  focused?: boolean;
   searchModeRequested?: boolean;
   onSearchModeConsumed?: () => void;
   onFocus?: () => void;
+  onAgentIntent?: (
+    intent: ProductsIntentId,
+    productId: string,
+    opts?: {
+      focusCandidateId?: string | null;
+      focusCandidates?: CandidateSummary[];
+    }
+  ) => void;
+  onCandidateContextChange?: (
+    productId: string,
+    ctx: { candidateId: string | null; candidates: CandidateSummary[] }
+  ) => void;
 }) {
   const { showToast } = useOnboarding();
   const hasImage = Boolean(item.primaryImageUrl);
@@ -776,6 +700,7 @@ function ShopProductCard({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [acking, setAcking] = useState(false);
   const [unbinding, setUnbinding] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
 
   const boundOfferId =
     binding?.bound && binding.tangbuyProductId ? binding.tangbuyProductId : null;
@@ -917,6 +842,7 @@ function ShopProductCard({
         offerPrice: candidate.price,
       });
       onBound(item.thirdPlatformItemId, view);
+      setTrayOpen(false);
       showToast(boundOfferId ? "已改绑货源" : "已绑定货源");
     } catch (err) {
       setConfirmError(imageMatchError(err));
@@ -961,38 +887,114 @@ function ShopProductCard({
     }
   };
 
+  // "驳回": unbind the AI suggestion and enqueue a single-item rematch.
+  const rejectBinding = async () => {
+    if (rejecting || !binding?.bound || !bindPending) return;
+    const ok = window.confirm("驳回后将解除当前推荐并重新图搜匹配，确定？");
+    if (!ok) return;
+    setRejecting(true);
+    setConfirmError(null);
+    try {
+      await api.unbindImageBinding(shopName, item.thirdPlatformItemId);
+      onBound(item.thirdPlatformItemId, { bound: false });
+      setResult(null);
+      setCurrentIdx(0);
+      await api.startMatchQueue(shopName, item.thirdPlatformItemId);
+      showToast("已驳回，正在重新匹配");
+    } catch (err) {
+      setConfirmError(imageMatchError(err));
+    } finally {
+      setRejecting(false);
+    }
+  };
+
   const candidates = result?.items ?? null;
   const current = candidates?.[currentIdx] ?? null;
-  // Right tile shows the active search candidate when searching, else the bound source, else a CTA.
-  const rightMode: "candidate" | "bound" | "empty" = current
+
+  const candidateSummaries = useMemo((): CandidateSummary[] => {
+    if (!candidates?.length) return [];
+    return candidates.map((c, idx) => ({
+      productId: c.productId,
+      title: c.title ?? null,
+      priceCny: parseGatewayPrice(c.price),
+      matchScore:
+        matchScores[c.productId] ?? normalizeMatchScore(c.similarityScore),
+      rank: idx,
+      soldCount: c.soldCount,
+      repurchaseRate: c.repurchaseRate,
+      inventory: c.inventory,
+    }));
+  }, [candidates, matchScores]);
+
+  const shopPrice = item.minPrice ?? item.maxPrice ?? null;
+  const shopCurrency = item.currency;
+
+  const trayInlineReasons = useMemo(() => {
+    if (candidateSummaries.length === 0) return {};
+    return buildTrayInlineReasons(candidateSummaries, {
+      shopPrice,
+      shopCurrency: shopCurrency ?? null,
+      recommendedProductId:
+        candidates?.[recommendedIdx]?.productId ?? null,
+      currentCandidateId: current?.productId ?? null,
+      boundOfferId,
+      bindPending,
+    });
+  }, [
+    candidateSummaries,
+    shopPrice,
+    shopCurrency,
+    candidates,
+    recommendedIdx,
+    current?.productId,
+    boundOfferId,
+    bindPending,
+  ]);
+
+  useEffect(() => {
+    if (!onCandidateContextChange) return;
+    onCandidateContextChange(item.thirdPlatformItemId, {
+      candidateId: current?.productId ?? null,
+      candidates: candidateSummaries,
+    });
+  }, [
+    candidateSummaries,
+    current?.productId,
+    item.thirdPlatformItemId,
+    onCandidateContextChange,
+  ]);
+
+  const triggerAgentIntent = (intent: ProductsIntentId) => {
+    onFocus?.();
+    onAgentIntent?.(intent, item.thirdPlatformItemId, {
+      focusCandidateId: current?.productId ?? null,
+      focusCandidates: candidateSummaries,
+    });
+  };
+
+  // Right tile: preview a tray candidate only while the tray is open; otherwise show bound source.
+  const rightMode: "candidate" | "bound" | "empty" = trayOpen && current
     ? "candidate"
     : boundOfferId
       ? "bound"
-      : "empty";
+      : current
+        ? "candidate"
+        : "empty";
   const isBoundHere =
     current != null && boundOfferId != null && boundOfferId === current.productId;
   const isRebind =
     current != null && boundOfferId != null && boundOfferId !== current.productId;
 
-  // —— AI 推荐卡派生值（真实数据；价格按定价模板汇率换目标币） ——
-  const shopPrice = item.minPrice ?? item.maxPrice ?? null;
+  // —— 货源采购价（成本展示；与右侧定价策略无关） ——
   const boundImage = snapImage ?? offerImage(offer);
   const boundTitle =
     offer?.subjectTrans ?? offer?.subject ?? null;
   const boundCostCny =
     parseGatewayPrice(snapPrice) ??
     parseGatewayPrice((offerPriceText(offer) ?? "").replace(/¥/g, ""));
-  const targetCur = template?.targetCurrency ?? null;
 
-  const formatOfferCost = (cny: number | null, fallbackRaw?: string | null) => {
-    const inTarget = costInTargetCurrency(cny, template);
-    if (inTarget != null && targetCur) {
-      return `成本 ${formatTargetMoney(inTarget, targetCur)}`;
-    }
-    if (fallbackRaw) return `成本 ${formatCny(fallbackRaw)}`;
-    if (cny != null) return `成本 ¥${cny}`;
-    return "成本待取";
-  };
+  const formatOfferCost = (cny: number | null, fallbackRaw?: string | null) =>
+    formatPurchaseCostLabel(cny, shopCurrency, fallbackRaw);
 
   const reco =
     rightMode === "candidate" && current
@@ -1015,7 +1017,7 @@ function ShopProductCard({
         : null;
 
   const profit = reco
-    ? profitPerOrder(shopPrice, reco.costCny, template)
+    ? profitPerOrderPurchaseDisplay(shopPrice, shopCurrency, reco.costCny)
     : null;
   const boundLoading = rightMode === "bound" && !hasSnapshot && offerLoading && !offer;
 
@@ -1100,10 +1102,10 @@ function ShopProductCard({
       onClick={() => onFocus?.()}
       className={cn(
         "flex flex-col rounded-xl border bg-white p-4 shadow-sm transition-shadow",
-        highlighted
-          ? "border-emerald-400 ring-2 ring-emerald-200/60"
+        focused
+          ? "border-emerald-400 shadow-md ring-2 ring-emerald-200/60"
           : "border-slate-200",
-        trayOpen ? "ring-1 ring-slate-300" : null
+        trayOpen && !focused ? "ring-1 ring-slate-300" : null
       )}
     >
       {/* Header */}
@@ -1307,6 +1309,53 @@ function ShopProductCard({
         </div>
       </div>
 
+      {onAgentIntent ? (
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+          {cardState !== "unbound" || current ? (
+            <>
+              <button
+                type="button"
+                className="font-medium text-sky-700 hover:underline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerAgentIntent("explain_match_reason");
+                }}
+              >
+                为何推荐
+              </button>
+              <span className="text-slate-300">·</span>
+              <button
+                type="button"
+                className="font-medium text-sky-700 hover:underline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerAgentIntent("explain_match_risk");
+                }}
+              >
+                不确定点
+              </button>
+            </>
+          ) : null}
+          {hasImage && candidates && candidates.length > 1 ? (
+            <>
+              {cardState !== "unbound" || current ? (
+                <span className="text-slate-300">·</span>
+              ) : null}
+              <button
+                type="button"
+                className="font-medium text-sky-700 hover:underline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerAgentIntent("compare_current_candidate");
+                }}
+              >
+                候选对比
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Footer actions — secondary links + primary on the right */}
       <div className="mt-3 flex flex-wrap items-center justify-end gap-x-2 gap-y-2 border-t border-slate-100 pt-3">
         <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[12px]">
@@ -1356,18 +1405,37 @@ function ShopProductCard({
           </button>
           {boundOfferId ? (
             <>
-              <span className="text-slate-300">|</span>
-              <button
-                type="button"
-                className="font-medium text-slate-500 hover:text-red-600 disabled:opacity-50"
-                disabled={unbinding || acking}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void unbindBinding();
-                }}
-              >
-                取消关联
-              </button>
+              {cardState === "pending" ? (
+                <>
+                  <span className="text-slate-300">|</span>
+                  <button
+                    type="button"
+                    className="font-medium text-slate-500 hover:text-red-600 disabled:opacity-50"
+                    disabled={rejecting || acking}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void rejectBinding();
+                    }}
+                  >
+                    {rejecting ? "驳回中…" : "驳回"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-slate-300">|</span>
+                  <button
+                    type="button"
+                    className="font-medium text-slate-500 hover:text-red-600 disabled:opacity-50"
+                    disabled={unbinding || acking}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void unbindBinding();
+                    }}
+                  >
+                    取消关联
+                  </button>
+                </>
+              )}
             </>
           ) : null}
         </div>
@@ -1379,7 +1447,8 @@ function ShopProductCard({
               searching ||
               (cardState === "unbound" && !hasImage && !current) ||
               confirmingId != null ||
-              acking
+              acking ||
+              rejecting
             }
             onClick={(e) => {
               e.stopPropagation();
@@ -1473,20 +1542,29 @@ function ShopProductCard({
                   matchScores[c.productId] ??
                   normalizeMatchScore(c.similarityScore);
                 const isCurrent = idx === currentIdx;
+                const isTop = idx === recommendedIdx;
                 const isBoundCand =
                   boundOfferId != null && boundOfferId === c.productId;
                 const costCny = parseGatewayPrice(c.price);
-                const costTarget = costInTargetCurrency(costCny, template);
+                const purchaseCtx = resolvePurchaseCostDisplayContext(shopCurrency);
+                const costTarget = costInPurchaseDisplayCurrency(costCny, purchaseCtx);
                 const costLabel =
-                  costTarget != null && targetCur
-                    ? `成本 ${formatTargetMoney(costTarget, targetCur)}`
-                    : `成本 ${formatCny(c.price)}`;
+                  costTarget != null
+                    ? `采购价 ${formatPurchaseCostMoney(costTarget, purchaseCtx.currency)}`
+                    : `采购价 ${formatCny(c.price)}`;
+                const inlineReason = trayInlineReasons[c.productId];
                 return (
                   <div
                     key={`${c.productId}-${idx}`}
                     className={cn(
-                      "flex w-[11rem] shrink-0 flex-col rounded-lg border bg-white p-2",
-                      isCurrent ? "border-emerald-400" : "border-slate-200"
+                      "flex w-[11rem] shrink-0 flex-col rounded-lg border-2 bg-white p-2 transition-colors",
+                      isCurrent
+                        ? "border-sky-400 bg-sky-50/30"
+                        : isBoundCand
+                          ? "border-amber-300"
+                          : isTop
+                            ? "border-emerald-300"
+                            : "border-slate-200"
                     )}
                   >
                     <div className="relative h-[4.5rem] w-full shrink-0 overflow-hidden rounded-md border border-slate-100 bg-slate-50">
@@ -1501,9 +1579,20 @@ function ShopProductCard({
                           referrerPolicy="no-referrer"
                         />
                       ) : null}
-                      {idx === recommendedIdx ? (
-                        <span className="absolute left-1 top-1 rounded bg-emerald-600 px-1.5 py-0.5 text-[9px] font-semibold text-white">
-                          当前推荐
+                      <div className="absolute left-1 top-1 flex max-w-[calc(100%-0.5rem)] flex-col gap-0.5">
+                        {isBoundCand ? (
+                          <span className="w-fit rounded bg-amber-600 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                            {bindPending ? "待确认" : "已关联"}
+                          </span>
+                        ) : isTop ? (
+                          <span className="w-fit rounded bg-emerald-600 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                            首推
+                          </span>
+                        ) : null}
+                      </div>
+                      {isCurrent ? (
+                        <span className="absolute bottom-1 right-1 rounded bg-sky-600 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                          查看中
                         </span>
                       ) : null}
                     </div>
@@ -1513,13 +1602,18 @@ function ShopProductCard({
                     <p className="mt-1 shrink-0 text-[11px] font-semibold text-slate-900">
                       {costLabel}
                     </p>
-                    <div className="mt-1 flex min-h-[2.75rem] flex-wrap content-start gap-1">
+                    {inlineReason ? (
+                      <p className="mt-1 line-clamp-2 text-[10px] leading-3.5 text-slate-500">
+                        {inlineReason}
+                      </p>
+                    ) : null}
+                    <div className="mt-1 flex min-h-[1.25rem] flex-wrap content-start gap-1">
                       {score != null ? (
                         <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
                           匹配 {score}%
                         </span>
                       ) : null}
-                      {signals.slice(0, 2).map((s) => (
+                      {signals.slice(0, 1).map((s) => (
                         <span
                           key={s}
                           className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"

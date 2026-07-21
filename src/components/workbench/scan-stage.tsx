@@ -28,6 +28,8 @@ interface ScanStageProps {
   tasks: ScanTaskView[];
   /** Streaming "最近完成" lines (only for tasks with genuine per-item output). */
   recent?: string[];
+  /** Real backend queue percent while image-match is running. */
+  progressPercent?: number;
   done: boolean;
   /** "直接查看当前结果" (running) / "查看结果" (done). Never blocks — always available. */
   onViewResult: () => void;
@@ -61,12 +63,18 @@ export function ScanStage({
   description,
   tasks,
   recent,
+  progressPercent,
   done,
   onViewResult,
 }: ScanStageProps) {
   const total = tasks.length;
   const settled = settledCount(tasks);
-  const pct = total > 0 ? Math.round((settled / total) * 100) : 0;
+  const matchRunning = tasks.some(
+    (t) => t.id === "match" && t.status === "running"
+  );
+  const taskPct = total > 0 ? Math.round((settled / total) * 100) : 0;
+  const pct =
+    matchRunning && progressPercent != null ? progressPercent : taskPct;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">

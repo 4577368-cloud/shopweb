@@ -24,39 +24,3 @@ export function routeProductsIntent(
   }
   return handleSourcingAdvisor(intent, ctx);
 }
-
-/**
- * Soft chip ordering: surface the most relevant intents first (still all available).
- */
-export function visibleProductChips(ctx: ProductsPageContext): ProductsIntentId[] {
-  const ordered: ProductsIntentId[] = [];
-  const push = (id: ProductsIntentId) => {
-    if (!ordered.includes(id)) ordered.push(id);
-  };
-
-  if (!ctx.authorized) {
-    push("explain_pricing");
-    return ordered;
-  }
-
-  if (!ctx.pricing.configured) {
-    push("explain_pricing");
-    push("configure_pricing");
-  }
-
-  push("summarize_shop_status");
-
-  if (ctx.pendingCount > 0) push("go_pending");
-  if (ctx.unboundCount > 0) push("go_unbound");
-
-  push("propose_candidate_search");
-  push("go_discover");
-  push("suggest_filters");
-
-  if (ctx.pricing.configured) {
-    push("explain_pricing");
-    push("configure_pricing");
-  }
-
-  return ordered;
-}

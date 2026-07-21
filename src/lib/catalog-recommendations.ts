@@ -1,5 +1,5 @@
 import { api } from "@/lib/api";
-import { calculateSalePrice } from "@/lib/price-calculator";
+import { listingSalePrice, resolveListingPricingContext } from "@/lib/listing-pricing";
 import type { CatalogSort } from "@/lib/catalog-sourcing-types";
 import type { CatalogRecommendation, PricingTemplate } from "@/lib/types";
 import {
@@ -111,14 +111,16 @@ export function repriceRecommendations(
   items: CatalogRecommendation[],
   template: PricingTemplate
 ): CatalogRecommendation[] {
+  const ctx = resolveListingPricingContext(template);
+  if (!ctx) return items;
   return items.map((item) => ({
     ...item,
-    estimatedSalePrice: calculateSalePrice(item.price, template),
-    targetCurrency: template.targetCurrency,
+    estimatedSalePrice: listingSalePrice(item.price, ctx),
+    targetCurrency: ctx.targetCurrency,
   }));
 }
 
-/** Convert procurement CNY cost → target currency via template exchange rate. */
+/** @deprecated Use listingPurchaseCostDisplay from @/lib/listing-pricing */
 export function toPurchasePriceUsd(
   cost: number | null | undefined,
   exchangeRate: number

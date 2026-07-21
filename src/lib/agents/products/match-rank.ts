@@ -1,14 +1,22 @@
-import type { ImageSearchProduct, PricingTemplate } from "@/lib/types";
+import type { ImageSearchProduct } from "@/lib/types";
+import {
+  costInPurchaseDisplayCurrency,
+  resolvePurchaseCostDisplayContext,
+} from "@/lib/purchase-cost-display";
 
-/** CNY cost → target-currency cost using template exchange rate (units of CNY per 1 target). */
-export function costInTargetCurrency(
-  costCny: number | null | undefined,
-  template: PricingTemplate | null | undefined
-): number | null {
-  if (costCny == null || !Number.isFinite(costCny) || costCny <= 0) return null;
-  const rate = template?.exchangeRate;
-  if (rate == null || !Number.isFinite(rate) || rate <= 0) return null;
-  return costCny / rate;
+/** Profit per order in shop currency (sale − purchase cost). Uses purchase-display FX only. */
+export function profitPerOrderPurchaseDisplay(
+  shopPrice: number | null | undefined,
+  shopCurrency: string | null | undefined,
+  costCny: number | null | undefined
+): { amount: number; currency: string } | null {
+  if (shopPrice == null || shopPrice <= 0) return null;
+  const ctx = resolvePurchaseCostDisplayContext(shopCurrency);
+  const cost = costInPurchaseDisplayCurrency(costCny, ctx);
+  if (cost == null) return null;
+  const shopCur = (shopCurrency ?? "").trim().toUpperCase();
+  if (shopCur && shopCur !== ctx.currency) return null;
+  return { amount: shopPrice - cost, currency: ctx.currency };
 }
 
 export function formatTargetMoney(
@@ -19,19 +27,6 @@ export function formatTargetMoney(
   const cur = (currency ?? "").trim();
   const v = amount.toFixed(decimals);
   return cur ? `${v} ${cur}` : v;
-}
-
-/** Profit per order in target currency (sale − cost). Null if incomplete. */
-export function profitPerOrder(
-  shopPrice: number | null | undefined,
-  costCny: number | null | undefined,
-  template: PricingTemplate | null | undefined
-): { amount: number; currency: string } | null {
-  if (shopPrice == null || shopPrice <= 0 || !template) return null;
-  const cost = costInTargetCurrency(costCny, template);
-  if (cost == null) return null;
-  const target = (template.targetCurrency ?? "").toUpperCase();
-  return { amount: shopPrice - cost, currency: target || "USD" };
 }
 
 function parseRepurchase(raw?: string | null): number {

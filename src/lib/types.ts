@@ -544,6 +544,42 @@ export interface ImageBindingView {
   offerPrice?: string | null;
 }
 
+/** Persisted Shopify order header (GET /api/plugin/order/header/list). */
+export interface ShopOrderHeader {
+  outerOrderId: string;
+  orderName?: string | null;
+  financialStatus?: string | null;
+  fulfillmentStatus?: string | null;
+  currency?: string | null;
+  totalPrice?: number | null;
+  platformCreatedAt?: string | null;
+}
+
+/** Background image-auto-match queue progress (POST start / GET active / GET {jobId}). */
+export type MatchJobStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELLED";
+
+export interface MatchJobProgress {
+  jobId: number;
+  shopName: string;
+  jobType: string;
+  jobStatus: MatchJobStatus;
+  total: number;
+  processed: number;
+  linked: number;
+  skipped: number;
+  failed: number;
+  percent: number;
+  lastError?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  recent?: string[];
+}
+
 // ---------------------------------------------------------------------------
 // S1-a SKU 绑定页（只读回显）：对应后端 SkuProductOverviewVO / SkuVariantVO。
 // 仅返回"至少有一条 ACTIVE binding 的商品"，按商品聚合、逐变体展开。

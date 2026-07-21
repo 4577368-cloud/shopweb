@@ -12,7 +12,10 @@ export type ProductsIntentId =
   | "go_pending"
   | "go_unbound"
   | "go_discover"
-  | "propose_candidate_search";
+  | "propose_candidate_search"
+  | "explain_match_reason"
+  | "explain_match_risk"
+  | "compare_current_candidate";
 
 export interface ProductsIntentDef extends PageIntentDef<ProductsIntentId> {
   agent: AgentId;
@@ -72,7 +75,28 @@ export const PRODUCTS_INTENTS: ProductsIntentDef[] = [
   {
     id: "propose_candidate_search",
     label: "重搜候选",
-    description: "为全部未关联商品重新图搜，不自动改绑已确认货源",
+    description: "为全部未关联商品或当前聚焦商品重新图搜",
+    agent: "sourcing_advisor",
+    when: "authorized",
+  },
+  {
+    id: "explain_match_reason",
+    label: "为何推荐",
+    description: "解释当前聚焦商品为何推荐该货源",
+    agent: "sourcing_advisor",
+    when: "authorized",
+  },
+  {
+    id: "explain_match_risk",
+    label: "不确定点",
+    description: "说明当前匹配的风险或待确认原因",
+    agent: "sourcing_advisor",
+    when: "authorized",
+  },
+  {
+    id: "compare_current_candidate",
+    label: "候选对比",
+    description: "对比当前候选与首推/更低成本选项",
     agent: "sourcing_advisor",
     when: "authorized",
   },

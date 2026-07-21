@@ -44,6 +44,10 @@ export function ProductsIntentResult(props: IntentResultProps) {
       return <FilterPresets {...props} />;
     case "propose_candidate_search":
       return <CandidateSearchProposal {...props} />;
+    case "explain_match_reason":
+    case "explain_match_risk":
+    case "compare_current_candidate":
+      return <ProductFocusExplain {...props} />;
     default:
       return <FallbackBrief {...props} />;
   }
@@ -126,6 +130,10 @@ export function StatusFactSummary({
       <div className="mt-1.5 space-y-0.5 text-[11px] leading-relaxed text-slate-600">
         <p>
           <span className="text-slate-400">定价</span> {pricingLine}
+        </p>
+        <p>
+          <span className="text-slate-400">采购价展示</span>{" "}
+          {context.purchaseDisplay.summaryLine.replace(/^采购价展示：/, "")}
         </p>
         <p>
           <span className="text-slate-400">已匹配</span>{" "}
@@ -483,7 +491,34 @@ function FilterPresets({ context, onAction }: IntentResultProps) {
 function CandidateSearchProposal({
   context,
   onAction,
+  onFocusProduct,
 }: IntentResultProps) {
+  if (context.focusProductId && context.focusProduct) {
+    const focus = context.focusProduct;
+    return (
+      <ExecShell
+        title="为这个商品找更多候选"
+        eyebrow="当前商品"
+        footer={
+          <Button
+            size="sm"
+            className="h-8 w-full"
+            onClick={() =>
+              onFocusProduct(focus.productId, { openSearch: true })
+            }
+          >
+            打开图搜托盘
+          </Button>
+        }
+      >
+        <p className="text-[11px] font-medium text-slate-800">{focus.title}</p>
+        <p className="mt-1 text-[11px] text-slate-600">
+          将重新图搜 Tangbuy 货源（最多 5 个候选），不会自动改绑已确认关联。
+        </p>
+      </ExecShell>
+    );
+  }
+
   if (context.unboundCount <= 0) {
     return (
       <ExecShell
@@ -542,6 +577,75 @@ function CandidateSearchProposal({
       <p className="text-[11px] text-slate-600">
         为全部未关联商品重新图搜，已关联的不会改绑。
       </p>
+    </ExecShell>
+  );
+}
+
+function ProductFocusExplain({
+  intent,
+  response,
+  context,
+  onAction,
+  onFocusProduct,
+  suppressPrimaryCta,
+}: IntentResultProps) {
+  const focus = context.focusProduct;
+  const title =
+    intent === "explain_match_reason"
+      ? "为什么推荐这个货源"
+      : intent === "explain_match_risk"
+        ? "匹配不确定点"
+        : "候选对比";
+
+  if (!focus) {
+    return (
+      <ExecShell title="请先选择商品" eyebrow="任务">
+        <p className="text-[11px] text-slate-600">
+          在「我的 Shopify」中点击商品卡片，再查看推荐依据或不确定点。
+        </p>
+      </ExecShell>
+    );
+  }
+
+  const action = response.suggestedAction;
+  const showCta =
+    !suppressPrimaryCta &&
+    action.kind !== "none" &&
+    action.label;
+
+  return (
+    <ExecShell
+      title={title}
+      eyebrow="当前商品"
+      footer={
+        showCta ? (
+          <TextLink
+            label={action.label!}
+            onClick={() => {
+              if (action.kind === "open_candidate_search" && action.productId) {
+                onFocusProduct(action.productId, { openSearch: true });
+              } else if (action.kind === "focus_product" && action.productId) {
+                onFocusProduct(action.productId);
+              } else {
+                onAction(action);
+              }
+            }}
+          />
+        ) : null
+      }
+    >
+      <p className="text-[11px] font-medium text-slate-800">{focus.title}</p>
+      {focus.purchaseCostLabel ? (
+        <p className="mt-1 text-[10px] text-slate-500">
+          采购成本 {focus.purchaseCostLabel}
+          {focus.profitLabel ? ` · 每单约 ${focus.profitLabel}` : ""}
+        </p>
+      ) : null}
+      <ul className="mt-2 space-y-0.5 text-[11px] text-slate-600">
+        {response.explanation.map((line, i) => (
+          <li key={`${i}-${line.slice(0, 16)}`}>· {line}</li>
+        ))}
+      </ul>
     </ExecShell>
   );
 }

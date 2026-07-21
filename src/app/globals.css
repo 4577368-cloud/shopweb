@@ -123,3 +123,14 @@ select {
   background: #d1fae5; /* emerald-100 */
   color: #065f46; /* emerald-800 */
 }
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

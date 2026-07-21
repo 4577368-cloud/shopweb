@@ -21,7 +21,7 @@ export type { ProductsPageContext } from "@/lib/agents/products/page-context";
 export { buildProductsPageContext } from "@/lib/agents/products/page-context";
 export type { ProductsIntentId } from "@/lib/agents/products/intents";
 export { PRODUCTS_INTENTS } from "@/lib/agents/products/intents";
-export { routeProductsIntent, visibleProductChips } from "@/lib/agents/products/orchestrator";
+export { routeProductsIntent } from "@/lib/agents/products/orchestrator";
 export {
   fetchProductsAgentResponse,
   classifyProductsShortInput,
