@@ -24,6 +24,7 @@ import { countryLabel } from "@/lib/logistics/markets";
 import type {
   AiPanelContent,
   LogisticsAnalysis,
+  LogisticsDecisionStatus,
   LogisticsTemplate,
   LogisticsTypeCode,
 } from "@/lib/types";
@@ -100,32 +101,43 @@ function LogisticsContent() {
       const updated = await api.correctLogisticsType(shopName, itemId, type);
       setAnalysis((prev) => {
         if (!prev) return prev;
-        const profiles = prev.profiles.map((p) =>
-          p.thirdPlatformItemId === itemId ? { ...p, ...updated } : p
+        const productProfiles = prev.productProfiles.map((p) =>
+          p.thirdPlatformItemId === itemId ? updated : p
         );
-        const counts = new Map<string, { label: string; count: number }>();
-        for (const p of profiles) {
-          const cur = counts.get(p.logisticsType) ?? {
-            label: p.logisticsTypeLabel,
-            count: 0,
-          };
-          cur.count += 1;
-          cur.label = p.logisticsTypeLabel;
-          counts.set(p.logisticsType, cur);
+
+        // 重新计算全局统计
+        const totalVariants = productProfiles.reduce(
+          (sum, p) => sum + p.totalVariants,
+          0
+        );
+        const decisionStatusCounts: Record<LogisticsDecisionStatus, number> = {
+          pending_sku: 0,
+          pending_postal_meta: 0,
+          ready_for_quote: 0,
+          restricted: 0,
+          needs_review: 0,
+        };
+        for (const p of productProfiles) {
+          for (const [status, count] of Object.entries(p.decisionStatusCounts)) {
+            decisionStatusCounts[status as LogisticsDecisionStatus] += count;
+          }
         }
-        const distribution = Array.from(counts.entries()).map(([t, v]) => ({
-          type: t as LogisticsTypeCode,
-          label: v.label,
-          count: v.count,
-        }));
-        const highRiskTypes = profiles
-          .map((p) => p.logisticsType)
+
+        const highRiskTypes = productProfiles
+          .map((p) => p.dominantLogisticsType)
           .filter(
             (t, i, arr) =>
               (t === "BATTERY_MAGNETIC" || t === "FOOD" || t === "BLADE") &&
               arr.indexOf(t) === i
           );
-        return { ...prev, profiles, distribution, highRiskTypes };
+
+        return {
+          ...prev,
+          productProfiles,
+          totalVariants,
+          decisionStatusCounts,
+          highRiskTypes,
+        };
       });
       showToast("已修正物流类型");
     } catch (err) {
@@ -179,9 +191,19 @@ function LogisticsContent() {
         bullets: ["不再重新同步店铺商品", "识别结果可手动修正", "接着配置物流策略模板"],
       };
     }
-    const dist = (analysis?.distribution ?? [])
+    const dist = Object.entries(analysis?.decisionStatusCounts ?? {})
+      .filter(([, count]) => count > 0)
       .slice(0, 4)
-      .map((d) => `${d.label} ${d.count}`)
+      .map(([status, count]) => {
+        const label: Record<LogisticsDecisionStatus, string> = {
+          pending_sku: "待对齐",
+          pending_postal_meta: "待补充",
+          ready_for_quote: "可报价",
+          restricted: "需确认",
+          needs_review: "需审核",
+        };
+        return `${label[status as LogisticsDecisionStatus] ?? status} ${count}`;
+      })
       .join(" · ");
     const countries = codesFromSelections(template?.markets ?? [])
       .slice(0, 4)

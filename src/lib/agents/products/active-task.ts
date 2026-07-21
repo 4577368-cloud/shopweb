@@ -62,14 +62,12 @@ export function computeActiveTask(ctx: ProductsPageContext): ActiveTask {
 
   if (ctx.unboundCount > 0) {
     return {
-      title: `为 ${ctx.unboundCount} 个商品找货源`,
-      reason: "未匹配商品尚无货源关联。",
+      title: `${ctx.unboundCount} 个未匹配`,
+      reason: "可批量启动图搜，为未关联商品自动匹配货源。",
       intent: "go_unbound",
       action: {
-        kind: "set_shop_filter",
-        tab: "shop",
-        shopFilter: "unbound",
-        label: "看未匹配",
+        kind: "rematch_unbound",
+        label: "批量关联",
       },
     };
   }

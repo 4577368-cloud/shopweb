@@ -2,7 +2,11 @@
 
 import { useCallback, useRef, useState } from "react";
 import { api, readableError } from "@/lib/api";
-import type { ImageBindingView, MatchJobProgress } from "@/lib/types";
+import type { ImageBindingView, MatchJobProgress, ShopMirrorProduct } from "@/lib/types";
+import {
+  computeShopProductBindingStats,
+  indexImageBindings,
+} from "@/lib/shop-product-binding-stats";
 import type { ScanTaskView } from "@/components/workbench/scan-stage";
 import type { ScanSummaryStats } from "@/lib/scan/copilot-workflow";
 import {
@@ -31,26 +35,18 @@ const EMPTY_STATS: ScanSummaryStats = {
 };
 
 function bindingStats(
-  bound: ImageBindingView[],
-  productIds: Set<string>
+  products: ShopMirrorProduct[],
+  bound: ImageBindingView[]
 ): Pick<
   ScanSummaryStats,
   "matchedCount" | "pendingCount" | "confirmedCount" | "unboundCount"
 > {
-  let matched = 0;
-  let pending = 0;
-  for (const b of bound) {
-    if (!b.bound || !b.thirdPlatformItemId) continue;
-    if (!productIds.has(b.thirdPlatformItemId)) continue;
-    matched += 1;
-    if (b.bindStatus === "PENDING") pending += 1;
-  }
-  const productCount = productIds.size;
+  const stats = computeShopProductBindingStats(products, indexImageBindings(bound));
   return {
-    matchedCount: matched,
-    pendingCount: pending,
-    confirmedCount: matched - pending,
-    unboundCount: Math.max(productCount - matched, 0),
+    matchedCount: stats.matched,
+    pendingCount: stats.pending,
+    confirmedCount: stats.confirmed,
+    unboundCount: stats.unbound,
   };
 }
 
@@ -105,7 +101,7 @@ export function useProductsScan(shopName: string) {
       setStats((prev) => ({
         ...prev,
         productCount: productIds.size,
-        ...bindingStats(bound, productIds),
+        ...bindingStats(items, bound),
       }));
     } catch {
       /* keep prior stats */
@@ -214,7 +210,7 @@ export function useProductsScan(shopName: string) {
       const productIds = new Set(items.map((p) => p.thirdPlatformItemId));
       setStats({
         productCount: productIds.size,
-        ...bindingStats(bound, productIds),
+        ...bindingStats(items, bound),
         matchJobTotal: 0,
         matchJobProcessed: 0,
         matchJobLinked: 0,

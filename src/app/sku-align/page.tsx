@@ -40,6 +40,7 @@ import {
 } from "@/components/sku-align/sku-binding-panel";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
+import { pollSkuAlignRun } from "@/lib/sku-align-v1/run-client";
 import type { AiPanelContent, SkuProductOverview } from "@/lib/types";
 
 const BREADCRUMBS = [
@@ -84,6 +85,7 @@ export default function SkuAlignPage() {
     setLoading(true);
     setError(null);
     try {
+      await api.backfillBindingSnapshots(shopName).catch(() => null);
       setProducts(await api.getSkuOverview(shopName));
     } catch (err) {
       setError(readableError(err));
@@ -122,7 +124,29 @@ export default function SkuAlignPage() {
     }
   }, [isAuthorized, shopName, load, startScan, finishToResult]);
 
+  // Step 3 — silent PAGE_ENTER for stale unresolved products on result view.
+  const pageEnterDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (phase !== "result" || !isAuthorized) return;
+    if (pageEnterDoneRef.current === shopName) return;
+    pageEnterDoneRef.current = shopName;
+
+    void (async () => {
+      try {
+        const accepted = await api.skuAlignV1PageEnter(shopName);
+        if (!accepted.accepted || !accepted.runId) return;
+        const status = await pollSkuAlignRun(shopName, accepted.runId);
+        if (status.runStatus === "SUCCEEDED" || status.runStatus === "PARTIAL") {
+          setProducts(await api.getSkuOverview(shopName));
+        }
+      } catch {
+        // Silent — no stale unresolved products or run already active.
+      }
+    })();
+  }, [phase, isAuthorized, shopName]);
+
   const restartScan = useCallback(() => {
+    pageEnterDoneRef.current = null;
     finishedRef.current = false;
     clearScanned("sku-align", shopName);
     setPhase("scan");

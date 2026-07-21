@@ -23,6 +23,7 @@ export interface CatalogProductGridProps {
   targetCurrency: string;
   publishState: Record<string, PublishCellState>;
   onPublish: (item: CatalogRecommendation) => void;
+  onLink: (item: CatalogRecommendation) => void;
   onPrevPage: () => void;
   onNextPage: () => void;
 }
@@ -37,6 +38,7 @@ export function CatalogProductGrid({
   targetCurrency,
   publishState,
   onPublish,
+  onLink,
   onPrevPage,
   onNextPage,
 }: CatalogProductGridProps) {
@@ -62,8 +64,8 @@ export function CatalogProductGrid({
       <div
         className={
           pageTurning
-            ? "grid grid-cols-1 gap-3 opacity-60 transition-opacity sm:grid-cols-2 lg:grid-cols-3"
-            : "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+            ? "grid grid-cols-1 gap-3 opacity-60 transition-opacity sm:grid-cols-2 lg:grid-cols-4"
+            : "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
         }
       >
         {items.map((item) => (
@@ -74,6 +76,7 @@ export function CatalogProductGrid({
             targetCurrency={targetCurrency}
             state={publishState[item.candidateId]}
             onPublish={() => onPublish(item)}
+            onLink={() => onLink(item)}
           />
         ))}
       </div>

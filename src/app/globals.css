@@ -134,3 +134,133 @@ select {
     transform: translateY(0);
   }
 }
+
+/* AI field edit feedback — cool sky/teal, workbench subtle */
+@keyframes ai-field-value-flash {
+  0% {
+    background-color: rgb(224 242 254 / 0.95);
+    transform: scale(1.015);
+  }
+  100% {
+    background-color: transparent;
+    transform: scale(1);
+  }
+}
+
+@keyframes ai-card-edit-ring {
+  0% {
+    border-color: rgb(125 211 252 / 0.85);
+    box-shadow:
+      0 0 0 1px rgb(125 211 252 / 0.35),
+      inset 0 2px 0 0 rgb(56 189 248 / 0.55);
+  }
+  100% {
+    border-color: rgb(226 232 240);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.05);
+  }
+}
+
+@keyframes ai-before-after-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes ai-edit-pill-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.ai-field-value-highlight {
+  animation: ai-field-value-flash 1s ease-out forwards;
+}
+
+.ai-card-edit-highlight {
+  animation: ai-card-edit-ring 1.2s ease-out forwards;
+}
+
+.ai-before-after {
+  animation: ai-before-after-fade 3.2s ease-out forwards;
+}
+
+.ai-edit-pill {
+  animation: ai-edit-pill-in 0.25s ease-out forwards;
+}
+
+.batch-link-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.batch-link-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(56 189 248 / 0.35),
+    transparent
+  );
+  animation: batch-link-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes batch-link-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes batch-link-done-flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(16 185 129 / 0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgb(16 185 129 / 0.35);
+  }
+}
+
+.batch-link-done-flash {
+  animation: batch-link-done-flash 0.48s ease-out;
+}
+
+@keyframes batch-link-candidate-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(16 185 129 / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(16 185 129 / 0.12);
+  }
+}
+
+.batch-link-candidate-flash {
+  animation: batch-link-candidate-pulse 0.9s ease-out 2;
+}
+
+.batch-link-select-pressed {
+  transform: scale(0.96);
+  box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.12);
+}

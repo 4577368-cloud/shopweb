@@ -29,7 +29,7 @@ export interface AgentFilterPreset {
 export interface AgentSuggestedAction {
   kind: SuggestedActionKind;
   tab?: "shop" | "catalog";
-  shopFilter?: "all" | "pending" | "confirmed" | "unbound";
+  shopFilter?: "all" | "pending" | "confirmed" | "unbound" | "new_arrivals";
   /** Shopify mirror item id (thirdPlatformItemId) */
   productId?: string;
   filterPreset?: AgentFilterPreset;

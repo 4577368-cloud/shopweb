@@ -2,6 +2,7 @@ import type { CatalogFilterState } from "@/lib/catalog-sourcing-types";
 import type { PricingTemplate } from "@/lib/types";
 import type { BasePageContext } from "@/lib/agents/runtime";
 import type { ProductFocusSnapshot, CandidateSummary } from "@/lib/agents/products/product-focus-snapshot";
+import type { ProductCatalogEntry } from "@/lib/agents/products/resolve-product-target";
 import type { ScanHandoffPayload } from "@/lib/scan/handoff";
 import {
   resolvePurchaseCostDisplayContext,
@@ -20,7 +21,12 @@ function needsPricingSetup(template: PricingTemplate | null): boolean {
 }
 
 export type ProductsTab = "shop" | "catalog";
-export type ProductsShopFilter = "all" | "pending" | "confirmed" | "unbound";
+export type ProductsShopFilter =
+  | "all"
+  | "new_arrivals"
+  | "pending"
+  | "confirmed"
+  | "unbound";
 export type ProductsPhase = "scan" | "result";
 
 export interface ProductsPricingContext {
@@ -58,6 +64,8 @@ export interface ProductsPageContext extends BasePageContext {
   /** Rule-built snapshot for per-product intents */
   focusProduct: ProductFocusSnapshot | null;
   focusCandidates: CandidateSummary[];
+  /** Mirror catalog for title → productId resolution (rules only). */
+  productCatalog: ProductCatalogEntry[];
   purchaseDisplay: ProductsPurchaseDisplayContext;
   /** One-shot context after scan → result handoff */
   scanHandoff: ScanHandoffPayload | null;
@@ -81,6 +89,7 @@ export interface BuildProductsPageContextInput {
   focusCandidateId?: string | null;
   focusProduct?: ProductFocusSnapshot | null;
   focusCandidates?: CandidateSummary[];
+  productCatalog?: ProductCatalogEntry[];
   scanHandoff?: ScanHandoffPayload | null;
   shopCurrencyHint?: string | null;
 }
@@ -151,6 +160,7 @@ export function buildProductsPageContext(
     focusCandidateId: input.focusCandidateId ?? null,
     focusProduct: input.focusProduct ?? null,
     focusCandidates: input.focusCandidates ?? [],
+    productCatalog: input.productCatalog ?? [],
     purchaseDisplay,
     scanHandoff: input.scanHandoff ?? null,
   };

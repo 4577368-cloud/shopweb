@@ -197,7 +197,7 @@ interface ItemGetSku {
   }> | null;
 }
 
-interface ItemGetProduct {
+export interface ItemGetProduct {
   itemId?: string | number;
   itemName?: string | null;
   itemNameTrans?: string | null;

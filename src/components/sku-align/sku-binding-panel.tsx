@@ -5,21 +5,39 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ExternalLink,
+  Hand,
   ImageOff,
   Loader2,
   MoveRight,
+  RefreshCw,
   Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api, ApiError } from "@/lib/api";
+import {
+  fetchSourceSkuMatrixResult,
+  needsOfferDetailFallback,
+  resolveBoundSkuDisplay,
+  resolveSkuDetailUrl,
+  type SourceSkuRow,
+} from "@/lib/source-sku-matrix";
 import type {
   OfferDetail,
-  OfferSku,
   SkuProductOverview,
   SkuVariant,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import {
+  buildSupplementSourceHint,
+  confirmSuggestionsWithFallback,
+  enqueueSkuAlignRun,
+  needsSupplementSource,
+  pollSkuAlignRun,
+} from "@/lib/sku-align-v1";
+import type { SkuAlignProductDetail } from "@/lib/sku-align-v1/types";
+import { SkuPickerTray } from "@/components/sku-align/sku-picker-tray";
 
 export type ProductMatchState = "full" | "partial" | "none";
 
@@ -52,12 +70,95 @@ function autoAlignError(err: unknown): string {
   if (raw.startsWith("AOP_CRED_MISSING")) return "Tangbuy 货源平台凭证未配置";
   if (raw.startsWith("AOP_TOKEN_INVALID")) return "Tangbuy 货源授权已失效，请重新授权";
   if (raw.startsWith("GATEWAY_BUSY")) return "Tangbuy 货源服务繁忙，请稍后重试";
+  if (raw.startsWith("SKU_NOT_IN_MATRIX")) {
+    return raw.includes(":") ? raw.split(":").slice(1).join(":").trim() : "所选 SKU 不在货源规格表中";
+  }
+  if (raw.startsWith("NO_UNRESOLVED_VARIANT")) return "当前没有需要补充货源的变体";
+  if (raw.startsWith("SUPPLEMENT_LIMIT")) return "V1 每个商品仅支持 1 个补充货源";
+  if (raw.startsWith("SUPPLEMENT_SAME_AS_PRIMARY")) return "补充货源不能与主货源相同";
   return raw || "自动对齐失败";
 }
 
 /** RULE/AI bindings come from S1-b1 auto-align; IMAGE from A3-2b image confirm. */
 function isAutoAligned(source?: string | null): boolean {
   return source === "RULE" || source === "AI";
+}
+
+function isManualBinding(source?: string | null): boolean {
+  return source === "MANUAL";
+}
+
+function isImageBinding(source?: string | null): boolean {
+  return source === "IMAGE" || source === "CATALOG";
+}
+
+type VariantBindingState =
+  | "unbound"
+  | "manual-active"
+  | "auto-pending"
+  | "auto-active"
+  | "image-active"
+  | "other-active";
+
+function variantBindingState(
+  bound?: SkuVariant["bound"] | null
+): VariantBindingState {
+  if (!bound) return "unbound";
+  const pending = bound.bindStatus === "PENDING";
+  if (isManualBinding(bound.matchSource) && !pending) return "manual-active";
+  if (isAutoAligned(bound.matchSource) && pending) return "auto-pending";
+  if (isAutoAligned(bound.matchSource) && !pending) return "auto-active";
+  if (isImageBinding(bound.matchSource) && !pending) return "image-active";
+  if (pending) return "auto-pending";
+  return "other-active";
+}
+
+/** Middle-column status badge — distinguishes manual vs auto vs unbound. */
+function BindingStatusBadge({ bound }: { bound?: SkuVariant["bound"] | null }) {
+  switch (variantBindingState(bound)) {
+    case "unbound":
+      return <Badge variant="outline">未匹配</Badge>;
+    case "manual-active":
+      return <Badge variant="success">手动绑定 · 已生效</Badge>;
+    case "auto-pending":
+      return <Badge variant="warning">自动对齐 · 待确认</Badge>;
+    case "auto-active":
+      return <Badge variant="success">自动对齐 · 已确认</Badge>;
+    case "image-active":
+      return <Badge variant="success">图搜绑定 · 已确认</Badge>;
+    default:
+      return <Badge variant="success">已绑定</Badge>;
+  }
+}
+
+function bindingStatusHint(
+  bound?: SkuVariant["bound"] | null
+): string | null {
+  switch (variantBindingState(bound)) {
+    case "unbound":
+      return "需从货源规格表选择对应 SKU";
+    case "manual-active":
+      return "你已手动选择，无需再确认";
+    case "auto-pending":
+      return "系统推测，可确认或重选 SKU";
+    case "auto-active":
+      return "按规格自动对齐并已确认";
+    case "image-active":
+      return matchReason(bound!);
+    default:
+      return bound ? matchReason(bound) : null;
+  }
+}
+
+function bindingScoreLine(bound: NonNullable<SkuVariant["bound"]>): string | null {
+  const state = variantBindingState(bound);
+  if (state === "manual-active") return "手动确认";
+  if (state === "auto-pending") return `建议匹配度 ${formatScore(bound.matchScore)}`;
+  if (state === "auto-active") return `匹配度 ${formatScore(bound.matchScore)}`;
+  if (state === "image-active") return `相似度 ${formatScore(bound.matchScore)}`;
+  return formatScore(bound.matchScore) !== "—"
+    ? `相似度 ${formatScore(bound.matchScore)}`
+    : null;
 }
 
 /** Similarity score may be a 0–1 ratio or an absolute index; render defensively. */
@@ -72,27 +173,9 @@ function formatShopPrice(price?: number | null): string {
   return price.toFixed(2);
 }
 
-/** First usable price string from a 1688 SKU (wholesale, else consignment). */
-function offerSkuPrice(sku?: OfferSku | null): string | null {
-  const raw = sku?.price ?? sku?.consignPrice ?? null;
-  return raw && raw.trim() ? raw.trim() : null;
-}
-
-/** Human spec label from a 1688 SKU's attribute matrix (translated value preferred). */
-function offerSkuSpec(sku?: OfferSku | null): string | null {
-  const parts = sku?.skuAttributes
-    ?.map((a) => a.valueTrans || a.value)
-    .filter((v): v is string => Boolean(v && v.trim()));
-  return parts && parts.length ? parts.join(" / ") : null;
-}
-
-/** Per-value image on a 1688 SKU, if the attribute matrix carries one. */
-function offerSkuImage(sku?: OfferSku | null): string | null {
-  return sku?.skuAttributes?.map((a) => a.skuImageUrl).find(Boolean) ?? null;
-}
-
-/** One short, human reason for the middle judgement column. */
+/** One short, human reason for audit / image bindings. */
 function matchReason(bound: NonNullable<SkuVariant["bound"]>): string {
+  if (isManualBinding(bound.matchSource)) return "手动选择 SKU";
   if (isAutoAligned(bound.matchSource)) return "按规格自动对齐";
   if (bound.querySource === "LLM") return "AI 识图匹配";
   if (bound.querySource === "TITLE") return "按标题图搜匹配";
@@ -169,30 +252,64 @@ function Thumb({
  */
 function VariantCompareRow({
   variant,
+  product,
   offer,
   offerLoading,
+  offerFallbackAttempted,
+  sourceMatrix,
+  sourceMatrixLoading,
+  sourceMatrixError,
+  onRetryEvidence,
   shopName,
   onMutated,
   showToast,
 }: {
   variant: SkuVariant;
+  product: SkuProductOverview;
   offer?: OfferDetail;
   offerLoading: boolean;
+  offerFallbackAttempted: boolean;
+  sourceMatrix: SourceSkuRow[];
+  sourceMatrixLoading: boolean;
+  sourceMatrixError: string | null;
+  onRetryEvidence: () => void;
   shopName: string;
   onMutated: () => Promise<void>;
   showToast: (message: string) => void;
 }) {
   const bound = variant.bound;
-  const isPending = bound?.bindStatus === "PENDING";
+  const bindingState = variantBindingState(bound);
+  const isPending = bindingState === "auto-pending";
+  const isUnbound = bindingState === "unbound";
   const [acking, setAcking] = useState(false);
   const [unbinding, setUnbinding] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const detailUrl = resolveSkuDetailUrl(product.detailUrl, product.tangbuyProductId);
+  const tangbuyProductId =
+    product.tangbuyProductId?.trim() ||
+    bound?.tangbuyProductId?.trim() ||
+    product.variants.find((v) => v.bound?.tangbuyProductId)?.bound?.tangbuyProductId?.trim() ||
+    null;
+  const canPickSku = Boolean(detailUrl && tangbuyProductId);
 
   const ackVariant = async () => {
-    if (acking) return;
+    if (acking || !isPending) return;
     setAcking(true);
     try {
-      await api.ackSkuBinding(shopName, variant.thirdPlatformSkuId);
-      showToast("已确认该变体关联");
+      const result = await confirmSuggestionsWithFallback(
+        {
+          shopName,
+          targetScope: "VARIANTS",
+          variantIds: [variant.thirdPlatformSkuId],
+        },
+        [variant.thirdPlatformSkuId]
+      );
+      if ((result.confirmedCount ?? 0) <= 0) {
+        showToast("没有可确认的待确认建议");
+        return;
+      }
+      showToast("已确认自动对齐，关联已生效");
       await onMutated();
     } catch (err) {
       showToast(autoAlignError(err));
@@ -216,23 +333,52 @@ function VariantCompareRow({
     }
   };
 
-  const sku =
+  const offerSku =
     offer?.skus?.find(
       (s) => bound?.tangbuySkuId && String(s.skuId) === String(bound.tangbuySkuId)
     ) ?? undefined;
 
-  const rightImage = offerSkuImage(sku) ?? offer?.whiteImageUrl ?? null;
-  const rightName =
-    offerSkuSpec(sku) ??
-    bound?.tangbuySkuSpec ??
-    offer?.subjectTrans ??
-    offer?.subject ??
-    null;
-  const rightPrice = offerSkuPrice(sku);
-  const resolved = Boolean(offer);
+  const display = bound
+    ? resolveBoundSkuDisplay({
+        tangbuySkuId: bound.tangbuySkuId,
+        sourceMatrix,
+        sourceMatrixLoading,
+        sourceMatrixError,
+        offerSku,
+        offerWhiteImage: offer?.whiteImageUrl,
+        offerLoading,
+        offerFallbackAttempted,
+        boundSpec: bound.tangbuySkuSpec,
+        boundImageUrl: bound.offerImageUrl,
+        boundPriceLabel:
+          bound.offerPrice?.trim() ? `¥${bound.offerPrice.trim()}` : null,
+      })
+    : null;
+
+  const displayStatus = display?.displayStatus ?? null;
+  const rightImage = display?.imageUrl ?? null;
+  const rightName = display?.specLabel ?? null;
+  const rightPrice = display?.priceLabel ?? null;
+  const priceCaption =
+    display?.priceKind === "procurement"
+      ? "采购价"
+      : display?.priceKind === "wholesale"
+        ? "批发价"
+        : null;
+  const statusHint = bindingStatusHint(bound);
+  const scoreLine = bound ? bindingScoreLine(bound) : null;
+  const showPickAction =
+    isUnbound || isPending || displayStatus === "ERROR";
 
   return (
-    <div className="grid grid-cols-1 gap-3 py-3 md:grid-cols-[minmax(0,1fr)_128px_minmax(0,1fr)] md:items-center md:gap-4">
+    <>
+    <div
+      className={cn(
+        "grid grid-cols-1 gap-3 py-3 md:grid-cols-[minmax(0,1fr)_148px_minmax(0,1fr)] md:items-center md:gap-4",
+        bindingState === "manual-active" && "rounded-[var(--radius-control)] bg-emerald-50/30 px-1",
+        bindingState === "auto-pending" && "rounded-[var(--radius-control)] bg-amber-50/25 px-1"
+      )}
+    >
       {/* Left — Shopify variant */}
       <div className="flex gap-3">
         <Thumb src={variant.imageUrl} alt={variant.optionLabel} className="h-16 w-16" />
@@ -254,58 +400,109 @@ function VariantCompareRow({
 
       {/* Middle — judgement */}
       <div className="flex flex-row items-center justify-between gap-2 rounded-[var(--radius-control)] bg-surface-muted px-2.5 py-2 md:flex-col md:justify-center md:gap-1 md:bg-transparent md:px-0 md:py-0 md:text-center">
-        {bound ? (
-          <>
-            {isPending ? (
-              <Badge variant="warning">AI 待确认</Badge>
-            ) : (
-              <Badge variant="success">已确认</Badge>
-            )}
-            <span className="text-[11px] font-medium text-brand">
-              {isAutoAligned(bound.matchSource) ? "匹配度" : "相似度"}{" "}
-              {formatScore(bound.matchScore)}
-            </span>
-            <span className="hidden text-[10px] leading-tight text-ink-subtle md:block">
-              {matchReason(bound)}
-            </span>
-          </>
-        ) : (
-          <>
-            <Badge variant="outline">未匹配</Badge>
-            <span className="hidden text-[10px] leading-tight text-ink-subtle md:block">
-              尚未找到货源
-            </span>
-          </>
-        )}
+        <BindingStatusBadge bound={bound} />
+        {bound && scoreLine ? (
+          <span className="text-[11px] font-medium text-brand">{scoreLine}</span>
+        ) : null}
+        {statusHint ? (
+          <span className="text-[10px] leading-tight text-ink-subtle md:max-w-[9rem]">
+            {statusHint}
+          </span>
+        ) : null}
         <MoveRight className="hidden h-4 w-4 text-ink-subtle md:block" />
       </div>
 
-      {/* Right — 1688 source */}
+      {/* Right — Tangbuy source (itemGet first) */}
       <div className="flex gap-3">
-        {!bound ? (
-          <div className="flex flex-1 items-center rounded-[var(--radius-control)] border border-dashed border-hairline px-3 py-3 text-[11px] text-ink-subtle">
-            未匹配货源
+        {isUnbound ? (
+          <div className="flex flex-1 flex-col gap-2.5 rounded-[var(--radius-control)] border border-dashed border-hairline px-3 py-3">
+            <p className="text-[11px] leading-snug text-ink-subtle">
+              尚未绑定货源 SKU。请对照左侧 Shopify 规格，从货源规格表中选择对应项。
+            </p>
+            <Button
+              size="sm"
+              className="w-fit"
+              disabled={!canPickSku}
+              title={
+                canPickSku
+                  ? "打开 itemGet SKU 规格表"
+                  : "缺少货源详情链接，无法加载 SKU"
+              }
+              onClick={() => setPickerOpen(true)}
+            >
+              <Hand className="h-3.5 w-3.5" />
+              选择 SKU
+            </Button>
           </div>
-        ) : offerLoading && !resolved ? (
+        ) : displayStatus === "LOADING" ? (
           <div className="flex flex-1 items-center gap-2 rounded-[var(--radius-control)] border border-hairline px-3 py-3 text-[11px] text-ink-subtle">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            载入货源…
+            载入 itemGet 规格与价格…
+          </div>
+        ) : displayStatus === "ERROR" ? (
+          <div className="flex flex-1 flex-col gap-2 rounded-[var(--radius-control)] border border-amber-200 bg-amber-50/40 px-3 py-3">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-[11px] leading-snug text-amber-800">
+                {display?.displayError ?? "规格加载失败"}
+              </p>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-7 w-7 shrink-0 px-0"
+                onClick={onRetryEvidence}
+                title="重试加载规格"
+                aria-label="重试加载规格"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {canPickSku ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="w-fit"
+                onClick={() => setPickerOpen(true)}
+                disabled={acking || unbinding}
+              >
+                <Hand className="h-3.5 w-3.5" />
+                重选 SKU
+              </Button>
+            ) : null}
           </div>
         ) : (
           <>
             <Thumb src={rightImage} alt={rightName ?? "Tangbuy 货源"} className="h-16 w-16" />
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-brand-strong">
-                Tangbuy 货源
-              </p>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-brand-strong">
+                  Tangbuy 货源
+                </p>
+                {bindingState === "manual-active" ? (
+                  <Badge variant="success" className="text-[9px] px-1 py-0">
+                    手动已绑定
+                  </Badge>
+                ) : null}
+              </div>
               <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-4 text-ink">
-                {rightName ?? "(未取到规格)"}
+                {rightName ?? bound?.tangbuySkuSpec?.trim() ?? "—"}
               </p>
               <p className="mt-1 text-sm font-semibold text-ink">
-                {rightPrice ? `¥${rightPrice}` : "价未取到"}
+                {rightPrice ? (
+                  <>
+                    {priceCaption ? (
+                      <span className="mr-1 text-[11px] font-medium text-ink-subtle">
+                        {priceCaption}
+                      </span>
+                    ) : null}
+                    {rightPrice}
+                  </>
+                ) : (
+                  "价未取到"
+                )}
               </p>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-ink-subtle">
-                {bound.detailUrl ? (
+                {bound?.detailUrl ? (
                   <a
                     href={bound.detailUrl}
                     target="_blank"
@@ -316,12 +513,21 @@ function VariantCompareRow({
                     详情
                   </a>
                 ) : null}
-                {bound.tangbuySkuId ? <span>SKU {bound.tangbuySkuId}</span> : null}
-                {!resolved && !offerLoading ? (
-                  <span className="text-amber-600">货源明细未取到</span>
-                ) : null}
+                {bound?.tangbuySkuId ? <span>skuId {bound.tangbuySkuId}</span> : null}
               </div>
-              <div className="mt-1.5 flex items-center gap-2">
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                {showPickAction && canPickSku ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setPickerOpen(true)}
+                    disabled={acking || unbinding}
+                    title="从 itemGet 规格表重新选择 SKU"
+                  >
+                    <Hand className="h-3.5 w-3.5" />
+                    {isPending ? "重选 SKU" : "选择 SKU"}
+                  </Button>
+                ) : null}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -336,9 +542,10 @@ function VariantCompareRow({
                     size="sm"
                     onClick={() => void ackVariant()}
                     disabled={acking || unbinding}
+                    title="接受自动对齐建议"
                   >
                     {acking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    确认无误
+                    确认自动对齐
                   </Button>
                 ) : null}
               </div>
@@ -347,6 +554,22 @@ function VariantCompareRow({
         )}
       </div>
     </div>
+    {pickerOpen && detailUrl && tangbuyProductId ? (
+      <SkuPickerTray
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        detailUrl={detailUrl}
+        shopName={shopName}
+        thirdPlatformItemId={product.thirdPlatformItemId}
+        thirdPlatformSkuId={variant.thirdPlatformSkuId}
+        tangbuyProductId={tangbuyProductId}
+        variantLabel={variant.optionLabel}
+        selectedSkuId={bound?.tangbuySkuId}
+        onBound={onMutated}
+        showToast={showToast}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -375,12 +598,79 @@ export function SkuProductCard({
   const [aligning, setAligning] = useState(false);
   const [ackingAll, setAckingAll] = useState(false);
   const [alignError, setAlignError] = useState<string | null>(null);
+  const [supplementOfferId, setSupplementOfferId] = useState("");
+  const [addingSupplement, setAddingSupplement] = useState(false);
+  const [v1Detail, setV1Detail] = useState<SkuAlignProductDetail | null>(null);
+  const [v1DetailLoading, setV1DetailLoading] = useState(false);
 
-  const pendingCount = product.variants.filter((v) => v.bound?.bindStatus === "PENDING").length;
+  const refreshV1Detail = async () => {
+    setV1DetailLoading(true);
+    try {
+      setV1Detail(
+        await api.skuAlignV1ProductDetail(shopName, product.thirdPlatformItemId)
+      );
+    } catch {
+      setV1Detail(null);
+    } finally {
+      setV1DetailLoading(false);
+    }
+  };
+
+  const addSupplementSource = async () => {
+    const offerId = supplementOfferId.trim();
+    if (!offerId || addingSupplement) return;
+    setAddingSupplement(true);
+    setAlignError(null);
+    try {
+      const accepted = await api.skuAlignV1AddSupplementSource(product.thirdPlatformItemId, {
+        shopName,
+        offerId,
+      });
+      if (accepted.accepted && accepted.runId) {
+        const status = await pollSkuAlignRun(shopName, accepted.runId);
+        showToast(
+          `补充货源对齐完成：${status.matchedCount} 个变体 · 无货源 ${status.noSourceCount}`
+        );
+      } else {
+        showToast("补充货源已登记");
+      }
+      setSupplementOfferId("");
+      await onAligned();
+      if (open) await refreshV1Detail();
+    } catch (err) {
+      setAlignError(autoAlignError(err));
+    } finally {
+      setAddingSupplement(false);
+    }
+  };
+
+  const pendingCount = product.variants.filter(
+    (v) => variantBindingState(v.bound) === "auto-pending"
+  ).length;
+  const unboundCount = product.variants.filter((v) => !v.bound).length;
+  const manualCount = product.variants.filter(
+    (v) => variantBindingState(v.bound) === "manual-active"
+  ).length;
+
+  const productDetailUrl = resolveSkuDetailUrl(
+    product.detailUrl,
+    product.tangbuyProductId
+  );
 
   const [offerMap, setOfferMap] = useState<Record<string, OfferDetail>>({});
   const [offerLoading, setOfferLoading] = useState(false);
-  const [fetchedSig, setFetchedSig] = useState<string | null>(null);
+  const [offerFallbackAttempted, setOfferFallbackAttempted] = useState(false);
+  const [sourceMatrix, setSourceMatrix] = useState<SourceSkuRow[]>([]);
+  const [sourceMatrixLoading, setSourceMatrixLoading] = useState(false);
+  const [sourceMatrixError, setSourceMatrixError] = useState<string | null>(null);
+  const [matrixLoadToken, setMatrixLoadToken] = useState(0);
+  const [loadedMatrixKey, setLoadedMatrixKey] = useState<string | null>(null);
+  const [loadedOfferKey, setLoadedOfferKey] = useState<string | null>(null);
+
+  const boundSkuIds = useMemo(
+    () => product.variants.map((v) => v.bound?.tangbuySkuId),
+    [product.variants]
+  );
 
   // Distinct 1688 offer ids referenced by this product's bound variants (usually one).
   const boundOfferIds = useMemo(
@@ -394,13 +684,49 @@ export function SkuProductCard({
       ),
     [product]
   );
-  const sig = boundOfferIds.join(",");
+  const offerSig = boundOfferIds.join(",");
+  const matrixKey = productDetailUrl ? `${productDetailUrl}:${matrixLoadToken}` : null;
+  const offerKey = offerSig ? `${offerSig}:${matrixLoadToken}` : null;
+
+  const retryEvidence = () => {
+    setLoadedMatrixKey(null);
+    setLoadedOfferKey(null);
+    setOfferMap({});
+    setOfferFallbackAttempted(false);
+    setMatrixLoadToken((k) => k + 1);
+  };
 
   useEffect(() => {
-    if (!open || boundOfferIds.length === 0 || fetchedSig === sig) return;
+    if (!open || !productDetailUrl || !matrixKey || loadedMatrixKey === matrixKey) return;
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy on-expand fetch; guarded by fetchedSig
+    setSourceMatrixLoading(true);
+    setSourceMatrixError(null);
+    void fetchSourceSkuMatrixResult(productDetailUrl)
+      .then(({ rows, error }) => {
+        if (cancelled) return;
+        setSourceMatrix(rows);
+        setSourceMatrixError(error);
+        setLoadedMatrixKey(matrixKey);
+      })
+      .finally(() => {
+        if (!cancelled) setSourceMatrixLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, productDetailUrl, matrixKey, loadedMatrixKey]);
+
+  useEffect(() => {
+    if (!open || boundOfferIds.length === 0) return;
+    if (sourceMatrixLoading) return;
+    if (!needsOfferDetailFallback(sourceMatrix, boundSkuIds)) {
+      setOfferFallbackAttempted(false);
+      return;
+    }
+    if (!offerKey || loadedOfferKey === offerKey) return;
+    let cancelled = false;
     setOfferLoading(true);
+    setOfferFallbackAttempted(true);
     void Promise.all(
       boundOfferIds.map(async (id) => {
         try {
@@ -416,23 +742,43 @@ export function SkuProductCard({
         if (detail) map[id] = detail;
       }
       setOfferMap(map);
-      setFetchedSig(sig);
+      setLoadedOfferKey(offerKey);
       setOfferLoading(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [open, boundOfferIds, sig, fetchedSig]);
+  }, [
+    open,
+    boundOfferIds,
+    offerKey,
+    sourceMatrix,
+    sourceMatrixLoading,
+    boundSkuIds,
+    loadedOfferKey,
+  ]);
 
   const runAutoAlign = async () => {
     if (aligning) return;
     setAligning(true);
     setAlignError(null);
     try {
-      const res = await api.autoAlignSku(shopName, product.thirdPlatformItemId);
-      showToast(`自动对齐完成：${res.matchedCount}/${res.totalVariants} 个变体已绑定`);
+      const status = await enqueueSkuAlignRun(shopName, {
+        triggerType: "MANUAL_REFRESH",
+        scopeType: "PRODUCT",
+        scopeIds: [product.thirdPlatformItemId],
+        forceRefresh: true,
+      });
+      if (status) {
+        showToast(
+          `自动对齐完成：${status.matchedCount} 个变体已对齐 · 建议 ${status.suggestedCount}`
+        );
+      } else {
+        showToast("对齐任务未受理，请稍后重试");
+      }
       setOpen(true);
       await onAligned();
+      if (open) await refreshV1Detail();
     } catch (err) {
       setAlignError(autoAlignError(err));
     } finally {
@@ -440,17 +786,66 @@ export function SkuProductCard({
     }
   };
 
+  const showSupplementSource =
+    open &&
+    v1Detail &&
+    !v1DetailLoading &&
+    needsSupplementSource(v1Detail);
+  const supplementHint = v1Detail ? buildSupplementSourceHint(v1Detail) : null;
+
+  // Step 3 — silent CARD_EXPAND + V1 detail when the user opens this product card.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      await refreshV1Detail();
+      if (cancelled) return;
+      try {
+        const accepted = await api.skuAlignV1CardExpand(
+          shopName,
+          product.thirdPlatformItemId
+        );
+        if (cancelled || !accepted.accepted || !accepted.runId) return;
+        const status = await pollSkuAlignRun(shopName, accepted.runId);
+        if (
+          !cancelled &&
+          (status.runStatus === "SUCCEEDED" || status.runStatus === "PARTIAL")
+        ) {
+          await onAligned();
+          await refreshV1Detail();
+        }
+      } catch {
+        // Backend rejects when not stale / already resolved — stay silent.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, shopName, product.thirdPlatformItemId, onAligned]);
+
   // "确认全部待确认": promote every PENDING variant of this product to ACTIVE.
   const ackAll = async () => {
     if (ackingAll || pendingCount === 0) return;
     setAckingAll(true);
     setAlignError(null);
     try {
-      const pend = product.variants.filter((v) => v.bound?.bindStatus === "PENDING");
-      for (const v of pend) {
-        await api.ackSkuBinding(shopName, v.thirdPlatformSkuId);
+      const pendingIds = product.variants
+        .filter((v) => variantBindingState(v.bound) === "auto-pending")
+        .map((v) => v.thirdPlatformSkuId);
+      const result = await confirmSuggestionsWithFallback(
+        {
+          shopName,
+          targetScope: "PRODUCT",
+          productIds: [product.thirdPlatformItemId],
+        },
+        pendingIds
+      );
+      const confirmed = result.confirmedCount ?? 0;
+      if (confirmed <= 0) {
+        showToast("没有可确认的待确认建议");
+        return;
       }
-      showToast(`已确认 ${pend.length} 个变体关联`);
+      showToast(`已确认 ${confirmed} 个自动对齐建议`);
       await onAligned();
     } catch (err) {
       setAlignError(autoAlignError(err));
@@ -481,6 +876,15 @@ export function SkuProductCard({
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-[11px] text-ink-subtle">{total} 个变体</span>
               <MatchStatePill state={state} bound={bound} total={total} />
+              {pendingCount > 0 ? (
+                <Badge variant="warning">待确认 {pendingCount}</Badge>
+              ) : null}
+              {unboundCount > 0 ? (
+                <Badge variant="outline">未匹配 {unboundCount}</Badge>
+              ) : null}
+              {manualCount > 0 ? (
+                <Badge variant="success">手动 {manualCount}</Badge>
+              ) : null}
             </div>
           </div>
           <ChevronDown
@@ -525,6 +929,31 @@ export function SkuProductCard({
         </div>
       ) : null}
 
+      {showSupplementSource && supplementHint ? (
+        <div className="mx-4 mb-3 flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-hairline pt-3 text-xs text-ink-subtle">
+          <span className="min-w-[12rem] flex-1 leading-relaxed">{supplementHint}</span>
+          <Input
+            value={supplementOfferId}
+            onChange={(e) => setSupplementOfferId(e.target.value)}
+            placeholder="1688 offerId"
+            className="h-8 w-36 text-xs"
+            disabled={addingSupplement}
+            aria-label="补充货源 offerId"
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void addSupplementSource()}
+            disabled={addingSupplement || !supplementOfferId.trim()}
+          >
+            {addingSupplement ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : null}
+            登记补充货源
+          </Button>
+        </div>
+      ) : null}
+
       {/* Body — per-variant side-by-side comparison */}
       {open ? (
         <div className="border-t border-hairline bg-canvas/40 px-4 py-1 divide-y divide-slate-100">
@@ -532,12 +961,18 @@ export function SkuProductCard({
             <VariantCompareRow
               key={v.thirdPlatformSkuId}
               variant={v}
+              product={product}
               offer={
                 v.bound?.tangbuyProductId
                   ? offerMap[v.bound.tangbuyProductId]
                   : undefined
               }
               offerLoading={offerLoading}
+              offerFallbackAttempted={offerFallbackAttempted}
+              sourceMatrix={sourceMatrix}
+              sourceMatrixLoading={sourceMatrixLoading}
+              sourceMatrixError={sourceMatrixError}
+              onRetryEvidence={retryEvidence}
               shopName={shopName}
               onMutated={onAligned}
               showToast={showToast}
