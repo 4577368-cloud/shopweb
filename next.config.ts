@@ -5,6 +5,16 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname),
   },
+  async rewrites() {
+    const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
+    if (!apiBase) return [];
+    return [
+      {
+        source: "/api/plugin/:path*",
+        destination: `${apiBase}/api/plugin/:path*`,
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       {

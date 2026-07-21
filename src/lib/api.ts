@@ -81,10 +81,12 @@ function safeJsonParse(text: string): unknown {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!API_BASE) {
+  if (!API_BASE && !path.startsWith("/api/plugin/")) {
     throw new ApiError("NEXT_PUBLIC_API_BASE is not configured", 0);
   }
-  const url = `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+  const url = path.startsWith("/api/plugin/")
+    ? path
+    : `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 
   let res: Response;
   try {
@@ -467,10 +469,15 @@ export const api = {
     return request<SkuAlignOverview>(`/api/plugin/sku-align/v1/overview?${params}`);
   },
 
-  skuAlignV1ProductDetail: (shop: string, productId: string) =>
-    request<SkuAlignProductDetail>(
-      `/api/plugin/sku-align/v1/products/${encodeURIComponent(productId)}?shopName=${encodeURIComponent(shop)}`
-    ),
+  skuAlignV1ProductDetail: (shop: string, productId: string) => {
+    const params = new URLSearchParams({
+      shopName: shop,
+      productId,
+    });
+    return request<SkuAlignProductDetail>(
+      `/api/plugin/sku-align/v1/products/detail?${params.toString()}`
+    );
+  },
 
   skuAlignV1EnqueueRun: (body: SkuAlignRunRequest) =>
     request<SkuAlignRunAccepted>(`/api/plugin/sku-align/v1/runs`, {
@@ -492,11 +499,13 @@ export const api = {
     ),
 
   /** Step 3 — card expand refresh for a single unresolved product. */
-  skuAlignV1CardExpand: (shop: string, productId: string) =>
-    request<SkuAlignRunAccepted>(
-      `/api/plugin/sku-align/v1/products/${encodeURIComponent(productId)}/expand?shopName=${encodeURIComponent(shop)}`,
+  skuAlignV1CardExpand: (shop: string, productId: string) => {
+    const params = new URLSearchParams({ shopName: shop, productId });
+    return request<SkuAlignRunAccepted>(
+      `/api/plugin/sku-align/v1/products/expand?${params.toString()}`,
       { method: "POST" }
-    ),
+    );
+  },
 
   skuAlignV1ConfirmSuggestions: (body: SkuAlignConfirmSuggestionsRequest) =>
     request<SkuAlignConfirmResult>(`/api/plugin/sku-align/v1/confirm-suggestions`, {
@@ -505,38 +514,47 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  skuAlignV1ManualBind: (variantId: string, body: SkuAlignManualBindRequest) =>
-    request<void>(
-      `/api/plugin/sku-align/v1/variants/${encodeURIComponent(variantId)}/bind`,
+  skuAlignV1ManualBind: (variantId: string, body: SkuAlignManualBindRequest) => {
+    const params = new URLSearchParams({ variantId });
+    return request<void>(
+      `/api/plugin/sku-align/v1/variants/bind?${params.toString()}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }
-    ),
+    );
+  },
 
-  skuAlignV1BlockVariant: (variantId: string, body: SkuAlignBlockVariantRequest) =>
-    request<void>(
-      `/api/plugin/sku-align/v1/variants/${encodeURIComponent(variantId)}/block`,
+  skuAlignV1BlockVariant: (variantId: string, body: SkuAlignBlockVariantRequest) => {
+    const params = new URLSearchParams({ variantId });
+    return request<void>(
+      `/api/plugin/sku-align/v1/variants/block?${params.toString()}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }
-    ),
+    );
+  },
 
   skuAlignV1AddSupplementSource: (
     productId: string,
     body: SkuAlignSupplementSourceRequest
-  ) =>
-    request<SkuAlignRunAccepted>(
-      `/api/plugin/sku-align/v1/products/${encodeURIComponent(productId)}/supplement-source`,
+  ) => {
+    const params = new URLSearchParams({
+      shopName: body.shopName,
+      productId,
+    });
+    return request<SkuAlignRunAccepted>(
+      `/api/plugin/sku-align/v1/products/supplement-source?${params.toString()}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }
-    ),
+    );
+  },
 
   skuAlignV1RecordAlias: (body: SkuAlignAliasKnowledgeRequest) =>
     request<void>(`/api/plugin/sku-align/v1/knowledge/alias`, {
@@ -652,7 +670,7 @@ export const api = {
     ),
 
   listLogisticsTemplates: (shop: string) =>
-    request<LogisticsTemplate[]>(
+    localRequest<LogisticsTemplate[]>(
       `/api/logistics/templates?shopName=${encodeURIComponent(shop)}`
     ),
 
