@@ -1,3 +1,4 @@
+import { isLikelySkuSpecLabel } from "@/lib/batch-link/source-display-title";
 import type { ConfirmImageMatchRequest, ImageBindingView, CatalogRecommendation } from "@/lib/types";
 import {
   buildTangbuyProductUrl,
@@ -143,11 +144,17 @@ export function withManualMatchBindingMeta(
   view: ImageBindingView,
   offerTitle?: string | null
 ): ImageBindingView {
+  const productTitle = offerTitle?.trim() || null;
+  const viewTitle = view.offerTitle?.trim() || null;
   return {
     ...view,
     bindSource: MANUAL_MATCH_BIND_SOURCE,
     appliedQuery: MANUAL_MATCH_APPLIED_QUERY,
     querySource: "NONE",
-    offerTitle: view.offerTitle ?? offerTitle ?? null,
+    offerTitle:
+      productTitle ||
+      (viewTitle && !isLikelySkuSpecLabel(viewTitle) ? viewTitle : null) ||
+      viewTitle ||
+      null,
   };
 }

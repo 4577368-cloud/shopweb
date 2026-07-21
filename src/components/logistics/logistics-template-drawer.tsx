@@ -33,6 +33,7 @@ const SPEEDS: {
 ];
 
 export function LogisticsTemplateDrawer({
+  shopName,
   templates,
   activeTemplate,
   onSave,
@@ -40,6 +41,7 @@ export function LogisticsTemplateDrawer({
   onSelect,
   onClose,
 }: {
+  shopName: string;
   templates: LogisticsTemplate[];
   activeTemplate: LogisticsTemplate | null;
   onSave: (template: LogisticsTemplateUpsert, id?: string) => Promise<LogisticsTemplate>;
@@ -67,13 +69,14 @@ export function LogisticsTemplateDrawer({
       }
     } else {
       setFormData({
+        shopName,
         packaging: "MINIMAL",
         speedPreference: "BALANCED",
         markets: [],
       });
       setSelectedGroupId(null);
     }
-  }, [activeTemplate]);
+  }, [activeTemplate, shopName]);
 
   const countryCodes = useMemo(() => {
     return codesFromSelections(formData.markets ?? []);
@@ -108,6 +111,10 @@ export function LogisticsTemplateDrawer({
   }, [selectedGroup, formData.markets]);
 
   const handleSave = async () => {
+    if (!shopName.trim()) {
+      setError("缺少店铺标识，请先完成店铺授权");
+      return;
+    }
     if (!formData.packaging || !formData.speedPreference) {
       setError("请选择包装方式和时效偏好");
       return;
@@ -125,14 +132,21 @@ export function LogisticsTemplateDrawer({
       const autoName = `物流模板 ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
       const upsertData: LogisticsTemplateUpsert = {
-        shopName: formData.shopName ?? "",
+        shopName,
         name: formData.name || autoName,
         packaging: formData.packaging,
         speedPreference: formData.speedPreference,
         markets: formData.markets ?? [],
       };
 
-      const saved = await onSave(upsertData, activeTemplate?.id);
+      const saved = await onSave(
+        upsertData,
+        activeTemplate?.id &&
+          activeTemplate.id !== "default" &&
+          templates.some((t) => t.id === activeTemplate.id)
+          ? activeTemplate.id
+          : undefined
+      );
       onSelect(saved);
     } catch (err) {
       setError((err as Error).message);
@@ -159,6 +173,7 @@ export function LogisticsTemplateDrawer({
 
   const handleNewTemplate = () => {
     setFormData({
+      shopName,
       packaging: "MINIMAL",
       speedPreference: "BALANCED",
       markets: [],

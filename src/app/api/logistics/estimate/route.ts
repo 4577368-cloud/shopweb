@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  resolveMallGatewayBaseUrl,
+  resolveServerMallToken,
+} from "@/lib/logistics/mall-gateway-auth";
 import { resolveCountryId } from "@/lib/logistics/template-params";
 import type {
   LogisticsLine,
@@ -8,7 +12,10 @@ import type {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const TANGBUY_GATEWAY_URL = "https://tangbuy.cc/gateway/plugin/logistic/estimateSkuSaleFeePrice";
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
+
+const MISSING_GATEWAY_ERROR =
+  "线路报价需 Tangbuy 网关凭证：请确认 NEXT_PUBLIC_API_BASE 指向已部署的 tangbuy-plugin（Render 上配置 TANG_PLUGIN_TANGBUY_MALL_TOKEN），或在本机 .env.local 添加 TANG_PLUGIN_TANGBUY_MALL_TOKEN 供本地 Next.js 使用。";
 
 export interface LogisticsEstimateRequest {
   shopName: string;
@@ -75,11 +82,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请提供至少一个 variant" }, { status: 400 });
   }
 
-  const authToken = process.env.TANG_PLUGIN_TANGBUY_MALL_TOKEN;
-  if (!authToken) {
-    return NextResponse.json({ error: "网关配置未就绪" }, { status: 500 });
-  }
-
   const tangbuyRequest = {
     countryId,
     countryCode: code,
@@ -98,54 +100,132 @@ export async function POST(request: Request) {
   };
 
   try {
-    const res = await fetch(TANGBUY_GATEWAY_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-        currency: "CNY",
-        device: "pc",
-        lang: "cn",
-        "tang-request-device": "web",
-        "tang-request-render": "csr",
-        "tang-request-rewrite": "true",
-        "x-timezone": "8",
-        "x-timezone-id": "Asia/Shanghai",
-      },
-      body: JSON.stringify(tangbuyRequest),
-    });
-
-    const text = await res.text();
-    let raw: unknown;
-    try {
-      raw = text ? JSON.parse(text) : undefined;
-    } catch {
-      raw = text;
-    }
-
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: `网关请求失败: ${res.status}`, details: raw },
-        { status: res.status }
-      );
-    }
-
-    const normalized = normalizeTangbuyResponse(raw as Record<string, unknown>, variants);
+    const raw = await fetchEstimateRaw(tangbuyRequest);
+    const normalized = normalizeTangbuyResponse(raw, variants);
     return NextResponse.json(normalized);
   } catch (error) {
+    const message = (error as Error).message || "网关请求异常";
+    const status =
+      message.includes("未配置") || message.includes("NEXT_PUBLIC_API_BASE")
+        ? 503
+        : 502;
     return NextResponse.json(
       {
+        error: message,
         success: false,
-        message: "网关请求异常",
+        message,
         results: variants.map((v) => ({
           thirdPlatformSkuId: v.thirdPlatformSkuId,
           quoteStatus: "FAILED" as QuoteStatus,
-          errorMessage: (error as Error).message,
+          errorMessage: message,
         })),
       },
-      { status: 502 }
+      { status }
     );
   }
+}
+
+async function fetchEstimateRaw(
+  tangbuyRequest: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  if (API_BASE) {
+    try {
+      return await fetchEstimateViaPlugin(tangbuyRequest);
+    } catch (pluginError) {
+      const token = resolveServerMallToken();
+      if (token) {
+        return fetchEstimateDirect(tangbuyRequest, token);
+      }
+      throw pluginError;
+    }
+  }
+
+  const token = resolveServerMallToken();
+  if (!token) {
+    throw new Error(MISSING_GATEWAY_ERROR);
+  }
+  return fetchEstimateDirect(tangbuyRequest, token);
+}
+
+async function fetchEstimateViaPlugin(
+  tangbuyRequest: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const res = await fetch(`${API_BASE}/api/plugin/logistics/estimate`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(tangbuyRequest),
+  });
+
+  const text = await res.text();
+  let raw: unknown;
+  try {
+    raw = text ? JSON.parse(text) : undefined;
+  } catch {
+    raw = text;
+  }
+
+  if (!res.ok) {
+    const detail =
+      raw && typeof raw === "object" && raw !== null && "message" in raw
+        ? String((raw as { message?: unknown }).message ?? "")
+        : "";
+    if (res.status === 404) {
+      throw new Error(
+        "Render 后端尚未部署 /api/plugin/logistics/estimate，请更新 tangbuy-plugin 后重试"
+      );
+    }
+    throw new Error(
+      detail.trim() ||
+        `Render 后端报价失败 (${res.status})，请检查 TANG_PLUGIN_TANGBUY_MALL_TOKEN`
+    );
+  }
+
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Render 后端返回非 JSON");
+  }
+  return raw as Record<string, unknown>;
+}
+
+async function fetchEstimateDirect(
+  tangbuyRequest: Record<string, unknown>,
+  authToken: string
+): Promise<Record<string, unknown>> {
+  const gatewayUrl = `${resolveMallGatewayBaseUrl()}/gateway/plugin/logistic/estimateSkuSaleFeePrice`;
+  const res = await fetch(gatewayUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+      currency: "CNY",
+      device: "pc",
+      lang: "cn",
+      "tang-request-device": "web",
+      "tang-request-render": "csr",
+      "tang-request-rewrite": "true",
+      "x-timezone": "8",
+      "x-timezone-id": "Asia/Shanghai",
+    },
+    body: JSON.stringify(tangbuyRequest),
+  });
+
+  const text = await res.text();
+  let raw: unknown;
+  try {
+    raw = text ? JSON.parse(text) : undefined;
+  } catch {
+    raw = text;
+  }
+
+  if (!res.ok) {
+    throw new Error(`Tangbuy 网关请求失败 (${res.status})`);
+  }
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Tangbuy 网关返回非 JSON");
+  }
+  return raw as Record<string, unknown>;
 }
 
 function normalizeTangbuyResponse(
@@ -196,7 +276,9 @@ function normalizeTangbuyResponse(
         ? String(result.errorMessage ?? "报价失败")
         : undefined,
       recommendedLine: mainLine ? parseLogisticsLine(mainLine) : undefined,
-      alternativeLines: otherLines?.map(parseLogisticsLine),
+      alternativeLines: otherLines
+        ?.map((line) => parseLogisticsLine(line))
+        .filter((line): line is LogisticsLine => Boolean(line.lineCode || line.lineName)),
       estimatedWeightG: result.estimatedWeightG as number | undefined,
       estimatedVolumeCm3: result.estimatedVolumeCm3 as number | undefined,
     };
@@ -206,6 +288,18 @@ function normalizeTangbuyResponse(
 }
 
 function parseLogisticsLine(raw: unknown): LogisticsLine {
+  if (!raw || typeof raw !== "object") {
+    return {
+      lineCode: "",
+      lineName: "",
+      estimatedFee: 0,
+      currency: "CNY",
+      estimatedDays: 0,
+      carrier: "",
+      trackingAvailable: false,
+      priority: 999,
+    };
+  }
   const line = raw as Record<string, unknown>;
   return {
     lineCode: String(line.lineCode ?? ""),

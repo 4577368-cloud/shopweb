@@ -198,6 +198,7 @@ export type LogisticsDecisionStatus =
   | "pending_sku"
   | "pending_postal_meta"
   | "ready_for_quote"
+  | "confirmed"
   | "restricted"
   | "needs_review";
 
@@ -682,6 +683,8 @@ export interface SkuProductOverview {
   tangbuyProductId?: string | null;
   /** Tangbuy detail URL for itemGet SKU matrix. */
   detailUrl?: string | null;
+  /** Shopify shop currency for listing-price display (e.g. USD). */
+  currency?: string | null;
   variants: SkuVariant[];
 }
 

@@ -49,9 +49,12 @@ import { SmartSourcingSummaryBar } from "@/components/select/smart-sourcing-summ
 import { PricingStrategyRailCard } from "@/components/select/pricing-strategy-rail-card";
 import { PricingTemplateDrawer } from "@/components/select/pricing-template-drawer";
 import { ProductsAgentPanel } from "@/components/select/products-agent-panel";
+import { PageAgentPanel } from "@/components/workbench/page-agent-panel";
+import { productsAgentConfig } from "@/lib/agents/page-agent/products-config";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import { mergeListingPriceRow, writeShopListingPrice } from "@/lib/shop-product-write";
@@ -90,7 +93,8 @@ interface ProductsSummary {
 function SelectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, isAuthorized, showToast } = useOnboarding();
+  const { shop, isAuthorized, authSessionReady, showToast, refreshWorkflowProgress } =
+    useOnboarding();
   const shopName = shop.name;
   const wb = useWorkbenchPage("products");
 
@@ -238,8 +242,9 @@ function SelectContent() {
       pendingProducts: stats.pending,
     });
     refreshNewArrivalAwareness(merged, map);
+    void refreshWorkflowProgress();
     return { products: merged, bindings: map };
-  }, [shopName, refreshNewArrivalAwareness]);
+  }, [shopName, refreshNewArrivalAwareness, refreshWorkflowProgress]);
 
   const finishedRef = useRef(false);
   const finishToResult = useCallback(async () => {
@@ -843,6 +848,32 @@ function SelectContent() {
       : undefined,
   };
 
+  const pageAgentHelpers = useMemo(
+    () => ({
+      showToast,
+      refreshData: async () => {
+        await loadSummary();
+      },
+      focusProduct: (productId: string, opts?: { openSearch?: boolean }) => {
+        focusProduct(productId, opts);
+      },
+      applyFilter: (filter: Record<string, unknown>) => {
+        if (filter.shopFilter && typeof filter.shopFilter === "string") {
+          setShopFilter(filter.shopFilter as ShopFilter);
+          setTab("shop");
+        }
+        // 价格/利润筛选暂存，后续可接入
+        if (filter.priceBelow != null || filter.profitBelow != null) {
+          showToast("筛选条件已应用到当前列表");
+        }
+      },
+      openDrawer: (drawer: string) => {
+        if (drawer === "pricing") openPricingDrawer();
+      },
+    }),
+    [showToast, focusProduct, openPricingDrawer, loadSummary]
+  );
+
   const rail = (
     <AssistantRail
       assistantContent={
@@ -888,6 +919,25 @@ function SelectContent() {
       }
     />
   );
+
+  if (!authSessionReady) {
+    return (
+      <WorkbenchShell sidebar={<StepSidebar />} rail={rail} {...wb.shellProps}>
+        <WorkbenchPanel
+          title="智能选品"
+          breadcrumbs={[{ label: "授权店铺", href: "/authorize" }, { label: "智能选品" }]}
+          {...wb.panelProps}
+        >
+          <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
+            <Loader2 className="h-4 w-4 animate-spin text-brand" />
+            正在恢复店铺授权…
+          </div>
+          <TableSkeleton rows={4} />
+        </WorkbenchPanel>
+        {pricingDrawer}
+      </WorkbenchShell>
+    );
+  }
 
   if (!isAuthorized) {
     return (
@@ -940,11 +990,6 @@ function SelectContent() {
       >
         <WorkbenchPanel
           title={scanDone ? "AI 已完成首轮选品分析" : "AI 正在分析你的店铺"}
-          description={
-            scanDone
-              ? undefined
-              : "正在同步商品、匹配供应链，并读取店铺经营数据。"
-          }
           breadcrumbs={BREADCRUMBS}
           {...wb.panelProps}
         >
@@ -1047,8 +1092,6 @@ function SelectContent() {
                 onViewNewArrivalUnmatched={() => viewNewArrivalResult("unbound")}
                 batchLinkProgress={batchLinkProgress}
                 batchLinkBusy={batchLinkActive}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
               />
             ) : (
               <div ref={setFiltersMountEl} />

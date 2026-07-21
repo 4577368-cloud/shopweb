@@ -2,14 +2,18 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, MoreHorizontal } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, MoreHorizontal } from "lucide-react";
 import type { LogisticsEstimateResult } from "@/lib/api";
 import {
   buildQuoteColumn,
+  canFetchLogisticsQuote,
   countIssues,
   countReady,
+  countReadyForQuote,
+  fetchQuoteActionLabel,
   filterProfiles,
   filterVariants,
+  formatQuoteStatusLabel,
   shouldDefaultExpand,
   shouldShowAcceptAction,
   shouldShowDecisionReason,
@@ -58,6 +62,9 @@ function ProductThumb({
 }
 
 function VariantDetailReadonly({ decision }: { decision: VariantLogisticsDecision }) {
+  const quoteLabel = formatQuoteStatusLabel(decision);
+  const line = decision.recommendedLine;
+
   return (
     <div className="mt-2 space-y-1 rounded border border-hairline bg-surface-muted/30 p-2 text-[10px] text-ink-subtle">
       {decision.decisionConfirmed && decision.acceptedAt ? (
@@ -79,7 +86,18 @@ function VariantDetailReadonly({ decision }: { decision: VariantLogisticsDecisio
       {decision.postalLimitConfidence != null ? (
         <p>邮限置信: {Math.round(decision.postalLimitConfidence * 100)}%</p>
       ) : null}
-      {decision.quoteStatus ? <p>报价状态: {decision.quoteStatus}</p> : null}
+      {quoteLabel ? <p>线路报价: {quoteLabel}</p> : null}
+      {line ? (
+        <p>
+          推荐线路: {line.lineName}
+          {line.estimatedFee != null
+            ? ` · ${line.currency ?? ""}${line.estimatedFee.toFixed(2)}`
+            : ""}
+          {line.estimatedDays != null ? ` · ${line.estimatedDays}天` : ""}
+        </p>
+      ) : decision.decisionConfirmed ? (
+        <p>推荐线路: 未配置（可点右侧「拉取线路」或批量「拉取线路报价」）</p>
+      ) : null}
       {decision.alternativeLines?.length ? (
         <p>备选线路: {decision.alternativeLines.length} 条</p>
       ) : null}
@@ -92,20 +110,24 @@ function VariantDecisionRow({
   quoteResult,
   busy,
   accepting,
+  quotingThis,
   focusKey,
   highlighted,
   onCorrectType,
   onAcceptAi,
+  onFetchQuote,
   pricing,
 }: {
   decision: VariantLogisticsDecision;
   quoteResult?: LogisticsEstimateResult;
   busy: boolean;
   accepting?: boolean;
+  quotingThis?: boolean;
   focusKey: string;
   highlighted: boolean;
   onCorrectType: () => void;
   onAcceptAi: () => void;
+  onFetchQuote: () => void;
   pricing?: PricingTemplate | null;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
@@ -174,11 +196,25 @@ function VariantDecisionRow({
           </Link>
         ) : shouldShowAcceptAction(decision) ? (
           <>
+            {canFetchLogisticsQuote(decision) ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-7 text-[11px]"
+                onClick={onFetchQuote}
+                disabled={busy || accepting || quotingThis}
+              >
+                {quotingThis ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                拉取线路
+              </Button>
+            ) : null}
             <Button
               size="sm"
               className="h-7 text-[11px]"
               onClick={onAcceptAi}
-              disabled={busy || accepting}
+              disabled={busy || accepting || quotingThis}
             >
               接受 AI
             </Button>
@@ -188,12 +224,26 @@ function VariantDecisionRow({
                 variant="secondary"
                 className="h-7 text-[11px]"
                 onClick={onCorrectType}
-                disabled={busy || accepting}
+                disabled={busy || accepting || quotingThis}
               >
                 修正主类型
               </Button>
             )}
           </>
+        ) : canFetchLogisticsQuote(decision) ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 text-[11px]"
+            onClick={onFetchQuote}
+            disabled={busy || accepting || quotingThis}
+            title={fetchQuoteActionLabel(decision)}
+          >
+            {quotingThis ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : null}
+            {fetchQuoteActionLabel(decision)}
+          </Button>
         ) : null}
         <Button
           size="sm"
@@ -221,8 +271,10 @@ function ProductDecisionCard({
   correcting,
   highlightVariantId,
   accepting,
+  quotingVariantId,
   onCorrect,
   onAcceptAi,
+  onFetchQuote,
   pricing,
 }: {
   profile: ProductLogisticsProfile;
@@ -233,12 +285,13 @@ function ProductDecisionCard({
   correcting: boolean;
   highlightVariantId: string | null;
   accepting?: boolean;
+  quotingVariantId?: string | null;
   onCorrect: (itemId: string, type: LogisticsTypeCode) => void;
   onAcceptAi: (variant: VariantLogisticsDecision) => void;
+  onFetchQuote: (variant: VariantLogisticsDecision) => void;
   pricing?: PricingTemplate | null;
 }) {
   const variants = filterVariants(profile.variantDecisions ?? [], filterMode);
-  const ready = countReady(profile);
   const issues = countIssues(profile);
 
   if (variants.length === 0) return null;
@@ -257,7 +310,11 @@ function ProductDecisionCard({
                 {profile.title || profile.thirdPlatformItemId}
               </p>
               <p className="mt-0.5 text-[11px] text-ink-subtle">
-                {ready}/{profile.totalVariants ?? variants.length} 可报价
+                {countReadyForQuote(profile)}/{profile.totalVariants ?? variants.length}{" "}
+                可报价
+                {(profile.decisionStatusCounts?.confirmed ?? 0) > 0
+                  ? ` · ${profile.decisionStatusCounts?.confirmed ?? 0} 已确认`
+                  : ""}
                 {issues > 0 ? ` · ${issues} 待处理` : ""}
               </p>
             </div>
@@ -306,6 +363,7 @@ function ProductDecisionCard({
               quoteResult={quoteResults.get(v.thirdPlatformSkuId)}
               busy={correcting}
               accepting={accepting}
+              quotingThis={quotingVariantId === v.thirdPlatformSkuId}
               focusKey={`${profile.thirdPlatformItemId}:${v.thirdPlatformSkuId}`}
               highlighted={
                 highlightVariantId === v.thirdPlatformSkuId ||
@@ -318,6 +376,7 @@ function ProductDecisionCard({
                 el?.focus();
               }}
               onAcceptAi={() => onAcceptAi(v)}
+              onFetchQuote={() => onFetchQuote(v)}
               pricing={pricing}
             />
           ))
@@ -334,8 +393,10 @@ export function LogisticsDecisionList({
   focusTarget,
   onCorrect,
   onAcceptAi,
+  onFetchQuote,
   onClearFocus,
   accepting,
+  quotingVariantId,
   pricing,
 }: {
   analysis: LogisticsAnalysis;
@@ -345,8 +406,10 @@ export function LogisticsDecisionList({
   focusTarget: LogisticsFocusTarget | null;
   onCorrect: (itemId: string, type: LogisticsTypeCode) => void;
   onAcceptAi: (variant: VariantLogisticsDecision, productId: string) => void;
+  onFetchQuote: (variant: VariantLogisticsDecision) => void;
   onClearFocus: () => void;
   accepting?: boolean;
+  quotingVariantId?: string | null;
   pricing?: PricingTemplate | null;
 }) {
   const profiles = useMemo(
@@ -413,8 +476,13 @@ export function LogisticsDecisionList({
         {filterMode === "issues"
           ? "当前没有待处理项"
           : filterMode === "ready"
-            ? "暂无可报价规格"
+            ? "暂无可报价或已确认规格"
             : "暂无已关联商品"}
+        {filterMode !== "all" ? (
+          <p className="mt-2 text-xs text-ink-muted">
+            切换到「全部」可查看完整列表。
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -444,8 +512,10 @@ export function LogisticsDecisionList({
             correcting={correctingId === p.thirdPlatformItemId}
             highlightVariantId={highlightVariantId}
             accepting={accepting}
+            quotingVariantId={quotingVariantId}
             onCorrect={onCorrect}
             onAcceptAi={(v) => onAcceptAi(v, p.thirdPlatformItemId)}
+            onFetchQuote={onFetchQuote}
             pricing={pricing}
           />
         );

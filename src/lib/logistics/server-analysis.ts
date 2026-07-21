@@ -8,6 +8,7 @@ import type {
   LogisticsAnalysis,
   LogisticsDecisionStatus,
   ProductLogisticsProfile,
+  QuoteStatus,
   SkuProductOverview,
   VariantLogisticsDecision,
 } from "@/lib/types";
@@ -42,6 +43,7 @@ export function mergeAcceptancesIntoAnalysis(
     pending_sku: 0,
     pending_postal_meta: 0,
     ready_for_quote: 0,
+    confirmed: 0,
     restricted: 0,
     needs_review: 0,
   };
@@ -59,6 +61,18 @@ export function mergeAcceptancesIntoAnalysis(
   };
 }
 
+function resolveAcceptedQuoteStatus(
+  acceptance: StoredVariantAcceptance,
+  variant: VariantLogisticsDecision
+): QuoteStatus {
+  const line = acceptance.recommendedLine ?? variant.recommendedLine;
+  const hasLine = Boolean(line?.lineName?.trim() || line?.lineCode?.trim());
+  const status = acceptance.quoteStatus ?? variant.quoteStatus;
+  if (hasLine) return status ?? "SUCCESS";
+  if (status === "SUCCESS") return "NOT_REQUESTED";
+  return status ?? "NOT_REQUESTED";
+}
+
 function applyAcceptancesToProduct(
   product: ProductLogisticsProfile,
   bySku: Map<string, StoredVariantAcceptance>
@@ -68,11 +82,11 @@ function applyAcceptancesToProduct(
     if (!acceptance) return variant;
     return {
       ...variant,
-      decisionStatus: "ready_for_quote" as const,
+      decisionStatus: "confirmed" as const,
       decisionReason: "已接受 AI 决策",
       decisionConfirmed: true,
       acceptedAt: acceptance.acceptedAt,
-      quoteStatus: acceptance.quoteStatus ?? variant.quoteStatus ?? "SUCCESS",
+      quoteStatus: resolveAcceptedQuoteStatus(acceptance, variant),
       recommendedLine: acceptance.recommendedLine ?? variant.recommendedLine,
       alternativeLines:
         acceptance.alternativeLines ?? variant.alternativeLines,

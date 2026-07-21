@@ -136,9 +136,11 @@ async function localRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const data = text ? safeJsonParse(text) : undefined;
   if (!res.ok) {
     let message = `Request failed (${res.status}): ${url}`;
-    if (data && typeof data === "object" && data !== null && "message" in data) {
-      const m = (data as { message: unknown }).message;
-      if (typeof m === "string" && m.trim()) message = m;
+    if (data && typeof data === "object" && data !== null) {
+      const err = (data as { error?: unknown; message?: unknown }).error;
+      const msg = (data as { message?: unknown }).message;
+      if (typeof err === "string" && err.trim()) message = err;
+      else if (typeof msg === "string" && msg.trim()) message = msg;
     }
     throw new ApiError(message, res.status, data);
   }
@@ -203,6 +205,23 @@ export interface LogisticsAcceptDecisionRequest {
 
 export interface LogisticsAcceptDecisionResult {
   acceptedCount: number;
+  analysis: LogisticsAnalysis;
+}
+
+export interface LogisticsPatchQuotesRequest {
+  shopName: string;
+  quotes: Record<
+    string,
+    {
+      recommendedLine?: LogisticsLine;
+      alternativeLines?: LogisticsLine[];
+      quoteStatus?: QuoteStatus;
+    }
+  >;
+}
+
+export interface LogisticsPatchQuotesResult {
+  patchedCount: number;
   analysis: LogisticsAnalysis;
 }
 
@@ -704,6 +723,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  patchLogisticsQuotes: (body: LogisticsPatchQuotesRequest) =>
+    localRequest<LogisticsPatchQuotesResult>("/api/logistics/patch-quotes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
   getLogisticsTemplate: (shop: string) =>
     request<LogisticsTemplate>(
       `/api/plugin/logistics/template?shopName=${encodeURIComponent(shop)}`
@@ -714,12 +740,16 @@ export const api = {
       `/api/logistics/templates?shopName=${encodeURIComponent(shop)}`
     ),
 
-  upsertLogisticsTemplate: (body: LogisticsTemplateUpsert, id?: string) => {
-    const url = `/api/logistics/templates?shopName=${encodeURIComponent(body.shopName)}`;
+  upsertLogisticsTemplate: (shop: string, body: LogisticsTemplateUpsert, id?: string) => {
+    const resolvedShop = shop.trim() || body.shopName?.trim() || "";
+    if (!resolvedShop) {
+      return Promise.reject(new Error("缺少店铺标识，请先完成店铺授权"));
+    }
+    const url = `/api/logistics/templates?shopName=${encodeURIComponent(resolvedShop)}`;
     return localRequest<LogisticsTemplate>(url, {
       method: id ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...body, id }),
+      body: JSON.stringify({ ...body, shopName: resolvedShop, id }),
     });
   },
 

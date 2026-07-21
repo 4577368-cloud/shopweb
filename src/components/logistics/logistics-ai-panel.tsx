@@ -29,6 +29,8 @@ export function LogisticsAiPanel({
   quoting,
   accepting,
   saving,
+  quoteTargetCount,
+  readyAcceptCount,
   onFocusStatus,
   onAcceptAllReady,
   onFetchQuotes,
@@ -40,13 +42,14 @@ export function LogisticsAiPanel({
   quoting: boolean;
   accepting: boolean;
   saving: boolean;
+  quoteTargetCount: number;
+  readyAcceptCount: number;
   onFocusStatus: (status: LogisticsDecisionStatus) => void;
   onAcceptAllReady: () => void;
   onFetchQuotes: () => void;
   onSaveSync: () => void;
 }) {
   const { auto, manual } = countAutoVsManual(decisionStatusCounts);
-  const readyCount = decisionStatusCounts?.ready_for_quote ?? 0;
 
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -91,26 +94,29 @@ export function LogisticsAiPanel({
             size="sm"
             variant="secondary"
             className="h-8 justify-start text-xs"
-            disabled={readyCount === 0 || accepting}
-            onClick={onAcceptAllReady}
-          >
-            {accepting ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-            ) : null}
-            接受全部可报价 ({readyCount})
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-8 justify-start text-xs"
-            disabled={readyCount === 0 || quoting}
+            disabled={quoteTargetCount === 0 || quoting}
             onClick={onFetchQuotes}
           >
             {quoting ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
             ) : null}
-            拉取可报价线路 ({readyCount})
+            拉取线路报价 ({quoteTargetCount})
           </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 justify-start text-xs"
+            disabled={readyAcceptCount === 0 || accepting || quoting}
+            onClick={onAcceptAllReady}
+          >
+            {accepting ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : null}
+            接受全部可报价 ({readyAcceptCount})
+          </Button>
+          <p className="text-[10px] leading-4 text-ink-subtle">
+            含已确认规格，可重复拉取；接受前会自动拉取线路。
+          </p>
         </div>
       </section>
 

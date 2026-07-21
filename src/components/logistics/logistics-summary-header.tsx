@@ -26,9 +26,9 @@ const STAT_ORDER: LogisticsDecisionStatus[] = [
 ];
 
 const FILTER_TABS: { id: LogisticsFilterMode; label: string }[] = [
-  { id: "issues", label: "问题项" },
   { id: "all", label: "全部" },
-  { id: "ready", label: "可报价" },
+  { id: "ready", label: "可报价/已确认" },
+  { id: "issues", label: "问题项" },
 ];
 
 export function LogisticsSummaryHeader({

@@ -66,3 +66,24 @@ export function formatPurchaseCostMoney(
 ): string {
   return `${amount.toFixed(decimals)} ${currency}`;
 }
+
+/** Shopify listing price with shop currency code (matches selection page). */
+export function formatShopListingPrice(
+  price?: number | null,
+  shopCurrency?: string | null
+): string {
+  if (price == null || Number.isNaN(price)) return "—";
+  const cur = normalizeCurrencyCode(shopCurrency);
+  return cur ? `${price.toFixed(2)} ${cur}` : price.toFixed(2);
+}
+
+/** CNY procurement cost → shop display currency string (no「采购价」prefix). */
+export function formatSourceCostInShopCurrency(
+  costCny: number | null | undefined,
+  shopCurrency?: string | null
+): string | null {
+  const ctx = resolvePurchaseCostDisplayContext(shopCurrency);
+  const inTarget = costInPurchaseDisplayCurrency(costCny, ctx);
+  if (inTarget == null) return null;
+  return formatPurchaseCostMoney(inTarget, ctx.currency);
+}

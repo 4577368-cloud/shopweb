@@ -24,6 +24,7 @@ import {
   EditedProfitLine,
   useAiFieldEditPhases,
 } from "@/components/ui/edited-field-value";
+import { ImageZoomOverlay } from "@/components/ui/image-zoom-overlay";
 import { useOnboarding } from "@/context/onboarding-context";
 import {
   AI_BEFORE_AFTER_MS,
@@ -75,6 +76,11 @@ import {
   loadVariantReadyIds,
   preflightBatchLinkScope,
 } from "@/lib/batch-link/preflight";
+import {
+  mergeConfirmedBindingView,
+  resolveBoundSourceDisplayTitle,
+  snapTitleNeedsItemGetFallback,
+} from "@/lib/batch-link/source-display-title";
 import { useBatchLinkQueue } from "@/hooks/use-batch-link-queue";
 
 export interface AgentIntentRequest {
@@ -917,6 +923,9 @@ function ShopProductCard({
   const [result, setResult] = useState<ImageSearchResult | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [trayOpen, setTrayOpen] = useState(false);
+  const [zoomImage, setZoomImage] = useState<{ src: string; alt: string } | null>(
+    null
+  );
   const [searchPhase, setSearchPhase] = useState<string | null>(null);
   const [matchScores, setMatchScores] = useState<Record<string, number>>({});
   const [recommendedIdx, setRecommendedIdx] = useState(0);
@@ -1039,11 +1048,12 @@ function ShopProductCard({
   }, [boundOfferId, boundDetailUrl, binding?.tangbuySkuId]);
 
   useEffect(() => {
-    if (!boundOfferId || !boundDetailUrl || snapTitle) {
+    if (!boundOfferId || !boundDetailUrl || !snapTitleNeedsItemGetFallback(snapTitle)) {
       setItemGetTitle(null);
       return;
     }
     let cancelled = false;
+    setItemGetTitle(null);
     void fetchItemDetail(boundDetailUrl)
       .then((detail) => {
         if (cancelled || !detail) return;
@@ -1161,7 +1171,11 @@ function ShopProductCard({
         offerPrice: candidate.price,
         offerTitle: candidate.title?.trim() || null,
       });
-      onBound(item.thirdPlatformItemId, view);
+      const merged = mergeConfirmedBindingView(view, candidate);
+      onBound(item.thirdPlatformItemId, merged);
+      if (merged.offerTitle?.trim()) {
+        setItemGetTitle(merged.offerTitle.trim());
+      }
       setTrayOpen(false);
       showToast(boundOfferId ? "已改绑货源" : "已绑定货源");
     } catch (err) {
@@ -1314,12 +1328,16 @@ function ShopProductCard({
 
   // —— 货源采购价（成本展示；与右侧定价策略无关） ——
   const boundImage = snapImage ?? offerImage(offer);
-  const boundTitle =
-    snapTitle ??
-    itemGetTitle ??
-    offer?.subjectTrans ??
-    offer?.subject ??
+  const boundCandidateTitle =
+    candidates?.find((c) => c.productId === boundOfferId)?.title?.trim() ??
     null;
+  const boundTitle = resolveBoundSourceDisplayTitle({
+    snapTitle,
+    itemGetTitle,
+    offerSubjectTrans: offer?.subjectTrans,
+    offerSubject: offer?.subject,
+    candidateTitle: boundCandidateTitle,
+  });
   const boundCostCny =
     itemGetCostCny ??
     parseGatewayPrice(snapPrice) ??
@@ -1476,6 +1494,16 @@ function ShopProductCard({
     }
   };
 
+  const openImageZoom = (
+    event: React.MouseEvent,
+    src: string | null | undefined,
+    alt: string
+  ) => {
+    if (!src) return;
+    event.stopPropagation();
+    setZoomImage({ src, alt });
+  };
+
   return (
     <article
       data-product-id={item.thirdPlatformItemId}
@@ -1504,86 +1532,66 @@ function ShopProductCard({
           : null
       )}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
-              headerBadge.variant === "matched"
-                ? headerBadge.label === "人工匹配"
-                  ? "bg-violet-50 text-violet-700"
-                  : "bg-emerald-50 text-emerald-700"
-                : headerBadge.variant === "pending"
-                  ? "bg-amber-50 text-amber-700"
-                  : headerBadge.variant === "linking"
-                    ? "bg-sky-50 text-sky-700"
-                    : headerBadge.variant === "selected"
-                      ? "bg-sky-50 text-sky-700"
-                      : "bg-slate-100 text-slate-600"
-            )}
-          >
-            {headerBadge.variant === "matched" ? (
-              <Check className="h-3.5 w-3.5" />
-            ) : headerBadge.variant === "pending" ? (
-              <Clock className="h-3.5 w-3.5" />
-            ) : headerBadge.variant === "linking" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : null}
-            {headerBadge.label}
-          </span>
-          {isNewArrival && cardState === "unbound" ? (
-            <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
-              新入库
-            </span>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Three-column body */}
-      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_1fr] md:items-stretch md:gap-0">
+      {/* Three-column body — fixed center rail keeps dividers aligned across cards */}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_9.5rem_minmax(0,1fr)] md:items-stretch md:gap-0">
         {/* A. Shopify */}
-        <div className="flex min-w-0 gap-3 md:pr-4">
-          <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:h-[4.5rem] sm:w-[4.5rem]">
-            {hasImage ? (
-              <Image
-                src={item.primaryImageUrl!}
-                alt={item.title ?? ""}
-                fill
-                sizes="72px"
-                className="object-cover"
-                unoptimized
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
-                无图
-              </div>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+        <div className="min-w-0 md:pr-4">
+          <div className="mb-1 flex w-full items-center justify-between gap-2">
+            <p className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-slate-400">
               Shopify 商品
             </p>
-            <p className="mt-0.5 line-clamp-2 text-sm font-semibold leading-snug text-slate-900">
-              {item.title ?? "(无标题)"}
-            </p>
-            <EditedFieldValue
-              edit={listingPriceEdit}
-              phases={listingPriceEditPhases}
-              className="text-sm font-semibold text-slate-800"
+            <span
+              className="shrink-0 text-[10px] tabular-nums text-slate-400"
+              title={item.thirdPlatformItemId}
             >
-              <span className="tabular-nums transition-opacity duration-300">
-                {listingPriceLabel}
-              </span>
-            </EditedFieldValue>
-            <p className="mt-0.5 text-[11px] text-slate-500">
               ID {shortProductId(item.thirdPlatformItemId)}
-            </p>
+            </span>
+          </div>
+          <div className="flex min-w-0 gap-3">
+            <button
+              type="button"
+              className={cn(
+                "relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:h-[4.5rem] sm:w-[4.5rem]",
+                hasImage && "cursor-zoom-in"
+              )}
+              disabled={!hasImage}
+              aria-label={hasImage ? "放大商品主图" : undefined}
+              onClick={(e) => openImageZoom(e, item.primaryImageUrl, item.title ?? "Shopify 商品")}
+            >
+              {hasImage ? (
+                <Image
+                  src={item.primaryImageUrl!}
+                  alt={item.title ?? ""}
+                  fill
+                  sizes="72px"
+                  className="object-cover"
+                  unoptimized
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
+                  无图
+                </div>
+              )}
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="line-clamp-2 text-sm font-semibold leading-snug text-slate-900">
+                {item.title ?? "(无标题)"}
+              </p>
+              <EditedFieldValue
+                edit={listingPriceEdit}
+                phases={listingPriceEditPhases}
+                className="text-sm font-semibold text-slate-800"
+              >
+                <span className="tabular-nums transition-opacity duration-300">
+                  {listingPriceLabel}
+                </span>
+              </EditedFieldValue>
+            </div>
           </div>
         </div>
 
         {/* B. AI Match */}
-        <div className="flex flex-col items-center justify-center border-y border-slate-100 py-2 md:border-x md:border-y-0 md:px-4 md:py-0">
+        <div className="flex w-full min-w-0 flex-col items-center justify-center border-y border-slate-100 py-2 md:border-x md:border-y-0 md:px-3 md:py-0">
           {cardState === "unbound" && !current ? (
             <>
               <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
@@ -1615,7 +1623,7 @@ function ShopProductCard({
               >
                 {matchHeadline}
               </p>
-              <div className="mt-1.5 flex max-w-[11rem] flex-wrap justify-center gap-1">
+              <div className="mt-1.5 flex w-full flex-wrap justify-center gap-1">
                 {tags.map((t) => (
                   <span
                     key={t.label}
@@ -1637,67 +1645,74 @@ function ShopProductCard({
         </div>
 
         {/* C. Source */}
-        <div className="flex min-w-0 gap-3 md:pl-4">
+        <div className="min-w-0 md:pl-4">
           {boundLoading ? (
-            <div className="flex flex-1 items-center gap-2 text-[11px] text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              载入货源…
-            </div>
+            <>
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                推荐货源
+              </p>
+              <div className="flex min-w-0 gap-3">
+                <div className="flex flex-1 items-center gap-2 text-[11px] text-slate-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  载入货源…
+                </div>
+              </div>
+            </>
           ) : reco ? (
             <>
-              <div
-                className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:h-[4.5rem] sm:w-[4.5rem]"
-                role={result && result.items.length > 0 ? "button" : undefined}
-                title={
-                  result && result.items.length > 0 && !trayOpen
-                    ? "展开候选"
-                    : undefined
-                }
-                onClick={(e) => {
-                  if (!result || result.items.length === 0) return;
-                  e.stopPropagation();
-                  void openOrRunSearch(false);
-                }}
-              >
-                {reco.image ? (
-                  <Image
-                    src={reco.image}
-                    alt={reco.title ?? ""}
-                    fill
-                    sizes="72px"
-                    className="object-contain"
-                    unoptimized
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
-                    无图
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                  推荐货源
-                </p>
-                <p className="mt-0.5 line-clamp-2 text-sm font-semibold leading-snug text-slate-900">
-                  {reco.title && !/^货源\s/.test(reco.title)
-                    ? reco.title
-                    : reco.title ?? "货源标题待取"}
-                </p>
-                <p className="mt-1 text-sm font-semibold text-slate-800">
-                  {reco.priceText}
-                </p>
-                {profit ? (
-                  <EditedProfitLine
-                    previous={previousProfit}
-                    next={profit}
-                    phases={listingPriceEditPhases}
-                  />
-                ) : recoInventory ? (
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    库存 {recoInventory}
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                推荐货源
+              </p>
+              <div className="flex min-w-0 gap-3">
+                <button
+                  type="button"
+                  className={cn(
+                    "relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:h-[4.5rem] sm:w-[4.5rem]",
+                    reco.image && "cursor-zoom-in"
+                  )}
+                  disabled={!reco.image}
+                  aria-label={reco.image ? "放大货源主图" : undefined}
+                  onClick={(e) => openImageZoom(e, reco.image, reco.title ?? "推荐货源")}
+                >
+                  {reco.image ? (
+                    <Image
+                      src={reco.image}
+                      alt={reco.title ?? ""}
+                      fill
+                      sizes="72px"
+                      className="object-contain"
+                      unoptimized
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
+                      无图
+                    </div>
+                  )}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 text-sm font-semibold leading-snug text-slate-900">
+                    {reco.title && !/^货源\s/.test(reco.title)
+                      ? reco.title
+                      : reco.title ?? "货源标题待取"}
                   </p>
-                ) : null}
+                  <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-sm font-semibold text-slate-800">
+                    <span>{reco.priceText}</span>
+                    {profit ? (
+                      <EditedProfitLine
+                        inline
+                        label="每单获利 "
+                        previous={previousProfit}
+                        next={profit}
+                        phases={listingPriceEditPhases}
+                      />
+                    ) : recoInventory ? (
+                      <span className="text-[11px] font-normal text-slate-500">
+                        库存 {recoInventory}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
               </div>
             </>
           ) : batchLinkDrive?.state === "searching" ? (
@@ -1721,7 +1736,39 @@ function ShopProductCard({
       </div>
 
       {/* Footer actions — secondary links + primary on the right */}
-      <div className="mt-3 flex flex-wrap items-center justify-end gap-x-2 gap-y-2 border-t border-slate-100 pt-3">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2 border-t border-slate-100 pt-3">
+        <div className="flex flex-wrap items-center gap-x-1.5">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+              headerBadge.variant === "matched"
+                ? headerBadge.label === "人工匹配"
+                  ? "bg-violet-50 text-violet-700"
+                  : "bg-emerald-50 text-emerald-700"
+                : headerBadge.variant === "pending"
+                  ? "bg-amber-50 text-amber-700"
+                  : headerBadge.variant === "linking"
+                    ? "bg-sky-50 text-sky-700"
+                    : headerBadge.variant === "selected"
+                      ? "bg-sky-50 text-sky-700"
+                      : "bg-slate-100 text-slate-600"
+            )}
+          >
+            {headerBadge.variant === "matched" ? (
+              <Check className="h-3 w-3" />
+            ) : headerBadge.variant === "pending" ? (
+              <Clock className="h-3 w-3" />
+            ) : headerBadge.variant === "linking" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : null}
+            {headerBadge.label}
+          </span>
+          {isNewArrival && cardState === "unbound" ? (
+            <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+              新入库
+            </span>
+          ) : null}
+        </div>
         <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[12px]">
           <button
             type="button"
@@ -2000,7 +2047,18 @@ function ShopProductCard({
                       }
                     }}
                   >
-                    <div className="relative h-[4.5rem] w-full shrink-0 overflow-hidden rounded-md border border-slate-100 bg-slate-50">
+                    <button
+                      type="button"
+                      className={cn(
+                        "relative h-[4.5rem] w-full shrink-0 overflow-hidden rounded-md border border-slate-100 bg-slate-50",
+                        c.imageUrl && "cursor-zoom-in"
+                      )}
+                      disabled={!c.imageUrl}
+                      aria-label={c.imageUrl ? "放大候选货源图" : undefined}
+                      onClick={(e) =>
+                        openImageZoom(e, c.imageUrl, c.title || c.productId)
+                      }
+                    >
                       {c.imageUrl ? (
                         <Image
                           src={c.imageUrl}
@@ -2023,7 +2081,7 @@ function ShopProductCard({
                           </span>
                         ) : null}
                       </div>
-                    </div>
+                    </button>
                     <p className="mt-1.5 line-clamp-2 min-h-[2rem] text-[11px] leading-4 text-slate-700">
                       {c.title || "(无标题)"}
                     </p>
@@ -2107,6 +2165,14 @@ function ShopProductCard({
         onBound={handleManualBound}
         showToast={showToast}
       />
+
+      {zoomImage ? (
+        <ImageZoomOverlay
+          src={zoomImage.src}
+          alt={zoomImage.alt}
+          onClose={() => setZoomImage(null)}
+        />
+      ) : null}
     </article>
   );
 }

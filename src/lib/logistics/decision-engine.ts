@@ -10,6 +10,7 @@ export const DEFAULT_DECISION_COUNTS: Record<LogisticsDecisionStatus, number> = 
   pending_sku: 0,
   pending_postal_meta: 0,
   ready_for_quote: 0,
+  confirmed: 0,
   restricted: 0,
   needs_review: 0,
 };

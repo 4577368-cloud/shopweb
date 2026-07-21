@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowRight,
   Boxes,
@@ -78,16 +78,21 @@ export default function AuthorizePage() {
     setShopDomainInput,
     shop,
     isAuthorized,
+    authSessionReady,
     showToast,
     hydrateAuthorizedShop,
   } = useOnboarding();
 
-  const [restoring, setRestoring] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [boundCount, setBoundCount] = useState<number | null>(null);
   const [publishedCount, setPublishedCount] = useState<number | null>(null);
   const [editingDomain, setEditingDomain] = useState(false);
   const [savedShop, setSavedShop] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setSavedShop(window.localStorage.getItem(SHOP_STORAGE_KEY));
+  }, [authSessionReady]);
 
   // Real post-auth stats: 已关联货源 (distinct bound products) + 已刊登 (products published from catalog).
   const loadStats = useCallback(async (shopName: string) => {
@@ -107,59 +112,6 @@ export default function AuthorizePage() {
       setBoundCount(null);
     }
   }, []);
-
-  // Runs once: prefill the (now secondary) domain input for one-click reconnect, and restore the real
-  // authorized state from the backend after the OAuth redirect (localStorage + ?shop + /status).
-  // Fail-open by design: the restore spinner ALWAYS clears (in finally + a hard timeout), so a blocked
-  // request (CORS/offline) or a slow backend can never strand the page — it falls back to the connect
-  // screen. We intentionally do NOT gate the clear behind a cancel flag (that stranded the spinner
-  // under React Strict Mode's double-invoke in dev).
-  const restoreStartedRef = useRef(false);
-  useEffect(() => {
-    if (restoreStartedRef.current) return;
-    if (typeof window === "undefined") return;
-    if (isAuthorized) {
-      restoreStartedRef.current = true;
-      return;
-    }
-
-    const shopFromUrl = new URLSearchParams(window.location.search).get("shop");
-    const stored = window.localStorage.getItem(SHOP_STORAGE_KEY);
-    const shopToRestore = stored ?? shopFromUrl;
-    if (shopFromUrl && !stored) {
-      window.localStorage.setItem(SHOP_STORAGE_KEY, shopFromUrl);
-    }
-    if (!shopToRestore) {
-      restoreStartedRef.current = true;
-      return;
-    }
-
-    restoreStartedRef.current = true;
-    setSavedShop(shopToRestore);
-    if (!shopDomainInput) setShopDomainInput(shopToRestore);
-
-    setRestoring(true);
-    // Hard timeout so a hanging/blocked request never keeps the spinner up forever.
-    const timer = window.setTimeout(() => setRestoring(false), 12000);
-    api
-      .getShopStatus(shopToRestore)
-      .then((status) => {
-        if (!status.authorized) return;
-        hydrateAuthorizedShop({
-          name: status.shopName ?? shopToRestore,
-          domain: status.shopDomain ?? shopToRestore,
-          authorizedAt: fmtDate(status.authorizedAt),
-          productCount: status.productCount ?? 0,
-        });
-      })
-      .catch(() => {
-        // Offline / CORS / not configured / not yet authorized: fall back to the connect screen.
-      })
-      .finally(() => {
-        window.clearTimeout(timer);
-        setRestoring(false);
-      });
-  }, [isAuthorized, shopDomainInput, setShopDomainInput, hydrateAuthorizedShop]);
 
   // Once authorized, read the real "已关联货源数" from the same source /products uses.
   // Re-run whenever the active shop changes (multi-shop switcher).
@@ -203,7 +155,11 @@ export default function AuthorizePage() {
   };
 
   const authorizing = authStatus === "authorizing";
-  const phase: Phase = isAuthorized ? "authorized" : restoring ? "restoring" : "unbound";
+  const phase: Phase = isAuthorized
+    ? "authorized"
+    : !authSessionReady
+      ? "restoring"
+      : "unbound";
   const trimmedDomain = shopDomainInput.trim();
   const hasPrefilledShop = Boolean(savedShop) && !editingDomain && Boolean(trimmedDomain);
   const syncing = isAuthorized && shop.productCount === 0;

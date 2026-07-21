@@ -20,6 +20,7 @@ export const DECISION_LABELS: Record<LogisticsDecisionStatus, string> = {
   pending_sku: "待SKU",
   pending_postal_meta: "待补充",
   ready_for_quote: "可报价",
+  confirmed: "已确认",
   restricted: "受限",
   needs_review: "需审核",
 };
@@ -45,6 +46,11 @@ const SPEED_LABELS: Record<LogisticsSpeedPreference, string> = {
 };
 
 export function countReady(profile: ProductLogisticsProfile): number {
+  const c = profile.decisionStatusCounts;
+  return (c?.ready_for_quote ?? 0) + (c?.confirmed ?? 0);
+}
+
+export function countReadyForQuote(profile: ProductLogisticsProfile): number {
   return profile.decisionStatusCounts?.ready_for_quote ?? 0;
 }
 
@@ -83,9 +89,13 @@ export function filterVariants(
 ): VariantLogisticsDecision[] {
   switch (mode) {
     case "issues":
-      return variants.filter((v) => v.decisionStatus !== "ready_for_quote");
+      return variants.filter(
+        (v) => v.decisionStatus !== "ready_for_quote" && v.decisionStatus !== "confirmed"
+      );
     case "ready":
-      return variants.filter((v) => v.decisionStatus === "ready_for_quote");
+      return variants.filter(
+        (v) => v.decisionStatus === "ready_for_quote" || v.decisionStatus === "confirmed"
+      );
     default:
       return variants;
   }
@@ -139,6 +149,21 @@ export function shouldShowAcceptAction(decision: VariantLogisticsDecision): bool
   return true;
 }
 
+export function canFetchLogisticsQuote(decision: VariantLogisticsDecision): boolean {
+  return (
+    (decision.decisionStatus === "ready_for_quote" ||
+      decision.decisionStatus === "confirmed") &&
+    Boolean(decision.tangbuySkuId?.trim() && decision.tangbuyGoodsId?.trim())
+  );
+}
+
+export function fetchQuoteActionLabel(decision: VariantLogisticsDecision): string {
+  if (decision.decisionStatus === "confirmed") {
+    return decision.recommendedLine ? "重新拉取" : "拉取线路";
+  }
+  return "拉取线路";
+}
+
 export function statusBadgeClass(status: LogisticsDecisionStatus): string {
   switch (status) {
     case "pending_sku":
@@ -147,6 +172,8 @@ export function statusBadgeClass(status: LogisticsDecisionStatus): string {
       return "bg-amber-50 text-amber-800";
     case "ready_for_quote":
       return "bg-emerald-50 text-emerald-800";
+    case "confirmed":
+      return "bg-slate-50 text-slate-700";
     case "restricted":
       return "bg-orange-50 text-orange-800";
     case "needs_review":
@@ -188,6 +215,35 @@ function convertCurrency(fee: number, pricing: PricingTemplate): number {
     default:
       return Math.round(result * factor) / factor;
   }
+}
+
+export const QUOTE_STATUS_LABELS: Record<QuoteStatus, string> = {
+  NOT_REQUESTED: "未拉取",
+  PENDING: "报价中",
+  SUCCESS: "已有报价",
+  FAILED: "报价失败",
+};
+
+/** SUCCESS without a line is treated as not quoted — avoids stale accept-all records. */
+export function effectiveQuoteStatus(
+  decision: Pick<VariantLogisticsDecision, "recommendedLine" | "quoteStatus">
+): QuoteStatus | undefined {
+  const hasLine = Boolean(
+    decision.recommendedLine?.lineName?.trim() ||
+      decision.recommendedLine?.lineCode?.trim()
+  );
+  const status = decision.quoteStatus;
+  if (hasLine) return status ?? "SUCCESS";
+  if (status === "SUCCESS") return "NOT_REQUESTED";
+  return status;
+}
+
+export function formatQuoteStatusLabel(
+  decision: Pick<VariantLogisticsDecision, "recommendedLine" | "quoteStatus">
+): string | null {
+  const status = effectiveQuoteStatus(decision);
+  if (!status) return null;
+  return QUOTE_STATUS_LABELS[status] ?? status;
 }
 
 function resolveLines(
@@ -233,6 +289,36 @@ export function buildQuoteColumn(
       return { primary: "—" };
     case "pending_postal_meta":
       return { primary: "缺数据，无法报价" };
+    case "confirmed": {
+      if (!recommended) {
+        const status = effectiveQuoteStatus(decision);
+        return {
+          primary: "决策已确认",
+          secondary:
+            status === "FAILED"
+              ? "线路报价失败 · 请重新拉取"
+              : "尚未拉取线路报价",
+        };
+      }
+      const fee = formatFee(recommended, pricing);
+      const days =
+        recommended.estimatedDays != null
+          ? `${recommended.estimatedDays}天`
+          : null;
+      const alt = alternatives[0];
+      const altCount = alternatives.length;
+      return {
+        primary: recommended.lineName,
+        secondary: [fee, days].filter(Boolean).join(" · ") || undefined,
+        tertiary: alt
+          ? `备选: ${alt.lineName}${formatFee(alt, pricing) ? ` ${formatFee(alt, pricing)}` : ""}${
+              altCount > 1 ? ` · +${altCount - 1}条` : ""
+            }`
+          : altCount > 0
+            ? `+${altCount}条备选`
+            : undefined,
+      };
+    }
     case "ready_for_quote": {
       if (quoteStatus === "PENDING") {
         return { primary: "报价中…" };
@@ -284,6 +370,7 @@ export function countAutoVsManual(
     pending_sku: 0,
     pending_postal_meta: 0,
     ready_for_quote: 0,
+    confirmed: 0,
     restricted: 0,
     needs_review: 0,
   };

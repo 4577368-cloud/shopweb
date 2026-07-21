@@ -70,7 +70,11 @@ export async function POST(request: Request) {
         alternativeLines:
           quote?.alternativeLines ?? variant.alternativeLines ?? undefined,
         quoteStatus:
-          quote?.quoteStatus ?? variant.quoteStatus ?? ("SUCCESS" as QuoteStatus),
+          quote?.quoteStatus ??
+          variant.quoteStatus ??
+          (quote?.recommendedLine || variant.recommendedLine
+            ? ("SUCCESS" as QuoteStatus)
+            : ("NOT_REQUESTED" as QuoteStatus)),
       };
     });
 

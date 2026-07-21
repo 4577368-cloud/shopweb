@@ -3,6 +3,8 @@ import {
   fetchItemDetail,
   isMallGatewayConfigured,
 } from "@/lib/tangbuy-mall-gateway";
+import { parseGatewayPrice } from "@/lib/agents/products/match-rank";
+import { formatSourceCostInShopCurrency } from "@/lib/purchase-cost-display";
 
 export type SkuDisplayStatus = "LOADING" | "READY" | "ERROR";
 
@@ -30,24 +32,84 @@ export interface SourceSkuRow {
 }
 
 export type SourceSkuRowRanked = SourceSkuRow & {
-  /** 0–1 overlap with Shopify variant option label. */
+  /** 0–1 spec+price+image composite match score. */
   matchScore: number;
+  /** 0–1 spec token overlap (with synonyms). */
+  specScore: number;
+  /** 0–1 price proximity (1 = exact, 0 = no price data). */
+  priceScore: number;
 };
 
 function normalizeMatchToken(value: string): string {
   return value.toLowerCase().replace(/\s+/g, "").trim();
 }
 
+// 同义词字典 — 颜色/尺码的中英文与简写映射
+const SYNONYM_GROUPS: string[][] = [
+  ["红", "红色", "red", "rouge", "rojo"],
+  ["蓝", "蓝色", "blue", "bleu", "azul"],
+  ["绿", "绿色", "green", "vert", "verde"],
+  ["黄", "黄色", "yellow", "jaune", "amarillo"],
+  ["黑", "黑色", "black", "noir", "negro"],
+  ["白", "白色", "white", "blanc", "blanco"],
+  ["紫", "紫色", "purple", "violet", "morado"],
+  ["粉", "粉色", "粉红", "pink", "rose"],
+  ["灰", "灰色", "gray", "grey", "gris"],
+  ["橙", "橙色", "orange", "naranja"],
+  ["棕", "棕色", "褐色", "brown", "café"],
+  ["金", "金色", "gold", "golden", "doré"],
+  ["银", "银色", "silver", "argent"],
+  ["xs", "特小"],
+  ["s", "小", "小码", "small"],
+  ["m", "中", "中码", "medium"],
+  ["l", "大", "大码", "large"],
+  ["xl", "加大", "xlarge"],
+  ["xxl", "2xl", "加加大"],
+  ["xxxl", "3xl", "加加加大"],
+  ["均码", "onesize", "one size", "free"],
+];
+
+const SYNONYM_MAP = new Map<string, Set<string>>();
+for (const group of SYNONYM_GROUPS) {
+  const normalizedGroup = new Set<string>();
+  for (const w of group) {
+    normalizedGroup.add(normalizeMatchToken(w));
+  }
+  for (const w of group) {
+    const nw = normalizeMatchToken(w);
+    SYNONYM_MAP.set(nw, normalizedGroup);
+  }
+}
+
 function tokenizeForMatch(label: string): Set<string> {
   const out = new Set<string>();
-  for (const raw of label.split(/[\s/|,，、·]+/)) {
+  for (const raw of label.split(/[\s/|,，、·:：]+/)) {
     const t = normalizeMatchToken(raw);
     if (t.length >= 1) out.add(t);
   }
   return out;
 }
 
-/** Token overlap 0–1 between Shopify option label and itemGet spec label. */
+/** 检查两个 token 是否同义 */
+function isSynonym(a: string, b: string): boolean {
+  if (a === b) return true;
+  // 前缀包含（"红" 匹配 "红色"）
+  if (a.length >= 1 && b.length >= 1 && (a.startsWith(b) || b.startsWith(a))) {
+    // 但避免单字符误匹配（如 "s" 和 "small" 不算同义，除非在字典里）
+    const groupA = SYNONYM_MAP.get(a);
+    const groupB = SYNONYM_MAP.get(b);
+    if (groupA && groupB && groupA === groupB) return true;
+    // 只在两者都 ≤ 2 字符时允许前缀匹配
+    if (a.length <= 2 && b.length <= 2 && (a.includes(b) || b.includes(a))) {
+      return true;
+    }
+  }
+  const group = SYNONYM_MAP.get(a);
+  if (group && group.has(b)) return true;
+  return false;
+}
+
+/** Token overlap 0–1 between Shopify option label and itemGet spec label, with synonyms. */
 export function scoreVariantSpecMatch(
   variantLabel: string,
   specLabel: string
@@ -57,21 +119,66 @@ export function scoreVariantSpecMatch(
   if (!a.size || !b.size) return 0;
   let hits = 0;
   for (const t of a) {
-    if (b.has(t)) hits += 1;
+    if (b.has(t)) {
+      hits += 1;
+      continue;
+    }
+    // 同义词匹配
+    let synonymHit = false;
+    for (const bt of b) {
+      if (isSynonym(t, bt)) {
+        synonymHit = true;
+        break;
+      }
+    }
+    if (synonymHit) hits += 1;
   }
   return hits / Math.max(a.size, b.size);
 }
 
-/** Rank itemGet rows for a variant — best spec match first. */
+/** 价格接近度：0 = 完全不同，1 = 完全相同 */
+function scorePriceProximity(
+  variantPrice?: number | null,
+  sourcePrice?: number | null
+): number {
+  if (variantPrice == null || sourcePrice == null) return 0;
+  if (variantPrice <= 0 || sourcePrice <= 0) return 0;
+  const ratio = Math.min(variantPrice, sourcePrice) / Math.max(variantPrice, sourcePrice);
+  // ratio 1.0 → score 1.0, ratio 0.5 → score 0.0
+  return Math.max(0, (ratio - 0.5) / 0.5);
+}
+
+/** 简单图片相似度：URL 完全相同 = 1，否则 0 */
+function scoreImageSimilarity(
+  variantImageUrl?: string | null,
+  sourceImageUrl?: string | null
+): number {
+  if (!variantImageUrl || !sourceImageUrl) return 0;
+  const a = variantImageUrl.split("?")[0].toLowerCase();
+  const b = sourceImageUrl.split("?")[0].toLowerCase();
+  return a === b ? 1 : 0;
+}
+
+export interface RankOptions {
+  variantPrice?: number | null;
+  variantImageUrl?: string | null;
+}
+
+/** Rank itemGet rows for a variant — composite of spec match (70%), price (20%), image (10%). */
 export function rankSourceSkuRows(
   rows: SourceSkuRow[],
-  variantLabel: string
+  variantLabel: string,
+  options?: RankOptions
 ): SourceSkuRowRanked[] {
   return rows
-    .map((row) => ({
-      ...row,
-      matchScore: scoreVariantSpecMatch(variantLabel, row.specLabel),
-    }))
+    .map((row) => {
+      const specScore = scoreVariantSpecMatch(variantLabel, row.specLabel);
+      const priceScore = scorePriceProximity(options?.variantPrice, row.procurementPrice);
+      const imageScore = scoreImageSimilarity(options?.variantImageUrl, row.imageUrl);
+      // 综合分：spec 70% + price 20% + image 10%
+      const matchScore = specScore * 0.7 + priceScore * 0.2 + imageScore * 0.1;
+      return { ...row, matchScore, specScore, priceScore };
+    })
     .sort((a, b) => b.matchScore - a.matchScore || a.specLabel.localeCompare(b.specLabel));
 }
 
@@ -251,7 +358,8 @@ export function resolveBoundSkuDisplay(input: {
   offerFallbackAttempted?: boolean;
   boundSpec?: string | null;
   boundImageUrl?: string | null;
-  boundPriceLabel?: string | null;
+  boundPriceRaw?: string | null;
+  shopCurrency?: string | null;
 }): BoundSkuDisplay {
   const id = input.tangbuySkuId?.trim();
 
@@ -264,10 +372,10 @@ export function resolveBoundSkuDisplay(input: {
     return {
       imageUrl: sourceRow.imageUrl ?? null,
       specLabel: sourceRow.specLabel,
-      priceLabel:
-        sourceRow.procurementPrice != null
-          ? `¥${sourceRow.procurementPrice.toFixed(2)}`
-          : null,
+      priceLabel: formatSourceCostInShopCurrency(
+        sourceRow.procurementPrice,
+        input.shopCurrency
+      ),
       priceKind: sourceRow.procurementPrice != null ? "procurement" : null,
       dataSource: "itemGet",
       displayStatus: "READY",
@@ -291,20 +399,30 @@ export function resolveBoundSkuDisplay(input: {
         input.offerWhiteImage ??
         null,
       specLabel: parts?.length ? parts.join(" / ") : null,
-      priceLabel: rawPrice ? `¥${rawPrice}` : null,
-      priceKind: rawPrice ? "wholesale" : null,
+      priceLabel: rawPrice
+        ? formatSourceCostInShopCurrency(
+            parseGatewayPrice(rawPrice),
+            input.shopCurrency
+          )
+        : null,
+      priceKind: rawPrice ? "procurement" : null,
       dataSource: "offer-detail",
       displayStatus: ok ? "READY" : "ERROR",
       displayError: ok ? null : "offer-detail 未返回可用规格",
     };
   }
 
-  if (input.boundSpec?.trim() || input.boundImageUrl || input.boundPriceLabel) {
+  if (input.boundSpec?.trim() || input.boundImageUrl || input.boundPriceRaw) {
     return {
       imageUrl: input.boundImageUrl ?? null,
       specLabel: input.boundSpec?.trim() ?? null,
-      priceLabel: input.boundPriceLabel ?? null,
-      priceKind: input.boundPriceLabel ? "wholesale" : null,
+      priceLabel: input.boundPriceRaw
+        ? formatSourceCostInShopCurrency(
+            parseGatewayPrice(input.boundPriceRaw),
+            input.shopCurrency
+          )
+        : null,
+      priceKind: input.boundPriceRaw ? "procurement" : null,
       dataSource: "binding",
       displayStatus: "READY",
     };

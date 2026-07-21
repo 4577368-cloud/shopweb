@@ -10,6 +10,8 @@ import {
   Layers,
   Loader2,
   RefreshCw,
+  Search,
+  X,
 } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
@@ -35,6 +37,7 @@ import { TableSkeleton } from "@/components/ui/skeleton";
 import {
   SkuProductCard,
   filterProducts,
+  matchesSkuProductSearch,
   sortProductsForWorkbench,
   type SkuFilterMode,
 } from "@/components/sku-align/sku-binding-panel";
@@ -46,7 +49,10 @@ import {
 import {
   confirmPageNeedsReview,
 } from "@/lib/sku-align/batch-confirm";
-import { autoAlignUnboundProducts } from "@/lib/sku-align/auto-align-unresolved";
+import {
+  autoAlignUnboundProducts,
+  autoConfirmPendingVariants,
+} from "@/lib/sku-align/auto-align-unresolved";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import type { AiPanelContent, SkuProductOverview } from "@/lib/types";
@@ -70,7 +76,8 @@ const matchRules = [
 type FilterId = SkuFilterMode;
 
 export default function SkuAlignPage() {
-  const { shop, showToast, isAuthorized } = useOnboarding();
+  const { shop, showToast, isAuthorized, authSessionReady, refreshWorkflowProgress } =
+    useOnboarding();
   const shopName = shop.name;
   const wb = useWorkbenchPage("sku-align");
 
@@ -88,7 +95,8 @@ export default function SkuAlignPage() {
   useEffect(() => {
     autoAlignStartedRef.current = null;
   }, [shopName]);
-  const [filter, setFilter] = useState<FilterId>("issues");
+  const [filter, setFilter] = useState<FilterId>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [confirmingPage, setConfirmingPage] = useState(false);
   // "result" is the SSR/hydration-safe default; the mount effect flips to "scan" on first visit.
   const [phase, setPhase] = useState<"scan" | "result">("result");
@@ -112,13 +120,14 @@ export default function SkuAlignPage() {
       const next = await api.getSkuOverview(shopName);
       setProducts(next);
       hasLoadedOnceRef.current = true;
+      void refreshWorkflowProgress();
     } catch (err) {
       setError(readableError(err));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [shopName]);
+  }, [shopName, refreshWorkflowProgress]);
 
   // Move to the result view once (guarded), pulling the freshly-aligned overview. Non-blocking:
   // callable while the scan is still running ("直接查看当前结果") — cancels remaining work first.
@@ -162,6 +171,14 @@ export default function SkuAlignPage() {
         ) {
           const next = await api.getSkuOverview(shopName);
           setProducts(next);
+          // autoAlign 完成后自动确认所有待确认变体（高置信度项已在显示层视为 active_auto）
+          try {
+            await autoConfirmPendingVariants(shopName, next);
+            const confirmed = await api.getSkuOverview(shopName);
+            setProducts(confirmed);
+          } catch {
+            // 自动确认失败不影响用户操作，仍可手动确认
+          }
         }
       } catch {
         // Fail-open — user can still tap per-product align.
@@ -184,8 +201,12 @@ export default function SkuAlignPage() {
   );
 
   const filtered = useMemo(() => {
-    return sortProductsForWorkbench(filterProducts(products, filter));
-  }, [products, filter]);
+    let list = filterProducts(products, filter);
+    if (searchQuery.trim()) {
+      list = list.filter((p) => matchesSkuProductSearch(p, searchQuery));
+    }
+    return sortProductsForWorkbench(list);
+  }, [products, filter, searchQuery]);
 
   const needsReviewOnPage = useMemo(
     () => countNeedsReviewInProducts(filtered),
@@ -262,7 +283,6 @@ export default function SkuAlignPage() {
   ];
 
   const filterTabs = [
-    { id: "issues", label: "问题项", count: stats.issueProducts },
     { id: "all", label: "全部", count: products.length },
     { id: "done", label: "已就绪", count: stats.doneProducts },
   ];
@@ -278,7 +298,7 @@ export default function SkuAlignPage() {
     bullets: [
       `问题项：${stats.issueProducts} 个商品`,
       `已就绪：${stats.doneProducts} 个商品`,
-      "默认只展示待确认 / 未匹配变体",
+      "可用上方搜索框按标题或 ID 定位商品",
       "下一步：用页面上方「进入物流确认」继续",
     ],
   };
@@ -326,6 +346,24 @@ export default function SkuAlignPage() {
     bullets: scanTasks.map((t) => `${t.label}：${scanStatusLabel(t.status, t.resultText)}`),
     nextAction: { label: scanDone ? "查看结果" : "直接查看当前结果", action: "view" },
   };
+
+  if (!authSessionReady) {
+    return (
+      <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
+        <WorkbenchPanel
+          title="SKU 绑定"
+          breadcrumbs={[{ label: "授权店铺", href: "/authorize" }, { label: "SKU 绑定" }]}
+          {...wb.panelProps}
+        >
+          <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
+            <Loader2 className="h-4 w-4 animate-spin text-brand" />
+            正在恢复店铺授权…
+          </div>
+          <TableSkeleton rows={4} />
+        </WorkbenchPanel>
+      </WorkbenchShell>
+    );
+  }
 
   if (!isAuthorized) {
     return (
@@ -433,27 +471,50 @@ export default function SkuAlignPage() {
         <div className="space-y-4">
           <MetricSummaryCards items={metrics} />
 
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <SegmentedTabs
               variant="chip"
               tabs={filterTabs}
               value={filter}
               onValueChange={(id) => setFilter(id as FilterId)}
             />
-            <Button
-              size="sm"
-              variant="secondary"
-              className="shrink-0"
-              onClick={() => void load()}
-              disabled={loading || refreshing}
-            >
-              {loading || refreshing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              刷新
-            </Button>
+            <div className="ml-auto flex min-w-0 items-center gap-2">
+              <div className="relative min-w-[12rem] flex-1 sm:w-56 sm:flex-none">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="搜索标题 / 商品 ID / SKU…"
+                  className="h-8 w-full rounded-[var(--radius-control)] border border-hairline bg-surface pl-8 pr-8 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft"
+                />
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
+                    aria-label="清除搜索"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-8 w-8 shrink-0 px-0"
+                onClick={() => void load()}
+                disabled={loading || refreshing}
+                title="刷新列表"
+                aria-label="刷新列表"
+              >
+                {loading || refreshing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </div>
           </div>
 
           {error ? (
@@ -492,11 +553,13 @@ export default function SkuAlignPage() {
             />
           ) : filtered.length === 0 ? (
             <EmptyState
-              title={filter === "issues" ? "暂无问题项" : "该筛选下暂无商品"}
+              title={searchQuery.trim() ? "未找到匹配商品" : "该筛选下暂无商品"}
               description={
-                filter === "issues"
-                  ? "高置信和单 SKU 变体已自动生效。切换到「全部」或「已就绪」查看完整列表。"
-                  : "切换到「问题项」查看待处理商品。"
+                searchQuery.trim()
+                  ? "试试更短的关键词，或切换到「全部」查看完整列表。"
+                  : filter === "done"
+                    ? "还没有全部变体对齐完成的商品。切换到「全部」查看待处理项。"
+                    : "当前列表为空。"
               }
             />
           ) : (

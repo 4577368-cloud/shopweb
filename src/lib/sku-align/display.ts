@@ -16,6 +16,9 @@ export const DISPLAY_STATE_LABELS: Record<SkuVariantDisplayState, string> = {
   unbound: "未匹配",
 };
 
+/** 高置信度阈值 — PENDING + matchScore≥此值 视为已自动对齐，无需手动确认。 */
+export const AUTO_CONFIRM_THRESHOLD = 0.8;
+
 function isManualBinding(source?: string | null): boolean {
   return source === "MANUAL";
 }
@@ -41,7 +44,16 @@ export function deriveDisplayStateFromBinding(
   if (!bound) return "unbound";
   const pending = bound.bindStatus === "PENDING";
   if (isManualBinding(bound.matchSource) && !pending) return "manual_active";
-  if (pending) return "needs_review";
+  // 高置信度的 PENDING（matchScore ≥ 0.8 或单 SKU 货源）视为已自动对齐，无需手动确认
+  if (pending) {
+    if (
+      bound.matchScore != null &&
+      bound.matchScore >= AUTO_CONFIRM_THRESHOLD
+    ) {
+      return "active_auto";
+    }
+    return "needs_review";
+  }
   if (isManualBinding(bound.matchSource)) return "manual_active";
   if (
     isAutoAligned(bound.matchSource) ||
@@ -56,6 +68,26 @@ export function deriveDisplayStateFromBinding(
 
 export function isIssueState(state: SkuVariantDisplayState): boolean {
   return state === "needs_review" || state === "unbound";
+}
+
+export function isResolvedVariantState(state: SkuVariantDisplayState): boolean {
+  return state === "active_auto" || state === "manual_active";
+}
+
+export function partitionVariantsForDisplay(variants: SkuVariant[]): {
+  attention: SkuVariant[];
+  resolved: SkuVariant[];
+} {
+  const attention: SkuVariant[] = [];
+  const resolved: SkuVariant[] = [];
+  for (const v of variants) {
+    if (isResolvedVariantState(deriveVariantDisplayState(v))) {
+      resolved.push(v);
+    } else {
+      attention.push(v);
+    }
+  }
+  return { attention, resolved };
 }
 
 export function countIssueVariants(product: SkuProductOverview): number {
@@ -88,6 +120,26 @@ export function hasIssues(product: SkuProductOverview): boolean {
 
 export function isFullyResolved(product: SkuProductOverview): boolean {
   return product.variants.length > 0 && !hasIssues(product);
+}
+
+export function matchesSkuProductSearch(
+  product: SkuProductOverview,
+  query: string
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  if (product.thirdPlatformItemId.toLowerCase().includes(q)) return true;
+  if (product.title?.toLowerCase().includes(q)) return true;
+  if (product.tangbuyProductId?.toLowerCase().includes(q)) return true;
+  for (const v of product.variants) {
+    if (v.thirdPlatformSkuId.toLowerCase().includes(q)) return true;
+    if (v.sku?.toLowerCase().includes(q)) return true;
+    if (v.optionLabel.toLowerCase().includes(q)) return true;
+    if (v.bound?.tangbuySkuId?.toLowerCase().includes(q)) return true;
+    if (v.bound?.tangbuyProductId?.toLowerCase().includes(q)) return true;
+    if (v.bound?.tangbuySkuSpec?.toLowerCase().includes(q)) return true;
+  }
+  return false;
 }
 
 export function filterProducts(

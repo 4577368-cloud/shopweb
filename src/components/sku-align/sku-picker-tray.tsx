@@ -13,12 +13,18 @@ import {
   type SourceSkuRowRanked,
 } from "@/lib/source-sku-matrix";
 import { cn } from "@/lib/utils";
+import { formatSourceCostInShopCurrency } from "@/lib/purchase-cost-display";
 
-const MATCH_HINT_THRESHOLD = 0.34;
+const MATCH_HINT_THRESHOLD = 0.5;
 
-function formatPrice(price?: number | null): string {
+function formatProcurementPrice(
+  price?: number | null,
+  shopCurrency?: string | null
+): string {
   if (price == null || Number.isNaN(price)) return "—";
-  return `¥${price.toFixed(2)}`;
+  return (
+    formatSourceCostInShopCurrency(price, shopCurrency) ?? `${price.toFixed(2)} CNY`
+  );
 }
 
 function formatMatchPct(score: number): string {
@@ -62,10 +68,13 @@ export type SkuPickerTrayProps = {
   thirdPlatformSkuId: string;
   tangbuyProductId: string;
   variantLabel: string;
+  variantPrice?: number | null;
+  variantImageUrl?: string | null;
   /** Currently bound Tangbuy skuId — highlighted in the tray. */
   selectedSkuId?: string | null;
   onBound: () => Promise<void>;
   showToast: (message: string) => void;
+  shopCurrency?: string | null;
 };
 
 /**
@@ -81,9 +90,12 @@ export function SkuPickerTray({
   thirdPlatformSkuId,
   tangbuyProductId,
   variantLabel,
+  variantPrice,
+  variantImageUrl,
   selectedSkuId,
   onBound,
   showToast,
+  shopCurrency,
 }: SkuPickerTrayProps) {
   const [rows, setRows] = useState<SourceSkuRowRanked[]>([]);
   const [loading, setLoading] = useState(false);
@@ -95,7 +107,10 @@ export function SkuPickerTray({
     setError(null);
     try {
       const { rows, error } = await fetchSourceSkuMatrixResult(detailUrl);
-      const ranked = rankSourceSkuRows(rows, variantLabel);
+      const ranked = rankSourceSkuRows(rows, variantLabel, {
+        variantPrice,
+        variantImageUrl,
+      });
       setRows(ranked);
       if (error) {
         setError(error);
@@ -108,7 +123,7 @@ export function SkuPickerTray({
     } finally {
       setLoading(false);
     }
-  }, [detailUrl, variantLabel]);
+  }, [detailUrl, variantLabel, variantPrice, variantImageUrl]);
 
   useEffect(() => {
     if (!open) return;
@@ -257,7 +272,7 @@ export function SkuPickerTray({
                   </div>
                 ) : null}
                 <p className="mt-1.5 text-xs font-semibold text-ink">
-                  采购价 {formatPrice(row.procurementPrice)}
+                  采购价 {formatProcurementPrice(row.procurementPrice, shopCurrency)}
                 </p>
                 <p className="mt-0.5 truncate text-[10px] text-ink-subtle">
                   skuId {row.skuId}

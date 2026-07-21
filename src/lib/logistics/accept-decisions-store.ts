@@ -29,6 +29,17 @@ function acceptancePath(shopName: string): string {
   return path.join(STORAGE_DIR, `${safe}-acceptances.json`);
 }
 
+function normalizeAcceptance(row: StoredVariantAcceptance): StoredVariantAcceptance {
+  const hasLine = Boolean(
+    row.recommendedLine?.lineName?.trim() || row.recommendedLine?.lineCode?.trim()
+  );
+  if (hasLine) return row;
+  if (row.quoteStatus === "SUCCESS" || !row.quoteStatus) {
+    return { ...row, quoteStatus: "NOT_REQUESTED" };
+  }
+  return row;
+}
+
 export function readAcceptances(shopName: string): StoredVariantAcceptance[] {
   try {
     ensureStorageDir();
@@ -36,7 +47,14 @@ export function readAcceptances(shopName: string): StoredVariantAcceptance[] {
     if (!fs.existsSync(filePath)) return [];
     const raw = JSON.parse(fs.readFileSync(filePath, "utf-8")) as AcceptDecisionsFile;
     if (!raw || !Array.isArray(raw.acceptances)) return [];
-    return raw.acceptances;
+    const normalized = raw.acceptances.map(normalizeAcceptance);
+    const needsRewrite = normalized.some(
+      (row, index) => row.quoteStatus !== raw.acceptances[index]?.quoteStatus
+    );
+    if (needsRewrite) {
+      writeAcceptances(shopName, normalized);
+    }
+    return normalized;
   } catch {
     return [];
   }

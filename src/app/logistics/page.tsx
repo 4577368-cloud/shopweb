@@ -11,6 +11,7 @@ import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { AssistantRail } from "@/components/workbench/assistant-rail";
 import { StickyActionBar } from "@/components/workbench/sticky-action-bar";
 import { Button } from "@/components/ui/button";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { LogisticsAiPanel } from "@/components/logistics/logistics-ai-panel";
 import {
   LogisticsDecisionList,
@@ -54,9 +55,9 @@ const DEFAULT_TEMPLATE = (shopName: string): LogisticsTemplate => ({
 
 function LogisticsContent() {
   const router = useRouter();
-  const { shop, isAuthorized, saveLogistics, showToast, skuReadyForNext } =
+  const { shop, isAuthorized, authSessionReady, saveLogistics, showToast, skuReadyForNext } =
     useOnboarding();
-  const shopName = shop.name;
+  const shopName = shop.name?.trim() || shop.domain?.trim() || "";
   const wb = useWorkbenchPage("logistics");
 
   const [analysis, setAnalysis] = useState<LogisticsAnalysis | null>(null);
@@ -68,11 +69,12 @@ function LogisticsContent() {
   const [correctingId, setCorrectingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
-  const [filterMode, setFilterMode] = useState<LogisticsFilterMode>("issues");
+  const [filterMode, setFilterMode] = useState<LogisticsFilterMode>("all");
   const [quoteResults, setQuoteResults] = useState<
     Map<string, LogisticsEstimateResult>
   >(new Map());
   const [quoting, setQuoting] = useState(false);
+  const [quotingVariantId, setQuotingVariantId] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [focusTarget, setFocusTarget] = useState<LogisticsFocusTarget | null>(
     null
@@ -152,6 +154,7 @@ function LogisticsContent() {
           pending_sku: 0,
           pending_postal_meta: 0,
           ready_for_quote: 0,
+          confirmed: 0,
           restricted: 0,
           needs_review: 0,
         };
@@ -197,7 +200,7 @@ function LogisticsContent() {
   ) => {
     setSaving(true);
     try {
-      const saved = await api.upsertLogisticsTemplate(upsertData as any, id);
+      const saved = await api.upsertLogisticsTemplate(shopName, upsertData as any, id);
       setTemplates((prev) => {
         if (id) {
           return prev.map((t) => (t.id === id ? saved : t));
@@ -248,18 +251,20 @@ function LogisticsContent() {
     if (goSync) router.push("/sync");
   };
 
-  const collectReadyVariants = useCallback(() => {
+  const collectQuotableVariants = useCallback(() => {
     const variants: Array<{
       thirdPlatformSkuId: string;
       tangbuySkuId: string;
       tangbuyGoodsId: string;
       incrementList: string[];
       quantity: number;
+      decisionStatus: VariantLogisticsDecision["decisionStatus"];
     }> = [];
     for (const p of analysis?.productProfiles ?? []) {
       for (const v of p.variantDecisions ?? []) {
         if (
-          v.decisionStatus === "ready_for_quote" &&
+          (v.decisionStatus === "ready_for_quote" ||
+            v.decisionStatus === "confirmed") &&
           v.tangbuySkuId &&
           v.tangbuyGoodsId
         ) {
@@ -269,6 +274,7 @@ function LogisticsContent() {
             tangbuyGoodsId: v.tangbuyGoodsId,
             incrementList: [],
             quantity: 1,
+            decisionStatus: v.decisionStatus,
           });
         }
       }
@@ -276,24 +282,44 @@ function LogisticsContent() {
     return variants;
   }, [analysis?.productProfiles]);
 
-  const handleFetchQuotes = async () => {
-    const variants = collectReadyVariants();
-    if (quoting || variants.length === 0) return;
+  const collectReadyVariants = useCallback(() => {
+    return collectQuotableVariants().filter(
+      (variant) => variant.decisionStatus === "ready_for_quote"
+    );
+  }, [collectQuotableVariants]);
 
-    const params = buildEstimateParams(activeTemplate, quoteMarketCode);
-    if (!params) {
-      showToast("请先在模板中配置销售市场");
-      return;
-    }
+  const quoteTargetCount = useMemo(
+    () => collectQuotableVariants().length,
+    [collectQuotableVariants]
+  );
 
-    setQuoting(true);
-    try {
+  const readyAcceptCount = useMemo(
+    () => collectReadyVariants().length,
+    [collectReadyVariants]
+  );
+
+  const fetchQuotesForVariants = useCallback(
+    async (variantIds?: string[]) => {
+      const all = collectQuotableVariants();
+      const targets = variantIds?.length
+        ? all.filter((v) => variantIds.includes(v.thirdPlatformSkuId))
+        : all;
+      if (targets.length === 0) return new Map<string, LogisticsEstimateResult>();
+
+      const params = buildEstimateParams(activeTemplate, quoteMarketCode);
+      if (!params) {
+        showToast("请先在模板中配置销售市场");
+        return null;
+      }
+
       const response = await api.estimateLogistics({
         shopName,
         countryCode: params.countryCode,
         shippingOption: params.shippingOption,
         packaging: params.packaging,
-        variants,
+        variants: targets.map(
+          ({ decisionStatus: _status, ...variant }) => variant
+        ),
         needOtherLine: true,
         needMeasure: true,
       });
@@ -301,48 +327,83 @@ function LogisticsContent() {
       for (const r of response.results) {
         resultsMap.set(r.thirdPlatformSkuId, r);
       }
-      setQuoteResults(resultsMap);
+      setQuoteResults((prev) => {
+        const next = new Map(prev);
+        for (const [skuId, result] of resultsMap) {
+          next.set(skuId, result);
+        }
+        return next;
+      });
+
+      const confirmedQuotes: NonNullable<
+        LogisticsAcceptDecisionRequest["quotes"]
+      > = {};
+      for (const target of targets) {
+        if (target.decisionStatus !== "confirmed") continue;
+        const result = resultsMap.get(target.thirdPlatformSkuId);
+        if (!result?.recommendedLine) continue;
+        confirmedQuotes[target.thirdPlatformSkuId] = {
+          recommendedLine: result.recommendedLine,
+          alternativeLines: result.alternativeLines,
+          quoteStatus: result.quoteStatus,
+        };
+      }
+      if (Object.keys(confirmedQuotes).length > 0) {
+        const patched = await api.patchLogisticsQuotes({
+          shopName,
+          quotes: confirmedQuotes,
+        });
+        setAnalysis(patched.analysis);
+      }
+
+      return resultsMap;
+    },
+    [
+      activeTemplate,
+      collectQuotableVariants,
+      quoteMarketCode,
+      shopName,
+      showToast,
+    ]
+  );
+
+  const fetchQuotesForReady = useCallback(async () => {
+    const readyIds = collectReadyVariants().map((v) => v.thirdPlatformSkuId);
+    return fetchQuotesForVariants(readyIds);
+  }, [collectReadyVariants, fetchQuotesForVariants]);
+
+  const handleFetchQuotes = async (variantIds?: string[]) => {
+    const targets = variantIds?.length
+      ? collectQuotableVariants().filter((v) =>
+          variantIds.includes(v.thirdPlatformSkuId)
+        )
+      : collectQuotableVariants();
+    if (quoting || targets.length === 0) {
+      if (targets.length === 0) showToast("没有可拉取线路的规格");
+      return;
+    }
+
+    setQuoting(true);
+    if (variantIds?.length === 1) {
+      setQuotingVariantId(variantIds[0] ?? null);
+    }
+    try {
+      const resultsMap = await fetchQuotesForVariants(variantIds);
+      if (!resultsMap) return;
+      const params = buildEstimateParams(activeTemplate, quoteMarketCode);
+      const withLine = [...resultsMap.values()].filter((r) => r.recommendedLine)
+        .length;
       showToast(
-        `已拉取 ${resultsMap.size} 条线路（${params.countryCode} · 时效${params.shippingOption}）`
+        withLine > 0
+          ? `已拉取 ${withLine}/${resultsMap.size} 条线路（${params?.countryCode ?? ""} · 时效${params?.shippingOption ?? ""}）`
+          : `已请求 ${resultsMap.size} 条报价，但未返回可用线路`
       );
+      setFilterMode("all");
     } catch (err) {
       showToast(readableError(err));
     } finally {
       setQuoting(false);
-    }
-  };
-
-  const buildQuotesPayload = useCallback(() => {
-    const quotes: LogisticsAcceptDecisionRequest["quotes"] = {};
-    for (const [skuId, result] of quoteResults.entries()) {
-      quotes[skuId] = {
-        recommendedLine: result.recommendedLine,
-        alternativeLines: result.alternativeLines,
-        quoteStatus: result.quoteStatus,
-      };
-    }
-    return quotes;
-  }, [quoteResults]);
-
-  const handleAcceptAllReady = async () => {
-    if (accepting) return;
-    setAccepting(true);
-    try {
-      const result = await api.acceptLogisticsDecision({
-        shopName,
-        targetScope: "ALL_READY",
-        quotes: buildQuotesPayload(),
-      });
-      setAnalysis(result.analysis);
-      showToast(
-        result.acceptedCount > 0
-          ? `已接受 ${result.acceptedCount} 条可报价决策`
-          : "没有可接受的可报价项"
-      );
-    } catch (err) {
-      showToast(readableError(err));
-    } finally {
-      setAccepting(false);
+      setQuotingVariantId(null);
     }
   };
 
@@ -353,7 +414,22 @@ function LogisticsContent() {
     if (accepting) return;
     setAccepting(true);
     try {
-      const quote = quoteResults.get(variant.thirdPlatformSkuId);
+      let quote = quoteResults.get(variant.thirdPlatformSkuId);
+      if (!quote?.recommendedLine && variant.decisionStatus === "ready_for_quote") {
+        setQuoting(true);
+        try {
+          const fetched = await fetchQuotesForReady();
+          if (fetched === null) return;
+          quote = fetched.get(variant.thirdPlatformSkuId);
+        } finally {
+          setQuoting(false);
+        }
+      }
+      if (variant.decisionStatus === "ready_for_quote" && !quote?.recommendedLine) {
+        setFilterMode("all");
+        showToast("该规格暂无可用线路报价，请先拉取或检查模板市场");
+        return;
+      }
       const result = await api.acceptLogisticsDecision({
         shopName,
         targetScope: "VARIANTS",
@@ -369,8 +445,77 @@ function LogisticsContent() {
           : undefined,
       });
       setAnalysis(result.analysis);
+      setFilterMode("all");
       showToast(
         result.acceptedCount > 0 ? "已接受 AI 决策" : "该规格暂不可接受"
+      );
+    } catch (err) {
+      showToast(readableError(err));
+    } finally {
+      setAccepting(false);
+    }
+  };
+
+  const handleAcceptAllReady = async () => {
+    if (accepting) return;
+    const readyVariants = collectReadyVariants();
+    if (readyVariants.length === 0) {
+      showToast("没有可接受的可报价项");
+      return;
+    }
+
+    setAccepting(true);
+    try {
+      let results = quoteResults;
+      const needsFetch = readyVariants.some(
+        (v) => !quoteResults.get(v.thirdPlatformSkuId)?.recommendedLine
+      );
+      if (needsFetch) {
+        setQuoting(true);
+        try {
+          const fetched = await fetchQuotesForReady();
+          if (fetched === null) return;
+          results = fetched;
+        } finally {
+          setQuoting(false);
+        }
+      }
+
+      const quotable = readyVariants.filter((v) =>
+        Boolean(results.get(v.thirdPlatformSkuId)?.recommendedLine)
+      );
+      if (quotable.length === 0) {
+        setFilterMode("all");
+        showToast("未获取到可用线路报价，请检查模板市场或稍后重试「拉取可报价线路」");
+        return;
+      }
+
+      const quotes: LogisticsAcceptDecisionRequest["quotes"] = {};
+      for (const v of quotable) {
+        const result = results.get(v.thirdPlatformSkuId);
+        if (!result) continue;
+        quotes[v.thirdPlatformSkuId] = {
+          recommendedLine: result.recommendedLine,
+          alternativeLines: result.alternativeLines,
+          quoteStatus: result.quoteStatus,
+        };
+      }
+
+      const result = await api.acceptLogisticsDecision({
+        shopName,
+        targetScope: "VARIANTS",
+        variantIds: quotable.map((v) => v.thirdPlatformSkuId),
+        quotes,
+      });
+      setAnalysis(result.analysis);
+      setFilterMode("all");
+      const skipped = readyVariants.length - quotable.length;
+      showToast(
+        result.acceptedCount > 0
+          ? skipped > 0
+            ? `已接受 ${result.acceptedCount} 条（含线路）；${skipped} 条因无报价未接受`
+            : `已接受 ${result.acceptedCount} 条可报价决策`
+          : "没有可接受的可报价项"
       );
     } catch (err) {
       showToast(readableError(err));
@@ -383,6 +528,24 @@ function LogisticsContent() {
     setFilterMode("issues");
     setFocusTarget({ status });
   };
+
+  if (!authSessionReady) {
+    return (
+      <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
+        <WorkbenchPanel
+          title="物流选择"
+          breadcrumbs={BREADCRUMBS}
+          {...wb.panelProps}
+        >
+          <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
+            <Loader2 className="h-4 w-4 animate-spin text-brand" />
+            正在恢复店铺授权…
+          </div>
+          <TableSkeleton rows={4} />
+        </WorkbenchPanel>
+      </WorkbenchShell>
+    );
+  }
 
   if (!isAuthorized) {
     return (
@@ -431,6 +594,8 @@ function LogisticsContent() {
               quoting={quoting}
               accepting={accepting}
               saving={saving}
+              quoteTargetCount={quoteTargetCount}
+              readyAcceptCount={readyAcceptCount}
               onFocusStatus={handleFocusStatus}
               onAcceptAllReady={() => void handleAcceptAllReady()}
               onFetchQuotes={() => void handleFetchQuotes()}
@@ -516,7 +681,9 @@ function LogisticsContent() {
               focusTarget={focusTarget}
               onCorrect={(id, type) => void handleCorrect(id, type)}
               onAcceptAi={(v, pid) => void handleAcceptAi(v, pid)}
+              onFetchQuote={(v) => void handleFetchQuotes([v.thirdPlatformSkuId])}
               accepting={accepting}
+              quotingVariantId={quotingVariantId}
               onClearFocus={() => setFocusTarget(null)}
               pricing={pricingTemplate}
             />
@@ -526,6 +693,7 @@ function LogisticsContent() {
 
       {showDrawer ? (
         <LogisticsTemplateDrawer
+          shopName={shopName}
           templates={templates}
           activeTemplate={activeTemplate}
           onSave={handleSaveTemplate}

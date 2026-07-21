@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
+  ChevronRight,
   ExternalLink,
   Hand,
   ImageOff,
@@ -29,16 +30,18 @@ import type {
   SkuVariant,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { formatShopListingPrice } from "@/lib/purchase-cost-display";
 import {
   buildSupplementSourceHint,
   confirmSuggestionsWithFallback,
   enqueueSkuAlignRun,
   needsSupplementSource,
   pollSkuAlignRun,
+  unbindWithFallback,
 } from "@/lib/sku-align-v1";
 import { confirmProductNeedsReview } from "@/lib/sku-align/batch-confirm";
 import type { SkuAlignProductDetail } from "@/lib/sku-align-v1/types";
-import { SkuPickerTray } from "@/components/sku-align/sku-picker-tray";
+import { SkuManualMatchDrawer } from "@/components/sku-align/sku-manual-match-drawer";
 import {
   deriveDisplayStateFromBinding,
   deriveVariantDisplayState,
@@ -46,6 +49,7 @@ import {
   countUnbound,
   DISPLAY_STATE_LABELS,
   filterVariants,
+  partitionVariantsForDisplay,
   shouldDefaultExpand,
   type SkuFilterMode,
   type SkuVariantDisplayState,
@@ -70,6 +74,7 @@ export {
   filterProducts,
   hasIssues,
   isFullyResolved,
+  matchesSkuProductSearch,
   sortProductsForWorkbench,
 } from "@/lib/sku-align/display";
 
@@ -172,11 +177,6 @@ function formatScore(score?: number | null): string {
   return String(Math.round(score));
 }
 
-function formatShopPrice(price?: number | null): string {
-  if (price == null || Number.isNaN(price)) return "—";
-  return price.toFixed(2);
-}
-
 /** One short, human reason for audit / image bindings. */
 function matchReason(bound: NonNullable<SkuVariant["bound"]>): string {
   if (isManualBinding(bound.matchSource)) return "手动选择 SKU";
@@ -249,6 +249,63 @@ function Thumb({
 }
 
 /**
+ * Collapsed summary for already-aligned variants — keeps multi-SKU cards scannable.
+ */
+function ResolvedVariantsSummary({
+  variants,
+  expanded,
+  onToggle,
+  children,
+}: {
+  variants: SkuVariant[];
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const autoCount = variants.filter(
+    (v) => deriveVariantDisplayState(v) === "active_auto"
+  ).length;
+  const manualCount = variants.length - autoCount;
+  const preview = variants.slice(0, 4).map((v) => v.optionLabel);
+  const rest = variants.length - preview.length;
+
+  return (
+    <div className="border-t border-hairline/60">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-2 px-0.5 py-2 text-left hover:bg-surface-muted/50"
+        aria-expanded={expanded}
+      >
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-ink-subtle transition-transform",
+            expanded && "rotate-90"
+          )}
+        />
+        <Badge variant="success" className="shrink-0 px-1.5 py-0 text-[10px]">
+          已对齐 {variants.length}
+        </Badge>
+        <span className="shrink-0 text-[10px] text-ink-subtle">
+          {manualCount > 0
+            ? `自动 ${autoCount} · 手动 ${manualCount}`
+            : "全部自动对齐"}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[11px] text-ink-muted">
+          {preview.join(" · ")}
+          {rest > 0 ? ` 等 ${variants.length} 个规格` : ""}
+        </span>
+      </button>
+      {expanded ? (
+        <div className="divide-y divide-slate-100/80 border-t border-hairline/40">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * One variant comparison row: Shopify variant (left) vs the matched 1688 SKU (right), with a compact
  * judgement in the middle. Evidence is ordered for the eye — image, name/spec, price — with codes/ids
  * demoted to muted footnotes. Source image/price/spec come from the on-demand offer detail (`offer`);
@@ -267,6 +324,9 @@ function VariantCompareRow({
   shopName,
   onMutated,
   showToast,
+  shopCurrency,
+  onOpenManualPicker,
+  compact = false,
 }: {
   variant: SkuVariant;
   product: SkuProductOverview;
@@ -280,6 +340,9 @@ function VariantCompareRow({
   shopName: string;
   onMutated: () => Promise<void>;
   showToast: (message: string) => void;
+  shopCurrency?: string | null;
+  onOpenManualPicker?: () => void;
+  compact?: boolean;
 }) {
   const bound = variant.bound;
   const displayState = deriveVariantDisplayState(variant);
@@ -289,7 +352,6 @@ function VariantCompareRow({
   const isActiveAuto = displayState === "active_auto";
   const [acking, setAcking] = useState(false);
   const [unbinding, setUnbinding] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   const detailUrl = resolveSkuDetailUrl(product.detailUrl, product.tangbuyProductId);
   const tangbuyProductId =
@@ -329,7 +391,7 @@ function VariantCompareRow({
     if (!window.confirm("取消该变体的货源关联？")) return;
     setUnbinding(true);
     try {
-      await api.unbindSkuBinding(shopName, variant.thirdPlatformSkuId);
+      await unbindWithFallback(shopName, variant.thirdPlatformSkuId, product.thirdPlatformItemId);
       showToast("已取消该变体关联");
       await onMutated();
     } catch (err) {
@@ -356,8 +418,8 @@ function VariantCompareRow({
         offerFallbackAttempted,
         boundSpec: bound.tangbuySkuSpec,
         boundImageUrl: bound.offerImageUrl,
-        boundPriceLabel:
-          bound.offerPrice?.trim() ? `¥${bound.offerPrice.trim()}` : null,
+        boundPriceRaw: bound.offerPrice?.trim() || null,
+        shopCurrency,
       })
     : null;
 
@@ -366,65 +428,80 @@ function VariantCompareRow({
   const rightName = display?.specLabel ?? null;
   const rightPrice = display?.priceLabel ?? null;
   const priceCaption =
-    display?.priceKind === "procurement"
-      ? "采购价"
-      : display?.priceKind === "wholesale"
-        ? "批发价"
-        : null;
+    display?.priceKind === "procurement" ? "采购价" : null;
   const statusHint = bindingStatusHint(bound);
   const scoreLine = bound ? bindingScoreLine(bound) : null;
   const showPickAction =
     isUnbound || isNeedsReview || displayStatus === "ERROR";
   const showRowActions = !isActiveAuto;
+  const thumbClass = compact ? "h-9 w-9" : "h-11 w-11";
 
   return (
     <>
     <div
       className={cn(
-        "grid grid-cols-1 gap-3 py-3 md:grid-cols-[minmax(0,1fr)_148px_minmax(0,1fr)] md:items-center md:gap-4",
+        "grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_7.5rem_minmax(0,1fr)] md:items-center md:gap-3",
+        compact ? "py-1.5" : "py-2",
         isManualActive && "rounded-[var(--radius-control)] bg-emerald-50/30 px-1",
         isNeedsReview && "rounded-[var(--radius-control)] bg-amber-50/25 px-1"
       )}
     >
       {/* Left — Shopify variant */}
-      <div className="flex gap-3">
-        <Thumb src={variant.imageUrl} alt={variant.optionLabel} className="h-16 w-16" />
+      <div className="flex gap-2">
+        <Thumb src={variant.imageUrl} alt={variant.optionLabel} className={thumbClass} />
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
+          <p className="text-[9px] font-medium uppercase tracking-wide text-ink-subtle">
             Shopify
           </p>
-          <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-4 text-ink">
+          <p
+            className={cn(
+              "mt-0.5 line-clamp-2 font-semibold leading-4 text-ink",
+              compact ? "text-[11px]" : "text-xs"
+            )}
+          >
             {variant.optionLabel}
           </p>
-          <p className="mt-1 text-sm font-semibold text-ink">
-            ¥{formatShopPrice(variant.price)}
+          <p
+            className={cn(
+              "mt-0.5 font-semibold text-ink",
+              compact ? "text-[11px]" : "text-xs"
+            )}
+          >
+            {formatShopListingPrice(variant.price, shopCurrency)}
           </p>
-          {variant.sku ? (
-            <p className="mt-0.5 truncate text-[11px] text-ink-subtle">SKU {variant.sku}</p>
+          {!compact && variant.sku ? (
+            <p className="mt-0.5 truncate text-[10px] text-ink-subtle">
+              SKU {variant.sku}
+            </p>
           ) : null}
         </div>
       </div>
 
       {/* Middle — judgement */}
-      <div className="flex flex-row items-center justify-between gap-2 rounded-[var(--radius-control)] bg-surface-muted px-2.5 py-2 md:flex-col md:justify-center md:gap-1 md:bg-transparent md:px-0 md:py-0 md:text-center">
+      <div className="flex flex-row items-center justify-between gap-2 rounded-[var(--radius-control)] bg-surface-muted px-2 py-1.5 md:flex-col md:justify-center md:gap-0.5 md:bg-transparent md:px-0 md:py-0 md:text-center">
         <BindingStatusBadge bound={bound} />
         {bound && scoreLine ? (
-          <span className="text-[11px] font-medium text-brand">{scoreLine}</span>
+          <span className="text-[10px] font-medium text-brand">{scoreLine}</span>
         ) : null}
-        {statusHint ? (
-          <span className="text-[10px] leading-tight text-ink-subtle md:max-w-[9rem]">
+        {!compact && statusHint ? (
+          <span className="text-[10px] leading-tight text-ink-subtle md:max-w-[8rem]">
             {statusHint}
           </span>
         ) : null}
-        <MoveRight className="hidden h-4 w-4 text-ink-subtle md:block" />
+        <MoveRight className="hidden h-3.5 w-3.5 text-ink-subtle md:block" />
       </div>
 
       {/* Right — Tangbuy source (itemGet first) */}
-      <div className="flex gap-3">
+      <div className="flex gap-2">
         {isUnbound ? (
-          <div className="flex flex-1 flex-col gap-2.5 rounded-[var(--radius-control)] border border-dashed border-hairline px-3 py-3">
-            <p className="text-[11px] leading-snug text-ink-subtle">
-              尚未绑定货源 SKU。请对照左侧 Shopify 规格，从货源规格表中选择对应项。
+          <div
+            className={cn(
+              "flex flex-1 flex-col gap-2 rounded-[var(--radius-control)] border border-dashed border-hairline",
+              compact ? "px-2 py-2" : "px-3 py-2.5"
+            )}
+          >
+            <p className="text-[10px] leading-snug text-ink-subtle">
+              尚未绑定货源 SKU。请从规格表中选择对应项。
             </p>
             <Button
               size="sm"
@@ -435,7 +512,7 @@ function VariantCompareRow({
                   ? "打开 itemGet SKU 规格表"
                   : "缺少货源详情链接，无法加载 SKU"
               }
-              onClick={() => setPickerOpen(true)}
+              onClick={() => onOpenManualPicker?.()}
             >
               <Hand className="h-3.5 w-3.5" />
               手动选择…
@@ -469,7 +546,7 @@ function VariantCompareRow({
                 size="sm"
                 variant="secondary"
                 className="w-fit"
-                onClick={() => setPickerOpen(true)}
+                onClick={() => onOpenManualPicker?.()}
                 disabled={acking || unbinding}
               >
                 <Hand className="h-3.5 w-3.5" />
@@ -479,26 +556,40 @@ function VariantCompareRow({
           </div>
         ) : (
           <>
-            <Thumb src={rightImage} alt={rightName ?? "Tangbuy 货源"} className="h-16 w-16" />
+            <Thumb
+              src={rightImage}
+              alt={rightName ?? "Tangbuy 货源"}
+              className={thumbClass}
+            />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-brand-strong">
+                <p className="text-[9px] font-medium uppercase tracking-wide text-brand-strong">
                   Tangbuy 货源
                 </p>
                 {isManualActive ? (
-                  <Badge variant="success" className="text-[9px] px-1 py-0">
-                    手动已绑定
+                  <Badge variant="success" className="px-1 py-0 text-[9px]">
+                    手动
                   </Badge>
                 ) : null}
               </div>
-              <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-4 text-ink">
+              <p
+                className={cn(
+                  "mt-0.5 line-clamp-2 font-semibold leading-4 text-ink",
+                  compact ? "text-[11px]" : "text-xs"
+                )}
+              >
                 {rightName ?? bound?.tangbuySkuSpec?.trim() ?? "—"}
               </p>
-              <p className="mt-1 text-sm font-semibold text-ink">
+              <p
+                className={cn(
+                  "mt-0.5 font-semibold text-ink",
+                  compact ? "text-[11px]" : "text-xs"
+                )}
+              >
                 {rightPrice ? (
                   <>
                     {priceCaption ? (
-                      <span className="mr-1 text-[11px] font-medium text-ink-subtle">
+                      <span className="mr-1 text-[10px] font-medium text-ink-subtle">
                         {priceCaption}
                       </span>
                     ) : null}
@@ -508,26 +599,31 @@ function VariantCompareRow({
                   "价未取到"
                 )}
               </p>
-              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-ink-subtle">
-                {bound?.detailUrl ? (
-                  <a
-                    href={bound.detailUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-ink-muted underline underline-offset-2 hover:text-ink"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    详情
-                  </a>
-                ) : null}
-                {bound?.tangbuySkuId ? <span>skuId {bound.tangbuySkuId}</span> : null}
-              </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              {!compact ? (
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-ink-subtle">
+                  {bound?.detailUrl ? (
+                    <a
+                      href={bound.detailUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-ink-muted underline underline-offset-2 hover:text-ink"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      详情
+                    </a>
+                  ) : null}
+                  {bound?.tangbuySkuId ? (
+                    <span>skuId {bound.tangbuySkuId}</span>
+                  ) : null}
+                </div>
+              ) : null}
+              {!compact ? (
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 {showRowActions && showPickAction && canPickSku ? (
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => setPickerOpen(true)}
+                    onClick={() => onOpenManualPicker?.()}
                     disabled={acking || unbinding}
                     title="从 itemGet 规格表重新选择 SKU"
                   >
@@ -557,27 +653,13 @@ function VariantCompareRow({
                     接受 AI
                   </Button>
                 ) : null}
-              </div>
+                </div>
+              ) : null}
             </div>
           </>
         )}
       </div>
     </div>
-    {pickerOpen && detailUrl && tangbuyProductId ? (
-      <SkuPickerTray
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        detailUrl={detailUrl}
-        shopName={shopName}
-        thirdPlatformItemId={product.thirdPlatformItemId}
-        thirdPlatformSkuId={variant.thirdPlatformSkuId}
-        tangbuyProductId={tangbuyProductId}
-        variantLabel={variant.optionLabel}
-        selectedSkuId={bound?.tangbuySkuId}
-        onBound={onMutated}
-        showToast={showToast}
-      />
-    ) : null}
     </>
   );
 }
@@ -593,7 +675,7 @@ export function SkuProductCard({
   shopName,
   onAligned,
   showToast,
-  filterMode = "issues",
+  filterMode = "all",
 }: {
   product: SkuProductOverview;
   shopName: string;
@@ -625,6 +707,12 @@ export function SkuProductCard({
     } finally {
       setV1DetailLoading(false);
     }
+  };
+
+  /** ack/unbind 后刷新 overview + v1Detail，避免 supplement 提示过时 */
+  const onMutatedWithDetail = async () => {
+    await onAligned();
+    if (open) await refreshV1Detail();
   };
 
   const addSupplementSource = async () => {
@@ -666,14 +754,37 @@ export function SkuProductCard({
     [product.variants, filterMode]
   );
 
+  const { attentionVariants, resolvedVariants } = useMemo(() => {
+    const { attention, resolved } = partitionVariantsForDisplay(visibleVariants);
+    return { attentionVariants: attention, resolvedVariants: resolved };
+  }, [visibleVariants]);
+
+  const [resolvedExpanded, setResolvedExpanded] = useState(false);
+  const [manualDrawerOpen, setManualDrawerOpen] = useState(false);
+  const [focusVariantId, setFocusVariantId] = useState<string | null>(null);
+
+  const openManualDrawer = (variantId?: string) => {
+    setFocusVariantId(variantId ?? null);
+    setManualDrawerOpen(true);
+  };
+
   useEffect(() => {
     setOpen(shouldDefaultExpand(product, filterMode));
   }, [product.thirdPlatformItemId, filterMode, product]);
+
+  useEffect(() => {
+    setResolvedExpanded(false);
+  }, [product.thirdPlatformItemId, open]);
 
   const productDetailUrl = resolveSkuDetailUrl(
     product.detailUrl,
     product.tangbuyProductId
   );
+  const productTangbuyId =
+    product.tangbuyProductId?.trim() ||
+    product.variants.find((v) => v.bound?.tangbuyProductId)?.bound?.tangbuyProductId?.trim() ||
+    null;
+  const canManualPick = Boolean(productDetailUrl && productTangbuyId);
 
   const [offerMap, setOfferMap] = useState<Record<string, OfferDetail>>({});
   const [offerLoading, setOfferLoading] = useState(false);
@@ -914,6 +1025,18 @@ export function SkuProductCard({
               接受本商品全部待确认（{pendingCount}）
             </Button>
           ) : null}
+          {canManualPick ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => openManualDrawer()}
+              disabled={aligning || ackingAll}
+              title="在右侧侧边栏对照 Shopify 变体并选择货源规格"
+            >
+              <Hand className="h-4 w-4" />
+              手动选择
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="secondary"
@@ -962,10 +1085,10 @@ export function SkuProductCard({
         </div>
       ) : null}
 
-      {/* Body — per-variant side-by-side comparison */}
+      {/* Body — attention variants full size; resolved collapsed into one summary row */}
       {open ? (
-        <div className="border-t border-hairline bg-canvas/40 px-4 py-1 divide-y divide-slate-100">
-          {visibleVariants.map((v) => (
+        <div className="divide-y divide-slate-100/80 border-t border-hairline bg-canvas/40 px-3 py-0.5">
+          {attentionVariants.map((v) => (
             <VariantCompareRow
               key={v.thirdPlatformSkuId}
               variant={v}
@@ -982,12 +1105,57 @@ export function SkuProductCard({
               sourceMatrixError={sourceMatrixError}
               onRetryEvidence={retryEvidence}
               shopName={shopName}
-              onMutated={onAligned}
+              onMutated={onMutatedWithDetail}
               showToast={showToast}
+              shopCurrency={product.currency}
+              onOpenManualPicker={() => openManualDrawer(v.thirdPlatformSkuId)}
             />
           ))}
+          {resolvedVariants.length > 0 ? (
+            <ResolvedVariantsSummary
+              variants={resolvedVariants}
+              expanded={resolvedExpanded}
+              onToggle={() => setResolvedExpanded((v) => !v)}
+            >
+              {resolvedVariants.map((v) => (
+                <VariantCompareRow
+                  key={v.thirdPlatformSkuId}
+                  variant={v}
+                  product={product}
+                  compact
+                  offer={
+                    v.bound?.tangbuyProductId
+                      ? offerMap[v.bound.tangbuyProductId]
+                      : undefined
+                  }
+                  offerLoading={offerLoading}
+                  offerFallbackAttempted={offerFallbackAttempted}
+                  sourceMatrix={sourceMatrix}
+                  sourceMatrixLoading={sourceMatrixLoading}
+                  sourceMatrixError={sourceMatrixError}
+                  onRetryEvidence={retryEvidence}
+                  shopName={shopName}
+                  onMutated={onMutatedWithDetail}
+                  showToast={showToast}
+                  shopCurrency={product.currency}
+                />
+              ))}
+            </ResolvedVariantsSummary>
+          ) : null}
         </div>
       ) : null}
+
+      <SkuManualMatchDrawer
+        open={manualDrawerOpen}
+        onClose={() => setManualDrawerOpen(false)}
+        product={product}
+        shopName={shopName}
+        detailUrl={productDetailUrl}
+        tangbuyProductId={productTangbuyId}
+        focusVariantId={focusVariantId}
+        onSaved={onMutatedWithDetail}
+        showToast={showToast}
+      />
     </article>
   );
 }

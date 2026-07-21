@@ -6,19 +6,30 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import {
   defaultLogisticsForm,
-  HIGH_MATCH_THRESHOLD,
   initialSteps,
   mockOverview,
   mockProductMatches,
   mockShop,
   mockSkuAlignments,
-  SKU_READY_THRESHOLD,
 } from "@/data/mock";
+import { api } from "@/lib/api";
+import {
+  computeWorkflowBindingProgress,
+  computeWorkflowSkuProgress,
+  deriveLogisticsStepStatus,
+  deriveProductsStepStatus,
+  deriveSkuStepStatus,
+  isProductsStepComplete,
+  isSkuStepComplete,
+  type WorkflowBindingProgress,
+  type WorkflowSkuProgress,
+} from "@/lib/workflow-progress";
 import type {
   AuthStatus,
   LogisticsForm,
@@ -33,6 +44,10 @@ import type {
   StepId,
   SyncPhase,
 } from "@/lib/types";
+import {
+  fetchRestoredShopAuth,
+  resolveShopDomainToRestore,
+} from "@/lib/restore-shop-auth";
 
 interface OnboardingState {
   steps: OnboardingStep[];
@@ -67,9 +82,12 @@ interface OnboardingState {
   clearToast: () => void;
   showToast: (message: string) => void;
   isAuthorized: boolean;
+  /** False until the cold-load auth restore pass finishes (localStorage + /status). */
+  authSessionReady: boolean;
   productsReadyForNext: boolean;
   skuReadyForNext: boolean;
   syncCompleted: boolean;
+  refreshWorkflowProgress: () => Promise<void>;
 }
 
 const OnboardingContext = createContext<OnboardingState | null>(null);
@@ -109,6 +127,13 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [logisticsCompleted, setLogisticsCompleted] = useState(false);
   const [syncPhase, setSyncPhase] = useState<SyncPhase>("blocked");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [authSessionReady, setAuthSessionReady] = useState(false);
+  const [workflowBinding, setWorkflowBinding] =
+    useState<WorkflowBindingProgress | null>(null);
+  const [workflowSku, setWorkflowSku] = useState<WorkflowSkuProgress | null>(
+    null
+  );
+  const authRestoreStartedRef = useRef(false);
 
   const updateStepStatus = useCallback(
     (id: StepId, status: OnboardingStep["status"]) => {
@@ -182,6 +207,51 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     [updateStepStatus]
   );
 
+  // Cold load: restore authorized shop from localStorage / ?shop / backend list on every page.
+  useEffect(() => {
+    if (authRestoreStartedRef.current) return;
+    if (typeof window === "undefined") return;
+    authRestoreStartedRef.current = true;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (!cancelled) setAuthSessionReady(true);
+    }, 12000);
+
+    void (async () => {
+      try {
+        const shopToRestore = await resolveShopDomainToRestore();
+        if (cancelled) return;
+
+        if (shopToRestore && !shopDomainInput.trim()) {
+          setShopDomainInput(shopToRestore);
+        }
+
+        if (!shopToRestore) {
+          return;
+        }
+
+        const restored = await fetchRestoredShopAuth(shopToRestore);
+        if (cancelled || !restored) return;
+
+        hydrateAuthorizedShop(restored);
+      } catch {
+        // Offline / CORS — fall through to unauthenticated UI.
+      } finally {
+        if (!cancelled) {
+          window.clearTimeout(timer);
+          setAuthSessionReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only restore
+  }, []);
+
   const updateProductStatus = useCallback((id: string, status: ProductMatchStatus) => {
     setProductMatches((prev) =>
       prev.map((item) => (item.id === id ? { ...item, status } : item))
@@ -191,8 +261,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const batchConfirmHighMatches = useCallback(() => {
     setProductMatches((prev) =>
       prev.map((item) =>
-        item.matchScore >= HIGH_MATCH_THRESHOLD &&
-        !isProductResolved(item.status)
+        item.matchScore >= 85 && !isProductResolved(item.status)
           ? { ...item, status: "confirmed" as const }
           : item
       )
@@ -286,47 +355,61 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
   const isAuthorized = authStatus === "authorized";
 
-  const productsReadyForNext = useMemo(() => {
-    const high = productMatches.filter(
-      (p) => p.matchScore >= HIGH_MATCH_THRESHOLD
-    );
-    if (high.length === 0) return false;
-    const confirmedHigh = high.filter((p) => p.status === "confirmed");
-    return confirmedHigh.length >= Math.ceil(high.length * 0.5);
-  }, [productMatches]);
+  const refreshWorkflowProgress = useCallback(async () => {
+    if (!isAuthorized || !shop.name?.trim()) return;
+    try {
+      const [products, bindings, skuOverview] = await Promise.all([
+        api.getShopProducts(shop.name),
+        api.listImageBindings(shop.name).catch(() => []),
+        api.getSkuOverview(shop.name).catch(() => []),
+      ]);
+      setWorkflowBinding(computeWorkflowBindingProgress(products, bindings));
+      setWorkflowSku(computeWorkflowSkuProgress(skuOverview));
+    } catch {
+      // Keep the last known snapshot on transient API errors.
+    }
+  }, [isAuthorized, shop.name]);
 
-  const skuReadyForNext = useMemo(() => {
-    const actionable = skuAlignments.filter((s) => s.judgment !== "blocked");
-    if (actionable.length === 0) return false;
-    const resolved = actionable.filter((s) => isSkuResolved(s));
-    const openConflict = actionable.filter(
-      (s) => s.judgment === "conflict" && s.handleStatus === "unhandled"
-    );
-    const openReview = actionable.filter(
-      (s) => s.judgment === "needs_review" && s.handleStatus === "unhandled"
-    );
-    return (
-      resolved.length / actionable.length >= SKU_READY_THRESHOLD &&
-      openConflict.length === 0 &&
-      openReview.length === 0
-    );
-  }, [skuAlignments]);
+  useEffect(() => {
+    if (!isAuthorized || !authSessionReady) return;
+    void refreshWorkflowProgress();
+    const timer = window.setInterval(() => {
+      void refreshWorkflowProgress();
+    }, 45_000);
+    return () => window.clearInterval(timer);
+  }, [isAuthorized, authSessionReady, shop.name, refreshWorkflowProgress]);
+
+  const productsReadyForNext = isProductsStepComplete(workflowBinding);
+  const skuReadyForNext = isSkuStepComplete(workflowSku);
 
   useEffect(() => {
     if (!isAuthorized) return;
-    if (productsReadyForNext) {
-      updateStepStatus("products", "completed");
-      updateStepStatus("sku-align", "pending_confirm");
-    }
-  }, [isAuthorized, productsReadyForNext, updateStepStatus]);
 
-  useEffect(() => {
-    if (!isAuthorized) return;
-    if (skuReadyForNext) {
-      updateStepStatus("sku-align", "completed");
-      updateStepStatus("logistics", "in_progress");
-    }
-  }, [isAuthorized, skuReadyForNext, updateStepStatus]);
+    updateStepStatus("authorize", "completed");
+
+    const productsStatus = deriveProductsStepStatus(isAuthorized, workflowBinding);
+    updateStepStatus("products", productsStatus);
+
+    const productsComplete = productsStatus === "completed";
+    const skuStatus = deriveSkuStepStatus(
+      isAuthorized,
+      productsComplete,
+      workflowSku
+    );
+    updateStepStatus("sku-align", skuStatus);
+
+    const skuComplete = skuStatus === "completed";
+    updateStepStatus(
+      "logistics",
+      deriveLogisticsStepStatus(isAuthorized, skuComplete, logisticsCompleted)
+    );
+  }, [
+    isAuthorized,
+    workflowBinding,
+    workflowSku,
+    logisticsCompleted,
+    updateStepStatus,
+  ]);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -365,9 +448,11 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       clearToast,
       showToast,
       isAuthorized,
+      authSessionReady,
       productsReadyForNext,
       skuReadyForNext,
       syncCompleted,
+      refreshWorkflowProgress,
     }),
     [
       steps,
@@ -396,9 +481,11 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       clearToast,
       showToast,
       isAuthorized,
+      authSessionReady,
       productsReadyForNext,
       skuReadyForNext,
       syncCompleted,
+      refreshWorkflowProgress,
     ]
   );
 
