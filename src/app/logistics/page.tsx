@@ -315,6 +315,7 @@ function LogisticsContent() {
       const response = await api.estimateLogistics({
         shopName,
         countryCode: params.countryCode,
+        countryId: params.countryId,
         shippingOption: params.shippingOption,
         packaging: params.packaging,
         variants: targets.map(

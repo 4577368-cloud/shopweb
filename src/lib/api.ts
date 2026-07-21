@@ -710,11 +710,9 @@ export const api = {
     }),
 
   estimateLogistics: (body: LogisticsEstimateRequest) =>
-    localRequest<LogisticsEstimateResponse>("/api/logistics/estimate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
+    import("@/lib/logistics/estimate-gateway").then((m) =>
+      m.estimateLogisticsFromBrowser(body)
+    ),
 
   acceptLogisticsDecision: (body: LogisticsAcceptDecisionRequest) =>
     localRequest<LogisticsAcceptDecisionResult>("/api/logistics/accept-decision", {
