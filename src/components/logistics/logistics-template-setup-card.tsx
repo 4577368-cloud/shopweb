@@ -21,7 +21,7 @@ export function LogisticsTemplateSetupCard({
           <Package className="h-7 w-7 text-ink-subtle" />
         </div>
         <p className="max-w-md text-sm leading-relaxed text-ink-muted">
-          销售国家、包装方式与时效偏好决定线路匹配与预估报价。保存模板后，系统将按商品自动拉取报价并确认普货方案。
+          销售国家、包装方式与时效偏好决定线路匹配与预估报价。保存模板后，系统将按商品自动运费预估并确认普货方案。
         </p>
         <Button className="mt-6" onClick={onOpenTemplate}>
           添加物流模板

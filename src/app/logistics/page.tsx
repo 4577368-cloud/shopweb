@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
@@ -21,14 +21,15 @@ import {
 import { LogisticsPlanStatusCard } from "@/components/logistics/logistics-plan-status-card";
 import { LogisticsSyncConfirmCard } from "@/components/logistics/logistics-sync-confirm-card";
 import { LogisticsTemplateDrawer } from "@/components/logistics/logistics-template-drawer";
-import { PricingStrategyRailCard } from "@/components/select/pricing-strategy-rail-card";
 import type { LogisticsCommandPlan } from "@/lib/agents/logistics/command-schema";
 import { codesFromSelections } from "@/components/logistics/market-multi-select";
 import { useOnboarding } from "@/context/onboarding-context";
 import { useLogisticsIncrementalPipeline } from "@/hooks/use-logistics-incremental-pipeline";
 import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
 import { api, readableError, type LogisticsAcceptDecisionRequest, type LogisticsEstimateResult } from "@/lib/api";
-import type { LogisticsFilterMode } from "@/lib/logistics/display";
+import type { LogisticsFilterMode, PostalLimitFilter } from "@/lib/logistics/display";
+import { normalizeLogisticsFilterMode } from "@/lib/logistics/display";
+import { LogisticsClassifyStage } from "@/components/logistics/logistics-classify-stage";
 import {
   buildEstimateParams,
   listTemplateCountryCodes,
@@ -43,9 +44,11 @@ import {
 } from "@/lib/logistics/completion-gate";
 import { stashLogisticsSyncExceptionCount } from "@/lib/logistics/sync-handoff";
 import {
+  collectBatchAcceptableVariants,
   collectProductQuotableVariantIds,
-  computeLogisticsPlanMetrics,
+  buildAcceptQuotePayload,
 } from "@/lib/logistics/display";
+import { deriveLogisticsWorkbenchState } from "@/lib/logistics/workbench-state";
 import {
   mergeQuoteResultsIntoAnalysis,
   readQuoteCache,
@@ -81,7 +84,7 @@ const DEFAULT_TEMPLATE = (shopName: string): LogisticsTemplate => ({
 
 function LogisticsContent() {
   const router = useRouter();
-  const { shop, isAuthorized, authSessionReady, saveLogistics, showToast, skuReadyForNext, workflowSku, logisticsCompleted, publishLogisticsStepSnapshot } =
+  const { shop, isAuthorized, authSessionReady, saveLogistics, showToast, skuReadyForNext, workflowSku, logisticsCompleted, publishLogisticsStepSnapshot, publishLogisticsPipelineActive } =
     useOnboarding();
   const shopName = shop.name?.trim() || shop.domain?.trim() || "";
   const wb = useWorkbenchPage("logistics");
@@ -96,6 +99,7 @@ function LogisticsContent() {
   const [error, setError] = useState<string | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [filterMode, setFilterMode] = useState<LogisticsFilterMode>("all");
+  const [postalLimitFilter, setPostalLimitFilter] = useState<PostalLimitFilter>("all");
   const [quoteResults, setQuoteResults] = useState<
     Map<string, LogisticsEstimateResult>
   >(new Map());
@@ -110,12 +114,44 @@ function LogisticsContent() {
   const [measureOverrides, setMeasureOverrides] = useState<Map<string, MeasureOverride>>(
     new Map()
   );
+  const [selectedLineByVariant, setSelectedLineByVariant] = useState<
+    Map<string, string>
+  >(new Map());
   const [showSyncConfirm, setShowSyncConfirm] = useState(false);
+  const batchAcceptCancelRef = useRef(false);
+  const logisticsListRef = useRef<HTMLDivElement>(null);
 
-  const planMetrics = useMemo(
-    () => computeLogisticsPlanMetrics(analysis, quoteResults),
+  const scrollToLogisticsList = useCallback(() => {
+    requestAnimationFrame(() => {
+      logisticsListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
+
+  const handleSelectLine = useCallback((variantId: string, lineKey: string) => {
+    setSelectedLineByVariant((prev) => {
+      const next = new Map(prev);
+      next.set(variantId, lineKey);
+      return next;
+    });
+  }, []);
+
+  const handleViewPendingConfirm = useCallback(() => {
+    setFilterMode("pending_confirm");
+    setFocusTarget(null);
+    scrollToLogisticsList();
+  }, [scrollToLogisticsList]);
+
+  const handleViewExceptions = useCallback(() => {
+    setFilterMode("exceptions");
+    setFocusTarget(null);
+    scrollToLogisticsList();
+  }, [scrollToLogisticsList]);
+
+  const workbench = useMemo(
+    () => deriveLogisticsWorkbenchState(analysis, quoteResults),
     [analysis, quoteResults]
   );
+  const planMetrics = workbench.metrics;
 
   const hasSavedTemplate = hasSavedLogisticsTemplate(templates);
 
@@ -390,25 +426,34 @@ function LogisticsContent() {
     );
   }, [collectQuotableVariants]);
 
-  const readyAcceptCount = useMemo(
-    () => collectReadyVariants().length,
-    [collectReadyVariants]
-  );
-
   const fetchQuotesForVariants = useCallback(
     async (
       variantIds?: string[],
-      overrides?: Map<string, MeasureOverride>,
-      opts?: { includeExceptions?: boolean }
+      overrides?: Map<string, MeasureOverride> | AbortSignal,
+      opts?: { includeExceptions?: boolean; signal?: AbortSignal }
     ) => {
-      const overrideMap = overrides ?? measureOverrides;
+      const signal =
+        overrides instanceof AbortSignal
+          ? overrides
+          : opts?.signal;
+      const overrideMap =
+        overrides instanceof AbortSignal ? measureOverrides : (overrides ?? measureOverrides);
+      const includeExceptions =
+        overrides instanceof AbortSignal
+          ? opts?.includeExceptions
+          : opts?.includeExceptions;
+
+      if (signal?.aborted) return null;
+
       const all = collectQuotableVariants(overrideMap, {
-        includeExceptions: opts?.includeExceptions,
+        includeExceptions,
       });
       const targets = variantIds?.length
         ? all.filter((v) => variantIds.includes(v.thirdPlatformSkuId))
         : all;
       if (targets.length === 0) return new Map<string, LogisticsEstimateResult>();
+
+      if (signal?.aborted) return null;
 
       const marketCode = resolveQuoteMarketCode(activeTemplate, quoteMarketCode);
       if (!marketCode) {
@@ -428,10 +473,12 @@ function LogisticsContent() {
         ({ decisionStatus: _status, ...variant }) => ({ ...variant })
       );
       await enrichVariantsWithMeasures(payloadVariants);
+      if (signal?.aborted) return null;
       const resolvedVariants = await enrichVariantsWithEstimateGoodsIds(
         payloadVariants,
         shopName
       );
+      if (signal?.aborted) return null;
 
       setAnalysis((prev) => {
         if (!prev) return prev;
@@ -475,35 +522,38 @@ function LogisticsContent() {
       }
 
       if (quotableVariants.length > 0) {
-        const response = await api.estimateLogistics({
-          shopName,
-          countryCode: params.countryCode,
-          countryId: params.countryId,
-          shippingOption: params.shippingOption,
-          packaging: params.packaging,
-          quoteCurrency: pricingTemplate?.targetCurrency?.trim().toUpperCase() || "USD",
-          variants: quotableVariants.map(
-            ({
-              estimateGoodsId: _id,
-              estimateGoodsError: _err,
-              titleHint: _title,
-              thirdPlatformItemId: _itemId,
-              sourceIdentity: _identity,
-              ...variant
-            }) => ({
-              ...variant,
-              tangbuyGoodsId: variant.tangbuyGoodsId,
-            })
-          ),
-          needOtherLine: true,
-          needMeasure: quotableVariants.some(
-            (v) =>
-              v.weightG == null ||
-              v.lengthCm == null ||
-              v.widthCm == null ||
-              v.heightCm == null
-          ),
-        });
+        const response = await api.estimateLogistics(
+          {
+            shopName,
+            countryCode: params.countryCode,
+            countryId: params.countryId,
+            shippingOption: params.shippingOption,
+            packaging: params.packaging,
+            quoteCurrency: pricingTemplate?.targetCurrency?.trim().toUpperCase() || "USD",
+            variants: quotableVariants.map(
+              ({
+                estimateGoodsId: _id,
+                estimateGoodsError: _err,
+                titleHint: _title,
+                thirdPlatformItemId: _itemId,
+                sourceIdentity: _identity,
+                ...variant
+              }) => ({
+                ...variant,
+                tangbuyGoodsId: variant.tangbuyGoodsId,
+              })
+            ),
+            needOtherLine: true,
+            needMeasure: quotableVariants.some(
+              (v) =>
+                v.weightG == null ||
+                v.lengthCm == null ||
+                v.widthCm == null ||
+                v.heightCm == null
+            ),
+          },
+          signal
+        );
         for (const r of response.results) {
           resultsMap.set(r.thirdPlatformSkuId, r);
         }
@@ -558,9 +608,10 @@ function LogisticsContent() {
   );
 
   const fetchQuotesForPipeline = useCallback(
-    (variantIds?: string[]) =>
+    (variantIds?: string[], signal?: AbortSignal) =>
       fetchQuotesForVariants(variantIds, measureOverrides, {
         includeExceptions: true,
+        signal,
       }),
     [fetchQuotesForVariants, measureOverrides]
   );
@@ -616,6 +667,10 @@ function LogisticsContent() {
     }
     return { products, skus };
   }, [workflowSku, analysis]);
+
+  useEffect(() => {
+    publishLogisticsPipelineActive(pipeline.pipelineActive);
+  }, [pipeline.pipelineActive, publishLogisticsPipelineActive]);
 
   useEffect(() => {
     if (!isAuthorized) {
@@ -694,7 +749,7 @@ function LogisticsContent() {
       pipeline.pipelineRunning
     );
     if (ids.length === 0) {
-      showToast("本商品没有可拉取报价的 SKU");
+      showToast("本商品没有可运费预估的 SKU");
       return;
     }
     setQuotingProductId(_productId);
@@ -764,7 +819,12 @@ function LogisticsContent() {
           setQuoting(false);
         }
       }
-      if (variant.decisionStatus === "ready_for_quote" && !quote?.recommendedLine) {
+      const quotePayload = buildAcceptQuotePayload(
+        variant,
+        quote,
+        selectedLineByVariant.get(variant.thirdPlatformSkuId)
+      );
+      if (variant.decisionStatus === "ready_for_quote" && !quotePayload?.recommendedLine) {
         setFilterMode("all");
         showToast("该规格暂无可用线路报价，请先拉取或检查模板市场");
         return;
@@ -773,14 +833,8 @@ function LogisticsContent() {
         shopName,
         targetScope: "VARIANTS",
         variantIds: [variant.thirdPlatformSkuId],
-        quotes: quote
-          ? {
-              [variant.thirdPlatformSkuId]: {
-                recommendedLine: quote.recommendedLine,
-                alternativeLines: quote.alternativeLines,
-                quoteStatus: quote.quoteStatus,
-              },
-            }
+        quotes: quotePayload
+          ? { [variant.thirdPlatformSkuId]: quotePayload }
           : undefined,
       });
       setAnalysis(result.analysis);
@@ -795,74 +849,82 @@ function LogisticsContent() {
     }
   };
 
-  const handleAcceptAllReady = async () => {
+  const handleAcceptAllReady = async (opts?: {
+    onProgress?: (current: number, total: number, success: number, failed: number) => void;
+    isCancelled?: () => boolean;
+  }) => {
     if (accepting) return;
-    const readyVariants = collectReadyVariants();
-    if (readyVariants.length === 0) {
-      showToast("没有可接受的可报价项");
+    const targets = collectBatchAcceptableVariants(analysis, quoteResults);
+    if (targets.length === 0) {
+      showToast("没有待确认的报价方案，请先完成运费预估");
       return;
     }
 
+    const total = targets.length;
+    opts?.onProgress?.(0, total, 0, 0);
+
     setAccepting(true);
     try {
-      let results = quoteResults;
-      const needsFetch = readyVariants.some(
-        (v) => !quoteResults.get(v.thirdPlatformSkuId)?.recommendedLine
-      );
-      if (needsFetch) {
-        setQuoting(true);
-        try {
-          const fetched = await fetchQuotesForReady();
-          if (fetched === null) return;
-          results = fetched;
-        } finally {
-          setQuoting(false);
+      const CHUNK_SIZE = 10;
+      let acceptedTotal = 0;
+      let failedTotal = 0;
+
+      for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
+        if (opts?.isCancelled?.()) {
+          showToast("已取消批量接受");
+          return;
         }
-      }
 
-      const quotable = readyVariants.filter((v) =>
-        Boolean(results.get(v.thirdPlatformSkuId)?.recommendedLine)
-      );
-      if (quotable.length === 0) {
-        setFilterMode("all");
-        const resultList = [...results.values()];
-        const ingesting = resultList.some((r) => r.quoteStatus === "INGESTING");
-        const firstError = resultList.find((r) => r.errorMessage)?.errorMessage;
-        showToast(
-          ingesting
-            ? "商品正在同步 Tangbuy 商品库，请稍后再拉取物流报价"
-            : firstError ||
-                "未获取到可用线路报价，请检查模板市场或稍后重试「拉取可报价线路」"
+        const chunk = targets.slice(i, i + CHUNK_SIZE);
+        const quotes: LogisticsAcceptDecisionRequest["quotes"] = {};
+        for (const variant of chunk) {
+          const result = quoteResults.get(variant.thirdPlatformSkuId);
+          const payload = buildAcceptQuotePayload(
+            variant,
+            result,
+            selectedLineByVariant.get(variant.thirdPlatformSkuId)
+          );
+          if (!payload?.recommendedLine) continue;
+          quotes[variant.thirdPlatformSkuId] = payload;
+        }
+
+        const variantIds = chunk
+          .map((v) => v.thirdPlatformSkuId)
+          .filter((id) => quotes[id]);
+        if (variantIds.length === 0) continue;
+
+        try {
+          const result = await api.acceptLogisticsDecision({
+            shopName,
+            targetScope: "VARIANTS",
+            variantIds,
+            quotes,
+          });
+          setAnalysis(result.analysis);
+          acceptedTotal += result.acceptedCount;
+          if (result.acceptedCount < variantIds.length) {
+            failedTotal += variantIds.length - result.acceptedCount;
+          }
+        } catch {
+          failedTotal += variantIds.length;
+        }
+
+        opts?.onProgress?.(
+          Math.min(i + chunk.length, targets.length),
+          total,
+          acceptedTotal,
+          failedTotal
         );
-        return;
       }
 
-      const quotes: LogisticsAcceptDecisionRequest["quotes"] = {};
-      for (const v of quotable) {
-        const result = results.get(v.thirdPlatformSkuId);
-        if (!result) continue;
-        quotes[v.thirdPlatformSkuId] = {
-          recommendedLine: result.recommendedLine,
-          alternativeLines: result.alternativeLines,
-          quoteStatus: result.quoteStatus,
-        };
-      }
-
-      const result = await api.acceptLogisticsDecision({
-        shopName,
-        targetScope: "VARIANTS",
-        variantIds: quotable.map((v) => v.thirdPlatformSkuId),
-        quotes,
-      });
-      setAnalysis(result.analysis);
       setFilterMode("all");
-      const skipped = readyVariants.length - quotable.length;
+      if (opts?.isCancelled?.()) return;
       showToast(
-        result.acceptedCount > 0
-          ? skipped > 0
-            ? `已接受 ${result.acceptedCount} 条（含线路）；${skipped} 条因无报价未接受`
-            : `已接受 ${result.acceptedCount} 条可报价决策`
-          : "没有可接受的可报价项"
+        acceptedTotal > 0
+          ? `已接受 ${acceptedTotal} 条待确认方案`
+          : failedTotal > 0
+            ? `批量接受失败 ${failedTotal} 条`
+            : "没有可接受的待确认方案"
       );
     } catch (err) {
       showToast(readableError(err));
@@ -872,21 +934,30 @@ function LogisticsContent() {
   };
 
   const handleFocusStatus = (status: LogisticsDecisionStatus) => {
-    setFilterMode("issues");
+    if (status === "pending_sku") {
+      setFilterMode("sku_unlinked");
+    } else {
+      setFilterMode("pending_confirm");
+    }
     setFocusTarget({ status });
   };
+
+  const handleSetFilter = useCallback((mode: string) => {
+    setFilterMode(normalizeLogisticsFilterMode(mode));
+    setFocusTarget(null);
+  }, []);
 
   const logisticsPreviewGenerators = useMemo(
     () => ({
       accept_all_ready: async (_plan: LogisticsCommandPlan) => {
-        const total = readyAcceptCount;
+        const total = workbench.batchAcceptCount;
         if (total === 0) {
-          throw new Error("没有可确认的可报价项");
+          throw new Error("没有待确认的报价方案");
         }
         return {
           sections: [
             {
-              title: `批量确认 · ${total} 个可报价 SKU`,
+              title: `批量接受 · ${total} 个待确认 SKU`,
               rows: [
                 {
                   label: "物流决策",
@@ -905,13 +976,20 @@ function LogisticsContent() {
         };
       },
     }),
-    [readyAcceptCount]
+    [workbench.batchAcceptCount]
   );
 
   const logisticsCommandExecutors = useMemo(
     () => ({
-      accept_all_ready: async () => {
-        await handleAcceptAllReady();
+      accept_all_ready: async (payload: Record<string, unknown>) => {
+        batchAcceptCancelRef.current = false;
+        const onProgress = payload.onProgress as
+          | ((current: number, total: number, success: number, failed: number) => void)
+          | undefined;
+        await handleAcceptAllReady({
+          onProgress,
+          isCancelled: () => batchAcceptCancelRef.current,
+        });
       },
     }),
     [handleAcceptAllReady]
@@ -979,20 +1057,16 @@ function LogisticsContent() {
               analysis={analysis}
               activeTemplate={activeTemplate}
               decisionStatusCounts={analysis?.decisionStatusCounts}
-              highRiskTypes={analysis?.highRiskTypes}
               skuReadyForNext={skuReadyForNext}
               quoting={quoting || pipeline.pipelineActive}
               accepting={accepting}
-              readyAcceptCount={readyAcceptCount}
-              pendingCount={planMetrics.pendingCount}
-              confirmedCount={analysis?.decisionStatusCounts?.confirmed ?? 0}
               onFocusStatus={handleFocusStatus}
               onAcceptAllReady={() => void handleAcceptAllReady()}
               onFetchQuotes={() => void handleFetchQuotes()}
               onOpenTemplate={() => setShowDrawer(true)}
               pipelineProgress={pipeline.progress}
               pipelineActive={pipeline.pipelineActive}
-              pendingReviewCount={planMetrics.pendingCount}
+              pendingReviewCount={planMetrics.pendingQuoteCount}
               onRetryPipeline={handleRetryPipeline}
               onCancelPipeline={pipeline.cancelPipeline}
               previewGenerators={logisticsPreviewGenerators}
@@ -1004,15 +1078,16 @@ function LogisticsContent() {
               skuBindingGap={skuBindingGap}
               onStartEstimate={handleStartEstimate}
               onSaveAndSync={handleSaveAndSync}
-              onViewUnidentified={() => setFilterMode("unidentified")}
-              onViewIssues={() => setFilterMode("issues")}
-            />
-          }
-          strategyCards={
-            <PricingStrategyRailCard
-              template={pricingTemplate}
-              analysisReady={Boolean(analysis)}
-              onConfigure={() => router.push("/products")}
+              onViewUnidentified={() => {
+                setFilterMode("sku_unlinked");
+                scrollToLogisticsList();
+              }}
+              onViewPendingConfirm={handleViewPendingConfirm}
+              onViewExceptions={handleViewExceptions}
+              onSetFilter={handleSetFilter}
+              onCancelBatchAccept={() => {
+                batchAcceptCancelRef.current = true;
+              }}
             />
           }
         />
@@ -1031,11 +1106,11 @@ function LogisticsContent() {
               disabled={
                 loading ||
                 pipeline.pipelineRunning ||
-                planMetrics.autoReadyCount === 0
+                !workbench.actions.canEstimate
               }
               title={
-                planMetrics.autoReadyCount > 0
-                  ? `批量拉取 ${planMetrics.autoReadyCount} 个待报价 SKU 的线路`
+                planMetrics.pendingQuoteCount > 0
+                  ? `批量获取 ${planMetrics.pendingQuoteCount} 个待报价 SKU 的线路运费`
                   : "当前没有待报价 SKU"
               }
             >
@@ -1044,9 +1119,9 @@ function LogisticsContent() {
               ) : null}
               {pipeline.pipelineRunning
                 ? "预估中…"
-                : planMetrics.autoReadyCount > 0
-                  ? `一键预估 (${planMetrics.autoReadyCount})`
-                  : "一键预估"}
+                : planMetrics.pendingQuoteCount > 0
+                  ? `运费预估 (${planMetrics.pendingQuoteCount})`
+                  : "运费预估"}
             </Button>
           ) : null
         }
@@ -1062,6 +1137,8 @@ function LogisticsContent() {
               activeTemplate={activeTemplate}
               filterMode={filterMode}
               onFilterModeChange={setFilterMode}
+              postalLimitFilter={postalLimitFilter}
+              onPostalLimitFilterChange={setPostalLimitFilter}
               quoteMarketCode={quoteMarketCode}
               onOpenStrategy={() => setShowDrawer(true)}
               pipelineProgress={pipeline.progress}
@@ -1082,10 +1159,10 @@ function LogisticsContent() {
           ) : null}
 
           {loading && !analysis ? (
-            <div className="flex items-center gap-2 py-12 text-sm text-ink-subtle">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              正在生成 AI 物流方案…
-            </div>
+            <LogisticsClassifyStage
+              phase={classifying ? "classifying" : "loading"}
+              productCount={workflowSku?.productCount}
+            />
           ) : error && !analysis ? (
             <div className="rounded-[var(--radius-card)] border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
               {error}
@@ -1099,9 +1176,11 @@ function LogisticsContent() {
               </Button>
             </div>
           ) : hasSavedTemplate && analysis ? (
+            <div ref={logisticsListRef} className="scroll-mt-4">
             <LogisticsDecisionList
               analysis={analysis}
               filterMode={filterMode}
+              postalLimitFilter={postalLimitFilter}
               quoteResults={quoteResults}
               activeTemplate={activeTemplate}
               correctingId={correctingId}
@@ -1124,7 +1203,10 @@ function LogisticsContent() {
               pricing={pricingTemplate}
               pipelineActive={pipeline.pipelineActive}
               pipelineProgress={pipeline.progress}
+              selectedLineByVariant={selectedLineByVariant}
+              onSelectLine={handleSelectLine}
             />
+            </div>
           ) : null}
         </div>
       </WorkbenchPanel>

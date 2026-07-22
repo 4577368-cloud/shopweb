@@ -33,7 +33,7 @@ export function buildEstimateGoodsBlockMessage(
     case "ingesting":
       return (
         `商品入库中${offerHint}：已登记 Tangbuy 商品库，正在同步规格与报价 ID。` +
-        `通常需数十秒，请稍后点击「拉取报价」重试，无需重新选品。`
+        `通常需数十秒，请稍后点击「运费预估」重试，无需重新选品。`
       );
     case "pool_failed":
       return (
@@ -48,7 +48,7 @@ export function buildEstimateGoodsBlockMessage(
     case "unresolved_offer":
       return (
         `货源 ID 尚未解析为商品库 goodsId${offerHint}。` +
-        `系统正在尝试登记商品库，请稍后重试拉取报价。`
+        `系统正在尝试登记商品库，请稍后重试运费预估。`
       );
     default:
       return `无法解析商品库 goodsId${offerHint}，请稍后重试。`;

@@ -180,8 +180,8 @@ export function evaluateLogisticsCompletionGate(input: {
       templateMarketsConfigured &&
       !pipelineActive;
     if (quoteOnlyBlocked) {
-      footerHint = `${stats.criticalUnquotedCount} 个 SKU 待拉取报价，点击一键预估`;
-      primaryButtonLabel = `一键预估 (${stats.criticalUnquotedCount})`;
+      footerHint = `${stats.criticalUnquotedCount} 个 SKU 待运费预估`;
+      primaryButtonLabel = `运费预估 (${stats.criticalUnquotedCount})`;
     } else {
       footerHint = blockers[0] ?? "先处理阻塞项";
       primaryButtonLabel = "先处理阻塞项";

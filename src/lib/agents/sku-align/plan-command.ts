@@ -362,6 +362,11 @@ export function resolveSkuCommandExecution(
     case "rerun_auto_align": {
       return { type: "rerun_auto_align", productId: plan.draft.productId };
     }
+    case "open_sku_detail": {
+      const productId = plan.draft.productId;
+      if (!productId) return null;
+      return { type: "focus_product", productId };
+    }
     default:
       return null;
   }

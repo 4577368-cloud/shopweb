@@ -26,6 +26,8 @@ export type ProductShellStatus =
   | "done"
   | "quoted"
   | "issues"
+  | "unidentified"
+  | "ready"
   | "failed"
   | "partial";
 
@@ -69,9 +71,17 @@ export function computeSkuRowStatus(
   ) {
     return "failed";
   }
+  if (variantHasQuoteLine(variant, quoteResult)) return "pending_review";
   if (isVariantException(variant)) return "pending_review";
   if (variant.decisionStatus === "ready_for_quote") return "ready";
-  return "pending_review";
+  if (
+    variant.decisionStatus === "pending_postal_meta" ||
+    variant.decisionStatus === "needs_review" ||
+    variant.decisionStatus === "restricted"
+  ) {
+    return "ready";
+  }
+  return "ready";
 }
 
 export const SKU_ROW_STATUS_LABELS: Record<SkuRowStatus, string> = {
@@ -79,8 +89,8 @@ export const SKU_ROW_STATUS_LABELS: Record<SkuRowStatus, string> = {
   confirmed: "已确认",
   pending_review: "待确认",
   failed: "失败",
-  pending_sku: "缺 SKU",
-  ready: "待预估",
+  pending_sku: "SKU未关联",
+  ready: "待报价",
 };
 
 export function formatVariantIssueHint(
@@ -108,8 +118,8 @@ export function formatVariantIssueHint(
   if (variant.decisionReason?.includes("重量") || variant.decisionReason?.includes("尺寸")) {
     return "缺重量或尺寸，请补充后重算";
   }
-  if (variant.decisionStatus === "restricted") return "邮限受限，需人工选线";
-  if (variant.decisionStatus === "needs_review") return "特殊品类，需人工确认";
+  if (variant.decisionStatus === "restricted") return "邮限受限，请确认线路";
+  if (variant.decisionStatus === "needs_review") return "报价后请人工确认线路";
   if (variant.decisionStatus === "ready_for_quote") return null;
   if (
     variant.decisionConfirmed ||
@@ -136,7 +146,9 @@ export function computeProductShellMeta(
   const skuTotal = variants.length || profile.totalVariants || 0;
   let confirmedCount = 0;
   let quotedCount = 0;
-  let pendingCount = 0;
+  let readyCount = 0;
+  let reviewCount = 0;
+  let unidentifiedCount = 0;
   let failedCount = 0;
   const issueHints: string[] = [];
   let minFee: number | null = null;
@@ -153,7 +165,9 @@ export function computeProductShellMeta(
 
     if (rowStatus === "confirmed") confirmedCount += 1;
     else if (rowStatus === "failed") failedCount += 1;
-    else if (rowStatus !== "processing") pendingCount += 1;
+    else if (rowStatus === "ready") readyCount += 1;
+    else if (rowStatus === "pending_review") reviewCount += 1;
+    else if (rowStatus === "pending_sku") unidentifiedCount += 1;
 
     if (variantHasQuoteLine(variant, quote)) quotedCount += 1;
 
@@ -173,17 +187,36 @@ export function computeProductShellMeta(
 
   let status: ProductShellStatus = "partial";
   if (isProcessing) status = "processing";
-  else if (failedCount > 0) status = "failed";
+  else if (failedCount > 0 && failedCount >= skuTotal) status = "failed";
   else if (confirmedCount >= skuTotal && skuTotal > 0) status = "done";
-  else if (quotedCount >= skuTotal && skuTotal > 0) status = "quoted";
-  else if (pendingCount > 0 && confirmedCount > 0) status = "issues";
-  else if (pendingCount > 0) status = "issues";
+  else if (
+    quotedCount >= skuTotal &&
+    skuTotal > 0 &&
+    reviewCount === 0 &&
+    unidentifiedCount === 0 &&
+    readyCount === 0
+  ) {
+    status = "quoted";
+  } else if (unidentifiedCount >= skuTotal && skuTotal > 0) {
+    status = "unidentified";
+  } else if (reviewCount > 0 && readyCount === 0 && unidentifiedCount === 0) {
+    status = "issues";
+  } else if (readyCount > 0 && reviewCount === 0 && unidentifiedCount === 0) {
+    status = "ready";
+  } else if (reviewCount > 0) status = "issues";
+  else if (unidentifiedCount > 0) status = "unidentified";
+  else if (readyCount > 0) status = "ready";
+  else if (failedCount > 0) status = "failed";
+  else if (quotedCount > 0) status = "quoted";
   else if (confirmedCount > 0) status = "partial";
 
   const summaryParts: string[] = [];
   if (confirmedCount > 0) summaryParts.push(`已确认 ${confirmedCount}/${skuTotal}`);
-  else if (quotedCount > 0) summaryParts.push(`已报价 ${quotedCount}/${skuTotal}`);
-  if (pendingCount > 0) summaryParts.push(`待处理 ${pendingCount}`);
+  else if (quotedCount > 0 && reviewCount === 0)
+    summaryParts.push(`已报价 ${quotedCount}/${skuTotal}`);
+  if (readyCount > 0) summaryParts.push(`待报价 ${readyCount}`);
+  if (reviewCount > 0) summaryParts.push(`待确认 ${reviewCount}`);
+  if (unidentifiedCount > 0) summaryParts.push(`SKU未关联 ${unidentifiedCount}`);
   if (failedCount > 0) summaryParts.push(`失败 ${failedCount}`);
   if (minFeeLabel) summaryParts.push(`最低 ${minFeeLabel}`);
 
@@ -191,7 +224,7 @@ export function computeProductShellMeta(
     status,
     skuTotal,
     confirmedCount,
-    pendingCount,
+    pendingCount: readyCount + reviewCount + unidentifiedCount,
     failedCount,
     summaryLine: summaryParts.join(" · ") || `${skuTotal} 个 SKU`,
     issueLine: issueHints.length > 0 ? issueHints.slice(0, 2).join("；") : null,
@@ -204,6 +237,8 @@ export const PRODUCT_SHELL_STATUS_LABELS: Record<ProductShellStatus, string> = {
   done: "已确认",
   quoted: "已报价",
   issues: "待确认",
+  unidentified: "SKU未关联",
+  ready: "待报价",
   failed: "失败",
   partial: "进行中",
 };
@@ -220,6 +255,10 @@ export function productShellStatusClass(status: ProductShellStatus): string {
       return "bg-red-50 text-red-800 ring-1 ring-red-200";
     case "issues":
       return "bg-amber-50 text-amber-900 ring-1 ring-amber-200";
+    case "unidentified":
+      return "bg-surface-muted text-ink-subtle ring-1 ring-hairline";
+    case "ready":
+      return "bg-brand-soft text-brand-strong ring-1 ring-brand/20";
     default:
       return "bg-surface-muted text-ink-subtle ring-1 ring-hairline";
   }

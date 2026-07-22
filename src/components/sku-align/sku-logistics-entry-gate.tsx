@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button";
 export function SkuLogisticsEntryGate() {
   return (
     <Link href="/logistics">
-      <Button>
+      <Button size="sm">
         进入物流确认
-        <ArrowRight className="h-4 w-4" />
+        <ArrowRight className="h-3.5 w-3.5" />
       </Button>
     </Link>
   );

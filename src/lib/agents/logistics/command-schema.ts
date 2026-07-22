@@ -72,6 +72,11 @@ export type LogisticsCommandExecution =
       status: LogisticsDecisionStatus;
     }
   | {
+      type: "set_filter";
+      /** Agent legacy id (`issues`) or current tab id — normalized on the page. */
+      filterMode: string;
+    }
+  | {
       type: "apply_template";
       templateId: string;
     };
@@ -99,15 +104,15 @@ export const LOGISTICS_COMMAND_DEFS: {
 }[] = [
   {
     id: "accept_all_ready",
-    label: "批量确认",
-    description: "批量接受 AI 推荐的物流方案",
+    label: "批量接受",
+    description: "批量接受已有线路报价的 AI 推荐方案",
     defaultConfirmation: true,
     sensitivity: "high",
   },
   {
     id: "fetch_quotes",
-    label: "刷新报价",
-    description: "重新拉取线路报价",
+    label: "运费预估",
+    description: "获取各规格的线路运费与推荐线路",
     defaultConfirmation: false,
     sensitivity: "low",
   },

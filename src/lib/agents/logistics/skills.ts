@@ -47,7 +47,7 @@ const confirmReadySkill: LogisticsSkill = {
     const steps: SkillNextStep[] = [];
     if (ctx.readyAcceptCount > 0) {
       steps.push({
-        label: `确认 ${ctx.readyAcceptCount} 个可报价方案`,
+        label: `确认 ${ctx.readyAcceptCount} 个待确认方案`,
       });
     }
     if (ctx.pendingCount > 0) {
@@ -96,7 +96,7 @@ const templateSkill: LogisticsSkill = {
     return [
       {
         label: "调整物流模板",
-        kind: "open_pricing_drawer",
+        kind: "open_template",
       },
     ];
   },

@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api";
+import { isOfferNotFoundMessage } from "@/lib/batch-link/match-errors";
 
 /** Map SKU align / manual bind backend machine codes to readable copy. */
 export function mapSkuAlignError(err: unknown): string {
@@ -7,7 +8,6 @@ export function mapSkuAlignError(err: unknown): string {
     if (err.status === 0) return err.message;
     const body = err.body as { message?: string } | undefined;
     raw = body?.message ?? err.message;
-    // readableError prefix: "请求失败（400）：GATEWAY_BUSY: ..."
     const colonIdx = raw.indexOf("：");
     if (colonIdx >= 0 && raw.startsWith("请求失败")) {
       raw = raw.slice(colonIdx + 1).trim();
@@ -20,6 +20,7 @@ export function mapSkuAlignError(err: unknown): string {
   if (raw.startsWith("NO_OFFER_SKU")) return "该 Tangbuy 货源未返回可用 SKU";
   if (raw.startsWith("AOP_CRED_MISSING")) return "1688 开放平台凭证未配置，请联系管理员";
   if (raw.startsWith("AOP_TOKEN_INVALID")) return "1688 授权已失效，请联系管理员";
+  if (isOfferNotFoundMessage(raw)) return "该货源已下架或无效，请换一个候选";
   if (raw.startsWith("GATEWAY_BUSY")) return "货源校验服务暂不可用，请稍后重试";
   if (raw.startsWith("SKU_NOT_IN_MATRIX")) {
     return raw.includes(":") ? raw.split(":").slice(1).join(":").trim() : "所选 SKU 不在货源规格表中";

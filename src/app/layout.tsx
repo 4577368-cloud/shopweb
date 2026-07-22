@@ -1,10 +1,19 @@
 import type { Metadata } from "next";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import { Providers } from "@/components/providers";
+import { APP_DESCRIPTION, APP_FULL_NAME } from "@/lib/brand";
 import "./globals.css";
 
+const displayFont = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-brand",
+  weight: ["500", "600", "700"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "Tangbuy · 一件代发工作台",
-  description: "Shopify 商家一件代发 onboarding 工作台原型",
+  title: APP_FULL_NAME,
+  description: APP_DESCRIPTION,
 };
 
 export default function RootLayout({
@@ -13,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className="h-full antialiased">
+    <html lang="zh-CN" className={`${displayFont.variable} h-full antialiased`}>
       <body className="min-h-full bg-slate-100 font-sans text-slate-900">
         <Providers>{children}</Providers>
       </body>

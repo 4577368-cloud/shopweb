@@ -13,8 +13,9 @@ import type { LogisticsAnalysis, LogisticsTemplate } from "@/lib/types";
 const FILTER_TABS = (
   metrics: ReturnType<typeof computeLogisticsPlanMetrics>
 ): { id: LogisticsFilterMode; label: string; count?: number }[] => [
-  { id: "issues", label: "待确认", count: metrics.pendingCount },
-  { id: "ready", label: "AI 已规划", count: metrics.aiAutoCount },
+  { id: "pending_quote", label: "待报价", count: metrics.pendingQuoteCount },
+  { id: "pending_confirm", label: "待确认", count: metrics.pendingConfirmCount },
+  { id: "sku_unlinked", label: "SKU未关联", count: metrics.skuUnlinkedCount },
   { id: "all", label: "全部", count: metrics.variantCount },
 ];
 

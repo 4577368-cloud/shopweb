@@ -86,6 +86,8 @@
 
   --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue",
     Arial, sans-serif;
+  --font-display: var(--font-brand), "Plus Jakarta Sans", "Segoe UI",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -214,6 +216,7 @@ select {
   content: "";
   position: absolute;
   inset: 0;
+  pointer-events: none;
   background: linear-gradient(
     90deg,
     transparent,

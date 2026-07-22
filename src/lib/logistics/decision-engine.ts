@@ -35,12 +35,7 @@ export function getPostalLimitLabel(
   return POSTAL_LIMIT_LABELS[postalClass] || postalClass;
 }
 
-const NEEDS_REVIEW_TYPES: Set<LogisticsTypeCode> = new Set([
-  "FOOD",
-  "BLADE",
-  "OTHER",
-  "BATTERY_MAGNETIC",
-]);
+const NEEDS_REVIEW_POSTAL_CLASSES = new Set(["BLADE", "OTHER"]);
 
 export function computeVariantDecisionStatus(
   variant: Partial<VariantLogisticsDecision> & {
@@ -65,14 +60,14 @@ export function computeVariantDecisionStatus(
   if (variant.postalLimitClass === "RESTRICTED") {
     return {
       status: "restricted",
-      reason: "当前已知规则下受限，需进一步线路确认或人工处理",
+      reason: "当前邮限标记为受限，请确认线路或调整品类",
     };
   }
 
-  if (NEEDS_REVIEW_TYPES.has(variant.postalLimitClass as LogisticsTypeCode)) {
+  if (NEEDS_REVIEW_POSTAL_CLASSES.has(variant.postalLimitClass)) {
     return {
       status: "needs_review",
-      reason: "特殊品类，需人工审核确认",
+      reason: "高风险品类，报价后需人工确认线路",
     };
   }
 

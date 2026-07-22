@@ -9,6 +9,15 @@ import { Field, Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { api, readableError } from "@/lib/api";
 import { isProductConflict } from "@/lib/shop-product-write";
+import {
+  formatShopProductDeleteVerifyMessage,
+  verifyShopProductDeletions,
+} from "@/lib/shop-product-delete-verify";
+import {
+  extractHtmlImageUrls,
+  isFeaturedShopMedia,
+  resolveShopMediaId,
+} from "@/lib/shop-product-media";
 import type {
   ShopProductDetail,
   ShopProductVariantUpdatePayload,
@@ -71,6 +80,8 @@ interface EditForm {
   description: string;
   status: string;
   variants: VariantEdit[];
+  deletedVariantIds: string[];
+  deletedMediaIds: string[];
 }
 
 function formFromDetail(d: ShopProductDetail): EditForm {
@@ -84,6 +95,8 @@ function formFromDetail(d: ShopProductDetail): EditForm {
       inventoryQuantity:
         v.inventoryQuantity != null ? String(v.inventoryQuantity) : "",
     })),
+    deletedVariantIds: [],
+    deletedMediaIds: [],
   };
 }
 
@@ -94,6 +107,17 @@ function sameUpdatedAt(a?: string | null, b?: string | null): boolean {
   const tb = Date.parse(b);
   if (Number.isFinite(ta) && Number.isFinite(tb)) return ta === tb;
   return a === b;
+}
+
+function deletionsEqual(a: EditForm, b: EditForm): boolean {
+  if (a.deletedVariantIds.length !== b.deletedVariantIds.length) return false;
+  if (a.deletedMediaIds.length !== b.deletedMediaIds.length) return false;
+  const av = [...a.deletedVariantIds].sort().join(",");
+  const bv = [...b.deletedVariantIds].sort().join(",");
+  if (av !== bv) return false;
+  const am = [...a.deletedMediaIds].sort().join(",");
+  const bm = [...b.deletedMediaIds].sort().join(",");
+  return am === bm;
 }
 
 function variantsEqual(a: VariantEdit[], b: VariantEdit[]): boolean {
@@ -130,6 +154,7 @@ export function ShopProductDetailDrawer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [detail, setDetail] = useState<ShopProductDetail | null>(null);
   const [form, setForm] = useState<EditForm | null>(null);
   const [baseline, setBaseline] = useState<EditForm | null>(null);
@@ -137,6 +162,9 @@ export function ShopProductDetailDrawer({
     null
   );
   const [conflict, setConflict] = useState(false);
+  const [descriptionView, setDescriptionView] = useState<"edit" | "preview">(
+    "edit"
+  );
 
   const dirtyRef = useRef(false);
   const mirrorUpdatedAtRef = useRef<string | null | undefined>(null);
@@ -152,6 +180,8 @@ export function ShopProductDetailDrawer({
       setBaselineUpdatedAt(d.updatedAt ?? null);
       setConflict(false);
       setSaveError(null);
+    setSaveNotice(null);
+      setSaveNotice(null);
     }
   };
 
@@ -163,6 +193,8 @@ export function ShopProductDetailDrawer({
       setBaselineUpdatedAt(null);
       setError(null);
       setSaveError(null);
+    setSaveNotice(null);
+      setSaveNotice(null);
       setConflict(false);
       mirrorUpdatedAtRef.current = null;
       return;
@@ -171,6 +203,7 @@ export function ShopProductDetailDrawer({
     setLoading(true);
     setError(null);
     setSaveError(null);
+    setSaveNotice(null);
     setConflict(false);
     api
       .getShopProductDetail(shopName, itemId)
@@ -209,7 +242,8 @@ export function ShopProductDetailDrawer({
       form.title !== baseline.title ||
       form.description !== baseline.description ||
       form.status !== baseline.status ||
-      !variantsEqual(form.variants, baseline.variants)
+      !variantsEqual(form.variants, baseline.variants) ||
+      !deletionsEqual(form, baseline)
     );
   }, [form, baseline]);
 
@@ -248,6 +282,7 @@ export function ShopProductDetailDrawer({
   const patchForm = (patch: Partial<EditForm>) => {
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
     setSaveError(null);
+    setSaveNotice(null);
   };
 
   const patchVariant = (
@@ -264,6 +299,35 @@ export function ShopProductDetailDrawer({
       };
     });
     setSaveError(null);
+    setSaveNotice(null);
+  };
+
+  const removeVariant = (skuId: string) => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      if (prev.variants.length <= 1) return prev;
+      if (prev.deletedVariantIds.includes(skuId)) return prev;
+      return {
+        ...prev,
+        variants: prev.variants.filter((v) => v.thirdPlatformSkuId !== skuId),
+        deletedVariantIds: [...prev.deletedVariantIds, skuId],
+      };
+    });
+    setSaveError(null);
+    setSaveNotice(null);
+  };
+
+  const removeMedia = (mediaId: string) => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      if (prev.deletedMediaIds.includes(mediaId)) return prev;
+      return {
+        ...prev,
+        deletedMediaIds: [...prev.deletedMediaIds, mediaId],
+      };
+    });
+    setSaveError(null);
+    setSaveNotice(null);
   };
 
   const handleReload = () => {
@@ -277,12 +341,14 @@ export function ShopProductDetailDrawer({
     | { ok: false; error: string } => {
     if (!form || !baseline) return { ok: true, variants: [] };
     const out: ShopProductVariantUpdatePayload[] = [];
-    for (let i = 0; i < form.variants.length; i++) {
-      const cur = form.variants[i];
-      const base = baseline.variants[i];
-      if (!base || cur.thirdPlatformSkuId !== base.thirdPlatformSkuId) {
-        return { ok: false, error: "变体列表已变化，请重新加载后再编辑" };
-      }
+    for (const cur of form.variants) {
+      const base = baseline.variants.find(
+        (v) => v.thirdPlatformSkuId === cur.thirdPlatformSkuId
+      );
+      if (!base) continue;
+      const meta = detail?.variants.find(
+        (v) => v.thirdPlatformSkuId === cur.thirdPlatformSkuId
+      );
       const priceChanged = cur.price.trim() !== base.price.trim();
       const invChanged =
         cur.inventoryQuantity.trim() !== base.inventoryQuantity.trim();
@@ -293,15 +359,16 @@ export function ShopProductDetailDrawer({
       };
       if (priceChanged) {
         if (!cur.price.trim()) {
-          return { ok: false, error: `变体价格不能为空（${cur.thirdPlatformSkuId}）` };
+          return {
+            ok: false,
+            error: `变体价格不能为空（${optionLabel(meta ?? {})}）`,
+          };
         }
         const n = Number(cur.price.trim());
         if (!Number.isFinite(n) || n < 0) {
           return {
             ok: false,
-            error: `变体价格须为 ≥ 0 的数字（${optionLabel(
-              detail?.variants?.[i] ?? {}
-            )}）`,
+            error: `变体价格须为 ≥ 0 的数字（${optionLabel(meta ?? {})}）`,
           };
         }
         row.price = n;
@@ -310,16 +377,14 @@ export function ShopProductDetailDrawer({
         if (!cur.inventoryQuantity.trim()) {
           return {
             ok: false,
-            error: `库存不能为空（${optionLabel(detail?.variants?.[i] ?? {})}）`,
+            error: `库存不能为空（${optionLabel(meta ?? {})}）`,
           };
         }
         const n = Number(cur.inventoryQuantity.trim());
         if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
           return {
             ok: false,
-            error: `库存须为 ≥ 0 的整数（${optionLabel(
-              detail?.variants?.[i] ?? {}
-            )}）`,
+            error: `库存须为 ≥ 0 的整数（${optionLabel(meta ?? {})}）`,
           };
         }
         row.inventoryQuantity = n;
@@ -344,6 +409,11 @@ export function ShopProductDetailDrawer({
 
     setSaving(true);
     setSaveError(null);
+    setSaveNotice(null);
+    const pendingDeletes = {
+      variantIds: [...form.deletedVariantIds],
+      mediaIds: [...form.deletedMediaIds],
+    };
     try {
       const saved = await api.updateShopProduct(shopName, {
         itemId,
@@ -358,10 +428,28 @@ export function ShopProductDetailDrawer({
                 : {}),
             }
           : {}),
+        ...(form.deletedVariantIds.length
+          ? { deletedVariantIds: form.deletedVariantIds }
+          : {}),
+        ...(form.deletedMediaIds.length
+          ? { deletedMediaIds: form.deletedMediaIds }
+          : {}),
         expectedUpdatedAt: baselineUpdatedAt,
         ...(force ? { force: true } : {}),
       });
       applyDetail(saved, true);
+      if (
+        pendingDeletes.variantIds.length > 0 ||
+        pendingDeletes.mediaIds.length > 0
+      ) {
+        const verify = verifyShopProductDeletions(
+          saved,
+          pendingDeletes.variantIds,
+          pendingDeletes.mediaIds
+        );
+        const notice = formatShopProductDeleteVerifyMessage(verify);
+        if (notice) setSaveNotice(notice);
+      }
       onSaved?.();
     } catch (err) {
       if (isProductConflict(err)) {
@@ -389,6 +477,14 @@ export function ShopProductDetailDrawer({
   const active = (detail?.status ?? "").toUpperCase() === "ACTIVE";
   const hero =
     detail?.primaryImageUrl || detail?.media?.[0]?.url || null;
+  const visibleMedia =
+    detail?.media.filter(
+      (m) => !form?.deletedMediaIds.includes(resolveShopMediaId(m))
+    ) ?? [];
+  const htmlDetailImages = extractHtmlImageUrls(detail?.description);
+  const descriptionHtml = form?.description.trim()
+    ? toHtml(form.description)
+    : detail?.description?.trim() || "";
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -410,7 +506,7 @@ export function ShopProductDetailDrawer({
               {detail?.title || (loading ? "加载中…" : "商品详情")}
             </h2>
             <p className="mt-1 text-[11px] text-ink-muted">
-              阶段 4 · 多变体价格 / 库存写回
+              编辑并同步到 Shopify · 支持删除多余 SKU / 商品图
             </p>
           </div>
           <Button
@@ -535,14 +631,57 @@ export function ShopProductDetailDrawer({
                     <option value="ARCHIVED">ARCHIVED（归档）</option>
                   </Select>
                 </Field>
-                <Field label="描述（纯文本，保存时转为 HTML）">
-                  <textarea
-                    value={form.description}
-                    onChange={(e) => patchForm({ description: e.target.value })}
-                    disabled={saving}
-                    rows={5}
-                    className="w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
-                  />
+                <Field label="描述">
+                  <div className="mb-2 flex gap-1">
+                    <button
+                      type="button"
+                      className={cn(
+                        "rounded-full px-2.5 py-0.5 text-[10px] font-medium",
+                        descriptionView === "edit"
+                          ? "bg-brand-soft text-brand-strong"
+                          : "text-ink-subtle hover:bg-surface-muted"
+                      )}
+                      onClick={() => setDescriptionView("edit")}
+                    >
+                      编辑文本
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "rounded-full px-2.5 py-0.5 text-[10px] font-medium",
+                        descriptionView === "preview"
+                          ? "bg-brand-soft text-brand-strong"
+                          : "text-ink-subtle hover:bg-surface-muted"
+                      )}
+                      onClick={() => setDescriptionView("preview")}
+                    >
+                      预览 HTML
+                    </button>
+                  </div>
+                  {descriptionView === "edit" ? (
+                    <textarea
+                      value={form.description}
+                      onChange={(e) => patchForm({ description: e.target.value })}
+                      disabled={saving}
+                      rows={5}
+                      className="w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+                      placeholder="保存时转为 HTML 段落"
+                    />
+                  ) : (
+                    <div className="rounded-[var(--radius-control)] border border-hairline bg-surface-muted/30 px-3 py-2">
+                      {descriptionHtml ? (
+                        <div
+                          className="prose prose-sm max-w-none text-ink [&_img]:my-2 [&_img]:max-h-48 [&_img]:rounded-md"
+                          dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+                        />
+                      ) : (
+                        <p className="text-xs text-ink-subtle">暂无详情内容</p>
+                      )}
+                    </div>
+                  )}
+                  <p className="mt-1.5 text-[10px] leading-snug text-ink-subtle">
+                    Shopify 详情底层为 HTML。文内嵌的图片属于详情图，与下方「商品图库」分开管理；详情图删除将在下一步支持。
+                  </p>
                 </Field>
               </section>
 
@@ -551,8 +690,13 @@ export function ShopProductDetailDrawer({
                   变体价格 / 库存（{form.variants.length}）
                 </h3>
                 <p className="mt-1 text-[11px] text-ink-subtle">
-                  库存写入店铺第一个启用地点；未追踪库存的变体会自动开启追踪。
+                  库存写入店铺第一个启用地点；未追踪库存的变体会自动开启追踪。至少保留 1 个变体。
                 </p>
+                {form.deletedVariantIds.length > 0 ? (
+                  <p className="mt-1 text-[11px] text-amber-800">
+                    已标记删除 {form.deletedVariantIds.length} 个变体，保存后同步到 Shopify。
+                  </p>
+                ) : null}
                 {form.variants.length === 0 ? (
                   <p className="mt-1.5 text-xs text-ink-subtle">
                     暂无变体镜像，请先同步商品
@@ -568,11 +712,15 @@ export function ShopProductDetailDrawer({
                             价格（{detail.currency || "币种"}）
                           </th>
                           <th className="px-2.5 py-1.5 font-medium">库存</th>
+                          <th className="w-8 px-1 py-1.5" aria-label="删除" />
                         </tr>
                       </thead>
                       <tbody>
-                        {form.variants.map((row, idx) => {
-                          const meta = detail.variants[idx];
+                        {form.variants.map((row) => {
+                          const meta = detail.variants.find(
+                            (v) => v.thirdPlatformSkuId === row.thirdPlatformSkuId
+                          );
+                          const canDelete = form.variants.length > 1;
                           return (
                             <tr
                               key={row.thirdPlatformSkuId}
@@ -610,6 +758,30 @@ export function ShopProductDetailDrawer({
                                   className="h-8 text-xs"
                                 />
                               </td>
+                              <td className="px-1 py-1 text-center">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 px-0 text-ink-subtle hover:text-red-600"
+                                  disabled={!canDelete || saving}
+                                  title={
+                                    canDelete
+                                      ? "删除此变体"
+                                      : "至少保留一个变体"
+                                  }
+                                  aria-label={
+                                    canDelete
+                                      ? `删除变体 ${optionLabel(meta ?? {})}`
+                                      : "无法删除最后一个变体"
+                                  }
+                                  onClick={() =>
+                                    removeVariant(row.thirdPlatformSkuId)
+                                  }
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </td>
                             </tr>
                           );
                         })}
@@ -622,6 +794,11 @@ export function ShopProductDetailDrawer({
               {saveError ? (
                 <div className="rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                   {saveError}
+                </div>
+              ) : null}
+              {saveNotice ? (
+                <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+                  {saveNotice}
                 </div>
               ) : null}
 
@@ -637,6 +814,8 @@ export function ShopProductDetailDrawer({
                     }
                     if (baseline) setForm(baseline);
                     setSaveError(null);
+    setSaveNotice(null);
+      setSaveNotice(null);
                   }}
                 >
                   {conflict ? "放弃并重新加载" : "重置"}
@@ -656,14 +835,27 @@ export function ShopProductDetailDrawer({
               {(detail.media?.length ?? 0) > 0 ? (
                 <section>
                   <h3 className="text-xs font-semibold text-ink">
-                    图片（{detail.media.length}）
+                    商品图库（{visibleMedia.length}
+                    {form.deletedMediaIds.length > 0
+                      ? ` · 待删 ${form.deletedMediaIds.length}`
+                      : ""}
+                    ）
                   </h3>
+                  <p className="mt-1 text-[10px] leading-snug text-ink-subtle">
+                    此处为 Shopify 商品媒体（主图 / 附图），保存后从店铺删除。
+                  </p>
                   <div className="mt-1.5 grid grid-cols-4 gap-2">
-                    {detail.media.map((m) => (
+                    {detail.media.map((m, index) => {
+                      const mediaId = resolveShopMediaId(m);
+                      const pendingDelete = form.deletedMediaIds.includes(mediaId);
+                      if (pendingDelete) return null;
+                      const featured = isFeaturedShopMedia(m, index);
+                      return (
                       <div
-                        key={m.id}
+                        key={mediaId}
                         className={cn(
-                          "relative aspect-square overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted"
+                          "group relative aspect-square overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted",
+                          featured && "ring-2 ring-brand/30"
                         )}
                       >
                         {m.url ? (
@@ -677,6 +869,53 @@ export function ShopProductDetailDrawer({
                             referrerPolicy="no-referrer"
                           />
                         ) : null}
+                        {featured ? (
+                          <span className="absolute left-1 top-1 rounded bg-ink/70 px-1.5 py-0.5 text-[9px] font-medium text-white">
+                            主图
+                          </span>
+                        ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="absolute right-1 top-1 h-7 w-7 px-0 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus:opacity-100"
+                          disabled={saving}
+                          title="从 Shopify 删除此图片"
+                          aria-label="删除商品图片"
+                          onClick={() => removeMedia(mediaId)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    );
+                    })}
+                  </div>
+                </section>
+              ) : null}
+
+              {htmlDetailImages.length > 0 ? (
+                <section>
+                  <h3 className="text-xs font-semibold text-ink">
+                    详情内嵌图（{htmlDetailImages.length}）
+                  </h3>
+                  <p className="mt-1 text-[10px] leading-snug text-ink-subtle">
+                    这些图片写在描述 HTML 里，当前只读展示；删除详情图将在下一步支持。
+                  </p>
+                  <div className="mt-1.5 grid grid-cols-4 gap-2">
+                    {htmlDetailImages.map((url) => (
+                      <div
+                        key={url}
+                        className="relative aspect-square overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted"
+                      >
+                        <ThumbImage
+                          src={url}
+                          alt=""
+                          fill
+                          sizes="120px"
+                          pixelWidth={240}
+                          className="object-cover"
+                          referrerPolicy="no-referrer"
+                        />
                       </div>
                     ))}
                   </div>

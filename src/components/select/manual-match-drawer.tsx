@@ -22,10 +22,7 @@ function formatCny(price?: number | null): string {
   return `¥${price.toFixed(2)}`;
 }
 
-function imageMatchError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return "确认匹配失败";
-}
+import { mapImageMatchConfirmError } from "@/lib/batch-link/match-errors";
 
 export function ManualMatchDrawer({
   open,
@@ -157,7 +154,7 @@ export function ManualMatchDrawer({
       showToast("已人工匹配货源");
       onClose();
     } catch (err) {
-      setSaveError(imageMatchError(err));
+      setSaveError(mapImageMatchConfirmError(err));
     } finally {
       setSaving(false);
     }

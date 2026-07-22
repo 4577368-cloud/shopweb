@@ -2,6 +2,7 @@ import type {
   ImageBindingView,
   ShopMirrorProduct,
 } from "@/lib/types";
+import { isAlreadySourcedProduct } from "@/lib/batch-link/publish-source";
 
 /** Compact row for agent mini-lists (real data only). */
 export interface ShopProductMini {
@@ -17,12 +18,15 @@ export interface ShopProductMini {
 
 export function buildShopProductMinis(
   products: ShopMirrorProduct[],
-  bindings: Record<string, ImageBindingView>
+  bindings: Record<string, ImageBindingView>,
+  shopName?: string
 ): ShopProductMini[] {
   return products.map((p) => {
     const b = bindings[p.thirdPlatformItemId];
     let state: ShopProductMini["state"] = "unbound";
-    if (b?.bound) {
+    if (isAlreadySourcedProduct(b, shopName, p.thirdPlatformItemId)) {
+      state = b?.bound && b.bindStatus === "PENDING" ? "pending" : "confirmed";
+    } else if (b?.bound) {
       state = b.bindStatus === "PENDING" ? "pending" : "confirmed";
     }
     const hints: string[] = [];
@@ -35,6 +39,8 @@ export function buildShopProductMinis(
         );
       }
       if (!b?.offerImageUrl) hints.push("货源图待补全");
+    } else if (state === "confirmed" && isAlreadySourcedProduct(b, shopName, p.thirdPlatformItemId) && !b?.bound) {
+      hints.push("发现新品上架，货源已就绪");
     } else if (state === "unbound") {
       if (!p.primaryImageUrl) hints.push("无主图，无法图搜");
       else hints.push("尚未关联货源");

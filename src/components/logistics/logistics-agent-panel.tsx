@@ -25,8 +25,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ConfirmPreviewResult } from "@/components/select/command-confirm-card";
 import type { ExecutionStep, BatchProgress } from "@/components/select/execution-pipeline";
-import type { LogisticsAnalysis, LogisticsTemplate, LogisticsTypeCode } from "@/lib/types";
+import type { LogisticsAnalysis, LogisticsTemplate } from "@/lib/types";
 import type { LogisticsPlanMetrics } from "@/lib/logistics/display";
+import {
+  computeActiveHighRiskAlerts,
+  formatActiveHighRiskAlert,
+} from "@/lib/logistics/display";
 import type { CompletionGateResult } from "@/lib/logistics/completion-gate";
 import { LogisticsNextStepsCard } from "@/components/logistics/logistics-next-steps-card";
 
@@ -41,13 +45,9 @@ export interface LogisticsAgentPanelProps {
   analysis: LogisticsAnalysis | null;
   activeTemplate: LogisticsTemplate | null;
   decisionStatusCounts?: Record<LogisticsDecisionStatus, number>;
-  highRiskTypes?: LogisticsTypeCode[];
   skuReadyForNext: boolean;
   quoting: boolean;
   accepting: boolean;
-  readyAcceptCount: number;
-  pendingCount: number;
-  confirmedCount: number;
   onFocusStatus: (status: LogisticsDecisionStatus) => void;
   onAcceptAllReady: () => void;
   onFetchQuotes: () => void;
@@ -67,20 +67,23 @@ export interface LogisticsAgentPanelProps {
   onStartEstimate?: () => void;
   onSaveAndSync?: () => void;
   onViewUnidentified?: () => void;
+  onViewPendingConfirm?: () => void;
+  onViewExceptions?: () => void;
+  /** @deprecated use onViewPendingConfirm */
   onViewIssues?: () => void;
+  /** Apply list tab filter (agent / skill next-steps). */
+  onSetFilter?: (filterMode: string) => void;
+  /** Signal in-flight batch accept to stop between chunks. */
+  onCancelBatchAccept?: () => void;
 }
 
 export function LogisticsAgentPanel({
   analysis,
   activeTemplate,
   decisionStatusCounts,
-  highRiskTypes,
   skuReadyForNext,
   quoting,
   accepting,
-  readyAcceptCount,
-  pendingCount,
-  confirmedCount,
   onFocusStatus,
   onAcceptAllReady,
   onFetchQuotes,
@@ -100,7 +103,11 @@ export function LogisticsAgentPanel({
   onStartEstimate,
   onSaveAndSync,
   onViewUnidentified,
+  onViewPendingConfirm,
+  onViewExceptions,
   onViewIssues,
+  onSetFilter,
+  onCancelBatchAccept,
 }: LogisticsAgentPanelProps) {
   const [commandPlan, setCommandPlan] = useState<LogisticsCommandPlan | null>(null);
   const [commandExecuting, setCommandExecuting] = useState(false);
@@ -127,36 +134,45 @@ export function LogisticsAgentPanel({
   const productCount = analysis?.productProfiles?.length ?? 0;
   const variantCount = analysis?.totalVariants ?? 0;
 
+  const activeRiskAlerts = useMemo(
+    () => computeActiveHighRiskAlerts(analysis),
+    [analysis]
+  );
+
+  const batchAcceptCount = planMetrics?.pendingConfirmCount ?? 0;
+  const pendingQuoteCount = planMetrics?.pendingQuoteCount ?? 0;
+  const exceptionCount = planMetrics?.exceptionCount ?? 0;
+  const confirmedCount = planMetrics?.confirmedCount ?? 0;
+
   const exampleCommands = useMemo(() => {
     const examples: string[] = [];
-    if (!pipelineActive) examples.push("一键预估");
-    if (!pipelineActive && readyAcceptCount > 0) {
-      examples.push("批量确认物流方案");
+    if (!pipelineActive && batchAcceptCount > 0) {
+      examples.push("批量接受方案");
     }
     examples.push("调整物流模板", "查看问题");
     return examples;
-  }, [readyAcceptCount, pipelineActive]);
+  }, [batchAcceptCount, pipelineActive]);
 
   const classifyContext = useMemo<LogisticsCommandClassifyContext>(() => ({
     focusProductTitle: null,
     focusProductId: null,
     currentFilter: null,
-    readyAcceptCount,
-    pendingCount,
+    readyAcceptCount: batchAcceptCount,
+    pendingCount: pendingQuoteCount + batchAcceptCount + exceptionCount,
     confirmedCount,
-    highRiskTypes: highRiskTypes?.map((t) => t) ?? [],
-  }), [readyAcceptCount, pendingCount, confirmedCount, highRiskTypes]);
+    highRiskTypes: activeRiskAlerts.map((a) => a.type),
+  }), [batchAcceptCount, pendingQuoteCount, exceptionCount, confirmedCount, activeRiskAlerts]);
 
   const pageContext = useMemo(() => ({
     focusProductTitle: null,
     focusProductId: null,
     currentFilter: null,
-    readyAcceptCount,
-    pendingCount,
+    readyAcceptCount: batchAcceptCount,
+    pendingCount: pendingQuoteCount + batchAcceptCount + exceptionCount,
     confirmedCount,
-    highRiskTypes: highRiskTypes?.map((t) => t) ?? [],
+    highRiskTypes: activeRiskAlerts.map((a) => a.type),
     readyVariantIds: [],
-  }), [readyAcceptCount, pendingCount, confirmedCount, highRiskTypes]);
+  }), [batchAcceptCount, pendingQuoteCount, exceptionCount, confirmedCount, activeRiskAlerts]);
 
   const savings = useMemo(() => {
     const tips: string[] = [];
@@ -166,11 +182,11 @@ export function LogisticsAgentPanel({
     if (activeTemplate?.packaging === "CARTON") {
       tips.push("纸箱包装会增加体积重，服装类可尝试「极简包装」。");
     }
-    if (tips.length === 0 && productCount > 0 && readyAcceptCount > 0) {
-      tips.push("预估完成后，可通过命令批量确认已绑定 SKU 的方案。");
+    if (tips.length === 0 && productCount > 0 && batchAcceptCount > 0) {
+      tips.push("运费预估完成后，可用「批量接受方案」一次确认 AI 推荐线路。");
     }
     return tips;
-  }, [activeTemplate, productCount, readyAcceptCount]);
+  }, [activeTemplate, productCount, batchAcceptCount]);
 
   const applyCommandExecution = useCallback(
     async (plan: LogisticsCommandPlan, execution: LogisticsCommandExecution) => {
@@ -195,13 +211,17 @@ export function LogisticsAgentPanel({
           onFocusStatus(execution.status);
           break;
         }
+        case "set_filter": {
+          onSetFilter?.(execution.filterMode);
+          break;
+        }
         case "apply_template": {
           onOpenTemplate();
           break;
         }
       }
     },
-    [onAcceptAllReady, onFetchQuotes, onOpenTemplate, onFocusStatus, onRetryPipeline]
+    [onAcceptAllReady, onFetchQuotes, onOpenTemplate, onFocusStatus, onRetryPipeline, onSetFilter]
   );
 
   const executeCommand = useCallback(
@@ -332,6 +352,10 @@ export function LogisticsAgentPanel({
     setSkillFeedback(null);
 
     if (isBatch) {
+      const total =
+        (preview?.payload?.totalCount as number | undefined) ??
+        batchAcceptCount;
+      setBatchProgress({ current: 0, total, success: 0, failed: 0 });
       setExecStep("batch_running");
     } else {
       setExecStep("applying");
@@ -364,7 +388,7 @@ export function LogisticsAgentPanel({
     } finally {
       setCommandExecuting(false);
     }
-  }, [commandPlan, commandExecutors, pageContext]);
+  }, [commandPlan, commandExecutors, pageContext, preview, batchAcceptCount]);
 
   const handleQuickCommand = useCallback((cmd: string) => {
     setInput(cmd);
@@ -373,18 +397,12 @@ export function LogisticsAgentPanel({
 
   const handleNextStep = useCallback(
     (step: { label: string; kind?: string; filterMode?: string }) => {
-      if (step.kind === "set_shop_filter" && step.filterMode === "issues") {
-        onFocusStatus("needs_review");
+      if (step.kind === "set_shop_filter" && step.filterMode) {
+        onSetFilter?.(step.filterMode);
       }
     },
-    [onFocusStatus]
+    [onSetFilter]
   );
-
-  const RISK_LABELS: Partial<Record<LogisticsTypeCode, string>> = {
-    BATTERY_MAGNETIC: "带电/带磁",
-    FOOD: "食品",
-    BLADE: "刀具",
-  };
 
   return (
     <div className="flex flex-col gap-2">
@@ -397,27 +415,30 @@ export function LogisticsAgentPanel({
         />
       ) : null}
 
-      {!commandPlan &&
-      !skillFeedback &&
+      {!skillFeedback &&
       !clarify &&
       planMetrics &&
       completionGate &&
       onStartEstimate &&
       onSaveAndSync &&
       onViewUnidentified &&
-      onViewIssues ? (
+      (onViewPendingConfirm || onViewIssues) ? (
         <LogisticsNextStepsCard
           pipelineRunning={pipelineRunning}
           saving={saving}
           autoReadyCount={planMetrics.autoReadyCount}
+          pendingConfirmCount={planMetrics.pendingConfirmCount}
+          exceptionCount={planMetrics.exceptionCount}
           unidentifiedCount={planMetrics.unidentifiedCount}
-          reviewCount={planMetrics.reviewCount}
           skuBindingGap={skuBindingGap}
           completionGate={completionGate}
           onStartEstimate={onStartEstimate}
           onSaveAndSync={onSaveAndSync}
           onViewUnidentified={onViewUnidentified}
-          onViewIssues={onViewIssues}
+          onViewPendingConfirm={onViewPendingConfirm ?? onViewIssues!}
+          onViewExceptions={onViewExceptions ?? onViewIssues!}
+          onAcceptAllReady={onAcceptAllReady}
+          batchAcceptCount={planMetrics.pendingConfirmCount}
         />
       ) : null}
 
@@ -442,13 +463,13 @@ export function LogisticsAgentPanel({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-              placeholder="输入命令，如：批量确认物流方案"
+              placeholder="输入命令，如：运费预估、批量接受方案"
               disabled={loading}
               className="flex-1 rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-1.5 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft disabled:opacity-50"
             />
             <Button
               size="sm"
-              className="h-8 px-2"
+              className="h-7 w-7 px-2"
               onClick={() => handleSubmit()}
               disabled={loading || !input.trim()}
             >
@@ -481,6 +502,9 @@ export function LogisticsAgentPanel({
         batchProgress={batchProgress}
         commandExecuting={commandExecuting}
         onCancel={() => {
+          if (execStep === "batch_running") {
+            onCancelBatchAccept?.();
+          }
           setCommandPlan(null);
           setPreview(null);
           setExecStep(null);
@@ -503,7 +527,7 @@ export function LogisticsAgentPanel({
         <SkillFeedbackCard feedback={skillFeedback} onNextStep={handleNextStep} />
       ) : null}
 
-      {!commandPlan && !skillFeedback && !clarify && savings.length > 0 && (
+      {savings.length > 0 && (
         <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3">
           <div className="flex items-center gap-1.5 mb-2">
             <TrendingDown className="h-3.5 w-3.5 text-brand" />
@@ -520,22 +544,21 @@ export function LogisticsAgentPanel({
         </div>
       )}
 
-      {!commandPlan && !skillFeedback && !clarify && (highRiskTypes?.length ?? 0) > 0 && (
+      {activeRiskAlerts.length > 0 ? (
         <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50/80 p-3">
           <div className="text-xs font-semibold text-amber-900 mb-2">AI 建议</div>
           <ul className="space-y-1.5">
-            {(highRiskTypes ?? []).map((t) => (
-              <li key={t} className="text-[11px] text-amber-800">
-                检测到 {RISK_LABELS[t] ?? t} 类商品，AI 已标记为需人工确认邮限。
+            {activeRiskAlerts.map((alert) => (
+              <li key={alert.type} className="text-[11px] text-amber-800">
+                {formatActiveHighRiskAlert(alert)}
               </li>
             ))}
           </ul>
         </div>
-      )}
+      ) : null}
 
-      {!commandPlan && !skillFeedback && !clarify && (
-        <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-xs">
-          <div className="text-xs font-semibold text-ink mb-2">物流分析摘要</div>
+      <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-xs">
+        <div className="text-xs font-semibold text-ink mb-2">物流分析摘要</div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="text-ink-muted">已分析商品</span>
@@ -550,12 +573,21 @@ export function LogisticsAgentPanel({
               <span className="text-ink">{confirmedCount} 个</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-ink-muted">待确认</span>
-              <span className="text-amber-700">{pendingCount} 个</span>
+              <span className="text-ink-muted">待报价</span>
+              <span className="text-ink">{pendingQuoteCount} 个</span>
             </div>
+            <div className="flex items-center justify-between">
+              <span className="text-ink-muted">待确认</span>
+              <span className="text-amber-700">{batchAcceptCount} 个</span>
+            </div>
+            {exceptionCount > 0 ? (
+              <div className="flex items-center justify-between">
+                <span className="text-ink-muted">异常</span>
+                <span className="text-amber-700">{exceptionCount} 个</span>
+              </div>
+            ) : null}
           </div>
         </div>
-      )}
     </div>
   );
 }

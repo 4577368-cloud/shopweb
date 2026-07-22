@@ -1,4 +1,7 @@
 import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
+import {
+  isAlreadySourcedProduct,
+} from "@/lib/batch-link/publish-source";
 
 const BASELINE_PREFIX = "tangbuy.products.baseline.";
 
@@ -64,7 +67,8 @@ export function seedProductBaselineIfEmpty(
 export function computeNewArrivalStats(
   products: ShopMirrorProduct[],
   bindingsByItemId: Record<string, ImageBindingView>,
-  baseline: Set<string>
+  baseline: Set<string>,
+  shopName?: string
 ): NewArrivalStats {
   const newArrivalIds = new Set<string>();
   const pendingNewAnalysisIds = new Set<string>();
@@ -74,7 +78,8 @@ export function computeNewArrivalStats(
     if (!id || baseline.has(id)) continue;
     newArrivalIds.add(id);
     const binding = bindingsByItemId[id];
-    if (!binding?.bound) pendingNewAnalysisIds.add(id);
+    const alreadySourced = isAlreadySourcedProduct(binding, shopName, id);
+    if (!binding?.bound && !alreadySourced) pendingNewAnalysisIds.add(id);
   }
 
   return {

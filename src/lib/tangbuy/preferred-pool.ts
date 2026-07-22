@@ -76,13 +76,17 @@ export async function pollResolveGoodsIdAfterPool(input: {
   for (const delay of POLL_DELAYS_MS) {
     if (delay > 0) await sleep(delay);
     if (sku) {
-      const match = await resolveInternalGoodsIdByOfferSku({
-        offerId1688: offerId,
-        tangbuySkuId: sku,
-        titleHint: input.titleHint,
-        shopName: input.shopName,
-      });
-      if (match) return match;
+      try {
+        const match = await resolveInternalGoodsIdByOfferSku({
+          offerId1688: offerId,
+          tangbuySkuId: sku,
+          titleHint: input.titleHint,
+          shopName: input.shopName,
+        });
+        if (match) return match;
+      } catch {
+        // Gateway offline / CORS — stop polling this round quietly.
+      }
     }
   }
   return null;

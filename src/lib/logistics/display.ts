@@ -8,34 +8,193 @@ import type {
   PricingTemplate,
   ProductLogisticsProfile,
   QuoteStatus,
+  LogisticsTypeCode,
   VariantLogisticsDecision,
 } from "@/lib/types";
 import type { LogisticsEstimateResult } from "@/lib/api";
-import { codesFromSelections } from "@/components/logistics/market-multi-select";
+import { codesFromSelections, singleCountryCodeFromMarkets } from "@/components/logistics/market-multi-select";
 import { countryLabel } from "@/lib/logistics/markets";
+import { getPostalLimitLabel, POSTAL_LIMIT_LABELS } from "@/lib/logistics/decision-engine";
 import { shippingOptionLabel, speedPreferenceToShippingOption } from "@/lib/logistics/template-params";
 
 export type LogisticsFilterMode =
   | "all"
-  | "ready"
+  | "pending_quote"
+  | "pending_confirm"
+  | "sku_unlinked"
   | "quoted"
-  | "issues"
-  | "unidentified";
+  | "exceptions";
+
+/** Map legacy / agent filter ids to current tab ids. */
+export function normalizeLogisticsFilterMode(
+  mode: string | null | undefined
+): LogisticsFilterMode {
+  switch (mode) {
+    case "pending_quote":
+    case "ready":
+      return "pending_quote";
+    case "pending_confirm":
+    case "issues":
+      return "pending_confirm";
+    case "sku_unlinked":
+    case "unidentified":
+      return "sku_unlinked";
+    case "quoted":
+      return "quoted";
+    case "exceptions":
+      return "exceptions";
+    default:
+      return "all";
+  }
+}
+
+export type PostalLimitFilter = string | "all";
+
+export function formatPostalLimitBadge(variant: VariantLogisticsDecision): {
+  label: string;
+  title: string;
+  className: string;
+} {
+  const code = variant.postalLimitClass?.trim() || "";
+  const label =
+    variant.postalLimitLabel?.trim() ||
+    getPostalLimitLabel(code) ||
+    (code ? code : "邮限未知");
+  const confidence =
+    variant.postalLimitConfidence != null
+      ? `置信度 ${Math.round(variant.postalLimitConfidence * 100)}%`
+      : null;
+  return {
+    label,
+    title: [code ? `邮限代码 ${code}` : null, confidence].filter(Boolean).join(" · "),
+    className: code
+      ? "bg-violet-50 text-violet-800 ring-1 ring-violet-200"
+      : "bg-surface-muted text-ink-subtle ring-1 ring-hairline",
+  };
+}
+
+export function collectPostalLimitFilterOptions(
+  analysis: LogisticsAnalysis | null | undefined
+): Array<{ value: string; label: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const profile of analysis?.productProfiles ?? []) {
+    for (const variant of profile.variantDecisions ?? []) {
+      const key = variant.postalLimitClass?.trim() || "UNKNOWN";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({
+      value,
+      label:
+        value === "UNKNOWN"
+          ? "邮限未知"
+          : getPostalLimitLabel(value) ?? POSTAL_LIMIT_LABELS[value] ?? value,
+      count,
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+export function variantMatchesPostalLimit(
+  variant: VariantLogisticsDecision,
+  postalFilter: PostalLimitFilter
+): boolean {
+  if (!postalFilter || postalFilter === "all") return true;
+  const code = variant.postalLimitClass?.trim() || "UNKNOWN";
+  return code === postalFilter;
+}
 
 export const LOGISTICS_PAGE_SIZE = 15;
+
+export interface ActiveHighRiskAlert {
+  type: LogisticsTypeCode;
+  label: string;
+  openSkuCount: number;
+  exceptionCount: number;
+  pendingConfirmCount: number;
+  pendingQuoteCount: number;
+}
+
+const CATALOG_HIGH_RISK_TYPES = new Set<LogisticsTypeCode>([
+  "FOOD",
+  "BATTERY_MAGNETIC",
+  "BLADE",
+  "OTHER",
+]);
+
+/** 仅统计仍有未完成 SKU 的高风险品类（确认后会从列表消失）。 */
+export function computeActiveHighRiskAlerts(
+  analysis: LogisticsAnalysis | null | undefined,
+  quoteResults?: Map<string, LogisticsEstimateResult>
+): ActiveHighRiskAlert[] {
+  const buckets = new Map<LogisticsTypeCode, ActiveHighRiskAlert>();
+
+  for (const profile of analysis?.productProfiles ?? []) {
+    const type = profile.dominantLogisticsType;
+    if (!type || !CATALOG_HIGH_RISK_TYPES.has(type)) continue;
+
+    for (const variant of profile.variantDecisions ?? []) {
+      if (variant.decisionConfirmed || variant.decisionStatus === "confirmed") {
+        continue;
+      }
+
+      const quote = quoteResults?.get(variant.thirdPlatformSkuId);
+      const hasQuote = variantHasQuoteLine(variant, quote);
+      const isException = isVariantException(variant);
+
+      let bucket = buckets.get(type);
+      if (!bucket) {
+        bucket = {
+          type,
+          label: profile.dominantLogisticsTypeLabel ?? type,
+          openSkuCount: 0,
+          exceptionCount: 0,
+          pendingConfirmCount: 0,
+          pendingQuoteCount: 0,
+        };
+        buckets.set(type, bucket);
+      }
+      bucket.openSkuCount += 1;
+      if (isException) bucket.exceptionCount += 1;
+      else if (hasQuote) bucket.pendingConfirmCount += 1;
+      else bucket.pendingQuoteCount += 1;
+    }
+  }
+
+  return [...buckets.values()].filter((bucket) => bucket.openSkuCount > 0);
+}
+
+export function formatActiveHighRiskAlert(alert: ActiveHighRiskAlert): string {
+  const name = alert.label || alert.type;
+  if (alert.exceptionCount > 0) {
+    return `${name}类还有 ${alert.exceptionCount} 个 SKU 邮限/品类待核对`;
+  }
+  if (alert.pendingConfirmCount > 0) {
+    return `${name}类还有 ${alert.pendingConfirmCount} 个 SKU 已有报价，待确认线路`;
+  }
+  if (alert.pendingQuoteCount > 0) {
+    return `${name}类还有 ${alert.pendingQuoteCount} 个 SKU 待运费预估`;
+  }
+  return `${name}类商品需完成物流确认`;
+}
 
 export interface LogisticsPlanMetrics {
   productCount: number;
   variantCount: number;
-  /** AI 已归类、待拉取报价（普货 ready_for_quote，尚无线路） */
-  autoReadyCount: number;
-  /** @deprecated use autoReadyCount */
-  aiAutoCount: number;
-  /** 已返回线路报价（含已确认） */
+  /** 尚无线路报价、可拉取报价 */
+  pendingQuoteCount: number;
+  /** 已有报价、待人工确认 */
+  pendingConfirmCount: number;
+  /** 邮限/品类等异常，需人工处理 */
+  exceptionCount: number;
+  /** SKU 未关联货源 */
+  skuUnlinkedCount: number;
+  /** @deprecated */ autoReadyCount: number;
+  /** @deprecated */ aiAutoCount: number;
   quotedCount: number;
-  reviewCount: number;
-  unidentifiedCount: number;
-  pendingCount: number;
+  /** @deprecated */ reviewCount: number;
+  /** @deprecated */ unidentifiedCount: number;
+  /** @deprecated */ pendingCount: number;
   confirmedCount: number;
   completionPercent: number;
 }
@@ -111,28 +270,74 @@ export function variantHasQuoteLine(
   return Boolean(line?.lineName?.trim() || line?.lineCode?.trim());
 }
 
+/** 已有线路报价、尚未确认 — 可批量接受（与「待确认」Tab 口径一致） */
+export function variantCanBatchAccept(
+  variant: VariantLogisticsDecision,
+  quoteResult?: LogisticsEstimateResult
+): boolean {
+  if (variant.decisionConfirmed || variant.decisionStatus === "confirmed") {
+    return false;
+  }
+  if (variant.decisionStatus === "pending_sku") return false;
+  return variantHasQuoteLine(variant, quoteResult);
+}
+
+export function countBatchAcceptableVariants(
+  analysis: LogisticsAnalysis | null | undefined,
+  quoteResults?: Map<string, LogisticsEstimateResult>
+): number {
+  let count = 0;
+  for (const profile of analysis?.productProfiles ?? []) {
+    for (const variant of profile.variantDecisions ?? []) {
+      const quote = quoteResults?.get(variant.thirdPlatformSkuId);
+      if (variantCanBatchAccept(variant, quote)) count += 1;
+    }
+  }
+  return count;
+}
+
+export function collectBatchAcceptableVariants(
+  analysis: LogisticsAnalysis | null | undefined,
+  quoteResults: Map<string, LogisticsEstimateResult>
+): VariantLogisticsDecision[] {
+  const out: VariantLogisticsDecision[] = [];
+  for (const profile of analysis?.productProfiles ?? []) {
+    for (const variant of profile.variantDecisions ?? []) {
+      const quote = quoteResults.get(variant.thirdPlatformSkuId);
+      if (variantCanBatchAccept(variant, quote)) {
+        out.push(variant);
+      }
+    }
+  }
+  return out;
+}
+
 export function variantMatchesFilter(
   variant: VariantLogisticsDecision,
   mode: LogisticsFilterMode,
   quoteResult?: LogisticsEstimateResult
 ): boolean {
+  const confirmed =
+    variant.decisionConfirmed || variant.decisionStatus === "confirmed";
+  const hasQuote = variantHasQuoteLine(variant, quoteResult);
+
   switch (mode) {
-    case "issues":
-      return (
-        variant.decisionStatus === "pending_postal_meta" ||
-        variant.decisionStatus === "needs_review" ||
-        variant.decisionStatus === "restricted"
-      );
-    case "unidentified":
+    case "sku_unlinked":
       return variant.decisionStatus === "pending_sku";
-    case "ready":
-      return (
-        variant.decisionStatus === "ready_for_quote" &&
-        !isVariantException(variant) &&
-        !variantHasQuoteLine(variant, quoteResult)
-      );
+    case "pending_quote":
+      if (variant.decisionStatus === "pending_sku") return false;
+      if (confirmed) return false;
+      return !hasQuote;
+    case "pending_confirm":
+      if (variant.decisionStatus === "pending_sku") return false;
+      if (confirmed) return false;
+      return hasQuote;
     case "quoted":
-      return variantHasQuoteLine(variant, quoteResult);
+      return hasQuote;
+    case "exceptions":
+      if (variant.decisionStatus === "pending_sku") return false;
+      if (confirmed) return false;
+      return isVariantException(variant);
     default:
       return true;
   }
@@ -141,40 +346,54 @@ export function variantMatchesFilter(
 export function filterProfiles(
   profiles: ProductLogisticsProfile[],
   mode: LogisticsFilterMode,
-  quoteResults?: Map<string, LogisticsEstimateResult>
+  quoteResults?: Map<string, LogisticsEstimateResult>,
+  postalFilter?: PostalLimitFilter
 ): ProductLogisticsProfile[] {
-  if (mode === "all") return profiles;
+  if (mode === "all" && (!postalFilter || postalFilter === "all")) return profiles;
   return profiles.filter((profile) =>
-    (profile.variantDecisions ?? []).some((variant) =>
-      variantMatchesFilter(
-        variant,
-        mode,
-        quoteResults?.get(variant.thirdPlatformSkuId)
-      )
-    )
+    filterVariants(
+      profile.variantDecisions ?? [],
+      mode,
+      quoteResults,
+      postalFilter
+    ).length > 0
   );
 }
 
 export function filterVariants(
   variants: VariantLogisticsDecision[],
   mode: LogisticsFilterMode,
-  quoteResults?: Map<string, LogisticsEstimateResult>
+  quoteResults?: Map<string, LogisticsEstimateResult>,
+  postalFilter?: PostalLimitFilter
 ): VariantLogisticsDecision[] {
-  if (mode === "all") return variants;
-  return variants.filter((variant) =>
-    variantMatchesFilter(
-      variant,
-      mode,
-      quoteResults?.get(variant.thirdPlatformSkuId)
-    )
-  );
+  let out = variants;
+  if (mode !== "all") {
+    out = out.filter((variant) =>
+      variantMatchesFilter(
+        variant,
+        mode,
+        quoteResults?.get(variant.thirdPlatformSkuId)
+      )
+    );
+  }
+  if (postalFilter && postalFilter !== "all") {
+    out = out.filter((variant) => variantMatchesPostalLimit(variant, postalFilter));
+  }
+  return out;
 }
 
 export function shouldDefaultExpand(
   profile: ProductLogisticsProfile,
   mode: LogisticsFilterMode
 ): boolean {
-  if (mode === "issues") return true;
+  if (
+    mode === "pending_confirm" ||
+    mode === "sku_unlinked" ||
+    mode === "pending_quote" ||
+    mode === "exceptions"
+  ) {
+    return true;
+  }
   if (mode === "all") return hasIssues(profile);
   return true;
 }
@@ -184,12 +403,8 @@ export function formatTemplateMeta(template: LogisticsTemplate | null): string {
   const packaging = PACKAGING_LABELS[template.packaging] ?? template.packaging;
   const speed = SPEED_LABELS[template.speedPreference] ?? template.speedPreference;
   const ship = shippingOptionLabel(speedPreferenceToShippingOption(template.speedPreference));
-  const codes = codesFromSelections(template.markets);
-  const markets =
-    codes.length > 0
-      ? codes.slice(0, 4).map(countryLabel).join("、") +
-        (codes.length > 4 ? ` 等${codes.length}国` : "")
-      : "未选市场";
+  const code = singleCountryCodeFromMarkets(template.markets);
+  const markets = code ? countryLabel(code) : "未选市场";
   return `包装: ${packaging} · 时效: ${speed}(${ship}) · 市场: ${markets}`;
 }
 
@@ -218,19 +433,30 @@ export function shouldShowAcceptAction(decision: VariantLogisticsDecision): bool
   return true;
 }
 
-/** P0: general goods with auto pipeline — hide manual accept on ready_for_quote. */
+/** P0: hide manual accept only while pipeline will auto-confirm quote-less ready rows. */
 export function shouldShowManualAcceptAction(
   decision: VariantLogisticsDecision,
-  opts?: { pipelineActive?: boolean }
+  opts?: { pipelineActive?: boolean; quoteResult?: LogisticsEstimateResult }
 ): boolean {
   if (decision.decisionConfirmed) return false;
-  if (decision.decisionStatus === "ready_for_quote" && !isVariantException(decision)) {
+  if (decision.decisionStatus === "pending_sku") return false;
+
+  const hasQuote = variantHasQuoteLine(decision, opts?.quoteResult);
+  if (hasQuote) return true;
+
+  if (
+    decision.decisionStatus === "ready_for_quote" &&
+    !isVariantException(decision)
+  ) {
     return false;
   }
   if (opts?.pipelineActive && decision.decisionStatus === "ready_for_quote") {
     return false;
   }
-  return shouldShowAcceptAction(decision);
+  if (isVariantException(decision)) {
+    return shouldShowAcceptAction(decision);
+  }
+  return false;
 }
 
 export function collectProductQuotableVariantIds(
@@ -275,8 +501,8 @@ export function productQuoteActionLabel(
     variantHasQuoteLine(v, quoteResults.get(v.thirdPlatformSkuId))
   );
   if (anyFailed) return "重试报价";
-  if (!anyQuoted) return "拉取报价";
-  return "重新计算";
+  if (!anyQuoted) return "运费预估";
+  return "重新预估";
 }
 
 export function isVariantQuoteFailed(
@@ -330,11 +556,8 @@ export function quoteActionLabel(
   quoteResult?: LogisticsEstimateResult
 ): string {
   if (isVariantQuoteFailed(decision, quoteResult)) return "重试报价";
-  if (!variantHasQuoteLine(decision, quoteResult)) return "拉取报价";
-  if (decision.decisionStatus === "confirmed" || decision.decisionConfirmed) {
-    return "重新拉取";
-  }
-  return "重新计算";
+  if (!variantHasQuoteLine(decision, quoteResult)) return "运费预估";
+  return "重新预估";
 }
 
 /** @deprecated use quoteActionLabel */
@@ -621,6 +844,49 @@ export function collectQuoteLines(
   return out;
 }
 
+export function logisticsLineKey(line: LogisticsLine): string {
+  const code = line.lineCode?.trim() ?? "";
+  const name = line.lineName?.trim() ?? "";
+  return code || name || "unknown";
+}
+
+/** 解析用户选中的线路；默认推荐线（列表第一条）。 */
+export function resolveSelectedLogisticsLine(
+  lines: LogisticsLine[],
+  selectedKey?: string | null
+): LogisticsLine | undefined {
+  if (!lines.length) return undefined;
+  if (selectedKey) {
+    const hit = lines.find((line) => logisticsLineKey(line) === selectedKey);
+    if (hit) return hit;
+  }
+  return lines[0];
+}
+
+export type LogisticsAcceptQuotePayload = {
+  recommendedLine?: LogisticsLine;
+  alternativeLines?: LogisticsLine[];
+  quoteStatus?: QuoteStatus;
+};
+
+/** 构建 accept-decision 请求体：用户选中线路写入 recommendedLine。 */
+export function buildAcceptQuotePayload(
+  variant: VariantLogisticsDecision,
+  quoteResult: LogisticsEstimateResult | undefined,
+  selectedLineKey?: string | null
+): LogisticsAcceptQuotePayload | undefined {
+  const lines = collectQuoteLines(variant, quoteResult);
+  const selected = resolveSelectedLogisticsLine(lines, selectedLineKey);
+  if (!selected) return undefined;
+  const key = logisticsLineKey(selected);
+  const alternatives = lines.filter((line) => logisticsLineKey(line) !== key);
+  return {
+    recommendedLine: selected,
+    alternativeLines: alternatives,
+    quoteStatus: quoteResult?.quoteStatus ?? variant.quoteStatus,
+  };
+}
+
 export function formatRouteFee(
   line: LogisticsLine,
   pricing?: PricingTemplate | null
@@ -740,12 +1006,16 @@ export function buildQuoteColumn(
     case "needs_review":
     case "restricted": {
       if (recommended) {
-        const fee = formatFee(recommended);
+        const fee = formatFee(recommended, pricing);
         return {
-          primary: `AI: ${recommended.lineName}${fee ? ` ~${fee}` : ""}（待确认）`,
+          primary: `${recommended.lineName}${fee ? ` · ${fee}` : ""}`,
+          secondary: "线路待确认",
         };
       }
-      return { primary: "确认邮限后可报价" };
+      if (decision.decisionStatus === "restricted") {
+        return { primary: "邮限受限", secondary: "请确认品类后重试报价" };
+      }
+      return { primary: "待拉取线路", secondary: decision.decisionReason?.trim() };
     }
     default:
       return { primary: decision.decisionStatus };
@@ -800,11 +1070,11 @@ export function variantCardBadge(decision: VariantLogisticsDecision): {
   }
   switch (tone) {
     case "review":
-      return { label: "需确认", className: "bg-amber-100 text-amber-800" };
+      return { label: "待确认", className: "bg-amber-100 text-amber-800" };
     case "unidentified":
-      return { label: "无法识别", className: "bg-surface-muted text-ink-subtle" };
+      return { label: "SKU未关联", className: "bg-surface-muted text-ink-subtle" };
     default:
-      return { label: "自动完成", className: "bg-brand-soft text-brand-strong" };
+      return { label: "待报价", className: "bg-brand-soft text-brand-strong" };
   }
 }
 
@@ -823,28 +1093,34 @@ export function computeLogisticsPlanMetrics(
   quoteResults?: Map<string, LogisticsEstimateResult>
 ): LogisticsPlanMetrics {
   const profiles = analysis?.productProfiles ?? [];
-  const counts = analysis?.decisionStatusCounts;
-  const reviewCount =
-    (counts?.pending_postal_meta ?? 0) +
-    (counts?.restricted ?? 0) +
-    (counts?.needs_review ?? 0);
-  const unidentifiedCount = counts?.pending_sku ?? 0;
-  const pendingCount = reviewCount + unidentifiedCount;
   const variantCount = analysis?.totalVariants ?? 0;
-  const confirmedCount = counts?.confirmed ?? 0;
+  const confirmedCount = analysis?.decisionStatusCounts?.confirmed ?? 0;
 
-  let autoReadyCount = 0;
+  let pendingQuoteCount = 0;
+  let pendingConfirmCount = 0;
+  let skuUnlinkedCount = 0;
+  let exceptionCount = 0;
   let quotedCount = 0;
+
   for (const profile of profiles) {
     for (const variant of profile.variantDecisions ?? []) {
       const quote = quoteResults?.get(variant.thirdPlatformSkuId);
-      if (variantHasQuoteLine(variant, quote)) {
+      const confirmed =
+        variant.decisionConfirmed || variant.decisionStatus === "confirmed";
+      const hasQuote = variantHasQuoteLine(variant, quote);
+
+      if (variant.decisionStatus === "pending_sku") {
+        skuUnlinkedCount += 1;
+      } else if (confirmed) {
+        if (hasQuote) quotedCount += 1;
+      } else if (hasQuote) {
+        pendingConfirmCount += 1;
         quotedCount += 1;
-      } else if (
-        variant.decisionStatus === "ready_for_quote" &&
-        !isVariantException(variant)
-      ) {
-        autoReadyCount += 1;
+      } else {
+        pendingQuoteCount += 1;
+      }
+      if (!confirmed && isVariantException(variant)) {
+        exceptionCount += 1;
       }
     }
   }
@@ -855,12 +1131,16 @@ export function computeLogisticsPlanMetrics(
   return {
     productCount: profiles.length,
     variantCount,
-    autoReadyCount,
-    aiAutoCount: autoReadyCount,
+    pendingQuoteCount,
+    pendingConfirmCount,
+    exceptionCount,
+    skuUnlinkedCount,
+    autoReadyCount: pendingQuoteCount,
+    aiAutoCount: pendingQuoteCount,
     quotedCount,
-    reviewCount,
-    unidentifiedCount,
-    pendingCount,
+    reviewCount: pendingConfirmCount,
+    unidentifiedCount: skuUnlinkedCount,
+    pendingCount: pendingQuoteCount + pendingConfirmCount + skuUnlinkedCount,
     confirmedCount,
     completionPercent,
   };

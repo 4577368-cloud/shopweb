@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
 import { MARKET_GROUPS } from "@/lib/logistics/markets";
 import {
   codesFromSelections,
-  selectionsFromCodes,
+  marketSelectionForCountry,
+  singleCountryCodeFromMarkets,
 } from "@/components/logistics/market-multi-select";
 import type {
   LogisticsTemplate,
@@ -58,13 +59,15 @@ export function LogisticsTemplateDrawer({
 
   useEffect(() => {
     if (activeTemplate) {
-      setFormData(activeTemplate);
+      const single = singleCountryCodeFromMarkets(activeTemplate.markets);
+      const normalized = single
+        ? { ...activeTemplate, markets: marketSelectionForCountry(single) }
+        : activeTemplate;
+      setFormData(normalized);
       setEditingId(activeTemplate.id ?? null);
-      const countryCodes = codesFromSelections(activeTemplate.markets);
-      if (countryCodes.length > 0) {
-        const firstCode = countryCodes[0];
+      if (single) {
         const group = MARKET_GROUPS.find((g) =>
-          g.countries.some((c) => c.code === firstCode)
+          g.countries.some((c) => c.code === single)
         );
         setSelectedGroupId(group?.id ?? null);
       } else {
@@ -81,37 +84,21 @@ export function LogisticsTemplateDrawer({
     }
   }, [activeTemplate, shopName]);
 
-  const countryCodes = useMemo(() => {
-    return codesFromSelections(formData.markets ?? []);
-  }, [formData.markets]);
+  const selectedCountry = useMemo(
+    () => singleCountryCodeFromMarkets(formData.markets ?? []),
+    [formData.markets]
+  );
 
   const selectedGroup = useMemo(() => {
     return MARKET_GROUPS.find((g) => g.id === selectedGroupId);
   }, [selectedGroupId]);
 
-  const toggleCountry = useCallback((code: string) => {
-    const currentCodes = codesFromSelections(formData.markets ?? []);
-    const newCodes = currentCodes.includes(code)
-      ? currentCodes.filter((c) => c !== code)
-      : [...currentCodes, code];
-
+  const selectCountry = useCallback((code: string) => {
     setFormData((prev) => ({
       ...prev,
-      markets: selectionsFromCodes(newCodes),
+      markets: marketSelectionForCountry(code),
     }));
-  }, [formData.markets]);
-
-  const selectAllInGroup = useCallback(() => {
-    if (!selectedGroup) return;
-    const groupCodes = selectedGroup.countries.map((c) => c.code);
-    const currentCodes = codesFromSelections(formData.markets ?? []);
-    const newCodes = [...new Set([...currentCodes, ...groupCodes])];
-
-    setFormData((prev) => ({
-      ...prev,
-      markets: selectionsFromCodes(newCodes),
-    }));
-  }, [selectedGroup, formData.markets]);
+  }, []);
 
   const handleSave = async () => {
     if (!shopName.trim()) {
@@ -122,8 +109,8 @@ export function LogisticsTemplateDrawer({
       setError("请选择包装方式和时效偏好");
       return;
     }
-    if (countryCodes.length === 0) {
-      setError("请至少选择一个销售国家");
+    if (!selectedCountry) {
+      setError("请选择一个销售国家");
       return;
     }
 
@@ -139,7 +126,7 @@ export function LogisticsTemplateDrawer({
         name: formData.name || autoName,
         packaging: formData.packaging,
         speedPreference: formData.speedPreference,
-        markets: formData.markets ?? [],
+        markets: marketSelectionForCountry(selectedCountry),
       };
 
       const saved = await onSave(
@@ -266,7 +253,10 @@ export function LogisticsTemplateDrawer({
             </div>
 
             <div>
-              <label className="block mb-2 text-xs font-medium text-ink">目标市场</label>
+              <label className="block mb-2 text-xs font-medium text-ink">
+                销售国家
+                <span className="ml-1 font-normal text-ink-subtle">（单选，用于运费试算）</span>
+              </label>
               <div className="flex flex-wrap gap-1.5">
                 {MARKET_GROUPS.map((group) => (
                   <button
@@ -287,24 +277,15 @@ export function LogisticsTemplateDrawer({
 
               {selectedGroup && (
                 <div className="mt-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] text-ink-subtle">{selectedGroup.labelZh}</span>
-                    <button
-                      type="button"
-                      onClick={selectAllInGroup}
-                      className="text-[10px] text-brand hover:underline"
-                    >
-                      全选
-                    </button>
-                  </div>
+                  <p className="mb-2 text-[10px] text-ink-subtle">{selectedGroup.labelZh}</p>
                   <div className="grid grid-cols-4 gap-2">
                     {selectedGroup.countries.map((country) => {
-                      const isSelected = countryCodes.includes(country.code);
+                      const isSelected = selectedCountry === country.code;
                       return (
                         <button
                           key={country.code}
                           type="button"
-                          onClick={() => toggleCountry(country.code)}
+                          onClick={() => selectCountry(country.code)}
                           className={cn(
                             "rounded-[var(--radius-control)] border px-1.5 py-1.5 text-center text-[10px] font-medium transition-colors overflow-hidden truncate",
                             isSelected
@@ -397,7 +378,7 @@ export function LogisticsTemplateDrawer({
           <Button variant="secondary" size="sm" onClick={onClose}>
             取消
           </Button>
-          <Button size="sm" onClick={handleSave} disabled={isSaving || countryCodes.length === 0}>
+          <Button size="sm" onClick={handleSave} disabled={isSaving || !selectedCountry}>
             <Save className="mr-1 h-3 w-3" />
             {isSaving ? "保存中…" : editingId ? "保存模板" : "创建模板"}
           </Button>

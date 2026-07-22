@@ -6,8 +6,10 @@ import { CopilotCard } from "@/components/workbench/assistant-rail";
 import { InfoCard } from "@/components/workbench/info-card";
 import { Button } from "@/components/ui/button";
 import {
+  computeActiveHighRiskAlerts,
   computeLogisticsPlanMetrics,
   countAutoVsManual,
+  formatActiveHighRiskAlert,
   formatTemplateMeta,
 } from "@/lib/logistics/display";
 import type {
@@ -15,20 +17,12 @@ import type {
   LogisticsAnalysis,
   LogisticsDecisionStatus,
   LogisticsTemplate,
-  LogisticsTypeCode,
 } from "@/lib/types";
-
-const RISK_LABELS: Partial<Record<LogisticsTypeCode, string>> = {
-  BATTERY_MAGNETIC: "带电/带磁",
-  FOOD: "食品",
-  BLADE: "刀具",
-};
 
 export function LogisticsAiPanel({
   analysis,
   activeTemplate,
   decisionStatusCounts,
-  highRiskTypes,
   skuReadyForNext,
   quoting,
   accepting,
@@ -42,7 +36,6 @@ export function LogisticsAiPanel({
   analysis: LogisticsAnalysis | null;
   activeTemplate: LogisticsTemplate | null;
   decisionStatusCounts?: Record<LogisticsDecisionStatus, number>;
-  highRiskTypes?: LogisticsTypeCode[];
   skuReadyForNext: boolean;
   quoting: boolean;
   accepting: boolean;
@@ -55,6 +48,10 @@ export function LogisticsAiPanel({
 }) {
   const metrics = computeLogisticsPlanMetrics(analysis);
   const { auto, manual } = countAutoVsManual(decisionStatusCounts);
+  const activeRiskAlerts = useMemo(
+    () => computeActiveHighRiskAlerts(analysis),
+    [analysis]
+  );
 
   const copilot: AiPanelContent = useMemo(() => {
     const bullets: string[] = [
@@ -194,16 +191,14 @@ export function LogisticsAiPanel({
         </div>
       </InfoCard>
 
-      {(highRiskTypes?.length ?? 0) > 0 || !skuReadyForNext ? (
+      {(activeRiskAlerts.length > 0 || !skuReadyForNext) ? (
         <InfoCard title="AI 建议" tone="warning">
           <ul className="space-y-1.5">
             {!skuReadyForNext ? (
               <li>部分商品 SKU 未齐，请先完成 SKU 绑定。</li>
             ) : null}
-            {(highRiskTypes ?? []).map((t) => (
-              <li key={t}>
-                检测到 {RISK_LABELS[t] ?? t} 类商品，AI 已标记为需人工确认邮限。
-              </li>
+            {activeRiskAlerts.map((alert) => (
+              <li key={alert.type}>{formatActiveHighRiskAlert(alert)}</li>
             ))}
           </ul>
         </InfoCard>

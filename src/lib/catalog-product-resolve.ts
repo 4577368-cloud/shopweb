@@ -135,6 +135,7 @@ export async function resolveInternalGoodsIdByOfferSku(input: {
   const sku = input.tangbuySkuId.trim();
   if (!offerId || !sku) return null;
 
+  try {
   if (input.shopName?.trim()) {
     const fromRecs = await loadRecommendationsOfferMap(input.shopName);
     const goodsId = fromRecs.get(offerId);
@@ -198,6 +199,9 @@ export async function resolveInternalGoodsIdByOfferSku(input: {
   }
 
   return null;
+  } catch {
+    return null;
+  }
 }
 
 export interface ResolveProductSourceInput {
@@ -386,22 +390,60 @@ export function identityFromSearchCandidate(
   };
 }
 
-/** Best offerProductId for confirm API — prefer internal goodsId when known. */
+/**
+ * offerProductId for confirm API — backend 1688 validator expects a 10–13 digit offer id.
+ * Catalog-only hits (no 1688 id) fall back to internal goods id + tangbuy detailUrl (itemGet).
+ */
 export function resolveConfirmOfferProductId(
   candidate: ImageSearchProduct,
   identity?: ProductSourceIdentity | null
 ): string {
+  const offer =
+    identity?.offerId1688?.trim() ||
+    candidate.offerId1688?.trim() ||
+    extractOfferIdFromUrl(identity?.offerDetailUrl ?? candidate.detailUrl) ||
+    (isOfferId1688(candidate.productId) ? candidate.productId : null);
+  if (offer) return offer;
+
   const internal =
     identity?.internalGoodsId?.trim() ||
     candidate.internalGoodsId?.trim() ||
     (isInternalGoodsId(candidate.productId) ? candidate.productId : null);
   if (internal) return internal;
 
+  return candidate.productId;
+}
+
+/** detailUrl for confirm — catalog/internal ids must use tangbuy itemGet URL. */
+export function resolveConfirmDetailUrl(
+  candidate: ImageSearchProduct,
+  identity?: ProductSourceIdentity | null,
+  offerProductId?: string | null
+): string | null {
+  const internal =
+    identity?.internalGoodsId?.trim() ||
+    candidate.internalGoodsId?.trim() ||
+    (offerProductId && isInternalGoodsId(offerProductId) ? offerProductId : null);
+
+  const tangbuy =
+    identity?.tangbuyCatalogUrl?.trim() ||
+    candidate.tangbuyCatalogUrl?.trim() ||
+    (internal ? catalogUrlForItemId(internal) : null);
+
+  if (internal || candidate.catalogSource) {
+    return tangbuy || candidate.detailUrl?.trim() || null;
+  }
+
   const offer =
+    offerProductId?.trim() ||
     identity?.offerId1688?.trim() ||
     candidate.offerId1688?.trim() ||
-    (isOfferId1688(candidate.productId) ? candidate.productId : null);
-  if (offer) return offer;
+    extractOfferIdFromUrl(candidate.detailUrl);
 
-  return candidate.productId;
+  return (
+    tangbuy ||
+    identity?.offerDetailUrl?.trim() ||
+    candidate.detailUrl?.trim() ||
+    (offer && isOfferId1688(offer) ? buildOfferDetailUrl(offer) : null)
+  );
 }

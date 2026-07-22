@@ -81,6 +81,15 @@ import {
 } from "@/lib/batch-link/preflight";
 import { confirmCandidateBinding } from "@/lib/batch-link/confirm-binding";
 import {
+  mapImageMatchConfirmError,
+  mapImageSearchError,
+} from "@/lib/batch-link/match-errors";
+import {
+  isAlreadySourcedProduct,
+  isEligibleForImageBatchLink,
+  isPublishSourcedBinding,
+} from "@/lib/batch-link/publish-source";
+import {
   candidateStorageKey,
   formatImageMatchLabel,
   formatTitleMatchLabel,
@@ -165,56 +174,14 @@ function middleMatchHeadline(
 
 /**
  * Map backend image-search errors to a readable, category-specific message.
- * The backend prefixes CustomException messages with a machine code so we can
- * differentiate: AK 未配置/无效、商品无主图、镜像缺失、网关繁忙/限流。
  */
 function imageSearchError(err: unknown): string {
-  let raw = "";
-  if (err instanceof ApiError) {
-    if (err.status === 0) return err.message;
-    const body = err.body as { message?: string } | undefined;
-    raw = body?.message ?? err.message;
-  } else if (err instanceof Error) {
-    raw = err.message;
-  }
-  if (raw.startsWith("AOP_CRED_MISSING") || raw.startsWith("AK_MISSING")) {
-    return "Tangbuy 货源平台凭证未配置或无效，请配置后重试";
-  }
-  if (raw.startsWith("AOP_TOKEN_INVALID")) {
-    return "Tangbuy 货源授权已失效或过期，请重新授权后重试";
-  }
-  if (raw.startsWith("IMAGE_UNREADABLE")) {
-    return "商品主图无法读取或上传，请更换主图后重试";
-  }
-  if (raw.startsWith("NO_PRIMARY_IMAGE")) {
-    return "该商品无主图，无法进行 Tangbuy 图搜";
-  }
-  if (raw.startsWith("PRODUCT_NOT_FOUND")) {
-    return "未找到该商品镜像，请先同步商品";
-  }
-  if (raw.startsWith("GATEWAY_BUSY")) {
-    return "Tangbuy 货源网关繁忙或限流，请稍后重试";
-  }
-  return raw || "图搜失败";
+  return mapImageSearchError(err);
 }
 
 /** Map backend confirm (A3-2b) errors to a readable message by machine-code prefix. */
 function imageMatchError(err: unknown): string {
-  let raw = "";
-  if (err instanceof ApiError) {
-    if (err.status === 0) return err.message;
-    const body = err.body as { message?: string } | undefined;
-    raw = body?.message ?? err.message;
-  } else if (err instanceof Error) {
-    raw = err.message;
-  }
-  if (raw.startsWith("PRODUCT_NOT_FOUND")) {
-    return "未找到该商品镜像，请先同步商品";
-  }
-  if (raw.startsWith("NO_VARIANT")) {
-    return "该商品无可用变体（SKU），请重新同步商品后再匹配";
-  }
-  return raw || "确认匹配失败";
+  return mapImageMatchConfirmError(err);
 }
 
 function formatSimilarity(score?: number | null): string | null {
@@ -501,28 +468,45 @@ export function ShopProductsPanel({
       onShopProductsChange?.(items, map);
 
       void (async () => {
-        const productById = new Map(
-          items.map((p) => [p.thirdPlatformItemId, p] as const)
-        );
-        const updates: Record<string, ImageBindingView> = {};
-        for (const [itemId, binding] of Object.entries(map)) {
-          if (!binding.bound || !binding.tangbuyProductId) continue;
-          if (binding.sourceIdentity?.internalGoodsId?.trim()) continue;
-          const product = productById.get(itemId);
-          const identity = await backfillProductSourceIdentity({
-            shopName,
-            thirdPlatformItemId: itemId,
-            tangbuyProductId: binding.tangbuyProductId,
-            tangbuySkuId: binding.tangbuySkuId,
-            detailUrl: binding.detailUrl,
-            titleHint: product?.title ?? binding.offerTitle,
-          });
-          if (identity) {
-            updates[itemId] = mergeIdentityIntoBinding(binding, identity);
+        try {
+          const productById = new Map(
+            items.map((p) => [p.thirdPlatformItemId, p] as const)
+          );
+          const updates: Record<string, ImageBindingView> = {};
+          let backfillAttempts = 0;
+          const backfillLimit = 8;
+
+          for (const [itemId, binding] of Object.entries(map)) {
+            if (backfillAttempts >= backfillLimit) break;
+            if (!binding.bound || !binding.tangbuyProductId) continue;
+            if (isPublishSourcedBinding(binding)) continue;
+            if (binding.sourceIdentity?.internalGoodsId?.trim()) continue;
+
+            backfillAttempts += 1;
+            try {
+              const product = productById.get(itemId);
+              const identity = await backfillProductSourceIdentity({
+                shopName,
+                thirdPlatformItemId: itemId,
+                tangbuyProductId: binding.tangbuyProductId,
+                tangbuySkuId: binding.tangbuySkuId,
+                detailUrl: binding.detailUrl,
+                titleHint: product?.title ?? binding.offerTitle,
+                skipPoolRetry: true,
+              });
+              if (identity) {
+                updates[itemId] = mergeIdentityIntoBinding(binding, identity);
+              }
+            } catch {
+              // Best-effort — gateway may be offline during dev.
+            }
           }
-        }
-        if (Object.keys(updates).length > 0) {
-          setBindings((prev) => ({ ...prev, ...updates }));
+
+          if (Object.keys(updates).length > 0) {
+            setBindings((prev) => ({ ...prev, ...updates }));
+          }
+        } catch {
+          // Background enrichment must never break the product list.
         }
       })();
       return items;
@@ -590,7 +574,16 @@ export function ShopProductsPanel({
       if (batchLinkRunning) return;
       const pendingSet = pendingNewAnalysisIds ?? new Set<string>();
 
-      if (scope.length === 0) {
+      const eligibleScope = scope.filter((p) =>
+        isEligibleForImageBatchLink({
+          thirdPlatformItemId: p.thirdPlatformItemId,
+          primaryImageUrl: p.primaryImageUrl,
+          binding: bindings[p.thirdPlatformItemId],
+          shopName,
+        })
+      );
+
+      if (eligibleScope.length === 0) {
         if (source !== "auto") showToast("当前页暂无可关联商品");
         onBatchLinkFinished?.({ ...INITIAL_BATCH_LINK_PROGRESS, source, done: true });
         return;
@@ -598,9 +591,9 @@ export function ShopProductsPanel({
 
       const variantReady = await loadVariantReadyIds(
         shopName,
-        scope.map((p) => p.thirdPlatformItemId)
+        eligibleScope.map((p) => p.thirdPlatformItemId)
       );
-      const preflight = preflightBatchLinkScope(scope, pendingSet, variantReady);
+      const preflight = preflightBatchLinkScope(eligibleScope, pendingSet, variantReady);
 
       if (preflight.readyProducts.length === 0) {
         if (source === "auto") {
@@ -638,6 +631,7 @@ export function ShopProductsPanel({
     },
     [
       batchLinkRunning,
+      bindings,
       onBatchLinkFinished,
       pendingNewAnalysisIds,
       setFilter,
@@ -681,10 +675,13 @@ export function ShopProductsPanel({
   const stateOf = useCallback(
     (p: ShopMirrorProduct): "pending" | "confirmed" | null => {
       const b = bindings[p.thirdPlatformItemId];
+      if (isAlreadySourcedProduct(b, shopName, p.thirdPlatformItemId)) {
+        return b?.bound && b.bindStatus === "PENDING" ? "pending" : "confirmed";
+      }
       if (!b?.bound) return null;
       return b.bindStatus === "PENDING" ? "pending" : "confirmed";
     },
-    [bindings]
+    [bindings, shopName]
   );
 
   const counts = useMemo(() => {
@@ -857,8 +854,8 @@ export function ShopProductsPanel({
   }, [batchLinkProgress, batchLinkSessionActive, displayProducts, filter, page]);
 
   const pageLinkableProducts = useMemo(
-    () => filterLinkableProducts(paginatedProducts, bindings),
-    [paginatedProducts, bindings]
+    () => filterLinkableProducts(paginatedProducts, bindings, shopName),
+    [paginatedProducts, bindings, shopName]
   );
 
   useEffect(() => {
@@ -887,7 +884,7 @@ export function ShopProductsPanel({
 
   useEffect(() => {
     if (!onMinisChange) return;
-    const all = buildShopProductMinis(products, bindings);
+    const all = buildShopProductMinis(products, bindings, shopName);
     const pending = all.filter((m) => m.state === "pending");
     const unbound = all.filter((m) => m.state === "unbound");
     const fp = `${pending.map((m) => m.productId).join(",")}|${unbound
@@ -1221,7 +1218,9 @@ function ShopProductCard({
   }, [trayOpen, result, boundOfferId]);
   const bindConfirmed = Boolean(binding?.bound) && !bindPending;
   // Published from the Tangbuy catalog → already a 1:1 source link; no matching needed.
-  const fromPublish = Boolean(binding?.bound) && binding?.bindSource === "FROM_PUBLISH";
+  const fromPublish =
+    isPublishSourcedBinding(binding) ||
+    isAlreadySourcedProduct(binding, shopName, item.thirdPlatformItemId);
   const fromManual = isManualImageBinding(binding);
 
   // Snapshot captured at confirm time: the exact candidate image/price the user matched. Preferred for
@@ -1611,7 +1610,7 @@ function ShopProductCard({
 
   const cardState: "matched" | "pending" | "unbound" = bindPending
     ? "pending"
-    : boundOfferId
+    : boundOfferId || fromPublish
       ? "matched"
       : "unbound";
 
@@ -1944,6 +1943,10 @@ function ShopProductCard({
                 </div>
               </div>
             </>
+          ) : fromPublish ? (
+            <div className="flex flex-1 items-center rounded-lg border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-2 text-[11px] leading-relaxed text-emerald-800">
+              发现新品上架商品，Tangbuy 即为货源，无需图搜关联。绑定记录同步中…
+            </div>
           ) : batchLinkDrive?.state === "searching" ? (
             <div className="batch-link-searching flex flex-1 flex-col justify-center rounded-lg border border-dashed border-sky-200 bg-sky-50/50 px-3 py-3">
               <div className="flex items-center gap-2 text-[11px] font-medium text-sky-800">
@@ -1992,7 +1995,7 @@ function ShopProductCard({
             ) : null}
             {headerBadge.label}
           </span>
-          {isNewArrival && cardState === "unbound" ? (
+          {isNewArrival && cardState === "unbound" && !fromPublish ? (
             <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
               新入库
             </span>
@@ -2025,6 +2028,7 @@ function ShopProductCard({
             </>
           ) : null}
           {cardState !== "unbound" || current ? (
+            !fromPublish ? (
             <>
               <span className="text-slate-300">|</span>
               <button
@@ -2063,7 +2067,9 @@ function ShopProductCard({
                 手动匹配
               </button>
             </>
+            ) : null
           ) : (
+            !fromPublish ? (
             <>
               <span className="text-slate-300">|</span>
               <button
@@ -2083,6 +2089,7 @@ function ShopProductCard({
                 手动匹配
               </button>
             </>
+            ) : null
           )}
           {boundOfferId ? (
             <>

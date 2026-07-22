@@ -37,6 +37,19 @@ export function codesFromSelections(markets: MarketSelection[]): string[] {
   return out;
 }
 
+/** 模板仅支持单一目的国；历史多选数据取第一个。 */
+export function singleCountryCodeFromMarkets(
+  markets: MarketSelection[] | null | undefined
+): string | null {
+  return codesFromSelections(markets ?? [])[0] ?? null;
+}
+
+export function marketSelectionForCountry(code: string): MarketSelection[] {
+  const normalized = code.trim().toUpperCase();
+  if (!normalized) return [];
+  return selectionsFromCodes([normalized]);
+}
+
 export function MarketMultiSelect({
   value,
   onChange,

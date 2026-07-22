@@ -157,6 +157,52 @@ function refersToBatch(text: string): boolean {
   );
 }
 
+function tryProductStatusCommand(text: string): ProductCommandDraft | null {
+  const wantsDraft = /(放到草稿|设为草稿|改成草稿|移入草稿|保存为草稿|转草稿|draft)/i.test(
+    text
+  );
+  const wantsArchive =
+    /(下架|归档|archive)/i.test(text) && !wantsDraft;
+
+  if (!wantsDraft && !wantsArchive) return null;
+  if (
+    !refersToCurrentProduct(text) &&
+    !/(商品|这个品|该品)/i.test(text) &&
+    !refersToBatch(text) &&
+    !extractProductTitleHint(text)
+  ) {
+    return null;
+  }
+
+  const isBatch = refersToBatch(text);
+  const batchFilter = detectBatchFilter(text);
+  const productTitleHint = refersToCurrentProduct(text)
+    ? undefined
+    : extractProductTitleHint(text) ?? undefined;
+
+  if (wantsDraft) {
+    const intent = isBatch ? "batch_draft_products" : "draft_product";
+    return draft(
+      intent,
+      isBatch ? { batchFilter } : { productTitleHint },
+      {
+        targetScope: isBatch ? "all" : productTitleHint ? "explicit" : "current",
+        confirmationRequired: true,
+      }
+    );
+  }
+
+  const intent = isBatch ? "batch_archive_products" : "archive_product";
+  return draft(
+    intent,
+    isBatch ? { batchFilter } : { productTitleHint },
+    {
+      targetScope: isBatch ? "all" : productTitleHint ? "explicit" : "current",
+      confirmationRequired: true,
+    }
+  );
+}
+
 function tryProductCopyCommand(text: string): ProductCommandDraft | null {
   const action = detectCopyAction(text);
   if (!action) return null;
@@ -295,6 +341,11 @@ export function classifyProductCommandByRules(
     return { confidence: "high", source: "rules", draft: priceCmd };
   }
 
+  const statusCmd = tryProductStatusCommand(text);
+  if (statusCmd) {
+    return { confidence: "high", source: "rules", draft: statusCmd };
+  }
+
   // 未命中快速操作，交给 LLM 判断
 
   if (/再找.*候选|重新搜索|重新查找|重搜候选|更多候选|别的货源/i.test(text)) {
@@ -364,7 +415,7 @@ export function classifyProductCommandByRules(
     confidence: "none",
     source: "rules",
     clarify:
-      "未识别为页面命令。可试试：只看待确认 / 给这个商品再找候选 / 翻译这个商品标题 / 把售价改成 9.9 美元。",
+      "未识别为页面命令。可试试：只看待确认 / 给这个商品再找候选 / 翻译这个商品标题 / 把售价改成 9.9 美元 / 把这个商品放到草稿 / 批量下架所有商品。",
   };
 }
 
@@ -505,6 +556,8 @@ ${contextBlock ? `\n${contextBlock}\n` : ""}
 6. "再找候选""重搜货源" → rerun_candidate_search
 7. "为什么推荐这个" → explain_product_match (matchExplain=reason)
 8. "这个靠谱吗""有什么风险" → explain_product_match (matchExplain=risk)
+9. "放到草稿""设为草稿" → draft_product（单个）或 batch_draft_products（批量）
+10. "下架""归档" → archive_product（单个）或 batch_archive_products（批量）；与 draft 区分：明确说草稿才用 draft 命令
 
 [结合上下文判断]
 - 如果用户说"翻译这个商品标题"，而上下文显示有选中商品，则 targetScope=current
@@ -530,6 +583,14 @@ ${contextBlock ? `\n${contextBlock}\n` : ""}
    - params.copyAction: translate|rewrite|optimize
    - params.copyTargetLang: 目标语言代码（en/zh/ja/ko/ar/es/fr/de/ru/pt/it/th/vi/tr 等），仅 translate 时需要
    - params.copyStyle: amazon（默认，Amazon 热销标题本土化）| literal（直译）
+   - params.batchFilter: all|pending|confirmed|unbound（默认 all）
+   - confirmationRequired 必须为 true
+- draft_product / archive_product（单个商品 Shopify 状态）：
+   - draft_product → status=DRAFT（前台不可见）
+   - archive_product → status=ARCHIVED（归档下架）
+   - confirmationRequired 必须为 true
+- batch_draft_products / batch_archive_products（批量状态）：
+   - targetScope = "all"
    - params.batchFilter: all|pending|confirmed|unbound（默认 all）
    - confirmationRequired 必须为 true
 - 无法判断时输出 {"intent":""}`;

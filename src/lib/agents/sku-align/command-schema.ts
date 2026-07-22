@@ -124,7 +124,7 @@ export const SKU_COMMAND_DEFS: {
   {
     id: "open_sku_detail",
     label: "打开详情",
-    description: "打开商品的 SKU 映射详情抽屉",
+    description: "打开商品的 SKU 映射工作台",
     defaultConfirmation: false,
     sensitivity: "low",
   },

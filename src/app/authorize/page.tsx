@@ -572,7 +572,7 @@ function buildAssistant(
     copilot: {
       title: "开始接入",
       summary:
-        "Hi！我是 Tangbuy AI Copilot。连接 Shopify 后，我会自动同步商品，并在后续为你匹配 Tangbuy 货源、优化利润。",
+        "Hi！我是 Tangbuy Smart Match 助手。连接 Shopify 后，我会自动同步商品，并在后续为你匹配 Tangbuy 货源、优化利润。",
       bullets: [
         "整页跳转至 Shopify 官方授权，安全只读",
         "授权后自动同步商品镜像",

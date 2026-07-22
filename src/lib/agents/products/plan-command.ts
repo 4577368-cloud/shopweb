@@ -10,6 +10,11 @@ import type { AgentSuggestedAction } from "@/lib/agents/types";
 import {
   resolveProductByTitleHint,
 } from "@/lib/agents/products/resolve-product-target";
+import {
+  isActiveShopStatus,
+  LISTING_STATUS_LABELS,
+  normalizeShopStatus,
+} from "@/lib/shop-product-status";
 
 const FILTER_LABELS: Record<ProductCommandShopFilter, string> = {
   all: "全部商品",
@@ -24,7 +29,9 @@ function needsFocusProduct(intent: ProductCommandDraft["intent"]): boolean {
     intent === "rerun_candidate_search" ||
     intent === "explain_product_match" ||
     intent === "update_listing_price" ||
-    intent === "update_product_copy"
+    intent === "update_product_copy" ||
+    intent === "draft_product" ||
+    intent === "archive_product"
   );
 }
 
@@ -97,7 +104,8 @@ function resolveCurrency(
 
 function resolveBatchProductIds(
   draft: ProductCommandDraft,
-  ctx: ProductsPageContext
+  ctx: ProductsPageContext,
+  opts?: { activeOnly?: boolean }
 ): { ids: string[]; label: string } {
   const filter = draft.params.batchFilter ?? "all";
   const all = ctx.productCatalog;
@@ -117,19 +125,127 @@ function resolveBatchProductIds(
       filtered = all;
   }
 
+  if (opts?.activeOnly) {
+    filtered = filtered.filter((p) => isActiveShopStatus(p.shopStatus));
+  }
+
   const limit = draft.params.batchLimit ?? 0;
   const result = limit > 0 ? filtered.slice(0, limit) : filtered;
   const ids = result.map((p) => p.productId);
 
   const filterLabels: Record<string, string> = {
-    all: "全部商品",
+    all: opts?.activeOnly ? "全部在售商品" : "全部商品",
     pending: "待确认商品",
     confirmed: "已确认商品",
     unbound: "未匹配商品",
   };
-  const label = filterLabels[filter] ?? "全部商品";
+  const label = filterLabels[filter] ?? (opts?.activeOnly ? "全部在售商品" : "全部商品");
 
   return { ids, label };
+}
+
+function planSingleStatusChange(
+  draft: ProductCommandDraft,
+  ctx: ProductsPageContext,
+  targetStatus: "DRAFT" | "ARCHIVED",
+  operation: string
+): ProductCommandPlan {
+  const resolved = resolveProductId(draft, ctx);
+  const productId = resolved.productId;
+  const focusTitle =
+    resolved.title ??
+    ctx.focusProduct?.title ??
+    (productId ? `商品 ${productId.slice(-8)}` : "未选中商品");
+
+  if (resolved.clarify) {
+    return {
+      draft,
+      operation,
+      targetLabel: focusTitle,
+      detailLines: [],
+      executable: false,
+      clarify: resolved.clarify,
+    };
+  }
+
+  if (!productId) {
+    return {
+      draft,
+      operation,
+      targetLabel: focusTitle,
+      detailLines: [],
+      executable: false,
+      clarify:
+        "请先在左侧列表中点一下目标商品，或在命令里写出商品名（如：把「拖鞋」放到草稿）。",
+    };
+  }
+
+  const currentStatus = normalizeShopStatus(
+    ctx.productCatalog.find((p) => p.productId === productId)?.shopStatus
+  );
+  if (currentStatus === targetStatus) {
+    return {
+      draft,
+      operation,
+      targetLabel: focusTitle,
+      detailLines: [],
+      executable: false,
+      clarify: `「${focusTitle}」已经是 ${LISTING_STATUS_LABELS[targetStatus]}，无需重复操作。`,
+    };
+  }
+
+  return {
+    draft: { ...draft, productId, confirmationRequired: true },
+    operation,
+    targetLabel: focusTitle,
+    detailLines: [
+      `当前状态：${currentStatus}`,
+      `目标状态：${LISTING_STATUS_LABELS[targetStatus]}`,
+      "确认后将同步到 Shopify",
+    ],
+    executable: true,
+  };
+}
+
+function planBatchStatusChange(
+  draft: ProductCommandDraft,
+  ctx: ProductsPageContext,
+  targetStatus: "DRAFT" | "ARCHIVED",
+  operation: string
+): ProductCommandPlan {
+  const batchResult = resolveBatchProductIds(draft, ctx, { activeOnly: true });
+  const totalCount = batchResult.ids.length;
+
+  if (totalCount === 0) {
+    return {
+      draft,
+      operation,
+      targetLabel: batchResult.label,
+      detailLines: [],
+      executable: false,
+      clarify: `当前「${batchResult.label}」范围内没有可操作的 ACTIVE 商品。`,
+    };
+  }
+
+  return {
+    draft: {
+      ...draft,
+      targetScope: "all",
+      confirmationRequired: true,
+      params: {
+        ...draft.params,
+        batchProductIds: batchResult.ids,
+      },
+    },
+    operation,
+    targetLabel: `${batchResult.label} · ${totalCount} 个`,
+    detailLines: [
+      `处理范围：${batchResult.label}（共 ${totalCount} 个 ACTIVE 商品）`,
+      `目标状态：${LISTING_STATUS_LABELS[targetStatus]}`,
+      "确认后将逐个同步到 Shopify",
+    ],
+    executable: true,
+  };
 }
 
 export function planProductCommand(
@@ -486,6 +602,14 @@ export function planProductCommand(
         executable: true,
       };
     }
+    case "draft_product":
+      return planSingleStatusChange(draft, ctx, "DRAFT", "放到草稿");
+    case "archive_product":
+      return planSingleStatusChange(draft, ctx, "ARCHIVED", "下架归档");
+    case "batch_draft_products":
+      return planBatchStatusChange(draft, ctx, "DRAFT", "批量放到草稿");
+    case "batch_archive_products":
+      return planBatchStatusChange(draft, ctx, "ARCHIVED", "批量下架归档");
     default:
       return {
         draft,
@@ -600,6 +724,46 @@ export function resolveCommandExecution(
         filterLabel: plan.targetLabel,
       };
     }
+    case "draft_product": {
+      if (!productId) return null;
+      return {
+        type: "product_status_update",
+        productId,
+        productTitle: plan.targetLabel,
+        targetStatus: "DRAFT",
+      };
+    }
+    case "archive_product": {
+      if (!productId) return null;
+      return {
+        type: "product_status_update",
+        productId,
+        productTitle: plan.targetLabel,
+        targetStatus: "ARCHIVED",
+      };
+    }
+    case "batch_draft_products": {
+      const productIds = draft.params.batchProductIds ?? [];
+      if (productIds.length === 0) return null;
+      return {
+        type: "batch_product_status_update",
+        productIds,
+        totalCount: productIds.length,
+        targetStatus: "DRAFT",
+        filterLabel: plan.targetLabel,
+      };
+    }
+    case "batch_archive_products": {
+      const productIds = draft.params.batchProductIds ?? [];
+      if (productIds.length === 0) return null;
+      return {
+        type: "batch_product_status_update",
+        productIds,
+        totalCount: productIds.length,
+        targetStatus: "ARCHIVED",
+        filterLabel: plan.targetLabel,
+      };
+    }
     default:
       return null;
   }
@@ -611,7 +775,11 @@ export function commandRequiresConfirmation(plan: ProductCommandPlan): boolean {
     plan.draft.intent === "update_listing_price" ||
     plan.draft.intent === "update_product_copy" ||
     plan.draft.intent === "batch_update_product_copy" ||
-    plan.draft.intent === "batch_update_listing_price"
+    plan.draft.intent === "batch_update_listing_price" ||
+    plan.draft.intent === "draft_product" ||
+    plan.draft.intent === "archive_product" ||
+    plan.draft.intent === "batch_draft_products" ||
+    plan.draft.intent === "batch_archive_products"
   );
 }
 
@@ -635,6 +803,14 @@ function commandOperationLabel(intent: ProductCommandDraft["intent"]): string {
       return "批量修改商品文案";
     case "batch_update_listing_price":
       return "批量修改商品售价";
+    case "draft_product":
+      return "放到草稿";
+    case "archive_product":
+      return "下架归档";
+    case "batch_draft_products":
+      return "批量放到草稿";
+    case "batch_archive_products":
+      return "批量下架归档";
     default:
       return "执行命令";
   }

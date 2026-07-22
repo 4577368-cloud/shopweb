@@ -502,6 +502,10 @@ export interface ShopProductUpdatePayload {
   defaultVariantPrice?: number | null;
   /** Phase 4: per-variant price / inventory. */
   variants?: ShopProductVariantUpdatePayload[];
+  /** Shopify variant GIDs (`thirdPlatformSkuId`) to delete on save. */
+  deletedVariantIds?: string[];
+  /** Shopify product media IDs to delete on save (gallery / 主图). */
+  deletedMediaIds?: string[];
   /** Mirror updatedAt from last GET; server returns 409 PRODUCT_CONFLICT on mismatch. */
   expectedUpdatedAt?: string | null;
   /** Skip concurrency check and overwrite Shopify. */

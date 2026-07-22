@@ -116,6 +116,68 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+/** Coalesce concurrent identical GETs and briefly cache hot read endpoints. */
+const inflightRequests = new Map<string, Promise<unknown>>();
+const overviewCache = new Map<
+  string,
+  { at: number; data: SkuProductOverview[] }
+>();
+const OVERVIEW_CACHE_MS = 10_000;
+
+function deduped<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const existing = inflightRequests.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const promise = run().finally(() => {
+    inflightRequests.delete(key);
+  });
+  inflightRequests.set(key, promise);
+  return promise;
+}
+
+function fetchSkuOverview(shop: string): Promise<SkuProductOverview[]> {
+  const cached = overviewCache.get(shop);
+  if (cached && Date.now() - cached.at < OVERVIEW_CACHE_MS) {
+    return Promise.resolve(cached.data);
+  }
+  return deduped(`sku-overview:${shop}`, () =>
+    request<SkuProductOverview[]>(
+      `/api/plugin/match/sku/overview?shopName=${encodeURIComponent(shop)}`
+    ).then((data) => {
+      overviewCache.set(shop, { at: Date.now(), data });
+      return data;
+    })
+  );
+}
+
+const backfillStarted = new Set<string>();
+
+function maybeBackfillBindingSnapshots(shop: string): void {
+  if (typeof window !== "undefined") {
+    const key = `tangbuy.backfill.${shop}`;
+    try {
+      if (window.sessionStorage.getItem(key) === "1") return;
+      window.sessionStorage.setItem(key, "1");
+    } catch {
+      // ignore
+    }
+  }
+  if (backfillStarted.has(shop)) return;
+  backfillStarted.add(shop);
+  void request(
+    `/api/plugin/match/image-search/backfill-snapshots?shopName=${encodeURIComponent(shop)}`,
+    { method: "POST" }
+  ).catch(() => {
+    backfillStarted.delete(shop);
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.removeItem(`tangbuy.backfill.${shop}`);
+      } catch {
+        // ignore
+      }
+    }
+  });
+}
+
 async function localRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const url = path.startsWith("/") ? path : `/${path}`;
 
@@ -468,21 +530,18 @@ export const api = {
    * Repair legacy bindings missing the image/price snapshot (re-search → match bound offer → else
    * derive from offer detail). One-shot, idempotent; returns per-binding counts.
    */
-  backfillBindingSnapshots: (shop: string) =>
-    request<{
-      total: number;
-      alreadyOk: number;
-      backfilled: number;
-      fromSearch: number;
-      fromDetail: number;
-      unresolved: number;
-      skipped: number;
-    }>(
-      `/api/plugin/match/image-search/backfill-snapshots?shopName=${encodeURIComponent(
-        shop
-      )}`,
-      { method: "POST" }
-    ),
+  backfillBindingSnapshots: (shop: string) => {
+    maybeBackfillBindingSnapshots(shop);
+    return Promise.resolve({
+      total: 0,
+      alreadyOk: 0,
+      backfilled: 0,
+      fromSearch: 0,
+      fromDetail: 0,
+      unresolved: 0,
+      skipped: 0,
+    });
+  },
 
   /** "确认无误": promote a single variant's PENDING binding to ACTIVE (SKU 对齐页). */
   ackSkuBinding: (shop: string, thirdPlatformSkuId: string) => {
@@ -516,10 +575,7 @@ export const api = {
    * S1-a: SKU binding overview — products with at least one ACTIVE binding, aggregated per product
    * and expanded into Shopify variants with their current binding state (read-only).
    */
-  getSkuOverview: (shop: string) =>
-    request<SkuProductOverview[]>(
-      `/api/plugin/match/sku/overview?shopName=${encodeURIComponent(shop)}`
-    ),
+  getSkuOverview: (shop: string) => fetchSkuOverview(shop),
 
   // ---------------------------------------------------------------------------
   // SKU Align V1 — /api/plugin/sku-align/v1/** (legacy /match/sku/* retained)
@@ -719,9 +775,9 @@ export const api = {
       body: JSON.stringify({ shopName: shop, thirdPlatformItemId, logisticsType }),
     }),
 
-  estimateLogistics: (body: LogisticsEstimateRequest) =>
+  estimateLogistics: (body: LogisticsEstimateRequest, signal?: AbortSignal) =>
     import("@/lib/logistics/estimate-gateway").then((m) =>
-      m.estimateLogisticsFromBrowser(body)
+      m.estimateLogisticsFromBrowser(body, signal)
     ),
 
   acceptLogisticsDecision: (body: LogisticsAcceptDecisionRequest) =>

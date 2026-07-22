@@ -8,7 +8,11 @@ export type ProductCommandId =
   | "update_listing_price"
   | "update_product_copy"
   | "batch_update_product_copy"
-  | "batch_update_listing_price";
+  | "batch_update_listing_price"
+  | "draft_product"
+  | "archive_product"
+  | "batch_draft_products"
+  | "batch_archive_products";
 
 export type ProductCommandTargetScope = "current" | "explicit" | "none" | "all";
 
@@ -122,6 +126,19 @@ export type ProductCommandExecution =
       batchPriceMultiplier?: number;
       batchPriceFixed?: number;
       filterLabel: string;
+    }
+  | {
+      type: "product_status_update";
+      productId: string;
+      productTitle: string;
+      targetStatus: "DRAFT" | "ARCHIVED";
+    }
+  | {
+      type: "batch_product_status_update";
+      productIds: string[];
+      totalCount: number;
+      targetStatus: "DRAFT" | "ARCHIVED";
+      filterLabel: string;
     };
 
 export const PRODUCT_COMMAND_IDS: ProductCommandId[] = [
@@ -134,6 +151,10 @@ export const PRODUCT_COMMAND_IDS: ProductCommandId[] = [
   "update_product_copy",
   "batch_update_product_copy",
   "batch_update_listing_price",
+  "draft_product",
+  "archive_product",
+  "batch_draft_products",
+  "batch_archive_products",
 ];
 
 export const PRODUCT_COMMAND_SET = new Set<ProductCommandId>(PRODUCT_COMMAND_IDS);
@@ -207,6 +228,34 @@ export const PRODUCT_COMMAND_DEFS: {
     id: "batch_update_listing_price",
     label: "批量修改售价",
     description: "批量更新多个商品的上架售价，支持按采购价倍数、固定价格等方式计算",
+    defaultConfirmation: true,
+    sensitivity: "high",
+  },
+  {
+    id: "draft_product",
+    label: "放到草稿",
+    description: "将单个 Shopify 商品改为 DRAFT 草稿（前台不可见，可再上架）",
+    defaultConfirmation: true,
+    sensitivity: "high",
+  },
+  {
+    id: "archive_product",
+    label: "下架归档",
+    description: "将单个 Shopify 商品归档下架（ARCHIVED）",
+    defaultConfirmation: true,
+    sensitivity: "high",
+  },
+  {
+    id: "batch_draft_products",
+    label: "批量放到草稿",
+    description: "批量将多个 Shopify 商品改为 DRAFT 草稿",
+    defaultConfirmation: true,
+    sensitivity: "high",
+  },
+  {
+    id: "batch_archive_products",
+    label: "批量下架",
+    description: "批量将多个 Shopify 商品归档下架（ARCHIVED）",
     defaultConfirmation: true,
     sensitivity: "high",
   },

@@ -20,6 +20,21 @@ import {
 } from "@/data/mock";
 import { api } from "@/lib/api";
 import {
+  evaluateLogisticsCompletionGate,
+  deriveLogisticsStepSnapshot,
+} from "@/lib/logistics/completion-gate";
+import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
+import { computeLogisticsPlanMetrics } from "@/lib/logistics/display";
+import {
+  mergeQuoteResultsIntoAnalysis,
+  readQuoteCache,
+} from "@/lib/logistics/quote-cache";
+import { buildLogisticsTemplateScopeKey } from "@/lib/logistics/template-scope-key";
+import { listTemplateCountryCodes } from "@/lib/logistics/template-params";
+import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
+import type { LogisticsStepSnapshot } from "@/lib/logistics/completion-gate";
+import type { LogisticsPlanMetrics } from "@/lib/logistics/display";
+import {
   computeWorkflowBindingProgress,
   computeWorkflowSkuProgress,
   deriveLogisticsStepStatus,
@@ -30,7 +45,15 @@ import {
   type WorkflowBindingProgress,
   type WorkflowSkuProgress,
 } from "@/lib/workflow-progress";
-import type { LogisticsStepSnapshot } from "@/lib/logistics/completion-gate";
+import {
+  computeWorkflowPercent,
+  snapshotAuthorizeStep,
+  snapshotLogisticsStep,
+  snapshotProductsStep,
+  snapshotSkuStep,
+  snapshotSyncStep,
+  type WorkflowStepSnapshot,
+} from "@/lib/workflow-step-snapshots";
 import type {
   AuthStatus,
   LogisticsForm,
@@ -80,6 +103,8 @@ interface OnboardingState {
   setSelectedLogisticsPlanId: (id: string) => void;
   saveLogistics: () => void;
   startSync: (options?: { force?: boolean }) => void;
+  /** Mark sync step completed after launch ceremony finishes. */
+  completeSyncCeremony: () => void;
   clearToast: () => void;
   showToast: (message: string) => void;
   isAuthorized: boolean;
@@ -88,8 +113,13 @@ interface OnboardingState {
   productsReadyForNext: boolean;
   skuReadyForNext: boolean;
   workflowSku: WorkflowSkuProgress | null;
+  workflowBinding: WorkflowBindingProgress | null;
+  workflowLogistics: LogisticsPlanMetrics | null;
+  workflowProgressPercent: number;
+  workflowStepSnapshots: Record<string, WorkflowStepSnapshot>;
   logisticsStepSnapshot: LogisticsStepSnapshot | null;
   publishLogisticsStepSnapshot: (snapshot: LogisticsStepSnapshot | null) => void;
+  publishLogisticsPipelineActive: (active: boolean) => void;
   syncCompleted: boolean;
   refreshWorkflowProgress: () => Promise<void>;
 }
@@ -139,6 +169,10 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   );
   const [logisticsStepSnapshot, setLogisticsStepSnapshot] =
     useState<LogisticsStepSnapshot | null>(null);
+  const [logisticsPipelineActive, setLogisticsPipelineActive] = useState(false);
+  const [workflowLogistics, setWorkflowLogistics] =
+    useState<LogisticsPlanMetrics | null>(null);
+  const [hasLogisticsTemplate, setHasLogisticsTemplate] = useState(false);
   const authRestoreStartedRef = useRef(false);
 
   const updateStepStatus = useCallback(
@@ -357,6 +391,10 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     [logisticsCompleted]
   );
 
+  const completeSyncCeremony = useCallback(() => {
+    setSyncPhase("completed");
+  }, []);
+
   const clearToast = useCallback(() => setToastMessage(null), []);
   const showToast = useCallback((message: string) => {
     setToastMessage(message);
@@ -369,22 +407,73 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const publishLogisticsPipelineActive = useCallback((active: boolean) => {
+    setLogisticsPipelineActive(active);
+  }, []);
+
   const isAuthorized = authStatus === "authorized";
 
+  const shopApiName = resolveShopApiName(shop);
+
   const refreshWorkflowProgress = useCallback(async () => {
-    if (!isAuthorized || !shop.name?.trim()) return;
+    if (!isAuthorized || !shopApiName) return;
     try {
-      const [products, bindings, skuOverview] = await Promise.all([
-        api.getShopProducts(shop.name),
-        api.listImageBindings(shop.name).catch(() => []),
-        api.getSkuOverview(shop.name).catch(() => []),
+      const [
+        products,
+        bindings,
+        skuOverview,
+        logisticsAnalysis,
+        logisticsTemplates,
+      ] = await Promise.all([
+        api.getShopProducts(shopApiName),
+        api.listImageBindings(shopApiName).catch(() => []),
+        api.getSkuOverview(shopApiName).catch(() => []),
+        api.getLogisticsAnalysis(shopApiName).catch(() => null),
+        api.listLogisticsTemplates(shopApiName).catch(() => []),
       ]);
+
       setWorkflowBinding(computeWorkflowBindingProgress(products, bindings));
       setWorkflowSku(computeWorkflowSkuProgress(skuOverview));
+
+      const activeTemplate = logisticsTemplates[0] ?? null;
+      const templateSaved = hasSavedLogisticsTemplate(logisticsTemplates);
+      setHasLogisticsTemplate(templateSaved);
+
+      const scopeKey = buildLogisticsTemplateScopeKey(activeTemplate);
+      const quoteResults =
+        scopeKey && typeof window !== "undefined"
+          ? readQuoteCache(shopApiName, scopeKey)
+          : new Map();
+      const mergedAnalysis =
+        logisticsAnalysis && quoteResults.size > 0
+          ? mergeQuoteResultsIntoAnalysis(logisticsAnalysis, quoteResults)
+          : logisticsAnalysis;
+
+      const metrics = computeLogisticsPlanMetrics(mergedAnalysis, quoteResults);
+      setWorkflowLogistics(metrics);
+
+      const templateMarketsConfigured =
+        listTemplateCountryCodes(activeTemplate).length > 0;
+      const gate = evaluateLogisticsCompletionGate({
+        hasSavedTemplate: templateSaved,
+        pipelineActive: false,
+        analysis: mergedAnalysis,
+        quoteResults,
+        templateMarketsConfigured,
+      });
+      const gateSnapshot = deriveLogisticsStepSnapshot({
+        skuReady: isSkuStepComplete(computeWorkflowSkuProgress(skuOverview)),
+        pipelineActive: false,
+        gate,
+        logisticsCompleted:
+          metrics.variantCount > 0 &&
+          metrics.confirmedCount >= metrics.variantCount,
+      });
+      setLogisticsStepSnapshot(gateSnapshot);
     } catch {
       // Keep the last known snapshot on transient API errors.
     }
-  }, [isAuthorized, shop.name]);
+  }, [isAuthorized, shopApiName]);
 
   useEffect(() => {
     if (!isAuthorized || !authSessionReady) return;
@@ -393,7 +482,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       void refreshWorkflowProgress();
     }, 45_000);
     return () => window.clearInterval(timer);
-  }, [isAuthorized, authSessionReady, shop.name, refreshWorkflowProgress]);
+  }, [isAuthorized, authSessionReady, shopApiName, refreshWorkflowProgress]);
 
   const productsReadyForNext = isProductsStepComplete(workflowBinding);
   const skuReadyForNext = isSkuStepComplete(workflowSku);
@@ -415,14 +504,24 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     updateStepStatus("sku-align", skuStatus);
 
     const skuComplete = skuStatus === "completed";
+    const logisticsDone =
+      workflowLogistics != null &&
+      workflowLogistics.variantCount > 0 &&
+      workflowLogistics.confirmedCount >= workflowLogistics.variantCount;
     updateStepStatus(
       "logistics",
-      deriveLogisticsStepStatus(isAuthorized, skuComplete, logisticsCompleted, workflowSku)
+      deriveLogisticsStepStatus(
+        isAuthorized,
+        skuComplete,
+        logisticsCompleted || logisticsDone,
+        workflowSku
+      )
     );
   }, [
     isAuthorized,
     workflowBinding,
     workflowSku,
+    workflowLogistics,
     logisticsCompleted,
     updateStepStatus,
   ]);
@@ -434,6 +533,68 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   }, [toastMessage]);
 
   const syncCompleted = syncPhase === "completed";
+
+  const productsComplete = isProductsStepComplete(workflowBinding);
+  const logisticsReadyForSync =
+    logisticsCompleted ||
+    (workflowLogistics != null &&
+      workflowLogistics.variantCount > 0 &&
+      workflowLogistics.confirmedCount >= workflowLogistics.variantCount);
+
+  const workflowStepSnapshots = useMemo(() => {
+    const authorize = snapshotAuthorizeStep(isAuthorized, shopApiName || shop.domain);
+    const products = snapshotProductsStep(isAuthorized, workflowBinding);
+    const sku = snapshotSkuStep(isAuthorized, productsComplete, workflowSku);
+
+    const logistics = snapshotLogisticsStep({
+      authorized: isAuthorized,
+      skuReady: skuReadyForNext || Boolean(workflowSku && workflowSku.productCount > 0),
+      metrics: workflowLogistics,
+      pipelineActive: logisticsPipelineActive,
+      hasTemplate: hasLogisticsTemplate,
+    });
+
+    const sync = snapshotSyncStep({
+      syncCompleted,
+      syncPhase,
+      logisticsReady: logisticsReadyForSync,
+    });
+
+    return {
+      authorize,
+      products,
+      "sku-align": sku,
+      logistics,
+      sync,
+    } satisfies Record<string, WorkflowStepSnapshot>;
+  }, [
+    isAuthorized,
+    shopApiName,
+    shop.domain,
+    workflowBinding,
+    productsComplete,
+    workflowSku,
+    skuReadyForNext,
+    workflowLogistics,
+    logisticsPipelineActive,
+    hasLogisticsTemplate,
+    logisticsStepSnapshot,
+    syncCompleted,
+    syncPhase,
+    logisticsReadyForSync,
+  ]);
+
+  const workflowProgressPercent = useMemo(
+    () =>
+      computeWorkflowPercent({
+        authorized: isAuthorized,
+        syncCompleted,
+        binding: workflowBinding,
+        sku: workflowSku,
+        logistics: workflowLogistics,
+      }),
+    [isAuthorized, syncCompleted, workflowBinding, workflowSku, workflowLogistics]
+  );
 
   const value = useMemo(
     () => ({
@@ -461,6 +622,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       setSelectedLogisticsPlanId,
       saveLogistics,
       startSync,
+      completeSyncCeremony,
       clearToast,
       showToast,
       isAuthorized,
@@ -468,8 +630,13 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       productsReadyForNext,
       skuReadyForNext,
       workflowSku,
+      workflowBinding,
+      workflowLogistics,
+      workflowProgressPercent,
+      workflowStepSnapshots,
       logisticsStepSnapshot,
       publishLogisticsStepSnapshot,
+      publishLogisticsPipelineActive,
       syncCompleted,
       refreshWorkflowProgress,
     }),
@@ -497,6 +664,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       updateLogisticsForm,
       saveLogistics,
       startSync,
+      completeSyncCeremony,
       clearToast,
       showToast,
       isAuthorized,
@@ -504,8 +672,13 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       productsReadyForNext,
       skuReadyForNext,
       workflowSku,
+      workflowBinding,
+      workflowLogistics,
+      workflowProgressPercent,
+      workflowStepSnapshots,
       logisticsStepSnapshot,
       publishLogisticsStepSnapshot,
+      publishLogisticsPipelineActive,
       syncCompleted,
       refreshWorkflowProgress,
     ]

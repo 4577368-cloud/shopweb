@@ -1,5 +1,5 @@
 import type { LogisticsSpeedPreference, PackagingType } from "@/lib/types";
-import { codesFromSelections } from "@/components/logistics/market-multi-select";
+import { codesFromSelections, singleCountryCodeFromMarkets } from "@/components/logistics/market-multi-select";
 import type { LogisticsTemplate } from "@/lib/types";
 
 /**
@@ -71,11 +71,11 @@ export function resolveQuoteMarketCode(
   template: LogisticsTemplate | null | undefined,
   preferred?: string | null
 ): string | null {
-  const codes = listTemplateCountryCodes(template);
-  if (codes.length === 0) return null;
+  const code = singleCountryCodeFromMarkets(template?.markets);
+  if (!code) return null;
   const pick = preferred?.trim().toUpperCase();
-  if (pick && codes.includes(pick)) return pick;
-  return codes[0] ?? null;
+  if (pick && pick === code) return pick;
+  return code;
 }
 
 export interface EstimateTemplateParams {

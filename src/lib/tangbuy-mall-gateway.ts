@@ -249,20 +249,24 @@ export async function fetchItemDetail(
   const url = productUrl.trim();
   if (!url) return null;
   const endpoint = `${gatewayBaseUrl()}${ITEM_GET_PATH}?url=${encodeURIComponent(url)}`;
-  const res = await fetch(endpoint, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${gatewayToken()}`,
-      currency: "USD",
-      device: "pc",
-      lang: "cn",
-      "tang-request-device": "web",
-    },
-  });
-  if (!res.ok) return null;
-  const data = (await res.json()) as ItemGetResponse;
-  if (data.code != null && data.code !== 200) return null;
-  return data.data?.item ?? null;
+  try {
+    const res = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${gatewayToken()}`,
+        currency: "USD",
+        device: "pc",
+        lang: "cn",
+        "tang-request-device": "web",
+      },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as ItemGetResponse;
+    if (data.code != null && data.code !== 200) return null;
+    return data.data?.item ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function mergeImageUrls(...groups: Array<string[] | null | undefined>): string[] {

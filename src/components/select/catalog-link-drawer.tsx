@@ -36,10 +36,7 @@ function formatShopPrice(
   return `${min.toFixed(2)}${cur ? ` ${cur}` : ""}`;
 }
 
-function imageMatchError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return "确认关联失败";
-}
+import { mapImageMatchConfirmError } from "@/lib/batch-link/match-errors";
 
 export function CatalogLinkDrawer({
   open,
@@ -199,7 +196,7 @@ export function CatalogLinkDrawer({
       onLinked?.(selectedItemId);
       onClose();
     } catch (err) {
-      setSaveError(imageMatchError(err));
+      setSaveError(mapImageMatchConfirmError(err, "确认关联失败"));
     } finally {
       setSaving(false);
     }

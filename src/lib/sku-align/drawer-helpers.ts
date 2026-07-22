@@ -16,7 +16,8 @@ import type { ImageSearchProduct, SkuVariant } from "@/lib/types";
 export const AUTO_SUGGEST_THRESHOLD = 0.8;
 export const COVERAGE_MATCH_THRESHOLD = 0.5;
 
-export type DrawerPhase = "primary" | "supplement";
+/** primary=当前主货源 SKU 对照；replace=整款换绑；supplement=缺口规格追加第二货源。 */
+export type DrawerPhase = "primary" | "replace" | "supplement";
 
 export interface VariantSkuHit {
   variant: SkuVariant;

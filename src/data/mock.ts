@@ -10,8 +10,7 @@ import type {
   SyncSummary,
 } from "@/lib/types";
 
-export const APP_NAME = "Tangbuy";
-export const APP_SUBTITLE = "一件代发工作台";
+export { APP_NAME, APP_SUBTITLE, APP_TAGLINE, APP_FULL_NAME } from "@/lib/brand";
 
 export const HIGH_MATCH_THRESHOLD = 85;
 export const MEDIUM_MATCH_THRESHOLD = 70;

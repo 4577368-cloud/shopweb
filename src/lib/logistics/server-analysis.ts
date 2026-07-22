@@ -15,6 +15,48 @@ import type {
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
 
+const UPSTREAM_RETRIES = 2;
+const UPSTREAM_TIMEOUT_MS = 45_000;
+
+async function fetchUpstream(
+  url: string,
+  init?: RequestInit
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= UPSTREAM_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...(init?.headers ?? {}),
+        },
+      });
+      if (
+        res.ok ||
+        attempt === UPSTREAM_RETRIES ||
+        ![502, 503, 504, 408, 429].includes(res.status)
+      ) {
+        return res;
+      }
+      lastError = new Error(`上游请求失败 ${res.status}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === UPSTREAM_RETRIES) break;
+    } finally {
+      clearTimeout(timer);
+    }
+    await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("上游物流服务暂时不可用，请稍后重试");
+}
+
 const ACCEPTABLE: Set<LogisticsDecisionStatus> = new Set([
   "ready_for_quote",
   "needs_review",
@@ -116,10 +158,15 @@ export async function loadLogisticsAnalysis(
   const analyzeUrl = `${API_BASE}/api/plugin/logistics/${force ? "analyze" : "analysis"}?shopName=${encodeURIComponent(shopName)}${force ? "&force=true" : ""}`;
   const skuOverviewUrl = `${API_BASE}/api/plugin/match/sku/overview?shopName=${encodeURIComponent(shopName)}`;
 
-  const analysisRes = await fetch(analyzeUrl, {
-    method: force ? "POST" : "GET",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-  });
+  const includeSku = options?.includeSkuOverview !== false;
+  const [analysisRes, skuRes] = await Promise.all([
+    fetchUpstream(analyzeUrl, {
+      method: force ? "POST" : "GET",
+    }),
+    includeSku
+      ? fetchUpstream(skuOverviewUrl, { method: "GET" })
+      : Promise.resolve(null),
+  ]);
 
   const analysisText = await analysisRes.text();
   let analysisRaw: unknown;
@@ -130,21 +177,21 @@ export async function loadLogisticsAnalysis(
   }
 
   if (!analysisRes.ok) {
-    throw new Error(
+    const detail =
       typeof analysisRaw === "object" && analysisRaw && "message" in analysisRaw
         ? String((analysisRaw as { message?: string }).message)
-        : `上游请求失败 ${analysisRes.status}`
-    );
+        : analysisText?.slice(0, 200) || `HTTP ${analysisRes.status}`;
+    throw new Error(`物流分析上游失败（${analysisRes.status}）：${detail}`);
   }
 
   const legacy = analysisRaw as LegacyLogisticsAnalysis;
+  if (!legacy || typeof legacy !== "object") {
+    throw new Error("物流分析上游返回了无效数据");
+  }
   let skuOverview: SkuProductOverview[] = [];
 
-  if (options?.includeSkuOverview !== false) {
+  if (includeSku && skuRes) {
     try {
-      const skuRes = await fetch(skuOverviewUrl, {
-        headers: { Accept: "application/json" },
-      });
       const skuText = await skuRes.text();
       const skuRaw = skuText ? JSON.parse(skuText) : undefined;
       if (skuRes.ok && Array.isArray(skuRaw)) {

@@ -169,10 +169,36 @@ const pricingDiagnosticSkill: ProductSkill = {
 
 // ── Skill 注册表 ─────────────────────────────────────────────────
 
+// ── Skill 4: 商品上下架 ────────────────────────────────────────────
+
+const listingStatusSkill: ProductSkill = {
+  id: "listing_status",
+  name: "商品上下架",
+  description: "将 Shopify 商品放到草稿或归档下架",
+  commandIds: [
+    "draft_product",
+    "archive_product",
+    "batch_draft_products",
+    "batch_archive_products",
+  ],
+
+  isActive: () => true,
+  progress: () => null,
+
+  nextSteps: () => [
+    {
+      label: "查看全部商品",
+      kind: "set_shop_filter",
+      shopFilter: "all",
+    },
+  ],
+};
+
 export const PRODUCT_SKILLS: ProductSkill[] = [
   cleanupPendingSkill,
   batchTranslateSkill,
   pricingDiagnosticSkill,
+  listingStatusSkill,
 ];
 
 export const SKILL_MAP = new Map<string, ProductSkill>();
@@ -228,6 +254,23 @@ export function buildSkillFeedback(
       break;
     }
     case "batch_update_listing_price": {
+      const total = opts?.totalCount ?? plan.draft.params.batchProductIds?.length ?? 0;
+      const success = opts?.successCount ?? total;
+      const failed = opts?.failedCount ?? 0;
+      if (total > 0) {
+        detailLines.push(`已处理 ${total} 个商品`);
+        if (success > 0) detailLines.push(`成功 ${success} 个`);
+        if (failed > 0) detailLines.push(`失败 ${failed} 个`);
+      }
+      break;
+    }
+    case "draft_product":
+    case "archive_product": {
+      detailLines.push(`已更新「${plan.targetLabel}」的 Shopify 状态`);
+      break;
+    }
+    case "batch_draft_products":
+    case "batch_archive_products": {
       const total = opts?.totalCount ?? plan.draft.params.batchProductIds?.length ?? 0;
       const success = opts?.successCount ?? total;
       const failed = opts?.failedCount ?? 0;

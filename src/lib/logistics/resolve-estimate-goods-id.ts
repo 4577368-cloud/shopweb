@@ -274,56 +274,65 @@ export async function backfillProductSourceIdentity(input: {
   tangbuySkuId?: string | null;
   detailUrl?: string | null;
   titleHint?: string | null;
+  /** Skip slow pool polling on bulk page load — resolve on demand later. */
+  skipPoolRetry?: boolean;
 }): Promise<ProductSourceIdentity | null> {
-  const existing = readProductSourceIdentity(input.shopName, input.thirdPlatformItemId);
-  if (existing?.internalGoodsId?.trim()) return existing;
+  try {
+    const existing = readProductSourceIdentity(input.shopName, input.thirdPlatformItemId);
+    if (existing?.internalGoodsId?.trim()) return existing;
 
-  const retried = existing
-    ? await retryPendingPoolResolve(existing, {
+    const retried =
+      existing && !input.skipPoolRetry
+        ? await retryPendingPoolResolve(existing, {
+            tangbuySkuId: input.tangbuySkuId,
+            titleHint: input.titleHint,
+            shopName: input.shopName,
+          })
+        : null;
+    if (retried?.internalGoodsId?.trim()) {
+      await persistIdentity(input.shopName, input.thirdPlatformItemId, retried);
+      return retried;
+    }
+
+    const offerId =
+      retried?.offerId1688?.trim() ||
+      existing?.offerId1688?.trim() ||
+      extractOfferIdFromUrl(input.detailUrl) ||
+      (isOfferId1688(input.tangbuyProductId) ? input.tangbuyProductId!.trim() : null);
+
+    if (offerId && !isInternalGoodsId(input.tangbuyProductId)) {
+      const afterPool = await ensurePoolIngestForLogistics({
+        offerId1688: offerId,
         tangbuySkuId: input.tangbuySkuId,
         titleHint: input.titleHint,
         shopName: input.shopName,
-      })
-    : null;
-  if (retried?.internalGoodsId?.trim()) {
-    await persistIdentity(input.shopName, input.thirdPlatformItemId, retried);
-    return retried;
-  }
+        existingIdentity: retried ?? existing ?? undefined,
+      });
+      if (afterPool.internalGoodsId || afterPool.poolIngestStatus) {
+        await persistIdentity(input.shopName, input.thirdPlatformItemId, afterPool);
+        return afterPool;
+      }
+    }
 
-  const offerId =
-    retried?.offerId1688?.trim() ||
-    existing?.offerId1688?.trim() ||
-    extractOfferIdFromUrl(input.detailUrl) ||
-    (isOfferId1688(input.tangbuyProductId) ? input.tangbuyProductId!.trim() : null);
-
-  if (offerId && !isInternalGoodsId(input.tangbuyProductId)) {
-    const afterPool = await ensurePoolIngestForLogistics({
-      offerId1688: offerId,
+    const identity = await resolveProductSourceIdentity({
+      tangbuyProductId: input.tangbuyProductId,
       tangbuySkuId: input.tangbuySkuId,
+      detailUrl: input.detailUrl,
       titleHint: input.titleHint,
       shopName: input.shopName,
-      existingIdentity: retried ?? existing ?? undefined,
     });
-    if (afterPool.internalGoodsId || afterPool.poolIngestStatus) {
-      await persistIdentity(input.shopName, input.thirdPlatformItemId, afterPool);
-      return afterPool;
+
+    if (identity.internalGoodsId || identity.offerId1688) {
+      const merged = retried ? { ...identity, ...retried } : identity;
+      await persistIdentity(input.shopName, input.thirdPlatformItemId, merged);
+      return merged;
     }
+    return retried;
+  } catch {
+    return (
+      readProductSourceIdentity(input.shopName, input.thirdPlatformItemId) ?? null
+    );
   }
-
-  const identity = await resolveProductSourceIdentity({
-    tangbuyProductId: input.tangbuyProductId,
-    tangbuySkuId: input.tangbuySkuId,
-    detailUrl: input.detailUrl,
-    titleHint: input.titleHint,
-    shopName: input.shopName,
-  });
-
-  if (identity.internalGoodsId || identity.offerId1688) {
-    const merged = retried ? { ...identity, ...retried } : identity;
-    await persistIdentity(input.shopName, input.thirdPlatformItemId, merged);
-    return merged;
-  }
-  return retried;
 }
 
 export { isInternalGoodsId, isOfferId1688, resolveInternalGoodsIdByOfferSku };

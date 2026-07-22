@@ -1,6 +1,7 @@
 import { api } from "@/lib/api";
 import {
   identityFromSearchCandidate,
+  resolveConfirmDetailUrl,
   resolveConfirmOfferProductId,
 } from "@/lib/catalog-product-resolve";
 import { candidateStorageKey } from "@/lib/batch-link/image-match";
@@ -59,10 +60,17 @@ export async function confirmCandidateBinding(
     mergedIdentity
   );
 
-  const confirmDetailUrl =
-    mergedIdentity.tangbuyCatalogUrl?.trim() ||
-    mergedIdentity.offerDetailUrl?.trim() ||
-    candidate.detailUrl;
+  const confirmDetailUrl = resolveConfirmDetailUrl(
+    {
+      ...candidate,
+      internalGoodsId: mergedIdentity.internalGoodsId ?? candidate.internalGoodsId,
+      tangbuyCatalogUrl: mergedIdentity.tangbuyCatalogUrl ?? candidate.tangbuyCatalogUrl,
+      catalogItemId: mergedIdentity.catalogItemId ?? candidate.catalogItemId,
+      dataSource: mergedIdentity.dataSource ?? candidate.dataSource,
+    },
+    mergedIdentity,
+    offerProductId
+  );
 
   const key = candidateStorageKey(candidate);
   const imageScore =

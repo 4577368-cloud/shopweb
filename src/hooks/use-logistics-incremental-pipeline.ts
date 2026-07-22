@@ -13,7 +13,8 @@ import {
 import type { LogisticsAnalysis, VariantLogisticsDecision } from "@/lib/types";
 
 type FetchQuotesFn = (
-  variantIds?: string[]
+  variantIds?: string[],
+  signal?: AbortSignal
 ) => Promise<Map<string, LogisticsEstimateResult> | null>;
 
 type AcceptFn = (
@@ -45,6 +46,12 @@ export function useLogisticsIncrementalPipeline({
   const ranScopeRef = useRef<string | null>(null);
   const runningRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const cancelledRef = useRef(false);
+
+  const isCancelled = useCallback(
+    () => cancelledRef.current || abortRef.current?.signal.aborted === true,
+    []
+  );
 
   const pipelineRunning = progress.phase === "running";
   const pipelineActive =
@@ -89,6 +96,7 @@ export function useLogisticsIncrementalPipeline({
       }
 
       abortRef.current = new AbortController();
+      cancelledRef.current = false;
       runningRef.current = true;
       setProgress({
         phase: "running",
@@ -111,45 +119,43 @@ export function useLogisticsIncrementalPipeline({
 
       try {
         for (let i = 0; i < works.length; i += 1) {
-          if (abortRef.current?.signal.aborted) {
-            setProgress((prev) => ({
-              ...prev,
-              phase: "done",
-              currentSkuStep: null,
-              stats: { ...stats },
-            }));
+          if (isCancelled()) {
             return;
           }
 
           const work = works[i]!;
-          setProgress((prev) => ({
-            ...prev,
-            phase: "running",
-            productIndex: i + 1,
-            productTotal: works.length,
-            currentProductId: work.productId,
-            currentProductTitle: work.title,
-            stats: { ...stats },
-          }));
+          if (!isCancelled()) {
+            setProgress((prev) => ({
+              ...prev,
+              phase: "running",
+              productIndex: i + 1,
+              productTotal: works.length,
+              currentProductId: work.productId,
+              currentProductTitle: work.title,
+              stats: { ...stats },
+            }));
+          }
 
           let productQuotes = latestQuotes;
 
           if (work.quoteVariantIds.length > 0) {
-            if (abortRef.current?.signal.aborted) {
-              setProgress((prev) => ({
-                ...prev,
-                phase: "done",
-                currentSkuStep: null,
-                stats: { ...stats },
-              }));
+            if (isCancelled()) {
               return;
             }
 
-            setProgress((prev) => ({
-              ...prev,
-              currentSkuStep: "quote",
-            }));
-            const fetched = await fetchQuotesForVariants(work.quoteVariantIds);
+            if (!isCancelled()) {
+              setProgress((prev) => ({
+                ...prev,
+                currentSkuStep: "quote",
+              }));
+            }
+            const fetched = await fetchQuotesForVariants(
+              work.quoteVariantIds,
+              abortRef.current?.signal
+            );
+            if (isCancelled()) {
+              return;
+            }
             if (fetched === null) {
               stats.failed += work.quoteVariantIds.length;
               continue;
@@ -162,13 +168,7 @@ export function useLogisticsIncrementalPipeline({
             }
           }
 
-          if (abortRef.current?.signal.aborted) {
-            setProgress((prev) => ({
-              ...prev,
-              phase: "done",
-              currentSkuStep: null,
-              stats: { ...stats },
-            }));
+          if (isCancelled()) {
             return;
           }
 
@@ -179,11 +179,13 @@ export function useLogisticsIncrementalPipeline({
           );
 
           if (autoAcceptIds.length > 0) {
-            setProgress((prev) => ({
-              ...prev,
-              currentSkuStep: "accept",
-              stats: { ...stats },
-            }));
+            if (!isCancelled()) {
+              setProgress((prev) => ({
+                ...prev,
+                currentSkuStep: "accept",
+                stats: { ...stats },
+              }));
+            }
 
             const quotes: NonNullable<LogisticsAcceptDecisionRequest["quotes"]> =
               {};
@@ -199,6 +201,9 @@ export function useLogisticsIncrementalPipeline({
 
             const acceptIds = Object.keys(quotes);
             if (acceptIds.length > 0) {
+              if (isCancelled()) {
+                return;
+              }
               try {
                 const result = await acceptDecision({
                   shopName,
@@ -214,10 +219,16 @@ export function useLogisticsIncrementalPipeline({
             }
           }
 
-          setProgress((prev) => ({
-            ...prev,
-            stats: { ...stats },
-          }));
+          if (!isCancelled()) {
+            setProgress((prev) => ({
+              ...prev,
+              stats: { ...stats },
+            }));
+          }
+        }
+
+        if (isCancelled()) {
+          return;
         }
 
         ranScopeRef.current = templateScopeKey;
@@ -232,13 +243,7 @@ export function useLogisticsIncrementalPipeline({
           showToast(`已自动确认 ${stats.autoAccepted} 个普货 SKU 物流方案`);
         }
       } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") {
-          setProgress((prev) => ({
-            ...prev,
-            phase: "done",
-            currentSkuStep: null,
-            stats: { ...stats },
-          }));
+        if (isCancelled() || (err instanceof Error && err.name === "AbortError")) {
           return;
         }
         const message =
@@ -263,6 +268,7 @@ export function useLogisticsIncrementalPipeline({
       acceptDecision,
       setAnalysis,
       showToast,
+      isCancelled,
     ]
   );
 
@@ -275,8 +281,13 @@ export function useLogisticsIncrementalPipeline({
   }, []);
 
   const cancelPipeline = useCallback(() => {
+    if (!runningRef.current && progress.phase !== "running") return;
+    cancelledRef.current = true;
     abortRef.current?.abort();
-  }, []);
+    runningRef.current = false;
+    setProgress(INITIAL_PIPELINE_PROGRESS);
+    showToast("已取消运费预估");
+  }, [progress.phase, showToast]);
 
   return {
     progress,

@@ -11,6 +11,7 @@ export type AgentId =
 
 export type SuggestedActionKind =
   | "open_pricing_drawer"
+  | "open_template"
   | "set_tab"
   | "set_shop_filter"
   | "focus_product"

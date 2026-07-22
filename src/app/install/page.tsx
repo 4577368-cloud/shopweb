@@ -22,7 +22,8 @@ import {
   launchShopifyInstall,
 } from "@/lib/shopify-install";
 
-const APP_NAME = "Tangbuy";
+import { AppLogo } from "@/components/brand/app-logo";
+import { APP_FULL_NAME } from "@/lib/brand";
 
 const trustSignals = [
   "官方 OAuth 授权",
@@ -105,15 +106,9 @@ export default function InstallPage() {
       {/* Top bar */}
       <header className="border-b border-hairline bg-surface">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3.5">
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-[13px] font-bold text-white">
-              T
-            </span>
-            <span className="text-[15px] font-semibold tracking-tight text-ink">
-              {APP_NAME} <span className="text-ink-subtle">·</span>{" "}
-              <span className="text-brand-strong">AI Copilot</span>
-            </span>
-            <span className="ml-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+          <div className="flex items-center gap-2.5">
+            <AppLogo variant="header" size="sm" />
+            <span className="ml-0.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
               Developer Preview
             </span>
           </div>
@@ -132,7 +127,7 @@ export default function InstallPage() {
           <div>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-2.5 py-1 text-[11px] font-medium text-ink-muted">
               <Sparkles className="h-3.5 w-3.5 text-brand" />
-              Shopify × Tangbuy 一件代发 AI Copilot
+              Shopify × Tangbuy Smart Match
             </span>
             <h1 className="mt-4 text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl">
               连接 Shopify，
@@ -326,7 +321,7 @@ export default function InstallPage() {
         </section>
 
         <footer className="mt-10 border-t border-hairline pt-5 text-center text-[11px] text-ink-subtle">
-          Tangbuy · AI Copilot — Developer Preview。仅供测试店铺接入，非 Shopify 官方商店页面。
+          {APP_FULL_NAME} — Developer Preview。仅供测试店铺接入，非 Shopify 官方商店页面。
         </footer>
       </div>
     </main>

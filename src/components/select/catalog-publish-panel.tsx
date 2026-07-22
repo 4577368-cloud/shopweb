@@ -33,6 +33,7 @@ import type {
   SavedCatalogSearch,
 } from "@/lib/catalog-sourcing-types";
 import { resolvePublishSnapshot } from "@/lib/tangbuy-mall-gateway";
+import { markCatalogPublished } from "@/lib/batch-link/publish-source";
 import type { CatalogRecommendation, PricingTemplate } from "@/lib/types";
 
 const PAGE_SIZE = 30;
@@ -364,6 +365,9 @@ export function CatalogPublishPanel({
       }));
       onActivity?.();
       if (result.publishStatus === "PUBLISHED") {
+        if (result.shopifyProductId?.trim()) {
+          markCatalogPublished(shopName, result.shopifyProductId.trim());
+        }
         showToast("上架成功");
       } else if (result.publishStatus === "PUBLISHING") {
         showToast("上架进行中");

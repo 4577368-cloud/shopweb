@@ -49,11 +49,11 @@ export function planLogisticsCommand(
       if (totalCount === 0) {
         return {
           draft,
-          operation: "批量确认物流方案",
-          targetLabel: "全部可报价项",
+          operation: "批量接受方案",
+          targetLabel: "待确认方案",
           detailLines: [],
           executable: false,
-          clarify: "当前没有可确认的可报价项，请先拉取线路报价。",
+          clarify: "当前没有待确认的报价方案，请先完成运费预估。",
         };
       }
       return {
@@ -65,11 +65,11 @@ export function planLogisticsCommand(
             ...draft.params,
           },
         },
-        operation: "批量确认物流方案",
-        targetLabel: `全部可报价项 · ${totalCount} 个`,
+        operation: "批量接受方案",
+        targetLabel: `待确认方案 · ${totalCount} 个`,
         detailLines: [
-          `将确认 ${totalCount} 个可报价项的物流方案`,
-          "接受 AI 推荐的线路，自动设置为已确认状态",
+          `将接受 ${totalCount} 个已有线路报价的 SKU 方案`,
+          "采用 AI 推荐线路，标记为已确认",
         ],
         executable: true,
       };
@@ -80,11 +80,11 @@ export function planLogisticsCommand(
           ...draft,
           targetScope: "all",
         },
-        operation: "刷新线路报价",
+        operation: "运费预估",
         targetLabel: "全部可报价项",
         detailLines: [
-          "将从 Tangbuy 重新拉取线路报价",
-          "更新所有规格的运费估算和推荐线路",
+          "将从 Tangbuy 获取各规格的线路运费",
+          "更新推荐线路与运费估算",
         ],
         executable: true,
       };
@@ -201,9 +201,9 @@ export function commandRequiresConfirmation(plan: LogisticsCommandPlan): boolean
 export function commandOperationLabel(intent: LogisticsCommandDraft["intent"]): string {
   switch (intent) {
     case "accept_all_ready":
-      return "批量确认物流方案";
+      return "批量接受方案";
     case "fetch_quotes":
-      return "刷新线路报价";
+      return "运费预估";
     case "open_template":
       return "打开物流模板";
     case "focus_issues":
@@ -237,7 +237,7 @@ export function resolveLogisticsCommandExecution(
       return { type: "open_template" };
     }
     case "focus_issues": {
-      return { type: "focus_status", status: "needs_review" };
+      return { type: "set_filter", filterMode: "issues" };
     }
     case "focus_status": {
       const status = plan.draft.params.status ?? "needs_review";

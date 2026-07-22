@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { buildEmptyAnalysis } from "@/lib/logistics/decision-engine";
 import { loadLogisticsAnalysis } from "@/lib/logistics/server-analysis";
-import type { LogisticsAnalysis } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "物流服务暂时不可用，请稍后重试";
+}
 
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -17,15 +19,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "缺少 shopName 参数" }, { status: 400 });
   }
 
-  if (!API_BASE) {
-    const empty = buildEmptyAnalysis(shopName) as LogisticsAnalysis;
-    return NextResponse.json(empty);
-  }
-
   try {
     const result = await loadLogisticsAnalysis(shopName, force);
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json(buildEmptyAnalysis(shopName), { status: 502 });
+    const message = errorMessage(error);
+    console.error("[logistics/analyze]", shopName, message, error);
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

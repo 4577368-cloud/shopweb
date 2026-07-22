@@ -49,6 +49,13 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import { mergeListingPriceRow, writeShopListingPrice } from "@/lib/shop-product-write";
 import {
+  formatStatusTransition,
+  LISTING_STATUS_LABELS,
+  normalizeShopStatus,
+  writeShopProductStatus,
+  type ShopifyListingStatusTarget,
+} from "@/lib/shop-product-status";
+import {
   ShopProductsPanel,
   type ShopFilter,
   type AgentIntentRequest,
@@ -203,7 +210,7 @@ function SelectContent() {
         return;
       }
       const baseline = readProductBaseline(shopName);
-      setNewArrivalStats(computeNewArrivalStats(products, bindings, baseline));
+      setNewArrivalStats(computeNewArrivalStats(products, bindings, baseline, shopName));
     },
     [shopName, emptyNewArrivals]
   );
@@ -220,6 +227,7 @@ function SelectContent() {
   );
 
   const loadSummary = useCallback(async () => {
+    void api.backfillPublishedBindings(shopName).catch(() => null);
     const [products, bindings, tpl] = await Promise.all([
       api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
       api.listImageBindings(shopName).catch(() => []),
@@ -417,6 +425,7 @@ function SelectContent() {
           productId: p.thirdPlatformItemId,
           title: (p.title ?? "").trim() || p.thirdPlatformItemId,
           bindState,
+          shopStatus: p.status,
         };
       }),
     [shopProducts, bindingsMap]
@@ -909,6 +918,76 @@ function SelectContent() {
     [bumpMirrorRefresh, loadSummary, shopName, showToast]
   );
 
+  const applyLocalProductStatus = useCallback(
+    (productId: string, status: ShopifyListingStatusTarget) => {
+      setShopProducts((prev) =>
+        prev.map((p) =>
+          p.thirdPlatformItemId === productId ? { ...p, status } : p
+        )
+      );
+    },
+    []
+  );
+
+  const executeProductStatusUpdate = useCallback(
+    async (req: {
+      productId: string;
+      productTitle: string;
+      targetStatus: ShopifyListingStatusTarget;
+    }) => {
+      const detail = await writeShopProductStatus(
+        shopName,
+        req.productId,
+        req.targetStatus
+      );
+      applyLocalProductStatus(req.productId, req.targetStatus);
+      bumpMirrorRefresh();
+      await loadSummary();
+      showToast(
+        `已将「${detail.title ?? req.productTitle}」设为 ${LISTING_STATUS_LABELS[req.targetStatus]}`
+      );
+    },
+    [applyLocalProductStatus, bumpMirrorRefresh, loadSummary, shopName, showToast]
+  );
+
+  const executeBatchProductStatusUpdate = useCallback(
+    async (req: {
+      productIds: string[];
+      targetStatus: ShopifyListingStatusTarget;
+      onProgress?: (current: number, total: number, success: number, failed: number) => void;
+    }) => {
+      const { productIds, targetStatus, onProgress } = req;
+      const total = productIds.length;
+      let success = 0;
+      let failed = 0;
+
+      for (let i = 0; i < total; i++) {
+        const productId = productIds[i]!;
+        try {
+          const detail = await api.getShopProductDetail(shopName, productId);
+          if (normalizeShopStatus(detail.status) === targetStatus) {
+            success++;
+            onProgress?.(i + 1, total, success, failed);
+            continue;
+          }
+          await writeShopProductStatus(shopName, productId, targetStatus);
+          applyLocalProductStatus(productId, targetStatus);
+          success++;
+        } catch {
+          failed++;
+        }
+        onProgress?.(i + 1, total, success, failed);
+      }
+
+      bumpMirrorRefresh();
+      await loadSummary();
+      showToast(
+        `批量${LISTING_STATUS_LABELS[targetStatus]}完成：成功 ${success} 个，失败 ${failed} 个`
+      );
+    },
+    [applyLocalProductStatus, bumpMirrorRefresh, loadSummary, shopName, showToast]
+  );
+
   const previewGenerators = useMemo(
     () => ({
       update_product_copy: async (plan: any, shopName: string) => {
@@ -1151,6 +1230,174 @@ function SelectContent() {
           },
         };
       },
+      draft_product: async (plan: any, shopName: string) => {
+        const productId = plan.draft.productId ?? plan.draft.params.productId;
+        const detail = await api.getShopProductDetail(shopName, productId);
+        const title = detail.title ?? plan.targetLabel ?? "商品";
+        const targetStatus: ShopifyListingStatusTarget = "DRAFT";
+        return {
+          sections: [
+            {
+              rows: [
+                {
+                  label: title,
+                  before: normalizeShopStatus(detail.status),
+                  after: targetStatus,
+                },
+              ],
+            },
+          ],
+          extraNote: formatStatusTransition(detail.status, targetStatus),
+          impact: {
+            scope: `修改 1 个商品状态`,
+            durationHint: "约 2 秒",
+            reversible: true,
+            riskNote: "草稿商品前台不可见，可在 Shopify 后台或本系统改回 ACTIVE",
+          },
+          payload: {
+            productId,
+            productTitle: title,
+            targetStatus,
+          },
+        };
+      },
+      archive_product: async (plan: any, shopName: string) => {
+        const productId = plan.draft.productId ?? plan.draft.params.productId;
+        const detail = await api.getShopProductDetail(shopName, productId);
+        const title = detail.title ?? plan.targetLabel ?? "商品";
+        const targetStatus: ShopifyListingStatusTarget = "ARCHIVED";
+        return {
+          sections: [
+            {
+              rows: [
+                {
+                  label: title,
+                  before: normalizeShopStatus(detail.status),
+                  after: targetStatus,
+                },
+              ],
+            },
+          ],
+          extraNote: formatStatusTransition(detail.status, targetStatus),
+          impact: {
+            scope: `修改 1 个商品状态`,
+            durationHint: "约 2 秒",
+            reversible: true,
+            riskNote: "归档后商品将从在售列表移除，需到 Shopify 后台恢复",
+          },
+          payload: {
+            productId,
+            productTitle: title,
+            targetStatus,
+          },
+        };
+      },
+      batch_draft_products: async (plan: any, shopName: string) => {
+        const productIds = plan.draft.params.batchProductIds ?? [];
+        const targetStatus: ShopifyListingStatusTarget = "DRAFT";
+        const totalCount = productIds.length;
+        if (totalCount === 0) throw new Error("没有可处理的商品");
+
+        const sampleCount = Math.min(3, totalCount);
+        const sampleRows: Array<{ label: string; before: string; after: string }> = [];
+        for (let i = 0; i < sampleCount; i++) {
+          const productId = productIds[i];
+          try {
+            const detail = await api.getShopProductDetail(shopName, productId);
+            sampleRows.push({
+              label: detail.title ?? `商品 ${i + 1}`,
+              before: normalizeShopStatus(detail.status),
+              after: targetStatus,
+            });
+          } catch {
+            sampleRows.push({
+              label: `商品 ${i + 1}`,
+              before: "（读取失败）",
+              after: targetStatus,
+            });
+          }
+        }
+
+        return {
+          sections: [
+            {
+              title: `批量放到草稿 · 共 ${totalCount} 个商品`,
+              rows: sampleRows,
+            },
+          ],
+          extraNote:
+            sampleCount < totalCount
+              ? `以上为前 ${sampleCount} 个商品预览，剩余 ${totalCount - sampleCount} 个将改为 DRAFT`
+              : `将全部 ${totalCount} 个 ACTIVE 商品改为 DRAFT`,
+          impact: {
+            scope: `修改 ${totalCount} 个商品状态`,
+            durationHint:
+              totalCount < 60
+                ? `约 ${Math.max(3, totalCount * 2)} 秒`
+                : `约 ${Math.ceil((totalCount * 2) / 60)} 分钟`,
+            reversible: true,
+            riskNote: totalCount > 10 ? "批量下架较多，请确认范围无误" : undefined,
+          },
+          payload: {
+            productIds,
+            targetStatus,
+            totalCount,
+          },
+        };
+      },
+      batch_archive_products: async (plan: any, shopName: string) => {
+        const productIds = plan.draft.params.batchProductIds ?? [];
+        const targetStatus: ShopifyListingStatusTarget = "ARCHIVED";
+        const totalCount = productIds.length;
+        if (totalCount === 0) throw new Error("没有可处理的商品");
+
+        const sampleCount = Math.min(3, totalCount);
+        const sampleRows: Array<{ label: string; before: string; after: string }> = [];
+        for (let i = 0; i < sampleCount; i++) {
+          const productId = productIds[i];
+          try {
+            const detail = await api.getShopProductDetail(shopName, productId);
+            sampleRows.push({
+              label: detail.title ?? `商品 ${i + 1}`,
+              before: normalizeShopStatus(detail.status),
+              after: targetStatus,
+            });
+          } catch {
+            sampleRows.push({
+              label: `商品 ${i + 1}`,
+              before: "（读取失败）",
+              after: targetStatus,
+            });
+          }
+        }
+
+        return {
+          sections: [
+            {
+              title: `批量下架归档 · 共 ${totalCount} 个商品`,
+              rows: sampleRows,
+            },
+          ],
+          extraNote:
+            sampleCount < totalCount
+              ? `以上为前 ${sampleCount} 个商品预览，剩余 ${totalCount - sampleCount} 个将归档下架`
+              : `将全部 ${totalCount} 个 ACTIVE 商品归档下架`,
+          impact: {
+            scope: `修改 ${totalCount} 个商品状态`,
+            durationHint:
+              totalCount < 60
+                ? `约 ${Math.max(3, totalCount * 2)} 秒`
+                : `约 ${Math.ceil((totalCount * 2) / 60)} 分钟`,
+            reversible: true,
+            riskNote: totalCount > 10 ? "批量下架较多，请确认范围无误" : undefined,
+          },
+          payload: {
+            productIds,
+            targetStatus,
+            totalCount,
+          },
+        };
+      },
     }),
     []
   );
@@ -1229,8 +1476,55 @@ function SelectContent() {
           onProgress: p.onProgress,
         });
       },
+      draft_product: async (payload: Record<string, unknown>) => {
+        const p = payload as {
+          productId: string;
+          productTitle: string;
+          targetStatus: ShopifyListingStatusTarget;
+        };
+        await executeProductStatusUpdate(p);
+      },
+      archive_product: async (payload: Record<string, unknown>) => {
+        const p = payload as {
+          productId: string;
+          productTitle: string;
+          targetStatus: ShopifyListingStatusTarget;
+        };
+        await executeProductStatusUpdate(p);
+      },
+      batch_draft_products: async (payload: Record<string, unknown>) => {
+        const p = payload as {
+          productIds: string[];
+          targetStatus: ShopifyListingStatusTarget;
+          onProgress?: (current: number, total: number, success: number, failed: number) => void;
+        };
+        await executeBatchProductStatusUpdate({
+          productIds: p.productIds,
+          targetStatus: p.targetStatus,
+          onProgress: p.onProgress,
+        });
+      },
+      batch_archive_products: async (payload: Record<string, unknown>) => {
+        const p = payload as {
+          productIds: string[];
+          targetStatus: ShopifyListingStatusTarget;
+          onProgress?: (current: number, total: number, success: number, failed: number) => void;
+        };
+        await executeBatchProductStatusUpdate({
+          productIds: p.productIds,
+          targetStatus: p.targetStatus,
+          onProgress: p.onProgress,
+        });
+      },
     }),
-    [executeListingPriceUpdate, executeProductCopyUpdate, executeBatchProductCopyUpdate, executeBatchListingPriceUpdate]
+    [
+      executeListingPriceUpdate,
+      executeProductCopyUpdate,
+      executeBatchProductCopyUpdate,
+      executeBatchListingPriceUpdate,
+      executeProductStatusUpdate,
+      executeBatchProductStatusUpdate,
+    ]
   );
 
   // Real reset: soft-delete stored template so isDefault becomes true again.

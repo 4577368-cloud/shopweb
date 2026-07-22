@@ -2,197 +2,111 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  AlertCircle,
-  AlertTriangle,
-  CheckCircle2,
-  Circle,
-  Loader2,
-} from "lucide-react";
-import { APP_NAME, APP_SUBTITLE } from "@/data/mock";
+import { useEffect } from "react";
+import { CheckCircle2, Circle } from "lucide-react";
+import { AppLogo } from "@/components/brand/app-logo";
 import { useOnboarding } from "@/context/onboarding-context";
 import { ShopSwitcher } from "@/components/workbench/shop-switcher";
 import { cn } from "@/lib/utils";
-import type { LogisticsStepDisplay } from "@/lib/logistics/completion-gate";
 import type { StepStatus } from "@/lib/types";
+import type { WorkflowStepSnapshot } from "@/lib/workflow-step-snapshots";
 
 function StepIndicator({
-  status,
   order,
-  logisticsDisplay,
+  completed,
+  current,
 }: {
-  status: StepStatus;
   order: number;
-  logisticsDisplay?: LogisticsStepDisplay | null;
+  completed: boolean;
+  current: boolean;
 }) {
-  if (logisticsDisplay) {
-    return <LogisticsStepIndicator display={logisticsDisplay} order={order} />;
-  }
-
-  const completed = status === "completed";
-  const active = status === "in_progress" || status === "pending_confirm";
-  const errored = status === "error";
-
   return (
     <div
       className={cn(
-        "relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+        "relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums",
         completed && "bg-brand text-white",
-        active && "bg-brand text-white ring-4 ring-brand-soft",
-        errored && "bg-red-500 text-white",
-        !completed && !active && !errored && "border border-hairline bg-surface text-ink-subtle"
+        current && !completed && "bg-brand text-white ring-4 ring-brand-soft",
+        !completed && !current && "border border-hairline bg-surface text-ink-subtle"
       )}
     >
-      {completed ? (
-        <CheckCircle2 className="h-4 w-4" />
-      ) : errored ? (
-        <AlertCircle className="h-3.5 w-3.5" />
-      ) : (
-        order
-      )}
+      {completed ? <CheckCircle2 className="h-4 w-4" /> : order}
     </div>
   );
 }
 
-function LogisticsStepIndicator({
-  display,
-  order,
-}: {
-  display: LogisticsStepDisplay;
-  order: number;
-}) {
-  switch (display) {
-    case "running":
-      return (
-        <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white ring-4 ring-sky-100">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        </div>
-      );
-    case "blocked":
-      return (
-        <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-500 text-white">
-          <AlertCircle className="h-3.5 w-3.5" />
-        </div>
-      );
-    case "warning":
-      return (
-        <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white ring-4 ring-amber-100">
-          <AlertTriangle className="h-3.5 w-3.5" />
-        </div>
-      );
-    case "ready":
-      return (
-        <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-white ring-4 ring-brand-soft">
-          <CheckCircle2 className="h-4 w-4" />
-        </div>
-      );
-    default:
-      return (
-        <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-hairline bg-surface text-[11px] font-semibold text-ink-subtle">
-          {order}
-        </div>
-      );
-  }
-}
-
-function statusLabel(status: StepStatus): { text: string; tone: string } {
-  switch (status) {
-    case "completed":
-      return { text: "已完成", tone: "text-brand" };
-    case "in_progress":
-    case "pending_confirm":
-      return { text: "进行中", tone: "text-brand" };
-    case "error":
-      return { text: "异常", tone: "text-red-500" };
-    default:
-      return { text: "待开始", tone: "text-ink-subtle" };
-  }
-}
-
-function logisticsDisplayLabel(display: LogisticsStepDisplay): {
-  text: string;
-  tone: string;
-} {
-  switch (display) {
-    case "running":
-      return { text: "匹配中", tone: "text-sky-700" };
-    case "blocked":
-      return { text: "有阻塞", tone: "text-red-600" };
-    case "warning":
-      return { text: "有例外", tone: "text-amber-700" };
-    case "ready":
-      return { text: "可同步", tone: "text-brand" };
-    default:
-      return { text: "待开始", tone: "text-ink-subtle" };
-  }
+function isSnapshotInProgress(snapshot: WorkflowStepSnapshot): boolean {
+  return (
+    snapshot.statusLabel === "进行中" ||
+    snapshot.statusLabel === "匹配中" ||
+    snapshot.statusLabel === "待处理" ||
+    snapshot.statusLabel === "待配置" ||
+    snapshot.statusLabel === "待报价" ||
+    snapshot.statusLabel === "可开始" ||
+    snapshot.statusLabel === "同步中" ||
+    snapshot.statusLabel === "加载中"
+  );
 }
 
 /**
- * Left workflow rail — prototype-aligned timeline with green active step.
+ * Left workflow rail — navigation first: every step is always clickable.
  */
 export function StepSidebar() {
   const pathname = usePathname();
   const {
     steps,
     syncCompleted,
-    syncPhase,
     isAuthorized,
-    logisticsStepSnapshot,
+    workflowStepSnapshots,
+    workflowProgressPercent,
+    refreshWorkflowProgress,
   } = useOnboarding();
 
-  const completedCount = steps.filter((s) => s.status === "completed").length;
-  const progress = syncCompleted
-    ? 100
-    : Math.round((completedCount / (steps.length + 1)) * 100);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshWorkflowProgress();
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [pathname, refreshWorkflowProgress]);
 
-  const syncStatus: StepStatus = syncCompleted
-    ? "completed"
-    : syncPhase === "syncing"
-      ? "in_progress"
-      : syncPhase === "ready"
-        ? "pending_confirm"
-        : "not_started";
+  const progress = syncCompleted ? 100 : workflowProgressPercent;
+  const syncSnapshot = workflowStepSnapshots.sync;
 
   const navItems: {
     id: string;
     order: number;
     title: string;
-    description: string;
     href: string;
-    status: StepStatus;
+    snapshot: WorkflowStepSnapshot;
   }[] = [
     ...steps.map((s) => ({
       id: s.id,
       order: s.order,
       title: s.title,
-      description: s.description,
       href: s.href,
-      status: s.status,
+      snapshot:
+        workflowStepSnapshots[s.id] ??
+        ({
+          statusLabel: "待开始",
+          statusTone: "text-ink-subtle",
+          description: s.description,
+        } satisfies WorkflowStepSnapshot),
     })),
     {
       id: "sync",
       order: steps.length + 1,
       title: "同步到店铺",
-      description: "写入映射与履约配置",
       href: "/sync",
-      status: syncStatus,
+      snapshot: syncSnapshot,
     },
   ];
 
   return (
     <aside className="flex h-full w-[15.5rem] shrink-0 flex-col border-r border-hairline bg-surface">
       <div className="px-4 py-4">
-        <Link href={isAuthorized ? "/" : "/authorize"} className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-sm font-bold text-white shadow-sm">
-            T
-          </span>
-          <span className="min-w-0">
-            <span className="block text-[14px] font-semibold tracking-tight text-ink">
-              {APP_NAME}
-            </span>
-            <span className="block text-[11px] text-brand-strong">{APP_SUBTITLE}</span>
-          </span>
-        </Link>
+        <AppLogo
+          variant="sidebar"
+          href={isAuthorized ? "/" : "/authorize"}
+        />
       </div>
 
       <ShopSwitcher />
@@ -210,32 +124,21 @@ export function StepSidebar() {
         </div>
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" aria-label="开店流程导航">
         <p className="mb-2 px-1 text-[11px] font-medium text-ink-subtle">开店流程</p>
         <ul className="space-y-0.5">
           {navItems.map((step, index) => {
-            const active = pathname === step.href;
-            const isLogistics = step.id === "logistics";
-            const logisticsDisplay =
-              isLogistics && logisticsStepSnapshot
-                ? logisticsStepSnapshot.display
-                : null;
-            const label =
-              isLogistics && logisticsStepSnapshot
-                ? {
-                    text: logisticsStepSnapshot.label,
-                    tone: logisticsDisplayLabel(logisticsStepSnapshot.display).tone,
-                  }
-                : statusLabel(step.status);
-            const completed =
-              step.status === "completed" &&
-              (!isLogistics || logisticsDisplay === "ready");
+            const current = pathname === step.href;
+            const snapshot = step.snapshot;
+            const completed = snapshot.statusLabel === "已完成";
+            const inProgress = isSnapshotInProgress(snapshot);
+
             return (
               <li key={step.id} className="relative">
                 {index < navItems.length - 1 ? (
                   <span
                     className={cn(
-                      "absolute left-[1.34rem] top-8 z-0 h-[calc(100%-0.5rem)] w-px",
+                      "pointer-events-none absolute left-[1.34rem] top-8 z-0 h-[calc(100%-0.5rem)] w-px",
                       completed ? "bg-brand/35" : "bg-hairline"
                     )}
                     aria-hidden
@@ -243,42 +146,40 @@ export function StepSidebar() {
                 ) : null}
                 <Link
                   href={step.href}
+                  aria-current={current ? "page" : undefined}
+                  title={`前往：${step.title}`}
                   className={cn(
-                    "relative z-[1] flex gap-2.5 rounded-[var(--radius-control)] px-2 py-2.5 transition-colors",
-                    active
+                    "group relative z-[1] flex cursor-pointer gap-2.5 rounded-[var(--radius-control)] px-2 py-2 transition-colors",
+                    current
                       ? "bg-brand-soft/80 ring-1 ring-brand/10"
                       : "hover:bg-surface-muted/80"
                   )}
                 >
-                  <StepIndicator
-                    status={step.status}
-                    order={step.order}
-                    logisticsDisplay={logisticsDisplay}
-                  />
+                  <StepIndicator order={step.order} completed={completed} current={current} />
                   <div className="min-w-0 flex-1">
                     <span
                       className={cn(
-                        "block text-[13px] font-medium leading-5",
-                        active ? "text-brand-strong" : "text-ink"
+                        "block text-[13px] font-medium leading-5 transition-colors",
+                        current
+                          ? "text-brand-strong"
+                          : "text-ink group-hover:text-brand-strong"
                       )}
                     >
                       {step.order}. {step.title}
                     </span>
-                    <p className="mt-0.5 line-clamp-1 text-[11px] leading-4 text-ink-muted">
-                      {step.description}
+                    <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-ink-muted">
+                      {snapshot.description}
                     </p>
                     <span
                       className={cn(
                         "mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium",
-                        label.tone
+                        snapshot.statusTone
                       )}
                     >
-                      {(step.status === "in_progress" ||
-                        step.status === "pending_confirm" ||
-                        logisticsDisplay === "running") && (
+                      {inProgress && !completed ? (
                         <Circle className="h-1.5 w-1.5 fill-current" />
-                      )}
-                      {label.text}
+                      ) : null}
+                      {snapshot.statusLabel}
                     </span>
                   </div>
                 </Link>

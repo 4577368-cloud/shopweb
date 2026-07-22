@@ -312,7 +312,7 @@ export function SkuAgentPanel({
           />
           <Button
             size="sm"
-            className="h-8 px-2"
+            className="h-7 w-7 px-2"
             onClick={handleSubmit}
             disabled={loading || !input.trim()}
           >

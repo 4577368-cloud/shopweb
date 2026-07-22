@@ -9,8 +9,8 @@ const STEP_LABEL: Record<
   NonNullable<LogisticsPipelineProgress["currentSkuStep"]>,
   string
 > = {
-  quote: "拉取线路报价",
-  accept: "自动确认普货方案",
+  quote: "运费预估",
+  accept: "自动确认（普货）",
 };
 
 export function LogisticsPipelineTaskCard({
@@ -89,15 +89,15 @@ export function LogisticsPipelineTaskCard({
             type="button"
             size="sm"
             variant="secondary"
-            className="ml-auto h-6 w-6 px-0"
+            className="relative z-10 ml-auto h-7 w-7 px-0"
             onClick={isError ? onRetry : onCancel}
             title={isError ? "重新匹配" : "取消"}
             aria-label={isError ? "重新匹配" : "取消"}
           >
             {isError ? (
-              <RefreshCw className="h-3 w-3" />
+              <RefreshCw className="h-3.5 w-3.5" />
             ) : (
-              <X className="h-3 w-3" />
+              <X className="h-3.5 w-3.5" />
             )}
           </Button>
         ) : null}
@@ -107,7 +107,7 @@ export function LogisticsPipelineTaskCard({
         {isDone
           ? `匹配完成 · 自动确认 ${progress.stats.autoAccepted} · 待你确认 ${pendingReview}`
           : progress.phase === "waiting"
-            ? "点击右上角「一键预估」开始"
+            ? "点击右上角「运费预估」开始"
             : `商品 ${progress.productIndex}/${progress.productTotal} · ${title}`}
       </p>
 

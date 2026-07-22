@@ -1,402 +1,293 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  CircleDot,
-  Loader2,
-  PackageCheck,
-  SkipForward,
-  X,
-} from "lucide-react";
-import { WorkbenchPageFrame } from "@/components/workbench/workbench-page";
-import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
-import { MetricCard } from "@/components/layout/metric-card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SyncKindBadge } from "@/components/ui/status-badge";
-import { mockSyncSummary } from "@/data/mock";
+import { Loader2, RefreshCw } from "lucide-react";
+import { motion } from "framer-motion";
+import { WorkbenchShell } from "@/components/workbench/workbench-shell";
+import { StepSidebar } from "@/components/workbench/step-sidebar";
+import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
+import { CompletionScreen } from "@/components/sync/completion-screen";
+import { FollowUpList } from "@/components/sync/follow-up-list";
+import { LaunchMetricsGrid } from "@/components/sync/launch-metrics-grid";
+import { ProductFlipCard } from "@/components/sync/product-flip-card";
+import { LaunchReportStream } from "@/components/sync/launch-report-stream";
+import { ProgressPanel } from "@/components/sync/progress-panel";
 import { useOnboarding } from "@/context/onboarding-context";
-import { consumeLogisticsSyncExceptionCount } from "@/lib/logistics/sync-handoff";
-import type { AiPanelContent } from "@/lib/types";
+import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
+import { assembleLaunchSummary } from "@/lib/sync/assemble-launch-summary";
+import {
+  buildCeremonyTasks,
+  ceremonyProductIndex,
+  CEREMONY_HOLD_MS,
+  CEREMONY_PROGRESS_MS,
+  displayStat,
+  SYNC_CEREMONY_DONE_KEY,
+  SYNC_CEREMONY_SUMMARY_VIEWED_KEY,
+} from "@/lib/sync/ceremony-progress";
+import { composeLaunchReport } from "@/lib/sync/compose-launch-report";
+import { getLaunchSummary, type LaunchSummary } from "@/lib/sync/launch-summary";
+import { Button } from "@/components/ui/button";
+
+type CeremonyPhase = "loading" | "running" | "holding" | "complete" | "summary";
+
+function readSummaryViewed(): boolean {
+  if (typeof window === "undefined") return false;
+  return sessionStorage.getItem(SYNC_CEREMONY_SUMMARY_VIEWED_KEY) === "1";
+}
+
+function readCeremonyCelebrated(): boolean {
+  if (typeof window === "undefined") return false;
+  return sessionStorage.getItem(SYNC_CEREMONY_DONE_KEY) === "1";
+}
 
 export default function SyncPage() {
-  const {
-    syncPhase,
-    logisticsCompleted,
-    startSync,
-    shop,
-    isAuthorized,
-    skuReadyForNext,
-  } = useOnboarding();
+  const { shop, isAuthorized, completeSyncCeremony } = useOnboarding();
+  const shopName = resolveShopApiName(shop);
+  const revisitRef = useRef(readSummaryViewed());
+  const [reportInstant, setReportInstant] = useState(
+    () => readSummaryViewed() || readCeremonyCelebrated()
+  );
 
-  const [logisticsExceptionCount, setLogisticsExceptionCount] = useState<
-    number | null
-  >(null);
-  const [logisticsExceptionDismissed, setLogisticsExceptionDismissed] =
-    useState(false);
+  const [summary, setSummary] = useState<LaunchSummary | null>(null);
+  const [phase, setPhase] = useState<CeremonyPhase>("loading");
+  const [ceremonyPercent, setCeremonyPercent] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setLogisticsExceptionCount(consumeLogisticsSyncExceptionCount());
-  }, []);
+  const showFull = phase === "holding" || phase === "summary";
 
-  const summary = mockSyncSummary;
-  const phase =
-    syncPhase === "completed"
-      ? "completed"
-      : syncPhase === "syncing"
-        ? "syncing"
-        : logisticsCompleted
-          ? "ready"
-          : "blocked";
-
-  const ai: AiPanelContent = useMemo(() => {
-    if (!isAuthorized) {
-      return {
-        title: "需先授权",
-        summary: "请先完成店铺授权。",
-        bullets: [],
-        nextAction: { label: "去授权店铺", href: "/authorize" },
-      };
+  const loadSummary = async (cancelled: () => boolean) => {
+    setLoadError(null);
+    setPhase("loading");
+    try {
+      const data =
+        isAuthorized && shopName
+          ? await assembleLaunchSummary(shopName)
+          : getLaunchSummary();
+      if (cancelled()) return;
+      setSummary(data);
+      if (revisitRef.current || readSummaryViewed()) {
+        setCeremonyPercent(100);
+        setPhase("summary");
+      } else if (readCeremonyCelebrated()) {
+        setCeremonyPercent(100);
+        setPhase("complete");
+      } else {
+        setCeremonyPercent(0);
+        setPhase("running");
+      }
+    } catch {
+      if (cancelled()) return;
+      if (isAuthorized && shopName) {
+        setSummary(null);
+        setLoadError("无法加载开店准备数据，请稍后重试。");
+        setPhase("loading");
+      } else {
+        setSummary(getLaunchSummary());
+        setCeremonyPercent(0);
+        setPhase("running");
+      }
     }
-    if (phase === "blocked") {
-      return {
-        title: "物流配置未保存",
-        summary: "建议先完成物流确认再同步，也可直接同步已就绪的部分。",
-        bullets: [
-          skuReadyForNext
-            ? "SKU 对齐已达门槛"
-            : "SKU 对齐仍有待处理项（可稍后补齐）",
-          "缺少：物流方案与履约偏好",
-        ],
-        nextAction: { label: "去确认物流", href: "/logistics" },
-        alerts: [
-          {
-            id: "need-logistics",
-            text: "可点击「仍要同步」跳过物流配置，直接同步已就绪内容。",
-          },
-        ],
-      };
-    }
-    if (phase === "ready" || phase === "syncing") {
-      return {
-        title: "准备同步",
-        summary:
-          "前置条件已满足。执行同步后，SKU 映射与物流配置将写入店铺。",
-        bullets: [
-          "将写入已确认的商品与 SKU 映射",
-          "将启用已保存的默认物流方案",
-          "同步过程约数秒（原型模拟）",
-        ],
-        nextAction: {
-          label: phase === "syncing" ? "同步中…" : "开始同步到店铺",
-          action: "sync",
-          disabled: phase === "syncing",
-          disabledReason: "正在写入店铺配置，请稍候。",
-        },
-      };
-    }
-    return {
-      title: "同步已完成",
-      summary:
-        "映射与履约规则已生效。新订单将进入待采购队列；异常项可稍后单独处理。",
-      bullets: [
-        `${summary.linkedProducts} 个商品已关联`,
-        `${summary.skippedProducts} 个跳过 · ${summary.exceptionCount} 个待处理异常`,
-        "可返回工作台查看进度，或继续处理未确认商品",
-      ],
-      nextAction: { label: "返回工作台", href: "/" },
-      alerts:
-        summary.exceptionCount > 0
-          ? [
-              {
-                id: "ex1",
-                text: "Organic Cotton Tote Bag 印花色号仍标记异常，可回选品页处理。",
-                targetId: undefined,
-              },
-            ]
-          : undefined,
-    };
-  }, [isAuthorized, phase, skuReadyForNext, summary]);
-
-  const primaryCta = () => {
-    if (!isAuthorized) {
-      return (
-        <Link href="/authorize">
-          <Button>去授权店铺</Button>
-        </Link>
-      );
-    }
-    if (phase === "blocked") {
-      return (
-        <div className="flex items-center gap-2">
-          <Link href="/logistics">
-            <Button>去确认物流</Button>
-          </Link>
-          <Button
-            variant="secondary"
-            onClick={() => startSync({ force: true })}
-          >
-            仍要同步
-          </Button>
-        </div>
-      );
-    }
-    if (phase === "ready") {
-      return <Button onClick={() => startSync()}>开始同步到店铺</Button>;
-    }
-    if (phase === "syncing") {
-      return (
-        <Button disabled>
-          <Loader2 className="h-4 w-4 animate-spin" />
-          同步中…
-        </Button>
-      );
-    }
-    return (
-      <Link href="/">
-        <Button>返回工作台</Button>
-      </Link>
-    );
   };
 
-  return (
-    <WorkbenchPageFrame
-      pageKey="sync"
-      title="同步到店铺"
-      breadcrumbs={[
-        { label: "工作台", href: "/" },
-        { label: "同步到店铺" },
-      ]}
-      actions={primaryCta()}
-      rail={
-        <AssistantRail
-          assistantContent={
-            <CopilotCard
-              heading="AI 同步顾问"
-              content={ai}
-              onNextAction={(action) => {
-                if (action === "sync") startSync();
-              }}
-            />
-          }
-        />
+  useEffect(() => {
+    let cancelled = false;
+    void loadSummary(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthorized, shopName]);
+
+  useEffect(() => {
+    if (phase !== "running" || !summary) return;
+
+    const startedAt = performance.now();
+    const tick = () => {
+      const elapsed = performance.now() - startedAt;
+      const next = Math.min(100, Math.round((elapsed / CEREMONY_PROGRESS_MS) * 100));
+      setCeremonyPercent(next);
+
+      if (next >= 100) {
+        setPhase("holding");
+        return;
       }
-    >
-      {logisticsExceptionCount != null &&
-      !logisticsExceptionDismissed &&
-      (phase === "ready" || phase === "syncing" || phase === "completed") ? (
-        <div className="mb-3 flex items-start gap-2 rounded-[var(--radius-card)] border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-xs text-amber-950">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
-          <p className="min-w-0 flex-1">
-            已带 {logisticsExceptionCount} 项物流例外继续同步
-          </p>
-          <button
-            type="button"
-            onClick={() => setLogisticsExceptionDismissed(true)}
-            className="shrink-0 rounded p-0.5 text-amber-800/70 hover:bg-amber-100 hover:text-amber-950"
-            title="关闭提示"
-            aria-label="关闭提示"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+      requestAnimationFrame(tick);
+    };
+
+    const frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [phase, summary]);
+
+  useEffect(() => {
+    if (phase !== "holding") return;
+
+    setCeremonyPercent(100);
+    const timer = window.setTimeout(() => {
+      completeSyncCeremony();
+      sessionStorage.setItem(SYNC_CEREMONY_DONE_KEY, "1");
+      setPhase("complete");
+    }, CEREMONY_HOLD_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [phase, completeSyncCeremony]);
+
+  const ceremonyTasks = useMemo(
+    () =>
+      summary ? buildCeremonyTasks(summary.stats, ceremonyPercent, showFull) : [],
+    [summary, ceremonyPercent, showFull]
+  );
+
+  const activeProductIndex = summary
+    ? ceremonyProductIndex(ceremonyPercent, summary.products.length)
+    : 0;
+
+  const processedProducts = summary
+    ? displayStat(
+        summary.stats.productsInCeremony || summary.stats.productsTotal,
+        ceremonyPercent,
+        showFull
+      )
+    : 0;
+
+  const launchReportText = useMemo(
+    () => (summary ? composeLaunchReport(summary) : ""),
+    [summary]
+  );
+
+  const handleExportReport = () => {
+    window.alert("准备报告导出功能即将上线。");
+  };
+
+  useEffect(() => {
+    if (phase === "summary") {
+      setReportInstant(true);
+    }
+  }, [phase]);
+
+  const handleViewSummary = () => {
+    setReportInstant(true);
+    sessionStorage.setItem(SYNC_CEREMONY_SUMMARY_VIEWED_KEY, "1");
+    setCeremonyPercent(100);
+    setPhase("summary");
+  };
+
+  if (phase === "complete" && summary) {
+    return (
+      <WorkbenchShell sidebar={<StepSidebar />}>
+        <div className="flex min-h-[calc(100vh-48px)] items-center justify-center px-[var(--wb-gutter)] py-8">
+          <CompletionScreen
+            shopDomain={summary.meta.shopDomain || summary.meta.shopName}
+            onExportReport={handleExportReport}
+            onViewSummary={handleViewSummary}
+          />
         </div>
-      ) : null}
+      </WorkbenchShell>
+    );
+  }
 
-      {phase === "blocked" ? (
-        <Card className="mb-3 border-amber-200 bg-amber-50/40">
-          <CardContent className="flex items-center gap-4 py-5">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-              <CircleDot className="h-7 w-7" />
+  if (phase === "loading" || !summary) {
+    return (
+      <WorkbenchShell sidebar={<StepSidebar />}>
+        <WorkbenchPanel
+          title="同步至店铺"
+          breadcrumbs={[
+            { label: "工作台", href: "/" },
+            { label: "同步至店铺" },
+          ]}
+          maxWidth={1080}
+        >
+          {loadError ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-20 text-sm text-ink-muted">
+              <p>{loadError}</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => void loadSummary(() => false)}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                重试
+              </Button>
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-semibold text-slate-900">
-                  物流配置未保存
-                </h2>
-                <Badge variant="warning">待确认</Badge>
-              </div>
-              <p className="mt-1 text-sm text-slate-600">
-                尚未保存物流配置。建议先完成「确认物流」再同步；也可直接同步已就绪的部分。
-              </p>
-              <ul className="mt-2 space-y-1 text-xs text-slate-500">
-                <li>· 物流方案：未保存</li>
-                <li>
-                  · SKU 对齐：
-                  {skuReadyForNext ? "已达门槛" : "仍有待处理项"}
-                </li>
-              </ul>
-              <div className="mt-3 flex items-center gap-2">
-                <Link href="/logistics">
-                  <Button size="sm">去确认物流</Button>
-                </Link>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => startSync({ force: true })}
-                >
-                  仍要同步
-                </Button>
-              </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2 py-20 text-sm text-ink-muted">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              正在汇总开店准备数据…
             </div>
-          </CardContent>
-        </Card>
-      ) : null}
+          )}
+        </WorkbenchPanel>
+      </WorkbenchShell>
+    );
+  }
 
-      {phase === "ready" || phase === "syncing" ? (
-        <Card className="mb-3 border-teal-200 bg-teal-50/40">
-          <CardContent className="flex items-center gap-4 py-5">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-teal-100 text-teal-800">
-              {phase === "syncing" ? (
-                <Loader2 className="h-7 w-7 animate-spin" />
+  return (
+    <WorkbenchShell sidebar={<StepSidebar />}>
+        <WorkbenchPanel
+          title="同步至店铺"
+          description={
+            phase === "summary"
+              ? undefined
+              : "正在回顾各步骤已完成的操作，请稍候…"
+          }
+        breadcrumbs={[
+          { label: "工作台", href: "/" },
+          { label: "同步至店铺" },
+        ]}
+        maxWidth={1080}
+      >
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-stretch">
+            <div className="flex min-h-0 flex-col gap-3">
+              {summary.products.length > 0 ? (
+                <ProductFlipCard
+                  products={summary.products}
+                  activeIndex={activeProductIndex}
+                  processedCount={processedProducts}
+                  totalCount={summary.stats.productsTotal}
+                  carouselCount={summary.products.length}
+                  autoRotate={phase === "summary"}
+                />
               ) : (
-                <PackageCheck className="h-7 w-7" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-semibold text-slate-900">
-                  {phase === "syncing" ? "正在同步" : "准备同步"}
-                </h2>
-                <Badge variant={phase === "syncing" ? "info" : "teal"}>
-                  {phase === "syncing" ? "进行中" : "待执行"}
-                </Badge>
-              </div>
-              <p className="mt-1 text-sm text-slate-600">
-                {shop.name}{" "}
-                的商品映射与物流配置已就绪。点击「开始同步到店铺」写入配置。
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {phase === "completed" ? (
-        <>
-          <Card className="mb-3 border-emerald-200 bg-emerald-50/50">
-            <CardContent className="flex items-center gap-4 py-5">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                <CheckCircle2 className="h-7 w-7" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-semibold text-slate-900">
-                    已完成同步
-                  </h2>
-                  <Badge variant="success">已完成</Badge>
+                <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-6 text-center text-sm text-ink-muted shadow-card">
+                  {summary.stats.productsTotal > 0
+                    ? "店铺商品已加载，但暂无可展示的主图或标题"
+                    : "店铺暂无商品数据"}
+                  <Link href="/products" className="mt-2 block">
+                    <Button size="sm" variant="secondary">
+                      去选品页
+                    </Button>
+                  </Link>
                 </div>
-                <p className="mt-1 text-sm text-slate-600">
-                  {shop.name} 已于 {summary.completedAt}{" "}
-                  完成映射同步。后续订单将自动进入待采购队列。
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+              )}
+              <ProgressPanel
+                layout="horizontal"
+                className="min-h-0 flex-1"
+                percent={ceremonyPercent}
+                tasks={ceremonyTasks}
+                stats={summary.stats}
+                showFull={showFull}
+              />
+            </div>
 
-          <div className="mb-3 grid grid-cols-4 gap-3">
-            <MetricCard
-              label="成功关联商品"
-              value={summary.linkedProducts}
-              tone="success"
-            />
-            <MetricCard
-              label="成功上架同步"
-              value={summary.listedProducts}
-              tone="teal"
-            />
-            <MetricCard
-              label="跳过"
-              value={summary.skippedProducts}
-              tone="warning"
-            />
-            <MetricCard
-              label="待处理异常"
-              value={summary.exceptionCount}
-              tone="warning"
+            <LaunchReportStream
+              text={launchReportText}
+              percent={ceremonyPercent}
+              showFull={showFull}
+              layout="vertical"
+              instant={reportInstant}
+              className="h-full min-h-[320px] lg:min-h-0"
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            {(
-              [
-                {
-                  kind: "success" as const,
-                  title: "已成功同步",
-                  icon: PackageCheck,
-                  items: summary.items.filter((i) => i.kind === "success"),
-                },
-                {
-                  kind: "skipped" as const,
-                  title: "跳过",
-                  icon: SkipForward,
-                  items: summary.items.filter((i) => i.kind === "skipped"),
-                },
-                {
-                  kind: "exception" as const,
-                  title: "待处理异常",
-                  icon: AlertTriangle,
-                  items: summary.items.filter((i) => i.kind === "exception"),
-                },
-              ] as const
-            ).map((group) => (
-              <Card key={group.kind}>
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <group.icon className="h-4 w-4 text-slate-500" />
-                    <CardTitle>{group.title}</CardTitle>
-                  </div>
-                  <SyncKindBadge kind={group.kind} />
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {group.items.length === 0 ? (
-                    <p className="text-xs text-slate-400">无</p>
-                  ) : (
-                    group.items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="rounded-md border border-slate-100 px-2.5 py-2"
-                      >
-                        <p className="text-xs font-medium text-slate-800">
-                          {item.title}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-500">
-                          {item.detail}
-                        </p>
-                        {group.kind === "exception" ? (
-                          <Link href="/products" className="mt-1.5 inline-block">
-                            <Button size="sm" variant="secondary">
-                              去选品页处理
-                            </Button>
-                          </Link>
-                        ) : null}
-                      </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </>
-      ) : null}
+          <LaunchMetricsGrid
+            shopify={summary.shopifyWrites}
+            fulfillment={summary.fulfillmentPrep}
+            strategy={summary.strategy}
+          />
 
-      {phase !== "completed" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>同步将写入的内容</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-xs text-slate-600">
-            <p>· 已确认的商品货源关联与 SKU 映射</p>
-            <p>· 默认物流方案与轨迹回传开关</p>
-            <p>· 新订单自动进入待采购队列的履约规则</p>
-            <p className="text-slate-400">
-              完成同步前，不会在本页展示「已生效」结果。
-            </p>
-          </CardContent>
-        </Card>
-      ) : null}
-    </WorkbenchPageFrame>
+          <FollowUpList items={summary.followUps} />
+        </motion.div>
+      </WorkbenchPanel>
+    </WorkbenchShell>
   );
 }

@@ -1,4 +1,5 @@
 import { api, ApiError } from "@/lib/api";
+import { isGatewayBusyError } from "@/lib/batch-link/match-errors";
 import type {
   SkuAlignConfirmResult,
   SkuAlignConfirmSuggestionsRequest,
@@ -18,10 +19,7 @@ function extractErrorCode(err: unknown): string {
   return raw;
 }
 
-/** Tangbuy itemGet 网关繁忙 — V1 bind 会拒绝，但浏览器侧已校验过规格时可走 legacy 落库。 */
-export function isGatewayBusyError(err: unknown): boolean {
-  return extractErrorCode(err).startsWith("GATEWAY_BUSY");
-}
+export { isGatewayBusyError };
 
 /** Render / older backends return 500 with Spring static-resource miss for undeployed V1 routes. */
 export function isSkuAlignV1Unavailable(err: unknown): boolean {

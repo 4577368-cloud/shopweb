@@ -1,12 +1,71 @@
 import type { SkuFilterMode } from "@/lib/sku-align/display";
 
 export const SKU_ALIGN_FILTER_PARAM = "filter";
+export const SKU_ALIGN_PRODUCT_PARAM = "product";
+export const SKU_ALIGN_TAB_PARAM = "tab";
+export const SKU_ALIGN_VARIANT_PARAM = "variant";
 
 export type SkuAlignFilterParam = SkuFilterMode;
 
-export function skuAlignHref(filter?: SkuAlignFilterParam): string {
-  if (!filter || filter === "all") return "/sku-align";
-  return `/sku-align?${SKU_ALIGN_FILTER_PARAM}=${encodeURIComponent(filter)}`;
+export type SkuAlignHrefOptions = {
+  filter?: SkuAlignFilterParam;
+  productId?: string;
+};
+
+export type SkuAlignProductHrefOptions = {
+  tab?: import("@/lib/sku-align/drawer-helpers").DrawerPhase;
+  variantId?: string;
+};
+
+export function skuAlignProductWorkbenchHref(
+  productId: string,
+  opts?: SkuAlignProductHrefOptions
+): string {
+  const params = new URLSearchParams();
+  params.set(SKU_ALIGN_PRODUCT_PARAM, productId.trim());
+  if (opts?.tab && opts.tab !== "primary") {
+    params.set(SKU_ALIGN_TAB_PARAM, opts.tab);
+  }
+  if (opts?.variantId?.trim()) {
+    params.set(SKU_ALIGN_VARIANT_PARAM, opts.variantId.trim());
+  }
+  return `/sku-align/product?${params.toString()}`;
+}
+
+export function skuAlignHref(
+  filterOrOpts?: SkuAlignFilterParam | SkuAlignHrefOptions
+): string {
+  let filter: SkuAlignFilterParam | undefined;
+  let productId: string | undefined;
+  if (typeof filterOrOpts === "string") {
+    filter = filterOrOpts;
+  } else if (filterOrOpts) {
+    filter = filterOrOpts.filter;
+    productId = filterOrOpts.productId;
+  }
+
+  const params = new URLSearchParams();
+  if (filter && filter !== "all") {
+    params.set(SKU_ALIGN_FILTER_PARAM, filter);
+  }
+  if (productId?.trim()) {
+    params.set(SKU_ALIGN_PRODUCT_PARAM, productId.trim());
+  }
+  const q = params.toString();
+  return q ? `/sku-align?${q}` : "/sku-align";
+}
+
+export function skuAlignProductHref(productId: string): string {
+  return skuAlignProductWorkbenchHref(productId, { tab: "primary" });
+}
+
+export function parseSkuAlignTabParam(
+  value: string | null
+): import("@/lib/sku-align/drawer-helpers").DrawerPhase {
+  if (value === "replace" || value === "supplement" || value === "primary") {
+    return value;
+  }
+  return "primary";
 }
 
 export function parseSkuAlignFilterParam(
@@ -22,6 +81,14 @@ export function scrollToFirstSkuIssueProduct(): void {
   requestAnimationFrame(() => {
     document
       .querySelector("[data-sku-issue-product]")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
+export function scrollToSkuProduct(productId: string): void {
+  requestAnimationFrame(() => {
+    document
+      .querySelector(`[data-sku-issue-product="${CSS.escape(productId)}"]`)
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }

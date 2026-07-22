@@ -1,11 +1,14 @@
 "use client";
 
 import { Sparkles } from "lucide-react";
+import { Select } from "@/components/ui/select";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { cn } from "@/lib/utils";
 import {
+  collectPostalLimitFilterOptions,
   computeLogisticsPlanMetrics,
   type LogisticsFilterMode,
+  type PostalLimitFilter,
 } from "@/lib/logistics/display";
 import { countryFlagEmoji, countryMarketLabel } from "@/lib/logistics/markets";
 import {
@@ -68,10 +71,11 @@ const FILTER_TABS = (
   metrics: ReturnType<typeof computeLogisticsPlanMetrics>
 ): { id: LogisticsFilterMode; label: string; count?: number }[] => [
   { id: "all", label: "全部", count: metrics.variantCount },
-  { id: "ready", label: "自动完成", count: metrics.autoReadyCount },
+  { id: "pending_quote", label: "待报价", count: metrics.pendingQuoteCount },
+  { id: "pending_confirm", label: "待确认", count: metrics.pendingConfirmCount },
+  { id: "exceptions", label: "异常", count: metrics.exceptionCount },
+  { id: "sku_unlinked", label: "SKU未关联", count: metrics.skuUnlinkedCount },
   { id: "quoted", label: "已报价", count: metrics.quotedCount },
-  { id: "issues", label: "需确认", count: metrics.reviewCount },
-  { id: "unidentified", label: "无法识别", count: metrics.unidentifiedCount },
 ];
 
 function StrategyCard({
@@ -117,26 +121,23 @@ function PlanStatusTip({
   metrics: ReturnType<typeof computeLogisticsPlanMetrics>;
 }) {
   if (
-    metrics.reviewCount > 0 ||
-    metrics.unidentifiedCount > 0 ||
-    metrics.autoReadyCount > 0
+    metrics.pendingConfirmCount > 0 ||
+    metrics.skuUnlinkedCount > 0 ||
+    metrics.pendingQuoteCount > 0
   ) {
     const parts: string[] = [];
-    if (metrics.quotedCount > 0) {
-      parts.push(`已报价 ${metrics.quotedCount} 个 SKU`);
+    if (metrics.pendingQuoteCount > 0) {
+      parts.push(`待报价 ${metrics.pendingQuoteCount} 个`);
     }
-    if (metrics.autoReadyCount > 0) {
-      parts.push(`待拉取报价 ${metrics.autoReadyCount} 个`);
+    if (metrics.pendingConfirmCount > 0) {
+      parts.push(`待确认 ${metrics.pendingConfirmCount} 个`);
     }
-    if (metrics.reviewCount > 0) {
-      parts.push(`需确认 ${metrics.reviewCount} 个`);
-    }
-    if (metrics.unidentifiedCount > 0) {
-      parts.push(`无法识别 ${metrics.unidentifiedCount} 个`);
+    if (metrics.skuUnlinkedCount > 0) {
+      parts.push(`SKU未关联 ${metrics.skuUnlinkedCount} 个`);
     }
     return (
       <p className="min-w-0 flex-1 text-[11px] leading-snug text-amber-900">
-        {parts.join(" · ")}。请切换对应 Tab 处理。
+        {parts.join(" · ")}。普货由运费预估自动确认；异常项请逐条「确认」。
       </p>
     );
   }
@@ -155,6 +156,8 @@ export function LogisticsPlanStatusCard({
   activeTemplate,
   filterMode,
   onFilterModeChange,
+  postalLimitFilter,
+  onPostalLimitFilterChange,
   quoteMarketCode,
   onOpenStrategy,
   pipelineProgress,
@@ -165,6 +168,8 @@ export function LogisticsPlanStatusCard({
   activeTemplate: LogisticsTemplate | null;
   filterMode: LogisticsFilterMode;
   onFilterModeChange: (mode: LogisticsFilterMode) => void;
+  postalLimitFilter: PostalLimitFilter;
+  onPostalLimitFilterChange: (value: PostalLimitFilter) => void;
   quoteMarketCode: string | null;
   onOpenStrategy: () => void;
   pipelineProgress?: LogisticsPipelineProgress;
@@ -172,6 +177,7 @@ export function LogisticsPlanStatusCard({
   className?: string;
 }) {
   const metrics = computeLogisticsPlanMetrics(analysis, quoteResults);
+  const postalOptions = collectPostalLimitFilterOptions(analysis);
   const marketCodes = listTemplateCountryCodes(activeTemplate);
   const marketCode = quoteMarketCode ?? marketCodes[0] ?? "US";
   const filterTabs = FILTER_TABS(metrics);
@@ -192,9 +198,9 @@ export function LogisticsPlanStatusCard({
         ? ` · ${pipelineProgress.currentProductTitle}`
         : ""}
     </p>
-  ) : metrics.autoReadyCount > 0 && metrics.quotedCount === 0 ? (
+  ) : metrics.pendingQuoteCount > 0 && metrics.quotedCount === 0 ? (
     <p className="min-w-0 flex-1 text-[11px] leading-snug text-ink-subtle">
-      点击右上角「一键预估」开始拉取线路报价。
+      点击右上角「运费预估」开始获取线路报价。
     </p>
   ) : (
     <PlanStatusTip metrics={metrics} />
@@ -211,7 +217,7 @@ export function LogisticsPlanStatusCard({
         >
           <div className="flex shrink-0 items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-brand-strong" />
-            <h2 className="text-xs font-semibold text-ink">AI 匹配进度</h2>
+            <h2 className="text-xs font-semibold text-ink">物流报价进度</h2>
           </div>
           {tip}
         </div>
@@ -221,25 +227,24 @@ export function LogisticsPlanStatusCard({
             <ProgressRing percent={ringPercent} />
 
             <div
-              className="grid min-h-[3.75rem] flex-1 grid-cols-2 divide-x divide-hairline sm:grid-cols-5"
-              aria-label="物流匹配统计"
+              className="grid min-h-[3.75rem] flex-1 grid-cols-2 divide-x divide-hairline sm:grid-cols-4"
+              aria-label="物流报价统计"
             >
-              <StatCell label="商品总数" value={metrics.productCount} />
+              <StatCell label="待报价" value={metrics.pendingQuoteCount} />
+              <StatCell
+                label="待确认"
+                value={metrics.pendingConfirmCount}
+                valueClassName="text-amber-600"
+              />
+              <StatCell
+                label="SKU未关联"
+                value={metrics.skuUnlinkedCount}
+                valueClassName="text-ink-subtle"
+              />
               <StatCell
                 label="已报价"
                 value={metrics.quotedCount}
                 valueClassName="text-brand-strong"
-              />
-              <StatCell label="自动完成" value={metrics.autoReadyCount} />
-              <StatCell
-                label="需确认"
-                value={metrics.reviewCount}
-                valueClassName="text-amber-600"
-              />
-              <StatCell
-                label="无法识别"
-                value={metrics.unidentifiedCount}
-                valueClassName="text-ink-subtle"
               />
             </div>
           </div>
@@ -254,12 +259,30 @@ export function LogisticsPlanStatusCard({
         </div>
       </div>
 
-      <SegmentedTabs
-        variant="chip"
-        tabs={filterTabs}
-        value={filterMode}
-        onValueChange={(id) => onFilterModeChange(id as LogisticsFilterMode)}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedTabs
+          variant="chip"
+          tabs={filterTabs}
+          value={filterMode}
+          onValueChange={(id) => onFilterModeChange(id as LogisticsFilterMode)}
+          className="min-w-0 flex-1"
+        />
+        {postalOptions.length > 0 ? (
+          <Select
+            value={postalLimitFilter}
+            onChange={(e) => onPostalLimitFilterChange(e.target.value)}
+            className="h-8 w-auto min-w-[8.5rem] shrink-0 text-[11px]"
+            aria-label="按邮限筛选"
+          >
+            <option value="all">全部邮限</option>
+            {postalOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label} ({opt.count})
+              </option>
+            ))}
+          </Select>
+        ) : null}
+      </div>
     </section>
   );
 }

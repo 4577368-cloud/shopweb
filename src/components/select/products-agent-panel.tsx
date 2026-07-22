@@ -135,7 +135,7 @@ export function ProductsAgentPanel({
     const examples: string[] = [];
     if (context.pendingCount > 0) examples.push("确认全部待关联");
     if (context.unboundCount > 0) examples.push("重搜未匹配");
-    examples.push("改价为9.9", "翻译标题", "只看待确认");
+    examples.push("改价为9.9", "翻译标题", "只看待确认", "把这个商品放到草稿");
     return examples.slice(0, 4);
   }, [context.pendingCount, context.unboundCount]);
 
@@ -270,7 +270,11 @@ export function ProductsAgentPanel({
       return;
     }
 
-    const isBatch = commandPlan.draft.intent === "batch_update_product_copy" || commandPlan.draft.intent === "batch_update_listing_price";
+    const isBatch =
+      commandPlan.draft.intent === "batch_update_product_copy" ||
+      commandPlan.draft.intent === "batch_update_listing_price" ||
+      commandPlan.draft.intent === "batch_draft_products" ||
+      commandPlan.draft.intent === "batch_archive_products";
     const belongsToSkill = commandBelongsToSkill(commandPlan.draft.intent);
 
     setCommandExecuting(true);

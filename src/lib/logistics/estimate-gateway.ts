@@ -75,8 +75,12 @@ async function buildTangbuyEstimateBody(body: LogisticsEstimateRequest) {
  * Render (and most PaaS) cannot reach tangbuy.cc; the user's browser can.
  */
 export async function estimateLogisticsFromBrowser(
-  body: LogisticsEstimateRequest
+  body: LogisticsEstimateRequest,
+  signal?: AbortSignal
 ): Promise<LogisticsEstimateResponse> {
+  if (signal?.aborted) {
+    throw new DOMException("Aborted", "AbortError");
+  }
   if (!isMallGatewayConfigured()) {
     throw new Error(
       "线路报价需在 .env.local 配置 NEXT_PUBLIC_TANGBUY_MALL_TOKEN（Render 无法访问 tangbuy.cc，须浏览器直连网关）"
@@ -91,6 +95,7 @@ export async function estimateLogisticsFromBrowser(
 
   const res = await fetch(url, {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${gatewayToken()}`,

@@ -252,7 +252,7 @@ export function AiCopilotScanStage({
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-brand to-emerald-500 px-2.5 py-0.5 text-[10px] font-bold tracking-wide text-white shadow-sm">
                 <Sparkles className="h-2.5 w-2.5" />
-                AI Copilot
+                Smart Match
               </span>
               {headline.hint ? (
                 <span className="text-[11px] font-medium text-ink-subtle">

@@ -61,10 +61,15 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import {
   parseSkuAlignFilterParam,
+  parseSkuAlignTabParam,
   scrollToFirstSkuIssueProduct,
   SKU_ALIGN_FILTER_PARAM,
+  SKU_ALIGN_PRODUCT_PARAM,
+  SKU_ALIGN_TAB_PARAM,
   skuAlignHref,
+  skuAlignProductWorkbenchHref,
 } from "@/lib/sku-align/deep-link";
+import { stashSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
 import type { AiPanelContent, PricingTemplate, SkuProductOverview } from "@/lib/types";
 
 const BREADCRUMBS = [
@@ -74,7 +79,7 @@ const BREADCRUMBS = [
 ];
 
 // Hold the completed progress bar briefly so users can see the finished state before the result view.
-const SCAN_DWELL_MS = 900;
+const SCAN_DWELL_MS = 400;
 
 const matchRules = [
   "商品标题与关键词",
@@ -104,6 +109,8 @@ function SkuAlignContent() {
     hasLoadedOnceRef.current = false;
   }, [shopName]);
   const autoAlignStartedRef = useRef<string | null>(null);
+  /** Scan already ran V1 align — skip duplicate PAGE_ENTER align on first result load. */
+  const skipNextAutoAlignRef = useRef(false);
 
   useEffect(() => {
     autoAlignStartedRef.current = null;
@@ -112,7 +119,6 @@ function SkuAlignContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const pendingScrollRef = useRef(false);
   const [confirmingPage, setConfirmingPage] = useState(false);
-  const [focusProductId, setFocusProductId] = useState<string | null>(null);
   // "result" is the SSR/hydration-safe default; the mount effect flips to "scan" on first visit.
   const [phase, setPhase] = useState<"scan" | "result">("result");
 
@@ -139,20 +145,20 @@ function SkuAlignContent() {
       setProducts(next);
       setPricingTemplate(tpl);
       hasLoadedOnceRef.current = true;
-      void refreshWorkflowProgress();
     } catch (err) {
       setError(readableError(err));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [shopName, refreshWorkflowProgress]);
+  }, [shopName]);
 
   // Move to the result view once (guarded), pulling the freshly-aligned overview. Non-blocking:
   // callable while the scan is still running ("直接查看当前结果") — cancels remaining work first.
   const finishToResult = useCallback(() => {
     cancelScan();
     markScanned("sku-align", shopName);
+    skipNextAutoAlignRef.current = true;
     setPhase("result");
     void load();
   }, [cancelScan, shopName, load]);
@@ -167,6 +173,18 @@ function SkuAlignContent() {
     const deepFilter = parseSkuAlignFilterParam(
       searchParams.get(SKU_ALIGN_FILTER_PARAM)
     );
+    const deepProductId = searchParams.get(SKU_ALIGN_PRODUCT_PARAM)?.trim() || null;
+
+    if (deepProductId) {
+      markScanned("sku-align", shopName);
+      router.replace(
+        skuAlignProductWorkbenchHref(deepProductId, {
+          tab: parseSkuAlignTabParam(searchParams.get(SKU_ALIGN_TAB_PARAM)),
+        })
+      );
+      return;
+    }
+
     if (deepFilter && deepFilter !== "all") {
       markScanned("sku-align", shopName);
       setPhase("result");
@@ -185,7 +203,7 @@ function SkuAlignContent() {
         window.setTimeout(() => void finishToResult(), SCAN_DWELL_MS);
       });
     }
-  }, [isAuthorized, shopName, load, startScan, finishToResult, searchParams]);
+  }, [isAuthorized, shopName, load, startScan, finishToResult, searchParams, router]);
 
   useEffect(() => {
     const deepFilter = parseSkuAlignFilterParam(
@@ -210,6 +228,11 @@ function SkuAlignContent() {
     if (phase !== "result" || !isAuthorized || loading) return;
     if (!hasLoadedOnceRef.current || loading) return;
     if (autoAlignStartedRef.current === shopName) return;
+    if (skipNextAutoAlignRef.current) {
+      skipNextAutoAlignRef.current = false;
+      autoAlignStartedRef.current = shopName;
+      return;
+    }
     autoAlignStartedRef.current = shopName;
     if (products.length === 0) return;
     void (async () => {
@@ -374,10 +397,8 @@ function SkuAlignContent() {
 
   const agentContext = useMemo<SkuPageContext>(() => ({
     productCatalog: products,
-    focusProductId: focusProductId ?? undefined,
-    focusProduct: products.find((p) => p.thirdPlatformItemId === focusProductId) ?? undefined,
     currentFilter: filter,
-  }), [products, focusProductId, filter]);
+  }), [products, filter]);
 
   const previewGenerators = useMemo(
     () => ({
@@ -480,7 +501,13 @@ function SkuAlignContent() {
             <SkuAgentPanel
               context={agentContext}
               shopName={shopName}
-              onFocusProduct={setFocusProductId}
+              onFocusProduct={(productId) => {
+                const found = products.find(
+                  (p) => p.thirdPlatformItemId === productId
+                );
+                if (found) stashSkuProductHandoff(shopName, found);
+                router.push(skuAlignProductWorkbenchHref(productId));
+              }}
               onSetFilter={setFilter}
               previewGenerators={previewGenerators}
               commandExecutors={commandExecutors}
@@ -591,7 +618,7 @@ function SkuAlignContent() {
         >
           <ScanStage
             heading="首轮自动整理"
-            description="系统正在用真实接口自动对齐 SKU，可随时直接查看当前结果。"
+            description="系统正在自动对齐 SKU，可随时直接查看当前结果。"
             tasks={scanTasks}
             recent={scanRecent}
             done={scanDone}
@@ -610,8 +637,23 @@ function SkuAlignContent() {
         {...wb.panelProps}
         actions={
           <div className="flex items-center gap-2">
+            {needsReviewOnPage > 0 ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void handleConfirmPageNeedsReview()}
+                disabled={confirmingPage || loading || refreshing}
+                title="接受当前筛选下全部待确认的 AI 建议"
+              >
+                {confirmingPage ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                接受本页（{needsReviewOnPage}）
+              </Button>
+            ) : null}
             <SkuLogisticsEntryGate />
             <Button
+              size="sm"
               variant="secondary"
               onClick={restartScan}
               className="h-7 w-7 px-0"
@@ -657,7 +699,7 @@ function SkuAlignContent() {
               <Button
                 size="sm"
                 variant="secondary"
-                className="h-8 w-8 shrink-0 px-0"
+                className="h-7 w-7 shrink-0 px-0"
                 onClick={() => void load()}
                 disabled={loading || refreshing}
                 title="刷新列表"

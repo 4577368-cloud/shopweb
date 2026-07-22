@@ -31,7 +31,7 @@ export function classifyLogisticsCommandByRules(
     };
   }
 
-  if (lower.includes("批量确认") || lower.includes("一键确认")) {
+  if (lower.includes("批量接受") || lower.includes("批量确认") || lower.includes("一键确认")) {
     return {
       confidence: "high",
       source: "rules",
@@ -125,7 +125,7 @@ export function classifyLogisticsCommandByRules(
   return {
     confidence: "none",
     source: "default",
-    clarify: "无法理解您的命令，请试试：一键预估、批量确认、调整模板、查看问题",
+    clarify: "无法理解您的命令，请试试：运费预估、批量接受、调整模板、查看问题",
   };
 }
 
@@ -211,8 +211,8 @@ export function buildLogisticsClassifyPrompt(
 
   const commandList = `
 可用命令:
-- accept_all_ready: 批量确认所有可接受的物流方案
-- fetch_quotes: 一键预估 / 刷新线路报价
+- accept_all_ready: 批量接受方案（已有线路报价的 SKU）
+- fetch_quotes: 运费预估 / 刷新线路报价
 - open_template: 打开物流模板配置
 - focus_issues: 查看需要人工确认的问题项
 - focus_status: 聚焦特定决策状态的商品

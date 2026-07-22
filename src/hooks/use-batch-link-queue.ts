@@ -3,6 +3,10 @@
 import { useCallback, useRef, useState } from "react";
 import { classifyMatchConfidence } from "@/lib/batch-link/confidence";
 import { confirmCandidateBinding } from "@/lib/batch-link/confirm-binding";
+import {
+  isOfferNotFoundError,
+  mapImageMatchConfirmError,
+} from "@/lib/batch-link/match-errors";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
 import {
   INITIAL_BATCH_LINK_PROGRESS,
@@ -17,6 +21,7 @@ const CANDIDATES_READY_MS = 650;
 const SELECT_PRESSED_MS = 220;
 const DONE_FLASH_MS = 480;
 const SCROLL_SETTLE_MS = 200;
+const AUTO_BIND_CANDIDATE_LIMIT = 3;
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -221,7 +226,7 @@ export function useBatchLinkQueue({
         }
 
         // High confidence — auto select top candidate (same as「选用」).
-        const top = pipeline.rankedItems[0]!;
+        const candidatesToTry = pipeline.rankedItems.slice(0, AUTO_BIND_CANDIDATE_LIMIT);
         setCardState(id, "auto_selecting", {
           searchResult: pipeline.result,
           matchScores: pipeline.matchScores,
@@ -240,34 +245,46 @@ export function useBatchLinkQueue({
           selectButtonPhase: "loading",
         });
 
-        try {
-          const view = await confirmCandidateBinding(
-            shopName,
-            product,
-            top,
-            pipeline.result,
-            {
-              auto: true,
+        let bound = false;
+        let lastErr: unknown = null;
+        for (let i = 0; i < candidatesToTry.length; i++) {
+          const candidate = candidatesToTry[i]!;
+          try {
+            const view = await confirmCandidateBinding(
+              shopName,
+              product,
+              candidate,
+              pipeline.result,
+              {
+                auto: true,
+                imageScores: pipeline.imageScores,
+                titleScores: pipeline.matchScores,
+              }
+            );
+            onBound(id, view);
+            setCardState(id, "done", {
+              searchResult: pipeline.result,
+              matchScores: pipeline.matchScores,
               imageScores: pipeline.imageScores,
-              titleScores: pipeline.matchScores,
-            }
-          );
-          onBound(id, view);
-          setCardState(id, "done", {
-            searchResult: pipeline.result,
-            matchScores: pipeline.matchScores,
-            imageScores: pipeline.imageScores,
-            selectButtonPhase: "idle",
-            doneFlash: true,
-          });
-          bumpProcessed(product, "linked", `${title}：已自动关联`);
-          await sleep(DONE_FLASH_MS);
-          patchCard(id, { doneFlash: false });
-        } catch (err) {
-          const msg =
-            err instanceof Error && err.message
-              ? err.message
-              : "绑定失败，请手动选用";
+              highlightTopCandidate: true,
+              selectButtonPhase: "idle",
+              doneFlash: true,
+            });
+            const suffix =
+              i > 0 ? `（已跳过 ${i} 个失效货源）` : "";
+            bumpProcessed(product, "linked", `${title}：已自动关联${suffix}`);
+            await sleep(DONE_FLASH_MS);
+            patchCard(id, { doneFlash: false });
+            bound = true;
+            break;
+          } catch (err) {
+            lastErr = err;
+            if (!isOfferNotFoundError(err)) break;
+          }
+        }
+
+        if (!bound) {
+          const msg = mapImageMatchConfirmError(lastErr, "绑定失败，请手动选用");
           setCardState(id, "failed", {
             searchResult: pipeline.result,
             matchScores: pipeline.matchScores,

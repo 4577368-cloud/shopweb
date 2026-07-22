@@ -13,16 +13,19 @@ import {
   collectQuoteLines,
   formatLineFeeOnly,
   formatMeasureFields,
-  formatProfitColumn,
+  formatPostalLimitBadge,
   formatTransitLabel,
   computeOvertimeCompensationDays,
   isVariantException,
+  logisticsLineKey,
   productQuoteActionLabel,
   collectProductQuotableVariantIds,
+  resolveSelectedLogisticsLine,
   shouldShowManualAcceptAction,
   TYPE_OPTIONS,
   variantCardTone,
 } from "@/lib/logistics/display";
+import { skuAlignProductHref } from "@/lib/sku-align/deep-link";
 import type { LogisticsPipelineProgress } from "@/lib/logistics/incremental-pipeline";
 import {
   computeProductShellMeta,
@@ -44,6 +47,13 @@ import type {
   VariantLogisticsDecision,
 } from "@/lib/types";
 import type { MeasureOverride } from "@/lib/logistics/product-shell";
+
+/** Shared column template — header and body must use the same tracks. */
+function skuRowGridClass(showOps: boolean): string {
+  return showOps
+    ? "grid-cols-[minmax(11rem,24%)_minmax(0,1fr)_5.75rem_7rem]"
+    : "grid-cols-[minmax(11rem,24%)_minmax(0,1fr)_5.75rem]";
+}
 
 function ProductThumb({
   src,
@@ -96,6 +106,9 @@ function FulfillmentSkuRow({
   onCorrect,
   measureEditPanel,
   hideQuoteActions = false,
+  productLevelSkuAlign = false,
+  selectedLineKey,
+  onSelectLine,
 }: {
   profile: ProductLogisticsProfile;
   variant: VariantLogisticsDecision;
@@ -115,6 +128,9 @@ function FulfillmentSkuRow({
   onCorrect: (type: LogisticsTypeCode) => void;
   measureEditPanel: ReactNode;
   hideQuoteActions?: boolean;
+  productLevelSkuAlign?: boolean;
+  selectedLineKey?: string | null;
+  onSelectLine?: (lineKey: string) => void;
 }) {
   const mergedDecision = useMemo(() => {
     if (!measureOverride) return variant;
@@ -130,11 +146,10 @@ function FulfillmentSkuRow({
   const tone = variantCardTone(mergedDecision);
   const measures = formatMeasureFields(mergedDecision, tone);
   const lines = collectQuoteLines(mergedDecision, quoteResult);
-  const recommended = lines[0];
-  const profit = formatProfitColumn(recommended, mergedDecision, pricing);
-  const routeFee = formatLineFeeOnly(recommended, pricing);
-  const transitLabel = formatTransitLabel(recommended);
-  const overtimeDays = computeOvertimeCompensationDays(recommended);
+  const selectedLine = resolveSelectedLogisticsLine(lines, selectedLineKey);
+  const routeFee = formatLineFeeOnly(selectedLine, pricing);
+  const transitLabel = formatTransitLabel(selectedLine);
+  const overtimeDays = computeOvertimeCompensationDays(selectedLine);
   const exception = isVariantException(mergedDecision);
   const rowStatus = computeSkuRowStatus(mergedDecision, quoteResult, {
     processing: Boolean(
@@ -145,7 +160,10 @@ function FulfillmentSkuRow({
   });
   const issueHint = formatVariantIssueHint(mergedDecision, quoteResult);
 
-  const showAccept = shouldShowManualAcceptAction(mergedDecision, { pipelineActive });
+  const showAccept = shouldShowManualAcceptAction(mergedDecision, {
+    pipelineActive,
+    quoteResult,
+  });
   const needsMeasure =
     exception &&
     (mergedDecision.decisionReason?.includes("重量") ||
@@ -153,9 +171,9 @@ function FulfillmentSkuRow({
       !mergedDecision.estimatedWeightG);
 
   let primaryAction: ReactNode = null;
-  if (mergedDecision.decisionStatus === "pending_sku") {
+  if (mergedDecision.decisionStatus === "pending_sku" && !productLevelSkuAlign) {
     primaryAction = (
-      <Link href="/sku-align">
+      <Link href={skuAlignProductHref(profile.thirdPlatformItemId)}>
         <Button size="sm" className="h-7 text-[11px]">
           去 SKU 对齐
         </Button>
@@ -171,7 +189,7 @@ function FulfillmentSkuRow({
     primaryAction = (
       <Button
         size="sm"
-        className="h-7 min-w-[4.5rem] text-[11px]"
+        className="h-7 min-w-[4rem]"
         onClick={onAcceptAi}
         disabled={busy || accepting || quotingThis}
       >
@@ -180,7 +198,7 @@ function FulfillmentSkuRow({
         ) : (
           <Check className="mr-1 h-3.5 w-3.5" />
         )}
-        确认方案
+        确认
       </Button>
     );
   } else if (rowStatus === "pending_review" && exception && !hideQuoteActions) {
@@ -196,66 +214,117 @@ function FulfillmentSkuRow({
       data-logistics-variant={variant.thirdPlatformSkuId}
       data-logistics-status={variant.decisionStatus}
       className={cn(
-        "border-t border-hairline/80 px-3 py-2 first:border-t-0",
+        "border-t border-hairline/80 px-4 py-3 first:border-t-0",
         rowStatus === "failed" && "bg-red-50/30",
         rowStatus === "pending_review" && "bg-amber-50/20"
       )}
     >
-      <div className="grid grid-cols-[minmax(5.5rem,7.5rem)_minmax(0,1fr)_4.5rem_5.5rem] items-center gap-x-4 gap-y-1">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-ink">
+      <div
+        className={cn(
+          "grid items-center gap-x-4",
+          skuRowGridClass(!hideQuoteActions)
+        )}
+      >
+        <div className="min-w-0 self-start py-0.5">
+          <p className="line-clamp-2 text-xs font-medium leading-snug text-ink">
             {variant.optionLabel || variant.thirdPlatformSkuId}
           </p>
-          <span className="mt-0.5 inline-flex rounded-full bg-surface-muted px-2 py-0.5 text-[10px] text-ink-subtle">
-            {SKU_ROW_STATUS_LABELS[rowStatus]}
-          </span>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            <span
+              className={cn(
+                "inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium",
+                rowStatus === "confirmed" && "bg-emerald-50 text-emerald-800",
+                rowStatus === "ready" && "bg-brand-soft text-brand-strong",
+                rowStatus === "pending_review" && "bg-amber-100 text-amber-800",
+                rowStatus === "pending_sku" && "bg-surface-muted text-ink-subtle",
+                rowStatus === "failed" && "bg-red-50 text-red-700",
+                rowStatus === "processing" && "bg-sky-50 text-sky-800"
+              )}
+            >
+              {SKU_ROW_STATUS_LABELS[rowStatus]}
+            </span>
+            {(() => {
+              const postal = formatPostalLimitBadge(mergedDecision);
+              return (
+                <span
+                  className={cn(
+                    "inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium",
+                    postal.className
+                  )}
+                  title={postal.title}
+                >
+                  {postal.label}
+                </span>
+              );
+            })()}
+          </div>
         </div>
 
-        <div className="flex min-w-0 items-center gap-2 overflow-hidden">
-          {recommended ? (
+        <div className="min-w-0 self-start py-0.5">
+          {selectedLine ? (
             <>
-              <span className="min-w-0 truncate text-[11px] text-ink">
-                {recommended.lineName}
-              </span>
-              <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 ring-1 ring-emerald-200">
-                超时必赔
-              </span>
-              {overtimeDays != null ? (
-                <span className="shrink-0 text-[10px] tabular-nums text-ink-subtle">
-                  超时时效 {overtimeDays}天
-                </span>
-              ) : null}
-              {transitLabel ? (
-                <span className="shrink-0 text-[10px] tabular-nums text-ink-muted">
-                  {transitLabel}
-                </span>
-              ) : null}
-              {profit.marginLabel && profit.marginLabel !== "毛利率 —" ? (
-                <span className="hidden shrink-0 text-[10px] tabular-nums text-ink-subtle xl:inline">
-                  {profit.marginLabel}
-                </span>
-              ) : null}
+              {lines.length > 1 && onSelectLine ? (
+                <Select
+                  value={logisticsLineKey(selectedLine)}
+                  onChange={(e) => onSelectLine(e.target.value)}
+                  disabled={busy || accepting}
+                  className="h-8 w-full max-w-[14rem] text-[11px] font-medium"
+                  title="选择物流线路"
+                >
+                  {lines.map((line) => {
+                    const key = logisticsLineKey(line);
+                    const fee = formatLineFeeOnly(line, pricing);
+                    return (
+                      <option key={key} value={key}>
+                        {line.lineName}
+                        {fee ? ` · ${fee}` : ""}
+                      </option>
+                    );
+                  })}
+                </Select>
+              ) : (
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="min-w-0 text-xs font-medium leading-snug text-ink">
+                    {selectedLine.lineName}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800 ring-1 ring-emerald-200">
+                    超时必赔
+                  </span>
+                </div>
+              )}
+              <p className="mt-1 text-[11px] leading-snug text-slate-600">
+                {[
+                  overtimeDays != null ? `超时时效 ${overtimeDays} 天` : null,
+                  transitLabel ? `时效 ${transitLabel}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
             </>
           ) : issueHint ? (
-            <span className="truncate text-[10px] text-amber-900">{issueHint}</span>
+            <span className="text-[11px] leading-snug text-amber-900">{issueHint}</span>
           ) : (
-            <span className="truncate text-[10px] text-ink-muted">
+            <span className="text-[11px] leading-snug text-ink-muted">
               {measures.weight} · {measures.dimensions}
             </span>
           )}
         </div>
 
-        <div className="text-right">
+        <div className="text-right tabular-nums">
           {routeFee ? (
-            <span className="text-sm font-semibold tabular-nums text-brand-strong">
-              {routeFee}
-            </span>
+            <span className="text-sm font-semibold text-brand-strong">{routeFee}</span>
           ) : (
-            <span className="text-[10px] text-ink-muted">—</span>
+            <span className="text-[11px] text-ink-muted">—</span>
           )}
         </div>
 
-        <div className="flex justify-end">{primaryAction}</div>
+        {!hideQuoteActions ? (
+          <div className="flex justify-end">
+            {primaryAction ?? (
+              <span className="text-[11px] text-ink-subtle">—</span>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {exception && !editingMeasures ? (
@@ -302,6 +371,8 @@ export function LogisticsProductGroup({
   onMeasureOverride,
   renderMeasureEditPanel,
   quotingProduct = false,
+  selectedLineByVariant,
+  onSelectLine,
 }: {
   profile: ProductLogisticsProfile;
   quoteResults: Map<string, LogisticsEstimateResult>;
@@ -323,6 +394,8 @@ export function LogisticsProductGroup({
   onCorrect: (type: LogisticsTypeCode) => void;
   onMeasureOverride?: (variantId: string, next: MeasureOverride) => void;
   quotingProduct?: boolean;
+  selectedLineByVariant?: Map<string, string>;
+  onSelectLine?: (variantId: string, lineKey: string) => void;
   renderMeasureEditPanel: (
     variant: VariantLogisticsDecision,
     override: MeasureOverride | undefined,
@@ -342,6 +415,35 @@ export function LogisticsProductGroup({
         .length,
     [variants, quoteResults, pipelineActive]
   );
+  const skuUnlinkedCount = useMemo(
+    () => variants.filter((v) => v.decisionStatus === "pending_sku").length,
+    [variants]
+  );
+  const needsSkuAlign = skuUnlinkedCount > 0;
+  const allSkuUnlinked =
+    variants.length > 0 && skuUnlinkedCount === variants.length;
+  const showOpsColumn = useMemo(() => {
+    if (allSkuUnlinked) return false;
+    return variants.some((variant) => {
+      const quote = quoteResults.get(variant.thirdPlatformSkuId);
+      if (variant.decisionStatus === "pending_sku") return false;
+      if (variant.decisionConfirmed || variant.decisionStatus === "confirmed") {
+        return false;
+      }
+      const exception = isVariantException(variant);
+      const needsMeasure =
+        exception &&
+        (variant.decisionReason?.includes("重量") ||
+          variant.decisionReason?.includes("尺寸") ||
+          !variant.estimatedWeightG);
+      if (needsMeasure) return true;
+      if (shouldShowManualAcceptAction(variant, { pipelineActive, quoteResult: quote })) {
+        return true;
+      }
+      if (exception) return true;
+      return false;
+    });
+  }, [allSkuUnlinked, variants, quoteResults, pipelineActive]);
 
   return (
     <article
@@ -350,6 +452,8 @@ export function LogisticsProductGroup({
         "overflow-hidden rounded-[var(--radius-card)] border bg-surface shadow-card transition-shadow",
         meta.status === "failed" && "border-red-200",
         meta.status === "issues" && "border-amber-200",
+        meta.status === "unidentified" && "border-hairline",
+        meta.status === "ready" && "border-brand/25",
         meta.status === "done" && "border-hairline",
         meta.status === "quoted" && "border-brand/25",
         pipelineHighlighted && "ring-2 ring-sky-400/70"
@@ -366,10 +470,10 @@ export function LogisticsProductGroup({
             alt={profile.title ?? "商品"}
           />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="line-clamp-1 text-sm font-medium text-ink">
-                {profile.title || profile.thirdPlatformItemId}
-              </p>
+            <p className="line-clamp-1 text-sm font-medium text-ink">
+              {profile.title || profile.thirdPlatformItemId}
+            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
               <span
                 className={cn(
                   "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
@@ -381,28 +485,42 @@ export function LogisticsProductGroup({
               {pipelineHighlighted || quotingProduct ? (
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-600" />
               ) : null}
+              <span className="text-[11px] text-ink-subtle">
+                {meta.skuTotal} 个 SKU
+                {meta.summaryLine ? ` · ${meta.summaryLine}` : ""}
+              </span>
             </div>
-            <p className="mt-0.5 text-[11px] text-ink-subtle">
-              {meta.skuTotal} 个 SKU · {meta.summaryLine}
-            </p>
             {!expanded && meta.issueLine ? (
-              <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-amber-900">
+              <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-amber-900">
                 {meta.issueLine}
               </p>
             ) : null}
           </div>
         </button>
-        {productQuoteLabel ? (
+        {needsSkuAlign ? (
+          <Link
+            href={skuAlignProductHref(profile.thirdPlatformItemId)}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Button size="sm" className="h-7 shrink-0">
+              去 SKU 对齐
+            </Button>
+          </Link>
+        ) : productQuoteLabel ? (
           <Button
             size="sm"
             variant={meta.status === "failed" ? "primary" : "secondary"}
-            className="h-8 shrink-0 text-[11px]"
+            className="h-7 shrink-0"
             onClick={(e) => {
               e.stopPropagation();
               onFetchProductQuotes();
             }}
             disabled={busy || quotingProduct || pipelineHighlighted}
-            title={`对本商品 ${quotableSkuCount} 个可处理 SKU 批量拉取/重试`}
+            title={
+              meta.status === "failed"
+                ? `对本商品 ${quotableSkuCount} 个失败 SKU 重试报价`
+                : `对本商品 ${quotableSkuCount} 个 SKU 单独运费预估`
+            }
           >
             {quotingProduct ? (
               <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -435,13 +553,16 @@ export function LogisticsProductGroup({
             </p>
           ) : null}
           <div
-            className="grid grid-cols-[minmax(5.5rem,7.5rem)_minmax(0,1fr)_4.5rem_5.5rem] gap-x-4 border-b border-hairline/80 px-3 py-1.5 text-[10px] text-ink-subtle"
+            className={cn(
+              "grid gap-x-4 border-b border-hairline/80 px-4 py-2 text-[10px] font-medium uppercase tracking-wide text-ink-muted",
+              skuRowGridClass(showOpsColumn)
+            )}
             aria-hidden
           >
             <span>规格</span>
             <span>线路 · 时效</span>
             <span className="text-right">运费</span>
-            <span />
+            {showOpsColumn ? <span className="text-right">操作</span> : null}
           </div>
           {variants.map((variant) => {
             const variantId = variant.thirdPlatformSkuId;
@@ -464,7 +585,14 @@ export function LogisticsProductGroup({
                 onSaveMeasures={(next) => onSaveMeasures(variantId, next)}
                 onAcceptAi={() => onAcceptAi(variant)}
                 onCorrect={onCorrect}
-                hideQuoteActions
+                productLevelSkuAlign={needsSkuAlign}
+                hideQuoteActions={!showOpsColumn}
+                selectedLineKey={selectedLineByVariant?.get(variantId)}
+                onSelectLine={
+                  onSelectLine
+                    ? (lineKey) => onSelectLine(variantId, lineKey)
+                    : undefined
+                }
                 measureEditPanel={renderMeasureEditPanel(
                   variant,
                   measureOverrides.get(variantId),

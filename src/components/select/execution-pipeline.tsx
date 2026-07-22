@@ -204,6 +204,8 @@ export function ExecutionPipeline({
             <span className="text-red-500">失败 {batchProgress.failed}</span>
           )}
         </div>
+      ) : isBatchRunning ? (
+        <p className="mt-1.5 text-[10px] text-slate-500">正在准备，请稍候…</p>
       ) : null}
 
       {/* Preview diff (when ready) */}
@@ -281,8 +283,8 @@ export function ExecutionPipeline({
         <p className="mt-2 text-[11px] text-red-700">{error}</p>
       ) : null}
 
-      {/* Cancel button — only for high-sensitivity ops during countdown */}
-      {sensitivity === "high" && showCountdown ? (
+      {/* Cancel — preview countdown or batch in progress */}
+      {(showCountdown || isBatchRunning || step === "preview_ready") ? (
         <div className="mt-2">
           <Button
             size="sm"

@@ -9,6 +9,7 @@ import {
   LOGISTICS_PAGE_SIZE,
   variantCardTone,
   type LogisticsFilterMode,
+  type PostalLimitFilter,
 } from "@/lib/logistics/display";
 import type { LogisticsPipelineProgress } from "@/lib/logistics/incremental-pipeline";
 import {
@@ -128,12 +129,14 @@ function MeasureEditPanel({
 function profileMatchesFilter(
   profile: ProductLogisticsProfile,
   filterMode: LogisticsFilterMode,
-  quoteResults: Map<string, LogisticsEstimateResult>
+  quoteResults: Map<string, LogisticsEstimateResult>,
+  postalLimitFilter: PostalLimitFilter
 ): boolean {
   const variants = filterVariants(
     profile.variantDecisions ?? [],
     filterMode,
-    quoteResults
+    quoteResults,
+    postalLimitFilter
   );
   return variants.length > 0;
 }
@@ -141,6 +144,7 @@ function profileMatchesFilter(
 export function LogisticsDecisionList({
   analysis,
   filterMode,
+  postalLimitFilter = "all",
   quoteResults,
   activeTemplate,
   correctingId,
@@ -155,9 +159,12 @@ export function LogisticsDecisionList({
   pricing,
   pipelineActive,
   pipelineProgress,
+  selectedLineByVariant,
+  onSelectLine,
 }: {
   analysis: LogisticsAnalysis;
   filterMode: LogisticsFilterMode;
+  postalLimitFilter?: PostalLimitFilter;
   quoteResults: Map<string, LogisticsEstimateResult>;
   activeTemplate: LogisticsTemplate | null;
   correctingId?: string | null;
@@ -172,22 +179,32 @@ export function LogisticsDecisionList({
   pricing?: PricingTemplate | null;
   pipelineActive?: boolean;
   pipelineProgress?: LogisticsPipelineProgress | null;
+  selectedLineByVariant?: Map<string, string>;
+  onSelectLine?: (variantId: string, lineKey: string) => void;
 }) {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
     setPage(1);
-  }, [filterMode]);
+  }, [filterMode, postalLimitFilter]);
 
   const profiles = useMemo(() => {
-    const filtered = filterProfiles(analysis.productProfiles ?? [], filterMode, quoteResults)
-      .filter((p) => profileMatchesFilter(p, filterMode, quoteResults))
+    const filtered = filterProfiles(
+      analysis.productProfiles ?? [],
+      filterMode,
+      quoteResults,
+      postalLimitFilter
+    )
+      .filter((p) =>
+        profileMatchesFilter(p, filterMode, quoteResults, postalLimitFilter)
+      )
       .map((profile) => ({
         profile,
         variants: filterVariants(
           profile.variantDecisions ?? [],
           filterMode,
-          quoteResults
+          quoteResults,
+          postalLimitFilter
         ),
       }));
 
@@ -203,7 +220,7 @@ export function LogisticsDecisionList({
       };
       return worst(a.variants) - worst(b.variants);
     });
-  }, [analysis.productProfiles, filterMode, quoteResults]);
+  }, [analysis.productProfiles, filterMode, quoteResults, postalLimitFilter]);
 
   const totalPages = Math.max(1, Math.ceil(profiles.length / LOGISTICS_PAGE_SIZE));
   const pagedProfiles = useMemo(() => {
@@ -254,8 +271,10 @@ export function LogisticsDecisionList({
       }
       const meta = shellMetaByProduct.get(productId);
       if (
-        filterMode === "ready" &&
-        (meta?.status === "failed" || meta?.status === "partial" || meta?.status === "issues")
+        filterMode === "pending_quote" ||
+        filterMode === "pending_confirm" ||
+        filterMode === "sku_unlinked" ||
+        filterMode === "exceptions"
       ) {
         return true;
       }
@@ -350,7 +369,7 @@ export function LogisticsDecisionList({
       <div className="rounded-[var(--radius-card)] border border-dashed border-hairline px-4 py-12 text-center">
         <p className="text-sm font-medium text-ink">当前筛选下暂无商品</p>
         <p className="mt-1 text-xs text-ink-subtle">
-          切换上方标签查看 AI 已规划或待确认项。
+          切换上方标签：自动完成、需确认、无法识别等。
         </p>
       </div>
     );
@@ -360,11 +379,26 @@ export function LogisticsDecisionList({
 
   return (
     <div className="space-y-3">
-      {filterMode === "ready" && readySkuCount > 0 ? (
+      {filterMode === "exceptions" ? (
+        <p className="rounded-[var(--radius-control)] border border-violet-200 bg-violet-50/50 px-3 py-2 text-[11px] leading-snug text-violet-900">
+          邮限或品类异常项。请核对分类、补充尺寸重量后再「确认」或重新运费预估。
+        </p>
+      ) : null}
+      {filterMode === "pending_confirm" ? (
+        <p className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50/50 px-3 py-2 text-[11px] leading-snug text-amber-900">
+          已有线路报价但尚未确认。展开后核对线路与运费，点击「确认」。
+        </p>
+      ) : null}
+      {filterMode === "sku_unlinked" ? (
+        <p className="rounded-[var(--radius-control)] border border-hairline bg-surface-muted/40 px-3 py-2 text-[11px] leading-snug text-ink-subtle">
+          这些 SKU 尚未关联货源。点击商品卡片上的「去 SKU 对齐」即可处理整款商品。
+        </p>
+      ) : null}
+      {filterMode === "pending_quote" && readySkuCount > 0 ? (
         <p className="rounded-[var(--radius-control)] border border-brand/20 bg-brand-soft/30 px-3 py-2 text-[11px] leading-snug text-ink">
           本 Tab 共{" "}
           <span className="font-semibold tabular-nums">{readySkuCount}</span>{" "}
-          个普货 SKU 待拉取报价。点击右上角「一键预估」可批量处理；失败项请展开后点「重试报价」。
+          个普货 SKU 待运费预估。点击右上角「运费预估」可批量处理；失败项请展开后点「重试报价」。
         </p>
       ) : null}
       {pagedProfiles.map(({ profile, variants }) => {
@@ -418,6 +452,8 @@ export function LogisticsDecisionList({
             onCorrect={(type) => onCorrect(productId, type)}
             onMeasureOverride={onMeasureOverride}
             renderMeasureEditPanel={renderMeasureEditPanel}
+            selectedLineByVariant={selectedLineByVariant}
+            onSelectLine={onSelectLine}
           />
         );
       })}
@@ -427,13 +463,13 @@ export function LogisticsDecisionList({
           <Button
             variant="secondary"
             size="sm"
-            className="h-8 w-8 px-0"
+            className="h-7 w-7 px-0"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1}
             title="上一页"
             aria-label="上一页"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="h-3.5 w-3.5" />
           </Button>
           <span className="min-w-[5.5rem] text-center text-xs text-ink-subtle tabular-nums">
             第 {page} / {totalPages} 页
@@ -441,13 +477,13 @@ export function LogisticsDecisionList({
           <Button
             variant="secondary"
             size="sm"
-            className="h-8 w-8 px-0"
+            className="h-7 w-7 px-0"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages}
             title="下一页"
             aria-label="下一页"
           >
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-3.5 w-3.5" />
           </Button>
         </div>
       ) : null}
