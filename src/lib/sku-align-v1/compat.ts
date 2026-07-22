@@ -5,6 +5,24 @@ import type {
   SkuAlignManualBindRequest,
 } from "./types";
 
+function extractErrorCode(err: unknown): string {
+  if (!(err instanceof ApiError)) {
+    return err instanceof Error ? err.message : "";
+  }
+  const body = err.body as { message?: string } | undefined;
+  let raw = body?.message ?? err.message ?? "";
+  const colonIdx = raw.indexOf("：");
+  if (colonIdx >= 0 && raw.startsWith("请求失败")) {
+    raw = raw.slice(colonIdx + 1).trim();
+  }
+  return raw;
+}
+
+/** Tangbuy itemGet 网关繁忙 — V1 bind 会拒绝，但浏览器侧已校验过规格时可走 legacy 落库。 */
+export function isGatewayBusyError(err: unknown): boolean {
+  return extractErrorCode(err).startsWith("GATEWAY_BUSY");
+}
+
 /** Render / older backends return 500 with Spring static-resource miss for undeployed V1 routes. */
 export function isSkuAlignV1Unavailable(err: unknown): boolean {
   if (!(err instanceof ApiError)) return false;
@@ -24,6 +42,26 @@ export function isSkuAlignV1Unavailable(err: unknown): boolean {
  */
 export function shouldFallbackToLegacyAlign(err: unknown): boolean {
   return isSkuAlignV1Unavailable(err);
+}
+
+function shouldFallbackToLegacyBind(err: unknown): boolean {
+  return isSkuAlignV1Unavailable(err) || isGatewayBusyError(err);
+}
+
+async function legacyBindSku(
+  variantId: string,
+  body: SkuAlignManualBindRequest,
+  legacy: { detailUrl?: string | null }
+): Promise<void> {
+  await api.bindSkuBinding({
+    shopName: body.shopName,
+    thirdPlatformItemId: body.thirdPlatformItemId,
+    thirdPlatformSkuId: variantId,
+    tangbuyProductId: body.offerId,
+    tangbuySkuId: body.offerSkuId,
+    tangbuySkuSpec: body.reason ?? null,
+    detailUrl: body.detailUrl ?? legacy.detailUrl ?? null,
+  });
 }
 
 /**
@@ -63,16 +101,8 @@ export async function manualBindWithFallback(
       detailUrl: body.detailUrl ?? legacy.detailUrl ?? undefined,
     });
   } catch (err) {
-    if (!isSkuAlignV1Unavailable(err)) throw err;
-    await api.bindSkuBinding({
-      shopName: body.shopName,
-      thirdPlatformItemId: body.thirdPlatformItemId,
-      thirdPlatformSkuId: variantId,
-      tangbuyProductId: body.offerId,
-      tangbuySkuId: body.offerSkuId,
-      tangbuySkuSpec: body.reason ?? null,
-      detailUrl: legacy.detailUrl ?? null,
-    });
+    if (!shouldFallbackToLegacyBind(err)) throw err;
+    await legacyBindSku(variantId, body, legacy);
   }
 }
 

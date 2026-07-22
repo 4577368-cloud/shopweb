@@ -53,6 +53,14 @@ import {
 import type { ImageSearchProduct, PricingTemplate, SkuProductOverview, SkuVariant } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+/** 对照行内下拉：白底 + 实线边框，避免与行背景色混在一起。 */
+const COMPARE_SELECT_CLASS =
+  "h-9 w-full border-slate-300 bg-white text-xs text-ink shadow-sm ring-1 ring-slate-200/90";
+
+/** 对照行右侧映射区：独立白底容器，提升辨识度。 */
+const COMPARE_MAP_PANEL_CLASS =
+  "min-w-0 rounded-md border border-slate-200 bg-white p-2.5 shadow-sm";
+
 /* ------------------------------------------------------------------ */
 /*  Helper components                                                   */
 /* ------------------------------------------------------------------ */
@@ -885,7 +893,7 @@ function PrimaryComparePanel({
       </div>
 
       {/* 对照列表 */}
-      <div className="flex-1 overflow-y-auto px-5 py-3">
+      <div className="flex-1 overflow-y-auto px-5 py-4">
         {loading ? (
           <div className="flex items-center gap-2 py-8 text-xs text-ink-muted">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -910,7 +918,7 @@ function PrimaryComparePanel({
             </Button>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {product.variants.map((variant) => (
               <PrimaryCompareRow
                 key={variant.thirdPlatformSkuId}
@@ -984,13 +992,13 @@ function PrimaryCompareRow({
       ref={rowRef}
       id={`sku-compare-row-${variant.thirdPlatformSkuId}`}
       className={cn(
-        "grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1.25fr)] items-center gap-3 rounded-[var(--radius-control)] border p-2.5 transition-colors",
+        "grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1.25fr)] items-center gap-3 rounded-[var(--radius-control)] border px-3 py-3.5 transition-colors",
         highlighted
           ? "border-brand bg-brand/5"
           : matched
-            ? "border-emerald-200 bg-emerald-50/40"
+            ? "border-emerald-200/80 bg-emerald-50/50"
             : isGap
-              ? "border-amber-200 bg-amber-50/40"
+              ? "border-amber-200/80 bg-amber-50/40"
               : "border-hairline bg-surface"
       )}
     >
@@ -1011,16 +1019,16 @@ function PrimaryCompareRow({
       </div>
 
       {/* 右：货源映射 */}
-      <div className="min-w-0">
+      <div className={COMPARE_MAP_PANEL_CLASS}>
         {showSelect ? (
-          <div className="space-y-1">
+          <div className="space-y-2">
             <Select
               value={effectiveSkuId}
               onChange={(e) => {
                 onSelect(e.target.value);
                 setEditing(false);
               }}
-              className="h-8 w-full text-[11px]"
+              className={COMPARE_SELECT_CLASS}
               disabled={ranked.length === 0}
             >
               <option value="">
@@ -1037,7 +1045,7 @@ function PrimaryCompareRow({
               <button
                 type="button"
                 onClick={onGoSupplement}
-                className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 hover:text-amber-800 hover:underline"
+                className="inline-flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-amber-300/80 bg-amber-50/60 px-2 py-1.5 text-[11px] font-medium text-amber-800 hover:bg-amber-50"
               >
                 <Plus className="h-3 w-3" />
                 当前货源无合适规格，为它新增货源
@@ -1144,7 +1152,7 @@ function SupplementPanel({
       </div>
 
       {/* 缺口列表 */}
-      <div className="flex-1 overflow-y-auto px-5 py-3">
+      <div className="flex-1 overflow-y-auto px-5 py-4">
         {searchLoading ? (
           <div className="flex items-center gap-2 py-8 text-xs text-ink-muted">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1167,7 +1175,7 @@ function SupplementPanel({
             点击右上「AI 一键识别」搜索同款货源。
           </p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {supplementGaps.map((variant) => (
               <SupplementGapRow
                 key={variant.thirdPlatformSkuId}
@@ -1232,8 +1240,8 @@ function SupplementGapRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1.5fr)] items-start gap-3 rounded-[var(--radius-control)] border p-2.5 transition-colors",
-        resolved ? "border-emerald-200 bg-emerald-50/40" : "border-amber-200 bg-amber-50/30"
+        "grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1.5fr)] items-center gap-3 rounded-[var(--radius-control)] border px-3 py-3.5 transition-colors",
+        resolved ? "border-emerald-200/80 bg-emerald-50/50" : "border-amber-200/80 bg-amber-50/40"
       )}
     >
       {/* 左：店铺变体 */}
@@ -1248,18 +1256,20 @@ function SupplementGapRow({
       </div>
 
       {/* 中 */}
-      <div className="flex justify-center pt-3 text-ink-subtle">
+      <div className="flex justify-center text-ink-subtle">
         <ArrowLeftRight className="h-4 w-4" />
       </div>
 
       {/* 右：商家 + 货源 SKU */}
-      <div className="min-w-0 space-y-1.5">
-        <div className="flex items-center gap-1.5">
-          <Store className="h-3 w-3 shrink-0 text-ink-subtle" />
+      <div className={cn(COMPARE_MAP_PANEL_CLASS, "space-y-2.5")}>
+        <div className="space-y-1">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
+            商家
+          </p>
           <Select
             value={candidateKey}
             onChange={(e) => onSetMerchant(e.target.value)}
-            className="h-8 w-full text-[11px]"
+            className={COMPARE_SELECT_CLASS}
           >
             <option value="">选择商家…</option>
             {candidates.map((c) => {
@@ -1273,12 +1283,16 @@ function SupplementGapRow({
             })}
           </Select>
         </div>
-        <Select
-          value={skuId}
-          onChange={(e) => onSetSku(e.target.value)}
-          className="h-8 w-full text-[11px]"
-          disabled={!candidateKey || skuOptions.length === 0}
-        >
+        <div className="space-y-1">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
+            货源规格
+          </p>
+          <Select
+            value={skuId}
+            onChange={(e) => onSetSku(e.target.value)}
+            className={COMPARE_SELECT_CLASS}
+            disabled={!candidateKey || skuOptions.length === 0}
+          >
           <option value="">
             {!candidateKey
               ? "先选择商家"
@@ -1292,9 +1306,10 @@ function SupplementGapRow({
               {r.matchScore > 0 ? ` · ${Math.round(r.matchScore * 100)}%` : ""}
             </option>
           ))}
-        </Select>
+          </Select>
+        </div>
         {resolved ? (
-          <div className="flex items-center gap-1.5 rounded bg-white/70 px-2 py-1">
+          <div className="flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/80 px-2.5 py-2">
             <VariantThumb
               src={chosenRow?.imageUrl?.trim() || chosenCandidate?.candidate.imageUrl || null}
               alt={chosenRow?.specLabel ?? ""}
