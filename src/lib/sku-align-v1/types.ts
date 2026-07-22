@@ -175,6 +175,8 @@ export interface SkuAlignManualBindRequest {
   offerSkuId: string;
   sourceRole?: SourceRole;
   reason?: string;
+  /** Tangbuy product URL — backend validates skuId via itemGet (same as browser picker). */
+  detailUrl?: string | null;
 }
 
 export interface SkuAlignBlockVariantRequest {

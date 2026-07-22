@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { ThumbImage } from "@/components/ui/thumb-image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ImageOff, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,8 +8,8 @@ import { Field, Input } from "@/components/ui/input";
 import { api, readableError } from "@/lib/api";
 import {
   buildManualMatchConfirmRequest,
+  finalizeManualMatchBinding,
   loadManualMatchProduct,
-  withManualMatchBindingMeta,
 } from "@/lib/manual-image-match";
 import { mapItemGetToSourceSkuMatrix } from "@/lib/source-sku-matrix";
 import type { ImageBindingView } from "@/lib/types";
@@ -151,7 +151,9 @@ export function ManualMatchDrawer({
         selectedSkuId,
       });
       const view = await api.confirmImageMatch(req);
-      onBound(withManualMatchBindingMeta(view, req.offerTitle));
+      onBound(
+        await finalizeManualMatchBinding(shopName, thirdPlatformItemId, view, req)
+      );
       showToast("已人工匹配货源");
       onClose();
     } catch (err) {
@@ -257,12 +259,13 @@ export function ManualMatchDrawer({
                   <div className="flex gap-3">
                     <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
                       {hero ? (
-                        <Image
+                        <ThumbImage
                           src={hero}
                           alt={title}
                           fill
+                          sizes="96px"
+                          pixelWidth={192}
                           className="object-cover"
-                          unoptimized
                           referrerPolicy="no-referrer"
                         />
                       ) : (
@@ -297,12 +300,13 @@ export function ManualMatchDrawer({
                             key={url}
                             className="relative aspect-square overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted"
                           >
-                            <Image
+                            <ThumbImage
                               src={url}
                               alt=""
                               fill
+                              sizes="120px"
+                              pixelWidth={240}
                               className="object-cover"
-                              unoptimized
                               referrerPolicy="no-referrer"
                             />
                           </div>
@@ -353,12 +357,13 @@ export function ManualMatchDrawer({
                                   <div className="flex items-center gap-2">
                                     <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded border border-hairline bg-surface-muted">
                                       {row.imageUrl ? (
-                                        <Image
+                                        <ThumbImage
                                           src={row.imageUrl}
                                           alt={row.specLabel}
                                           fill
+                                          sizes="40px"
+                                          pixelWidth={80}
                                           className="object-cover"
-                                          unoptimized
                                           referrerPolicy="no-referrer"
                                         />
                                       ) : (

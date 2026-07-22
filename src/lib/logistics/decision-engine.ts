@@ -39,6 +39,7 @@ const NEEDS_REVIEW_TYPES: Set<LogisticsTypeCode> = new Set([
   "FOOD",
   "BLADE",
   "OTHER",
+  "BATTERY_MAGNETIC",
 ]);
 
 export function computeVariantDecisionStatus(
@@ -77,7 +78,7 @@ export function computeVariantDecisionStatus(
 
   return {
     status: "ready_for_quote",
-    reason: "数据完整，可发起报价",
+    reason: "",
   };
 }
 
@@ -170,13 +171,44 @@ function transformLegacyProfile(
   if (skuItem) {
     for (const variant of skuItem.variants) {
       const bound = variant.bound;
+      const bindStatus = bound?.bindStatus?.trim().toUpperCase();
+      const hasBindingIds =
+        Boolean(bound?.tangbuySkuId?.trim()) &&
+        Boolean(bound?.tangbuyProductId?.trim());
+      const bindingActive =
+        hasBindingIds && (!bindStatus || bindStatus === "ACTIVE");
+
+      if (hasBindingIds && bindStatus === "PENDING") {
+        variantDecisions.push({
+          thirdPlatformSkuId: variant.thirdPlatformSkuId,
+          optionLabel: variant.optionLabel,
+          tangbuySkuId: bound?.tangbuySkuId ?? null,
+          tangbuyGoodsId: bound?.tangbuyProductId ?? null,
+          postalLimitClass: baseDecision.postalLimitClass,
+          postalLimitLabel: baseDecision.postalLimitLabel,
+          postalLimitConfidence: baseDecision.postalLimitConfidence,
+          decisionStatus: "pending_sku",
+          decisionReason: "SKU 绑定待确认，请先在 SKU 对齐页确认后再报价",
+          listingPrice: variant.price ?? null,
+          listingCurrency: skuItem.currency ?? null,
+        });
+        continue;
+      }
+
       const decision: Partial<VariantLogisticsDecision> = {
         ...baseDecision,
-        tangbuySkuId: bound?.tangbuySkuId ?? null,
-        tangbuyGoodsId: bound?.tangbuyProductId ?? null,
+        tangbuySkuId: bindingActive ? (bound?.tangbuySkuId ?? null) : null,
+        tangbuyGoodsId: bindingActive ? (bound?.tangbuyProductId ?? null) : null,
       };
 
       const { status, reason } = computeVariantDecisionStatus(decision);
+
+      const offerRaw = bound?.offerPrice?.trim();
+      let procurementCostCny: number | null = null;
+      if (offerRaw) {
+        const parsed = Number.parseFloat(offerRaw.replace(/[^\d.]/g, ""));
+        if (Number.isFinite(parsed) && parsed > 0) procurementCostCny = parsed;
+      }
 
       variantDecisions.push({
         thirdPlatformSkuId: variant.thirdPlatformSkuId,
@@ -188,6 +220,9 @@ function transformLegacyProfile(
         postalLimitConfidence: decision.postalLimitConfidence,
         decisionStatus: status,
         decisionReason: reason,
+        listingPrice: variant.price ?? null,
+        listingCurrency: skuItem.currency ?? null,
+        procurementCostCny,
       });
     }
   }

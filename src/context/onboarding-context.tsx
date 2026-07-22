@@ -30,6 +30,7 @@ import {
   type WorkflowBindingProgress,
   type WorkflowSkuProgress,
 } from "@/lib/workflow-progress";
+import type { LogisticsStepSnapshot } from "@/lib/logistics/completion-gate";
 import type {
   AuthStatus,
   LogisticsForm,
@@ -78,7 +79,7 @@ interface OnboardingState {
   updateLogisticsForm: (patch: Partial<LogisticsForm>) => void;
   setSelectedLogisticsPlanId: (id: string) => void;
   saveLogistics: () => void;
-  startSync: () => void;
+  startSync: (options?: { force?: boolean }) => void;
   clearToast: () => void;
   showToast: (message: string) => void;
   isAuthorized: boolean;
@@ -86,6 +87,9 @@ interface OnboardingState {
   authSessionReady: boolean;
   productsReadyForNext: boolean;
   skuReadyForNext: boolean;
+  workflowSku: WorkflowSkuProgress | null;
+  logisticsStepSnapshot: LogisticsStepSnapshot | null;
+  publishLogisticsStepSnapshot: (snapshot: LogisticsStepSnapshot | null) => void;
   syncCompleted: boolean;
   refreshWorkflowProgress: () => Promise<void>;
 }
@@ -133,6 +137,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [workflowSku, setWorkflowSku] = useState<WorkflowSkuProgress | null>(
     null
   );
+  const [logisticsStepSnapshot, setLogisticsStepSnapshot] =
+    useState<LogisticsStepSnapshot | null>(null);
   const authRestoreStartedRef = useRef(false);
 
   const updateStepStatus = useCallback(
@@ -339,19 +345,29 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setToastMessage("物流配置已保存，可开始同步");
   }, [updateStepStatus]);
 
-  const startSync = useCallback(() => {
-    if (!logisticsCompleted) return;
-    setSyncPhase("syncing");
-    window.setTimeout(() => {
-      setSyncPhase("completed");
-      setToastMessage("同步完成");
-    }, 1200);
-  }, [logisticsCompleted]);
+  const startSync = useCallback(
+    (options?: { force?: boolean }) => {
+      if (!logisticsCompleted && !options?.force) return;
+      setSyncPhase("syncing");
+      window.setTimeout(() => {
+        setSyncPhase("completed");
+        setToastMessage("同步完成");
+      }, 1200);
+    },
+    [logisticsCompleted]
+  );
 
   const clearToast = useCallback(() => setToastMessage(null), []);
   const showToast = useCallback((message: string) => {
     setToastMessage(message);
   }, []);
+
+  const publishLogisticsStepSnapshot = useCallback(
+    (snapshot: LogisticsStepSnapshot | null) => {
+      setLogisticsStepSnapshot(snapshot);
+    },
+    []
+  );
 
   const isAuthorized = authStatus === "authorized";
 
@@ -401,7 +417,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     const skuComplete = skuStatus === "completed";
     updateStepStatus(
       "logistics",
-      deriveLogisticsStepStatus(isAuthorized, skuComplete, logisticsCompleted)
+      deriveLogisticsStepStatus(isAuthorized, skuComplete, logisticsCompleted, workflowSku)
     );
   }, [
     isAuthorized,
@@ -451,6 +467,9 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       authSessionReady,
       productsReadyForNext,
       skuReadyForNext,
+      workflowSku,
+      logisticsStepSnapshot,
+      publishLogisticsStepSnapshot,
       syncCompleted,
       refreshWorkflowProgress,
     }),
@@ -484,6 +503,9 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       authSessionReady,
       productsReadyForNext,
       skuReadyForNext,
+      workflowSku,
+      logisticsStepSnapshot,
+      publishLogisticsStepSnapshot,
       syncCompleted,
       refreshWorkflowProgress,
     ]

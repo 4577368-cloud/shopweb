@@ -1,3 +1,4 @@
+import { isPendingImageBinding } from "@/lib/shop-product-binding-stats";
 import type { ImageBindingView, MatchJobProgress } from "@/lib/types";
 
 export type NewArrivalAnalysisSource = "manual" | "auto";
@@ -26,8 +27,8 @@ export function buildNewArrivalAnalysisResult(input: {
 
   for (const id of attemptedIds) {
     const binding = bindingsByItemId[id];
-    if (binding?.bound) pendingItemIds.push(id);
-    else unmatchedItemIds.push(id);
+    if (isPendingImageBinding(binding)) pendingItemIds.push(id);
+    else if (!binding?.bound) unmatchedItemIds.push(id);
   }
 
   // If the queue reports links but bindings are not visible yet, trust the job.

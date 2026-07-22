@@ -63,7 +63,7 @@ function explainMatchReason(
     `商品：${focus.title}`,
     ...focus.rankingReasons,
     ctx.pricing.configured
-      ? `定价策略（${ctx.pricing.targetCurrency}）影响发现新品建议售价，不改变此处采购成本展示。`
+      ? `定价策略（${ctx.pricing.targetCurrency} · 汇率 ${ctx.pricing.exchangeRate}）与采购成本展示共用汇率；倍率加价仅用于发现新品建议售价。`
       : "尚未配置定价策略：采购成本按店铺币种默认汇率展示；发现新品建议售价需先配定价。",
   ];
   if (focus.bindState === "unbound") {

@@ -58,7 +58,10 @@ export async function manualBindWithFallback(
   legacy: { detailUrl?: string | null }
 ): Promise<void> {
   try {
-    await api.skuAlignV1ManualBind(variantId, body);
+    await api.skuAlignV1ManualBind(variantId, {
+      ...body,
+      detailUrl: body.detailUrl ?? legacy.detailUrl ?? undefined,
+    });
   } catch (err) {
     if (!isSkuAlignV1Unavailable(err)) throw err;
     await api.bindSkuBinding({

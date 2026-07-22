@@ -8,7 +8,6 @@ import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
-import { InfoCard } from "@/components/workbench/info-card";
 import { AiCopilotScanStage } from "@/components/workbench/ai-copilot-scan-stage";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { useProductsScan } from "@/hooks/use-products-scan";
@@ -18,6 +17,7 @@ import { scanBriefingLine } from "@/lib/scan/copilot-workflow";
 import {
   aiFieldEditKey,
   applyListingEditsToProducts,
+  applyTitleEditsToProducts,
   formatListingMoney,
   type AiFieldEditRecord,
   type AiFieldId,
@@ -33,24 +33,14 @@ import {
   writeProductBaseline,
   type NewArrivalStats,
 } from "@/lib/shop-product-mirror-baseline";
-import {
-  formatNewArrivalAnalysisSummary,
-  type NewArrivalAnalysisResult,
-} from "@/lib/new-arrival-analysis-result";
+import { formatNewArrivalAnalysisSummary } from "@/lib/new-arrival-analysis-result";
 import { mergeProductBaseline } from "@/lib/shop-product-mirror-baseline";
 import { formatBatchLinkSummary } from "@/lib/batch-link/types";
 import type { BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
 import { buildNewArrivalResultFromBatch } from "@/lib/batch-link/build-new-arrival-result";
-import {
-  batchLinkScopeIds,
-  buildBatchLinkScope,
-} from "@/lib/batch-link/scope";
 import { SmartSourcingSummaryBar } from "@/components/select/smart-sourcing-summary-bar";
-import { PricingStrategyRailCard } from "@/components/select/pricing-strategy-rail-card";
 import { PricingTemplateDrawer } from "@/components/select/pricing-template-drawer";
 import { ProductsAgentPanel } from "@/components/select/products-agent-panel";
-import { PageAgentPanel } from "@/components/workbench/page-agent-panel";
-import { productsAgentConfig } from "@/lib/agents/page-agent/products-config";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -81,6 +71,14 @@ import type {
 import type { ScanHandoffPayload } from "@/lib/scan/handoff";
 
 type Tab = "shop" | "catalog";
+
+function resolveTitleCopyStyle(
+  copyAction: "translate" | "rewrite" | "optimize",
+  copyStyle?: "amazon" | "literal"
+): "amazon" | "literal" {
+  if (copyStyle === "amazon" || copyStyle === "literal") return copyStyle;
+  return copyAction === "translate" ? "amazon" : "literal";
+}
 
 const BREADCRUMBS = [{ label: "工作台", href: "/" }, { label: "智能选品" }];
 
@@ -229,8 +227,8 @@ function SelectContent() {
     ]);
     const map = indexImageBindings(bindings);
     const stats = computeShopProductBindingStats(products, map);
-    const merged = applyListingEditsToProducts(
-      products,
+    const merged = applyTitleEditsToProducts(
+      applyListingEditsToProducts(products, aiFieldEditsRef.current),
       aiFieldEditsRef.current
     );
     setBindingsMap(map);
@@ -299,12 +297,15 @@ function SelectContent() {
     setFocusCandidates([]);
   }, [focusProductId]);
 
-  const [newArrivalAnalysisResult, setNewArrivalAnalysisResult] =
-    useState<NewArrivalAnalysisResult | null>(null);
   const [batchLinkProgress, setBatchLinkProgress] = useState<BatchLinkProgress | null>(
     null
   );
   const [batchLinkRequest, setBatchLinkRequest] = useState<BatchLinkRequest | null>(null);
+  const [pageLinkableScope, setPageLinkableScope] = useState<{
+    ids: string[];
+    page: number;
+    totalPages: number;
+  }>({ ids: [], page: 1, totalPages: 1 });
   const [searchQuery, setSearchQuery] = useState("");
   const batchLinkRequestSeq = useRef(0);
   const autoLinkVisitRef = useRef(false);
@@ -319,32 +320,26 @@ function SelectContent() {
   }, []);
 
   const batchLinkActive = batchLinkProgress?.active ?? false;
-
-  const linkableScope = useMemo(
-    () =>
-      buildBatchLinkScope(
-        shopProducts,
-        bindingsMap,
-        newArrivalStats.pendingNewAnalysisIds
-      ),
-    [shopProducts, bindingsMap, newArrivalStats.pendingNewAnalysisIds]
-  );
-  const linkableCount = linkableScope.length;
+  const pageLinkableCount = pageLinkableScope.ids.length;
 
   const enqueueBatchLink = useCallback(
     (source: BatchLinkRequest["source"]) => {
       if (batchLinkActive) return;
-      const ids = batchLinkScopeIds(linkableScope);
-      if (ids.length === 0) {
-        showToast("暂无可关联商品（需有主图）");
+      if (pageLinkableScope.ids.length === 0) {
+        showToast("当前页暂无可关联商品（需有主图）");
         return;
       }
       setTab("shop");
       setShopFilter("all");
-      setNewArrivalAnalysisResult(null);
-      fireBatchLink(source, ids);
+      fireBatchLink(source, pageLinkableScope.ids);
     },
-    [batchLinkActive, fireBatchLink, linkableScope, setTab, showToast]
+    [
+      batchLinkActive,
+      fireBatchLink,
+      pageLinkableScope.ids,
+      setTab,
+      showToast,
+    ]
   );
 
   const batchLinkActiveRef = useRef(false);
@@ -360,38 +355,20 @@ function SelectContent() {
   useEffect(() => {
     if (phase !== "result" || !isAuthorized || tab !== "shop" || batchLinkActive) return;
     if (autoLinkVisitRef.current) return;
-    if (summary == null || linkableCount === 0) return;
+    if (summary == null || pageLinkableScope.ids.length === 0) return;
 
     autoLinkVisitRef.current = true;
     setShopFilter("all");
-    fireBatchLink("auto", batchLinkScopeIds(linkableScope));
+    fireBatchLink("auto", pageLinkableScope.ids);
   }, [
     batchLinkActive,
     fireBatchLink,
     isAuthorized,
-    linkableCount,
-    linkableScope,
+    pageLinkableScope.ids,
     phase,
     summary,
     tab,
   ]);
-
-  const viewNewArrivalResult = useCallback(
-    (target: "pending" | "unbound") => {
-      if (!newArrivalAnalysisResult) return;
-      const itemIds =
-        target === "pending"
-          ? newArrivalAnalysisResult.pendingItemIds
-          : newArrivalAnalysisResult.unmatchedItemIds;
-      setTab("shop");
-      setShopFilter(target === "pending" ? "pending" : "unbound");
-      if (itemIds[0]) {
-        setFocusProductId(itemIds[0]);
-        setScrollToProductId(itemIds[0]);
-      }
-    },
-    [newArrivalAnalysisResult, setTab]
-  );
 
   const restartScan = useCallback(() => {
     finishedRef.current = false;
@@ -416,8 +393,8 @@ function SelectContent() {
       (p) => p.thirdPlatformItemId === focusProductId
     );
     if (!product) return null;
-    return buildProductFocusSnapshot(product, bindingsMap[focusProductId]);
-  }, [focusProductId, shopProducts, bindingsMap]);
+    return buildProductFocusSnapshot(product, bindingsMap[focusProductId], template);
+  }, [focusProductId, shopProducts, bindingsMap, template]);
 
   const openPricingDrawer = useCallback(() => {
     if (!isAuthorized) {
@@ -430,11 +407,19 @@ function SelectContent() {
 
   const productCatalog = useMemo(
     () =>
-      shopProducts.map((p) => ({
-        productId: p.thirdPlatformItemId,
-        title: (p.title ?? "").trim() || p.thirdPlatformItemId,
-      })),
-    [shopProducts]
+      shopProducts.map((p) => {
+        const binding = bindingsMap[p.thirdPlatformItemId];
+        let bindState: string = "unbound";
+        if (binding?.bound) {
+          bindState = binding.bindStatus === "PENDING" ? "pending" : "confirmed";
+        }
+        return {
+          productId: p.thirdPlatformItemId,
+          title: (p.title ?? "").trim() || p.thirdPlatformItemId,
+          bindState,
+        };
+      }),
+    [shopProducts, bindingsMap]
   );
 
   const pageContext = useMemo(
@@ -517,7 +502,7 @@ function SelectContent() {
     return {
       ...pageContext,
       focusProductId: productId,
-      focusProduct: buildProductFocusSnapshot(product, bindingsMap[productId]),
+      focusProduct: buildProductFocusSnapshot(product, bindingsMap[productId], template),
       focusCandidateId:
         reqCandidateId ??
         (productId === focusProductId ? focusCandidateId : null),
@@ -533,6 +518,7 @@ function SelectContent() {
     focusProductId,
     focusCandidateId,
     focusCandidates,
+    template,
   ]);
 
   const requestAgentIntent = useCallback(
@@ -577,6 +563,13 @@ function SelectContent() {
     [setTab, pendingMinis, unboundMinis]
   );
 
+  const [highlightedArea, setHighlightedArea] = useState<string | null>(null);
+
+  const highlight = useCallback((area: string) => {
+    setHighlightedArea(area);
+    setTimeout(() => setHighlightedArea(null), 2000);
+  }, []);
+
   const applyAgentAction = useCallback(
     (res: AgentResponse) => {
       const action = res.suggestedAction;
@@ -585,13 +578,16 @@ function SelectContent() {
         action.kind === "open_pricing_drawer"
       ) {
         openPricingDrawer();
+        highlight("pricing");
       }
       if (action.kind === "set_tab" && action.tab) {
         setTab(action.tab);
+        highlight("tabs");
       }
       if (action.kind === "set_shop_filter") {
         if (action.tab) setTab(action.tab);
         if (action.shopFilter) setShopFilter(action.shopFilter);
+        highlight("filters");
         if (action.shopFilter === "pending" && pendingMinis[0]) {
           setFocusProductId(pendingMinis[0].productId);
           setScrollToProductId(pendingMinis[0].productId);
@@ -707,6 +703,536 @@ function SelectContent() {
     [bumpMirrorRefresh, loadSummary, shopName, showToast]
   );
 
+  const executeProductCopyUpdate = useCallback(
+    async (req: {
+      productId: string;
+      copyField: "title" | "description" | "all";
+      copyAction: "translate" | "rewrite" | "optimize";
+      targetLang?: string;
+      copyStyle?: "amazon" | "literal";
+      tone?: string;
+      previewText: string;
+    }) => {
+      if (req.copyField === "title" || req.copyField === "all") {
+        try {
+          const detail = await api.getShopProductDetail(shopName, req.productId);
+          const previousTitle = detail.title ?? "";
+          const style = resolveTitleCopyStyle(req.copyAction, req.copyStyle);
+          const translated =
+            req.previewText?.trim() ||
+            (
+              await api.translateText(
+                previousTitle,
+                req.targetLang,
+                undefined,
+                style
+              )
+            ).translatedText ||
+            "";
+          if (!translated) {
+            throw new Error("标题生成失败");
+          }
+          const result = await api.updateShopProduct(shopName, {
+            itemId: req.productId,
+            title: translated,
+          });
+          const nextTitle = result.title ?? translated;
+          const editRecord: AiFieldEditRecord = {
+            productId: req.productId,
+            field: "title",
+            previousDisplay: previousTitle || "—",
+            nextDisplay: nextTitle,
+            createdAt: Date.now(),
+          };
+          const editsWithCurrent = {
+            ...aiFieldEditsRef.current,
+            [aiFieldEditKey(req.productId, "title")]: editRecord,
+          };
+          aiFieldEditsRef.current = editsWithCurrent;
+          setAiFieldEdits(editsWithCurrent);
+          setShopProducts((prev) =>
+            prev.map((p) =>
+              p.thirdPlatformItemId === req.productId
+                ? { ...p, title: nextTitle }
+                : p
+            )
+          );
+          bumpMirrorRefresh();
+          await loadSummary();
+          const actionLabel =
+            req.copyAction === "translate"
+              ? `翻译为 ${req.targetLang?.toUpperCase() ?? "EN"}`
+              : req.copyAction === "rewrite"
+                ? "改写"
+                : "优化";
+          showToast(`已将商品标题${actionLabel}并更新到 Shopify`);
+        } catch (err) {
+          showToast(readableError(err) || "更新商品标题失败");
+          throw err;
+        }
+      }
+    },
+    [bumpMirrorRefresh, loadSummary, shopName, showToast]
+  );
+
+  const executeBatchProductCopyUpdate = useCallback(
+    async (req: {
+      productIds: string[];
+      copyField: "title" | "description" | "all";
+      copyAction: "translate" | "rewrite" | "optimize";
+      targetLang?: string;
+      copyStyle?: "amazon" | "literal";
+      tone?: string;
+      onProgress?: (current: number, total: number, success: number, failed: number) => void;
+    }) => {
+      const { productIds, copyField, copyAction, targetLang, copyStyle, onProgress } = req;
+      const style = resolveTitleCopyStyle(copyAction, copyStyle);
+      const total = productIds.length;
+      let success = 0;
+      let failed = 0;
+
+      for (let i = 0; i < total; i++) {
+        const productId = productIds[i];
+        try {
+          const detail = await api.getShopProductDetail(shopName, productId);
+          const originalTitle = detail.title ?? "";
+          let newText = "";
+
+          if (copyAction === "translate") {
+            const result = await api.translateText(
+              originalTitle,
+              targetLang,
+              undefined,
+              style
+            );
+            if (result.success && result.translatedText) {
+              newText = result.translatedText;
+            } else {
+              throw new Error(result.error ?? "标题本土化失败");
+            }
+          } else {
+            throw new Error("该文案操作暂未实现");
+          }
+
+          if (copyField === "title" || copyField === "all") {
+            const updateResult = await api.updateShopProduct(shopName, {
+              itemId: productId,
+              title: newText,
+            });
+            const nextTitle = updateResult.title ?? newText;
+            const editRecord: AiFieldEditRecord = {
+              productId,
+              field: "title",
+              previousDisplay: originalTitle || "—",
+              nextDisplay: nextTitle,
+              createdAt: Date.now(),
+            };
+            const editsWithCurrent = {
+              ...aiFieldEditsRef.current,
+              [aiFieldEditKey(productId, "title")]: editRecord,
+            };
+            aiFieldEditsRef.current = editsWithCurrent;
+            setAiFieldEdits(editsWithCurrent);
+            setShopProducts((prev) =>
+              prev.map((p) =>
+                p.thirdPlatformItemId === productId
+                  ? { ...p, title: nextTitle }
+                  : p
+              )
+            );
+          }
+
+          success++;
+        } catch {
+          failed++;
+        }
+
+        onProgress?.(i + 1, total, success, failed);
+      }
+
+      bumpMirrorRefresh();
+      await loadSummary();
+
+      const actionLabel =
+        copyAction === "translate"
+          ? `翻译为 ${targetLang?.toUpperCase() ?? "EN"}`
+          : copyAction === "rewrite"
+            ? "改写"
+            : "优化";
+      showToast(`批量${actionLabel}完成：成功 ${success} 个，失败 ${failed} 个`);
+    },
+    [bumpMirrorRefresh, loadSummary, shopName, showToast]
+  );
+
+  const executeBatchListingPriceUpdate = useCallback(
+    async (req: {
+      productIds: string[];
+      batchPriceMultiplier?: number;
+      batchPriceFixed?: number;
+      onProgress?: (current: number, total: number, success: number, failed: number) => void;
+    }) => {
+      const { productIds, batchPriceMultiplier, batchPriceFixed, onProgress } = req;
+      const total = productIds.length;
+      let success = 0;
+      let failed = 0;
+
+      for (let i = 0; i < total; i++) {
+        const productId = productIds[i];
+        try {
+          const detail = await api.getShopProductDetail(shopName, productId);
+          let targetPrice = 0;
+
+          if (batchPriceFixed) {
+            targetPrice = batchPriceFixed;
+          } else if (batchPriceMultiplier && detail.minPrice != null) {
+            targetPrice = detail.minPrice * batchPriceMultiplier;
+          } else {
+            throw new Error("无法计算目标价格");
+          }
+
+          const target = { scope: "all" } as const;
+          await writeShopListingPrice(shopName, productId, targetPrice, target);
+          success++;
+        } catch {
+          failed++;
+        }
+
+        onProgress?.(i + 1, total, success, failed);
+      }
+
+      bumpMirrorRefresh();
+      await loadSummary();
+
+      const modeLabel = batchPriceFixed ? `固定价格 ${batchPriceFixed}` : `当前价格 × ${batchPriceMultiplier}`;
+      showToast(`批量改价完成（${modeLabel}）：成功 ${success} 个，失败 ${failed} 个`);
+    },
+    [bumpMirrorRefresh, loadSummary, shopName, showToast]
+  );
+
+  const previewGenerators = useMemo(
+    () => ({
+      update_product_copy: async (plan: any, shopName: string) => {
+        const productId = plan.draft.productId ?? plan.draft.params.productId;
+        const copyField = plan.draft.params.copyField ?? "title";
+        const copyAction = plan.draft.params.copyAction ?? "translate";
+        const targetLang = plan.draft.params.copyTargetLang ?? "en";
+        const copyStyle = plan.draft.params.copyStyle;
+
+        const detail = await api.getShopProductDetail(shopName, productId);
+        const originalTitle = detail.title ?? "";
+        let translatedText = "";
+        const style = resolveTitleCopyStyle(copyAction, copyStyle);
+
+        if (copyAction === "translate") {
+          const result = await api.translateText(
+            originalTitle,
+            targetLang,
+            undefined,
+            style
+          );
+          if (!result.success || !result.translatedText) {
+            throw new Error(result.error ?? "标题生成失败");
+          }
+          translatedText = result.translatedText;
+        } else {
+          throw new Error("该文案操作暂未实现");
+        }
+
+        const fieldLabel =
+          copyField === "title" ? "标题" : copyField === "description" ? "描述" : "全部文案";
+        const modeNote =
+          style === "literal"
+            ? "直译模式"
+            : "去噪 + Amazon 结构重组";
+
+        return {
+          sections: [
+            {
+              rows: [
+                {
+                  label: fieldLabel,
+                  before: originalTitle,
+                  after: translatedText,
+                },
+              ],
+            },
+          ],
+          extraNote: `${modeNote} · ${copyField === "all" ? "将更新标题与描述" : ""}`.trim(),
+          impact: {
+            scope: `修改 1 个商品（${fieldLabel}）`,
+            durationHint: "约 2 秒",
+            reversible: true,
+            riskNote: undefined,
+          },
+          payload: {
+            productId,
+            copyField,
+            copyAction,
+            targetLang,
+            copyStyle: style,
+            previewText: translatedText,
+          },
+        };
+      },
+      batch_update_product_copy: async (plan: any, shopName: string) => {
+        const productIds = plan.draft.params.batchProductIds ?? [];
+        const copyField = plan.draft.params.copyField ?? "title";
+        const copyAction = plan.draft.params.copyAction ?? "translate";
+        const targetLang = plan.draft.params.copyTargetLang ?? "en";
+        const copyStyle = plan.draft.params.copyStyle;
+        const style = resolveTitleCopyStyle(copyAction, copyStyle);
+        const totalCount = productIds.length;
+
+        if (totalCount === 0) {
+          throw new Error("没有可处理的商品");
+        }
+
+        const sampleCount = Math.min(3, totalCount);
+        const sampleRows: any[] = [];
+
+        for (let i = 0; i < sampleCount; i++) {
+          const productId = productIds[i];
+          try {
+            const detail = await api.getShopProductDetail(shopName, productId);
+            const originalTitle = detail.title ?? "";
+            let translatedText = "";
+
+            if (copyAction === "translate") {
+              const result = await api.translateText(
+                originalTitle,
+                targetLang,
+                undefined,
+                style
+              );
+              if (result.success && result.translatedText) {
+                translatedText = result.translatedText;
+              } else {
+                translatedText = result.error ?? "（生成失败）";
+              }
+            } else {
+              translatedText = "（该操作暂未实现）";
+            }
+
+            sampleRows.push({
+              label: `商品 ${i + 1}`,
+              before: originalTitle,
+              after: translatedText,
+            });
+          } catch {
+            sampleRows.push({
+              label: `商品 ${i + 1}`,
+              before: "（读取失败）",
+              after: "（读取失败）",
+            });
+          }
+        }
+
+        const fieldLabel =
+          copyField === "title" ? "标题" : copyField === "description" ? "描述" : "全部文案";
+        const actionLabel =
+          copyAction === "translate"
+            ? `本土化为 ${targetLang.toUpperCase()}`
+            : copyAction === "rewrite"
+              ? "改写"
+              : "优化";
+        const modeNote =
+          style === "literal" ? "直译" : "去噪 + Amazon 结构重组";
+
+        const extraNote =
+          (sampleCount < totalCount
+            ? `以上为前 ${sampleCount} 个商品预览，剩余 ${totalCount - sampleCount} 个将按相同规则处理`
+            : `以上为全部 ${totalCount} 个商品`) + ` · ${modeNote}`;
+
+        const estimatedSeconds = Math.max(3, totalCount * 2);
+        const durationHint =
+          estimatedSeconds < 60
+            ? `约 ${estimatedSeconds} 秒`
+            : `约 ${Math.ceil(estimatedSeconds / 60)} 分钟`;
+
+        return {
+          sections: [
+            {
+              title: `批量${actionLabel} · 共 ${totalCount} 个商品`,
+              rows: sampleRows,
+            },
+          ],
+          extraNote,
+          impact: {
+            scope: `修改 ${totalCount} 个商品（${fieldLabel}）`,
+            durationHint,
+            reversible: true,
+            riskNote: totalCount > 10 ? "批量修改较多，建议先确认翻译质量" : undefined,
+          },
+          payload: {
+            productIds,
+            copyField,
+            copyAction,
+            targetLang,
+            copyStyle: style,
+            totalCount,
+          },
+        };
+      },
+      batch_update_listing_price: async (plan: any, shopName: string) => {
+        const productIds = plan.draft.params.batchProductIds ?? [];
+        const multiplier = plan.draft.params.batchPriceMultiplier;
+        const fixedPrice = plan.draft.params.batchPriceFixed;
+        const totalCount = productIds.length;
+
+        if (totalCount === 0) {
+          throw new Error("没有可处理的商品");
+        }
+
+        const sampleCount = Math.min(3, totalCount);
+        const sampleRows: any[] = [];
+
+        for (let i = 0; i < sampleCount; i++) {
+          const productId = productIds[i];
+          try {
+            const detail = await api.getShopProductDetail(shopName, productId);
+            const title = detail.title ?? "未知商品";
+            const currentPrice = detail.minPrice ?? 0;
+            let newPrice = 0;
+
+            if (fixedPrice) {
+              newPrice = fixedPrice;
+            } else if (multiplier && detail.minPrice != null) {
+              newPrice = detail.minPrice * multiplier;
+            } else {
+              newPrice = 0;
+            }
+
+            sampleRows.push({
+              label: title,
+              before: currentPrice > 0 ? `${currentPrice.toFixed(2)}` : "（暂无售价）",
+              after: newPrice > 0 ? `${newPrice.toFixed(2)}` : "（无法计算）",
+            });
+          } catch {
+            sampleRows.push({
+              label: `商品 ${i + 1}`,
+              before: "（读取失败）",
+              after: "（读取失败）",
+            });
+          }
+        }
+
+        const modeLabel = fixedPrice ? `固定价格 ${fixedPrice}` : `采购价 × ${multiplier}`;
+
+        const extraNote =
+          sampleCount < totalCount
+            ? `以上为前 ${sampleCount} 个商品预览，剩余 ${totalCount - sampleCount} 个商品将按相同规则处理`
+            : `以上为全部 ${totalCount} 个商品`;
+
+        const estimatedSeconds = Math.max(3, totalCount * 2);
+        const durationHint =
+          estimatedSeconds < 60
+            ? `约 ${estimatedSeconds} 秒`
+            : `约 ${Math.ceil(estimatedSeconds / 60)} 分钟`;
+
+        return {
+          sections: [
+            {
+              title: `批量改价 · ${modeLabel} · 共 ${totalCount} 个商品`,
+              rows: sampleRows,
+            },
+          ],
+          extraNote,
+          impact: {
+            scope: `修改 ${totalCount} 个商品售价`,
+            durationHint,
+            reversible: true,
+            riskNote: totalCount > 10 ? "批量修改较多，建议先确认预览价格" : undefined,
+          },
+          payload: {
+            productIds,
+            batchPriceMultiplier: multiplier,
+            batchPriceFixed: fixedPrice,
+            totalCount,
+          },
+        };
+      },
+    }),
+    []
+  );
+
+  const commandExecutors = useMemo(
+    () => ({
+      update_listing_price: async (payload: Record<string, unknown>) => {
+        const p = payload as {
+          productId: string;
+          price: number;
+          currency: string;
+          variantScope: "all" | "one";
+          variantSkuId?: string;
+        };
+        await executeListingPriceUpdate({
+          productId: p.productId,
+          price: p.price,
+          currency: p.currency,
+          variantScope: p.variantScope,
+          variantSkuId: p.variantSkuId,
+        });
+      },
+      update_product_copy: async (payload: Record<string, unknown>) => {
+        const p = payload as {
+          productId: string;
+          copyField: "title" | "description" | "all";
+          copyAction: "translate" | "rewrite" | "optimize";
+          targetLang?: string;
+          copyStyle?: "amazon" | "literal";
+          tone?: string;
+          previewText: string;
+        };
+        await executeProductCopyUpdate({
+          productId: p.productId,
+          copyField: p.copyField,
+          copyAction: p.copyAction,
+          targetLang: p.targetLang,
+          copyStyle: p.copyStyle,
+          tone: p.tone,
+          previewText: p.previewText,
+        });
+      },
+      batch_update_product_copy: async (payload: Record<string, unknown>) => {
+        const p = payload as {
+          productIds: string[];
+          copyField: "title" | "description" | "all";
+          copyAction: "translate" | "rewrite" | "optimize";
+          targetLang?: string;
+          copyStyle?: "amazon" | "literal";
+          tone?: string;
+          totalCount: number;
+          onProgress?: (current: number, total: number, success: number, failed: number) => void;
+        };
+        await executeBatchProductCopyUpdate({
+          productIds: p.productIds,
+          copyField: p.copyField,
+          copyAction: p.copyAction,
+          targetLang: p.targetLang,
+          copyStyle: p.copyStyle,
+          tone: p.tone,
+          onProgress: p.onProgress,
+        });
+      },
+      batch_update_listing_price: async (payload: Record<string, unknown>) => {
+        const p = payload as {
+          productIds: string[];
+          batchPriceMultiplier?: number;
+          batchPriceFixed?: number;
+          totalCount: number;
+          onProgress?: (current: number, total: number, success: number, failed: number) => void;
+        };
+        await executeBatchListingPriceUpdate({
+          productIds: p.productIds,
+          batchPriceMultiplier: p.batchPriceMultiplier,
+          batchPriceFixed: p.batchPriceFixed,
+          onProgress: p.onProgress,
+        });
+      },
+    }),
+    [executeListingPriceUpdate, executeProductCopyUpdate, executeBatchProductCopyUpdate, executeBatchListingPriceUpdate]
+  );
+
   // Real reset: soft-delete stored template so isDefault becomes true again.
   const resetPricingGuideRequested =
     searchParams.get("resetPricingGuide") === "1";
@@ -798,16 +1324,10 @@ function SelectContent() {
       onSave={(payload) => void handleSaveTemplate(payload)}
       onClear={() => void handleClearTemplate()}
       clearing={clearingTemplate}
+      highlighted={highlightedArea === "pricing"}
     />
   );
 
-  const jumpToShopFilter = useCallback(
-    (f: ShopFilter) => {
-      setShopFilter(f);
-      setTab("shop");
-    },
-    [setTab]
-  );
   const enqueueUnboundMatch = useCallback(() => {
     enqueueBatchLink("manual");
   }, [enqueueBatchLink]);
@@ -827,15 +1347,13 @@ function SelectContent() {
           disabled: true,
           queueAction: true,
         }
-      : linkableCount > 0
+      : pageLinkableCount > 0
         ? {
             label: "一键关联",
             onClick: () => void enqueueUnboundMatch(),
             queueAction: true,
           }
-        : pendingCount > 0
-          ? { label: `确认 ${pendingCount} 个`, onClick: () => jumpToShopFilter("pending") }
-          : { label: "SKU 绑定", href: "/sku-align" };
+        : { label: "SKU 绑定", href: "/sku-align" };
 
   const scanCopilot: AiPanelContent = {
     title: scanDone ? "首轮分析已完成" : "AI 正在分析",
@@ -848,32 +1366,6 @@ function SelectContent() {
       : undefined,
   };
 
-  const pageAgentHelpers = useMemo(
-    () => ({
-      showToast,
-      refreshData: async () => {
-        await loadSummary();
-      },
-      focusProduct: (productId: string, opts?: { openSearch?: boolean }) => {
-        focusProduct(productId, opts);
-      },
-      applyFilter: (filter: Record<string, unknown>) => {
-        if (filter.shopFilter && typeof filter.shopFilter === "string") {
-          setShopFilter(filter.shopFilter as ShopFilter);
-          setTab("shop");
-        }
-        // 价格/利润筛选暂存，后续可接入
-        if (filter.priceBelow != null || filter.profitBelow != null) {
-          showToast("筛选条件已应用到当前列表");
-        }
-      },
-      openDrawer: (drawer: string) => {
-        if (drawer === "pricing") openPricingDrawer();
-      },
-    }),
-    [showToast, focusProduct, openPricingDrawer, loadSummary]
-  );
-
   const rail = (
     <AssistantRail
       assistantContent={
@@ -881,6 +1373,7 @@ function SelectContent() {
           context={agentPanelContext}
           pendingMinis={pendingMinis}
           unboundMinis={unboundMinis}
+          batchLinkProgress={batchLinkProgress}
           intentRequest={agentIntentRequest}
           onIntentRequestConsumed={() => setAgentIntentRequest(null)}
           onApplySuggestedAction={(action) =>
@@ -897,26 +1390,11 @@ function SelectContent() {
           onRequestAgentIntent={(intent, productId) =>
             requestAgentIntent(intent, productId)
           }
-          onExecuteListingPriceUpdate={executeListingPriceUpdate}
+          previewGenerators={previewGenerators}
+          commandExecutors={commandExecutors}
         />
       }
-      strategyCards={
-        isAuthorized ? (
-          // First-time guide only; after pricing is saved, use the「定价策略」chip.
-          template == null || template.isDefault || previewPricingGuide ? (
-            <PricingStrategyRailCard
-              template={template}
-              analysisReady={analysisReady}
-              forceGuide={previewPricingGuide}
-              onConfigure={openPricingDrawer}
-            />
-          ) : null
-        ) : (
-          <InfoCard title="定价策略">
-            授权店铺后，可在此配置目标币种、汇率与倍率，并生成建议售价。
-          </InfoCard>
-        )
-      }
+      strategyCards={null}
     />
   );
 
@@ -1086,11 +1564,6 @@ function SelectContent() {
                 recommendedCategories={recommendedCategories}
                 onRefresh={restartScan}
                 onViewNewArrivals={() => setShopFilter("new_arrivals")}
-                newArrivalAnalysisResult={newArrivalAnalysisResult}
-                onDismissNewArrivalResult={() => setNewArrivalAnalysisResult(null)}
-                onViewNewArrivalPending={() => viewNewArrivalResult("pending")}
-                onViewNewArrivalUnmatched={() => viewNewArrivalResult("unbound")}
-                batchLinkProgress={batchLinkProgress}
                 batchLinkBusy={batchLinkActive}
               />
             ) : (
@@ -1116,6 +1589,7 @@ function SelectContent() {
                 mirrorRefreshSignal={mirrorRefreshSignal}
                 linkingLocked={batchLinkActive}
                 onBatchLinkProgressChange={setBatchLinkProgress}
+                onPageLinkableScopeChange={setPageLinkableScope}
                 onBatchLinkFinished={(progress) => {
                   void loadSummary().then(({ bindings }) => {
                     bumpMirrorRefresh();
@@ -1124,7 +1598,6 @@ function SelectContent() {
                     }
                     if (progress.processed > 0) {
                       const result = buildNewArrivalResultFromBatch(progress, bindings);
-                      setNewArrivalAnalysisResult(result);
                       showToast(
                         progress.source === "auto"
                           ? formatNewArrivalAnalysisSummary(result)
@@ -1150,21 +1623,23 @@ function SelectContent() {
                 aiFieldEdits={aiFieldEdits}
                 onAiFieldEditConsumed={clearAiFieldEdit}
                 searchQuery={searchQuery}
+                highlighted={highlightedArea === "filters"}
+                pricingTemplate={template}
               />
             </div>
           ) : null}
-          <div className={tab === "catalog" ? undefined : "hidden"}>
+          {tab === "catalog" ? (
             <CatalogPublishPanel
               onActivity={loadSummary}
               onBindingLinked={() => bumpMirrorRefresh()}
               recommendedCategories={recommendedCategories}
-              filtersMountEl={tab === "catalog" ? filtersMountEl : null}
+              filtersMountEl={filtersMountEl}
               sharedTemplate={template}
               onAppliedFilterSummaryChange={setFilterSummary}
               filterPresetRequest={filterPresetRequest}
               onFilterPresetConsumed={() => setFilterPresetRequest(null)}
             />
-          </div>
+          ) : null}
         </div>
       </WorkbenchPanel>
 

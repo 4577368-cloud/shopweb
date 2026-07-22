@@ -53,33 +53,26 @@ export function WorkbenchPanel({
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b border-hairline bg-canvas/80 px-[var(--wb-gutter)] pb-3 pt-4 backdrop-blur">
         <div className="mx-auto w-full" style={{ maxWidth }}>
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              {breadcrumbs && breadcrumbs.length > 0 ? (
-                <nav className="mb-1.5 flex items-center gap-1 text-[11px] text-ink-subtle">
-                  {breadcrumbs.map((item, index) => (
-                    <span key={item.label} className="flex items-center gap-1">
-                      {index > 0 ? <ChevronRight className="h-3 w-3" /> : null}
-                      {item.href ? (
-                        <Link href={item.href} className="hover:text-ink-muted">
-                          {item.label}
-                        </Link>
-                      ) : (
-                        <span className="text-ink-muted">{item.label}</span>
-                      )}
-                    </span>
-                  ))}
-                </nav>
-              ) : null}
-              <h1 className="text-[22px] font-semibold leading-7 tracking-tight text-ink">
-                {title}
-              </h1>
-              {description ? (
-                <p className="mt-1 max-w-3xl text-sm leading-5 text-ink-muted">
-                  {description}
-                </p>
-              ) : null}
-            </div>
+          {breadcrumbs && breadcrumbs.length > 0 ? (
+            <nav className="mb-1.5 flex items-center gap-1 text-[11px] text-ink-subtle">
+              {breadcrumbs.map((item, index) => (
+                <span key={item.label} className="flex items-center gap-1">
+                  {index > 0 ? <ChevronRight className="h-3 w-3" /> : null}
+                  {item.href ? (
+                    <Link href={item.href} className="hover:text-ink-muted">
+                      {item.label}
+                    </Link>
+                  ) : (
+                    <span className="text-ink-muted">{item.label}</span>
+                  )}
+                </span>
+              ))}
+            </nav>
+          ) : null}
+          <div className="flex items-center justify-between gap-4">
+            <h1 className="min-w-0 text-[22px] font-semibold leading-7 tracking-tight text-ink">
+              {title}
+            </h1>
             {actions || showAssistantToggle ? (
               <div className="flex shrink-0 items-center gap-2">
                 {actions}
@@ -92,6 +85,11 @@ export function WorkbenchPanel({
               </div>
             ) : null}
           </div>
+          {description ? (
+            <p className="mt-1 max-w-3xl text-sm leading-5 text-ink-muted">
+              {description}
+            </p>
+          ) : null}
         </div>
       </header>
 

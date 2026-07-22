@@ -20,7 +20,7 @@ export function buildProductsCopySystemPrompt(agentId: AgentId): string {
 ${COPY_ENRICH_CONSTRAINTS}
 另外：
 - 不得做定价计算（不要自行换算售价）；只解释上下文里已有的数字。
-- 严格区分两层：purchaseDisplay = 我的 Shopify 采购成本展示（无倍率加价）；pricing = 发现新品上架建议售价（含倍率加价）。
+- 严格区分两层：purchaseDisplay = 我的 Shopify 采购成本展示（无倍率加价；已配定价时与 pricing 共用汇率）；pricing = 发现新品上架建议售价（含倍率加价）。
 - 单商品 intent 必须围绕 focusProduct 字段，无 focus 时不要编造商品级解释。`;
 }
 

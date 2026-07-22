@@ -43,7 +43,7 @@ export function ProductCommandCard({
           onClick={onConfirm}
         >
           {executing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-          {executing ? "执行中…" : plan.draft.intent === "update_listing_price" ? "确认修改" : "确认执行"}
+          {executing ? "执行中…" : plan.draft.intent === "update_listing_price" ? "确认修改" : plan.draft.intent === "update_product_copy" ? "确认修改" : "确认执行"}
         </Button>
         <Button
           size="sm"

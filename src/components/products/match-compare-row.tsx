@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { ThumbImage } from "@/components/ui/thumb-image";
 import { useMemo } from "react";
 import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -128,12 +128,13 @@ export function MatchCompareRow({
         {/* 左：店铺商品 */}
         <div className="flex min-w-0 gap-3">
           <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-50">
-            <Image
+            <ThumbImage
               src={item.shopProduct.image}
               alt={item.shopProduct.title}
               fill
+              sizes="64px"
+              pixelWidth={128}
               className="object-cover"
-              unoptimized
             />
           </div>
           <div className="min-w-0 flex-1">
@@ -188,12 +189,13 @@ export function MatchCompareRow({
         {/* 右：推荐货源 */}
         <div className="flex min-w-0 gap-3">
           <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-50">
-            <Image
+            <ThumbImage
               src={item.sourceProduct.image}
               alt={item.sourceProduct.title}
               fill
+              sizes="64px"
+              pixelWidth={128}
               className="object-cover"
-              unoptimized
             />
           </div>
           <div className="min-w-0 flex-1">

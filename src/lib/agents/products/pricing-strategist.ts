@@ -77,7 +77,7 @@ export function handlePricingStrategist(
       explanation: [
         pricing.summaryLine,
         "上架定价路径：采购价（RMB）→ 乘汇率 → 乘倍率 → 加固定加价 → 取整（仅用于发现新品建议售价）。",
-        "我的 Shopify 已关联商品的采购成本展示不走倍率加价，见 purchaseDisplay 摘要。",
+        "已配置时，我的 Shopify 采购成本展示与上架定价共用同一汇率（不含倍率加价）。",
         "右侧策略卡可随时调整；主区继续负责选品与上架执行。",
       ],
       nextSteps: [

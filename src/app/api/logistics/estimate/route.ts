@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import type { LogisticsEstimateRequest } from "@/lib/api";
 import { normalizeTangbuyEstimateResponse } from "@/lib/logistics/estimate-normalize";
 import {
+  packagingToIncrementList,
+  resolveCountryId,
+} from "@/lib/logistics/template-params";
+import { toTangbuyPostLimitType } from "@/lib/logistics/postal-limit-map";
+import {
   resolveMallGatewayBaseUrl,
   resolveServerMallToken,
 } from "@/lib/logistics/mall-gateway-auth";
-import { resolveCountryId } from "@/lib/logistics/template-params";
 import type { QuoteStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -58,19 +62,32 @@ export async function POST(request: Request) {
     );
   }
 
+  const defaultIncrements = packagingToIncrementList(body.packaging);
+
   const tangbuyRequest = {
     countryId,
     countryCode: code,
     shippingOption: shippingOption ?? 2,
-    skuList: variants.map((v) => ({
-      providerType: "alibaba",
-      skuId: v.tangbuySkuId,
-      goodsId: v.tangbuyGoodsId,
-      incrementDTO: { incrementList: v.incrementList },
-      num: v.quantity ?? 1,
-    })),
+    skuList: variants.map((v) => {
+      const incrementList =
+        v.incrementList?.length > 0 ? v.incrementList : defaultIncrements;
+      const entry: Record<string, unknown> = {
+        providerType: "alibaba",
+        skuId: v.tangbuySkuId,
+        goodsId: v.tangbuyGoodsId,
+        incrementDTO: { incrementList },
+        num: v.quantity ?? 1,
+      };
+      if (v.weightG != null && Number.isFinite(v.weightG)) entry.weight = v.weightG;
+      if (v.lengthCm != null && Number.isFinite(v.lengthCm)) entry.length = v.lengthCm;
+      if (v.widthCm != null && Number.isFinite(v.widthCm)) entry.width = v.widthCm;
+      if (v.heightCm != null && Number.isFinite(v.heightCm)) entry.height = v.heightCm;
+      const postLimit = toTangbuyPostLimitType(v.postalLimitClass);
+      if (postLimit) entry.postLimitType = postLimit;
+      return entry;
+    }),
     needOtherLine: body.needOtherLine ?? true,
-    needMeasure: body.needMeasure ?? false,
+    needMeasure: body.needMeasure ?? true,
   };
 
   try {
@@ -107,8 +124,18 @@ export async function POST(request: Request) {
       );
     }
 
+    const envelope = raw as Record<string, unknown>;
+    const gatewayCode = typeof envelope.code === "number" ? envelope.code : undefined;
+    if (gatewayCode != null && gatewayCode !== 200) {
+      const msg =
+        (typeof envelope.msg === "string" && envelope.msg.trim()) ||
+        (typeof envelope.message === "string" && envelope.message.trim()) ||
+        `Tangbuy 线路报价失败 (${gatewayCode})`;
+      return NextResponse.json({ error: msg, success: false }, { status: 502 });
+    }
+
     return NextResponse.json(
-      normalizeTangbuyEstimateResponse(raw as Record<string, unknown>, variants)
+      normalizeTangbuyEstimateResponse(envelope, variants, { countryCode: code })
     );
   } catch (error) {
     return NextResponse.json(

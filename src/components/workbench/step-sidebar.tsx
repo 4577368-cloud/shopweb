@@ -3,32 +3,96 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  CheckCircle2,
   AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  Circle,
+  Loader2,
 } from "lucide-react";
 import { APP_NAME, APP_SUBTITLE } from "@/data/mock";
 import { useOnboarding } from "@/context/onboarding-context";
 import { ShopSwitcher } from "@/components/workbench/shop-switcher";
 import { cn } from "@/lib/utils";
+import type { LogisticsStepDisplay } from "@/lib/logistics/completion-gate";
 import type { StepStatus } from "@/lib/types";
 
-function StepDot({ status, order }: { status: StepStatus; order: number }) {
-  const base =
-    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold";
-  if (status === "completed") {
-    return <CheckCircle2 className="h-5 w-5 text-brand" />;
+function StepIndicator({
+  status,
+  order,
+  logisticsDisplay,
+}: {
+  status: StepStatus;
+  order: number;
+  logisticsDisplay?: LogisticsStepDisplay | null;
+}) {
+  if (logisticsDisplay) {
+    return <LogisticsStepIndicator display={logisticsDisplay} order={order} />;
   }
-  if (status === "in_progress" || status === "pending_confirm") {
-    return <span className={cn(base, "bg-brand text-white")}>{order}</span>;
-  }
-  if (status === "error") {
-    return <AlertCircle className="h-5 w-5 text-red-500" />;
-  }
+
+  const completed = status === "completed";
+  const active = status === "in_progress" || status === "pending_confirm";
+  const errored = status === "error";
+
   return (
-    <span className={cn(base, "border border-hairline-strong text-ink-subtle")}>
-      {order}
-    </span>
+    <div
+      className={cn(
+        "relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+        completed && "bg-brand text-white",
+        active && "bg-brand text-white ring-4 ring-brand-soft",
+        errored && "bg-red-500 text-white",
+        !completed && !active && !errored && "border border-hairline bg-surface text-ink-subtle"
+      )}
+    >
+      {completed ? (
+        <CheckCircle2 className="h-4 w-4" />
+      ) : errored ? (
+        <AlertCircle className="h-3.5 w-3.5" />
+      ) : (
+        order
+      )}
+    </div>
   );
+}
+
+function LogisticsStepIndicator({
+  display,
+  order,
+}: {
+  display: LogisticsStepDisplay;
+  order: number;
+}) {
+  switch (display) {
+    case "running":
+      return (
+        <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-500 text-white ring-4 ring-sky-100">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        </div>
+      );
+    case "blocked":
+      return (
+        <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-500 text-white">
+          <AlertCircle className="h-3.5 w-3.5" />
+        </div>
+      );
+    case "warning":
+      return (
+        <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white ring-4 ring-amber-100">
+          <AlertTriangle className="h-3.5 w-3.5" />
+        </div>
+      );
+    case "ready":
+      return (
+        <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-white ring-4 ring-brand-soft">
+          <CheckCircle2 className="h-4 w-4" />
+        </div>
+      );
+    default:
+      return (
+        <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-hairline bg-surface text-[11px] font-semibold text-ink-subtle">
+          {order}
+        </div>
+      );
+  }
 }
 
 function statusLabel(status: StepStatus): { text: string; tone: string } {
@@ -45,11 +109,26 @@ function statusLabel(status: StepStatus): { text: string; tone: string } {
   }
 }
 
+function logisticsDisplayLabel(display: LogisticsStepDisplay): {
+  text: string;
+  tone: string;
+} {
+  switch (display) {
+    case "running":
+      return { text: "匹配中", tone: "text-sky-700" };
+    case "blocked":
+      return { text: "有阻塞", tone: "text-red-600" };
+    case "warning":
+      return { text: "有例外", tone: "text-amber-700" };
+    case "ready":
+      return { text: "可同步", tone: "text-brand" };
+    default:
+      return { text: "待开始", tone: "text-ink-subtle" };
+  }
+}
+
 /**
- * Left rail (Step 3): brand header → shop switcher (visual) → progress → compact step timeline →
- * lightweight help footer. Reads the onboarding context (same source as the legacy StepNav) and
- * renders every step compactly with a green active state. teal/green is used only for the active
- * step, progress and status. The AI tip card was removed to avoid duplicating the right-hand copilot.
+ * Left workflow rail — prototype-aligned timeline with green active step.
  */
 export function StepSidebar() {
   const pathname = usePathname();
@@ -58,16 +137,13 @@ export function StepSidebar() {
     syncCompleted,
     syncPhase,
     isAuthorized,
-    logisticsCompleted,
+    logisticsStepSnapshot,
   } = useOnboarding();
 
   const completedCount = steps.filter((s) => s.status === "completed").length;
   const progress = syncCompleted
     ? 100
-    : Math.round(
-        ((completedCount + (logisticsCompleted ? 0 : 0)) / (steps.length + 1)) *
-          100
-      );
+    : Math.round((completedCount / (steps.length + 1)) * 100);
 
   const syncStatus: StepStatus = syncCompleted
     ? "completed"
@@ -104,63 +180,85 @@ export function StepSidebar() {
   ];
 
   return (
-    <aside className="flex h-full flex-col border-r border-hairline bg-surface">
+    <aside className="flex h-full w-[15.5rem] shrink-0 flex-col border-r border-hairline bg-surface">
       <div className="px-4 py-4">
-        <Link href={isAuthorized ? "/" : "/authorize"} className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-[13px] font-bold text-white">
+        <Link href={isAuthorized ? "/" : "/authorize"} className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-sm font-bold text-white shadow-sm">
             T
           </span>
           <span className="min-w-0">
-            <span className="block text-[15px] font-semibold tracking-tight text-ink">
-              {APP_NAME} <span className="text-ink-subtle">·</span>{" "}
-              <span className="text-brand-strong">AI Copilot</span>
+            <span className="block text-[14px] font-semibold tracking-tight text-ink">
+              {APP_NAME}
             </span>
-            <span className="block text-[11px] text-ink-muted">{APP_SUBTITLE}</span>
+            <span className="block text-[11px] text-brand-strong">{APP_SUBTITLE}</span>
           </span>
         </Link>
       </div>
 
       <ShopSwitcher />
 
-      <div className="px-4 pb-3 pt-3">
-        <div className="mb-1 flex items-center justify-between text-[11px] text-ink-muted">
+      <div className="px-4 pb-3 pt-1">
+        <div className="mb-1.5 flex items-center justify-between text-[11px] text-ink-muted">
           <span>开店进度</span>
-          <span className="font-medium text-ink">{progress}%</span>
+          <span className="font-semibold tabular-nums text-ink">{progress}%</span>
         </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-1 overflow-hidden rounded-full bg-surface-muted">
           <div
-            className="h-full rounded-full bg-brand transition-all"
+            className="h-full rounded-full bg-brand transition-all duration-500"
             style={{ width: `${Math.max(progress, 4)}%` }}
           />
         </div>
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        <p className="mb-1.5 px-2 text-[11px] font-medium uppercase tracking-wide text-ink-subtle">
-          开店流程
-        </p>
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        <p className="mb-2 px-1 text-[11px] font-medium text-ink-subtle">开店流程</p>
         <ul className="space-y-0.5">
-          {navItems.map((step) => {
+          {navItems.map((step, index) => {
             const active = pathname === step.href;
-            const label = statusLabel(step.status);
+            const isLogistics = step.id === "logistics";
+            const logisticsDisplay =
+              isLogistics && logisticsStepSnapshot
+                ? logisticsStepSnapshot.display
+                : null;
+            const label =
+              isLogistics && logisticsStepSnapshot
+                ? {
+                    text: logisticsStepSnapshot.label,
+                    tone: logisticsDisplayLabel(logisticsStepSnapshot.display).tone,
+                  }
+                : statusLabel(step.status);
+            const completed =
+              step.status === "completed" &&
+              (!isLogistics || logisticsDisplay === "ready");
             return (
-              <li key={step.id}>
+              <li key={step.id} className="relative">
+                {index < navItems.length - 1 ? (
+                  <span
+                    className={cn(
+                      "absolute left-[1.34rem] top-8 z-0 h-[calc(100%-0.5rem)] w-px",
+                      completed ? "bg-brand/35" : "bg-hairline"
+                    )}
+                    aria-hidden
+                  />
+                ) : null}
                 <Link
                   href={step.href}
                   className={cn(
-                    "flex items-start gap-2.5 rounded-[var(--radius-control)] px-2.5 py-2 transition-colors",
+                    "relative z-[1] flex gap-2.5 rounded-[var(--radius-control)] px-2 py-2.5 transition-colors",
                     active
-                      ? "bg-brand-soft"
-                      : "hover:bg-slate-50"
+                      ? "bg-brand-soft/80 ring-1 ring-brand/10"
+                      : "hover:bg-surface-muted/80"
                   )}
                 >
-                  <div className="mt-0.5">
-                    <StepDot status={step.status} order={step.order} />
-                  </div>
+                  <StepIndicator
+                    status={step.status}
+                    order={step.order}
+                    logisticsDisplay={logisticsDisplay}
+                  />
                   <div className="min-w-0 flex-1">
                     <span
                       className={cn(
-                        "block text-[13px] font-medium leading-4",
+                        "block text-[13px] font-medium leading-5",
                         active ? "text-brand-strong" : "text-ink"
                       )}
                     >
@@ -169,7 +267,17 @@ export function StepSidebar() {
                     <p className="mt-0.5 line-clamp-1 text-[11px] leading-4 text-ink-muted">
                       {step.description}
                     </p>
-                    <span className={cn("mt-0.5 block text-[11px] font-medium", label.tone)}>
+                    <span
+                      className={cn(
+                        "mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium",
+                        label.tone
+                      )}
+                    >
+                      {(step.status === "in_progress" ||
+                        step.status === "pending_confirm" ||
+                        logisticsDisplay === "running") && (
+                        <Circle className="h-1.5 w-1.5 fill-current" />
+                      )}
                       {label.text}
                     </span>
                   </div>
@@ -180,8 +288,8 @@ export function StepSidebar() {
         </ul>
       </nav>
 
-      <div className="border-t border-hairline p-3">
-        <div className="flex items-center gap-3 px-1 text-[11px] text-ink-subtle">
+      <div className="border-t border-hairline px-4 py-3">
+        <div className="flex flex-col gap-1 text-[11px] text-ink-subtle">
           <Link href="#" className="hover:text-ink-muted">
             需要帮助？
           </Link>

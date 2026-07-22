@@ -2,18 +2,22 @@ import {
   profitPerOrderPurchaseDisplay,
   parseGatewayPrice,
 } from "@/lib/agents/products/match-rank";
+import { passesImageRecommendGate } from "@/lib/batch-link/image-match";
 import {
   costInPurchaseDisplayCurrency,
   formatPurchaseCostMoney,
   resolvePurchaseCostDisplayContext,
 } from "@/lib/purchase-cost-display";
-import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
+import type { ImageBindingView, PricingTemplate, ShopMirrorProduct } from "@/lib/types";
 
 export interface CandidateSummary {
   productId: string;
   title: string | null;
   priceCny: number | null;
+  /** Title / text composite score (0–100). */
   matchScore: number | null;
+  /** Visual similarity score (0–100) when available. */
+  imageScore?: number | null;
   rank: number;
   soldCount?: number | null;
   repurchaseRate?: string | null;
@@ -21,6 +25,13 @@ export interface CandidateSummary {
 }
 
 function sortCandidatesByRanking(a: CandidateSummary, b: CandidateSummary): number {
+  const gateA = passesImageRecommendGate(a.imageScore) ? 1 : 0;
+  const gateB = passesImageRecommendGate(b.imageScore) ? 1 : 0;
+  if (gateA !== gateB) return gateB - gateA;
+
+  const imageDiff = (b.imageScore ?? -1) - (a.imageScore ?? -1);
+  if (imageDiff !== 0) return imageDiff;
+
   const scoreDiff = (b.matchScore ?? 0) - (a.matchScore ?? 0);
   if (scoreDiff !== 0) return scoreDiff;
   const soldDiff = (b.soldCount ?? 0) - (a.soldCount ?? 0);
@@ -64,16 +75,22 @@ function formatMatchScore(score?: number | null): string | null {
 
 export function buildProductFocusSnapshot(
   product: ShopMirrorProduct,
-  binding: ImageBindingView | null | undefined
+  binding: ImageBindingView | null | undefined,
+  pricingTemplate?: PricingTemplate | null
 ): ProductFocusSnapshot {
   const shopCurrency = product.currency ?? null;
   const shopPrice = product.minPrice ?? product.maxPrice ?? null;
-  const purchaseCtx = resolvePurchaseCostDisplayContext(shopCurrency);
+  const purchaseCtx = resolvePurchaseCostDisplayContext(shopCurrency, pricingTemplate);
   const costCny =
     parseGatewayPrice(binding?.offerPrice) ??
     parseGatewayPrice(binding?.offerPrice ?? null);
   const purchaseCost = costInPurchaseDisplayCurrency(costCny, purchaseCtx);
-  const profit = profitPerOrderPurchaseDisplay(shopPrice, shopCurrency, costCny);
+  const profit = profitPerOrderPurchaseDisplay(
+    shopPrice,
+    shopCurrency,
+    costCny,
+    pricingTemplate
+  );
 
   let bindState: ProductFocusSnapshot["bindState"] = "unbound";
   if (binding?.bound) {
@@ -87,7 +104,7 @@ export function buildProductFocusSnapshot(
   const ms = binding?.matchScore ?? null;
   const matchScoreLabel = formatMatchScore(ms);
   if (ms != null && ms > 0 && ms <= 1 && ms < 0.55) {
-    riskFlags.push(`匹配度偏低（${matchScoreLabel}）`);
+    riskFlags.push(`标题综合分偏低（${matchScoreLabel}）`);
   }
   if (binding?.bound && !binding.offerImageUrl) {
     riskFlags.push("货源图快照缺失，展示可能不完整");
@@ -97,11 +114,11 @@ export function buildProductFocusSnapshot(
   }
 
   const rankingReasons: string[] = [];
-  if (matchScoreLabel) rankingReasons.push(`图搜匹配度 ${matchScoreLabel}`);
+  if (matchScoreLabel) rankingReasons.push(`标题综合分 ${matchScoreLabel}`);
   if (binding?.imageSource === "SHOPIFY") {
-    rankingReasons.push("按 Shopify 主图图搜命中");
+    rankingReasons.push("已用店铺主图图搜");
   } else if (binding?.imageSource === "ORIGINAL") {
-    rankingReasons.push("按货源原图图搜命中");
+    rankingReasons.push("已用货源原图图搜");
   }
   if (purchaseCost != null) {
     rankingReasons.push(
@@ -159,17 +176,19 @@ export function buildCandidateCompareLines(
   const lines: string[] = [];
   lines.push(
     `当前查看：${current.title || current.productId}${
-      current.matchScore != null ? `（匹配 ${formatMatchScore(current.matchScore)}）` : ""
+      current.matchScore != null
+        ? `（标题 ${formatMatchScore(current.matchScore)}）`
+        : ""
     }`
   );
   if (top.productId !== current.productId) {
     lines.push(
       `系统首推：${top.title || top.productId}${
-        top.matchScore != null ? `（匹配 ${formatMatchScore(top.matchScore)}）` : ""
-      } — 综合匹配度更高`
+        top.matchScore != null ? `（标题 ${formatMatchScore(top.matchScore)}）` : ""
+      } — 标题综合分更高`
     );
   } else {
-    lines.push("当前候选与系统首推一致，综合匹配度最高。");
+    lines.push("当前候选与系统首推一致，标题综合分最高。");
   }
   const cheaper = candidates
     .filter((c) => c.priceCny != null && current.priceCny != null)

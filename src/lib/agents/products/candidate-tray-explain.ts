@@ -64,7 +64,7 @@ export function buildCandidateTrayInlineReason(
       return "供应与销售信号较强";
     }
     if (candidate.matchScore != null && candidate.matchScore > 0) {
-      return "图搜综合评分最高";
+      return "标题综合分最高";
     }
     return null;
   }
@@ -91,7 +91,7 @@ export function buildCandidateTrayInlineReason(
 
   const topScore = top.matchScore ?? 0;
   const candScore = candidate.matchScore ?? 0;
-  if (topScore > candScore + 3) return "匹配度低于首推";
+  if (topScore > candScore + 3) return "标题综合分低于首推";
 
   if ((candidate.inventory ?? 0) > 0 && (top.inventory ?? 0) <= 0) {
     return "库存较稳，可作备选";

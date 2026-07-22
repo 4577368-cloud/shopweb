@@ -16,7 +16,7 @@ import type { BatchLinkSource } from "@/lib/batch-link/types";
 const CANDIDATES_READY_MS = 650;
 const SELECT_PRESSED_MS = 220;
 const DONE_FLASH_MS = 480;
-const SCROLL_SETTLE_MS = 280;
+const SCROLL_SETTLE_MS = 200;
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -177,6 +177,7 @@ export function useBatchLinkQueue({
             errorMessage: pipeline.error ?? "未找到可靠候选",
             searchResult: null,
             matchScores: {},
+            imageScores: {},
           });
           bumpProcessed(product, "failed", `${title}：未找到可靠候选`);
           continue;
@@ -187,16 +188,18 @@ export function useBatchLinkQueue({
           setCardState(id, "failed", {
             searchResult: pipeline.result,
             matchScores: pipeline.matchScores,
+            imageScores: pipeline.imageScores,
             highlightTopCandidate: true,
-            errorMessage: "匹配度偏低，请人工确认",
+            errorMessage: "标题或图像未达自动关联门槛，请人工确认",
           });
-          bumpProcessed(product, "failed", `${title}：匹配度偏低`);
+          bumpProcessed(product, "failed", `${title}：标题或图像未达门槛`);
           continue;
         }
 
         setCardState(id, "candidates_ready", {
           searchResult: pipeline.result,
           matchScores: pipeline.matchScores,
+          imageScores: pipeline.imageScores,
           highlightTopCandidate: true,
         });
         await sleep(CANDIDATES_READY_MS);
@@ -206,6 +209,7 @@ export function useBatchLinkQueue({
           setCardState(id, "needs_review", {
             searchResult: pipeline.result,
             matchScores: pipeline.matchScores,
+            imageScores: pipeline.imageScores,
             highlightTopCandidate: true,
           });
           bumpProcessed(
@@ -221,6 +225,7 @@ export function useBatchLinkQueue({
         setCardState(id, "auto_selecting", {
           searchResult: pipeline.result,
           matchScores: pipeline.matchScores,
+          imageScores: pipeline.imageScores,
           highlightTopCandidate: true,
           selectButtonPhase: "pressed",
         });
@@ -230,6 +235,7 @@ export function useBatchLinkQueue({
         setCardState(id, "binding", {
           searchResult: pipeline.result,
           matchScores: pipeline.matchScores,
+          imageScores: pipeline.imageScores,
           highlightTopCandidate: true,
           selectButtonPhase: "loading",
         });
@@ -239,12 +245,18 @@ export function useBatchLinkQueue({
             shopName,
             product,
             top,
-            pipeline.result
+            pipeline.result,
+            {
+              auto: true,
+              imageScores: pipeline.imageScores,
+              titleScores: pipeline.matchScores,
+            }
           );
           onBound(id, view);
           setCardState(id, "done", {
             searchResult: pipeline.result,
             matchScores: pipeline.matchScores,
+            imageScores: pipeline.imageScores,
             selectButtonPhase: "idle",
             doneFlash: true,
           });
@@ -259,6 +271,7 @@ export function useBatchLinkQueue({
           setCardState(id, "failed", {
             searchResult: pipeline.result,
             matchScores: pipeline.matchScores,
+            imageScores: pipeline.imageScores,
             highlightTopCandidate: true,
             errorMessage: msg,
             selectButtonPhase: "idle",

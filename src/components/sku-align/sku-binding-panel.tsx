@@ -1,8 +1,9 @@
 "use client";
 
-import Image from "next/image";
+import { ThumbImage } from "@/components/ui/thumb-image";
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   ChevronDown,
   ChevronRight,
   ExternalLink,
@@ -14,7 +15,6 @@ import {
   Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api, ApiError } from "@/lib/api";
 import {
@@ -26,6 +26,7 @@ import {
 } from "@/lib/source-sku-matrix";
 import type {
   OfferDetail,
+  PricingTemplate,
   SkuProductOverview,
   SkuVariant,
 } from "@/lib/types";
@@ -42,6 +43,8 @@ import {
 import { confirmProductNeedsReview } from "@/lib/sku-align/batch-confirm";
 import type { SkuAlignProductDetail } from "@/lib/sku-align-v1/types";
 import { SkuManualMatchDrawer } from "@/components/sku-align/sku-manual-match-drawer";
+import { buildGapSummaryText } from "@/lib/sku-align/drawer-helpers";
+import type { DrawerPhase } from "@/lib/sku-align/drawer-helpers";
 import {
   deriveDisplayStateFromBinding,
   deriveVariantDisplayState,
@@ -49,6 +52,7 @@ import {
   countUnbound,
   DISPLAY_STATE_LABELS,
   filterVariants,
+  hasIssues,
   partitionVariantsForDisplay,
   shouldDefaultExpand,
   type SkuFilterMode,
@@ -141,7 +145,7 @@ function bindingStatusHint(
 ): string | null {
   switch (deriveDisplayStateFromBinding(bound)) {
     case "unbound":
-      return "需从货源规格表选择对应 SKU";
+      return "需在当前货源规格表中选择对应项";
     case "manual_active":
       return "你已手动选择，无需再确认";
     case "needs_review":
@@ -179,7 +183,7 @@ function formatScore(score?: number | null): string {
 
 /** One short, human reason for audit / image bindings. */
 function matchReason(bound: NonNullable<SkuVariant["bound"]>): string {
-  if (isManualBinding(bound.matchSource)) return "手动选择 SKU";
+  if (isManualBinding(bound.matchSource)) return "手动映射";
   if (isAutoAligned(bound.matchSource)) return "按规格自动对齐";
   if (bound.querySource === "LLM") return "AI 识图匹配";
   if (bound.querySource === "TITLE") return "按标题图搜匹配";
@@ -230,13 +234,13 @@ function Thumb({
       )}
     >
       {src ? (
-        <Image
+        <ThumbImage
           src={src}
           alt={alt}
           fill
           sizes="72px"
+          pixelWidth={144}
           className="object-cover"
-          unoptimized
           referrerPolicy="no-referrer"
         />
       ) : (
@@ -325,6 +329,7 @@ function VariantCompareRow({
   onMutated,
   showToast,
   shopCurrency,
+  pricingTemplate,
   onOpenManualPicker,
   compact = false,
 }: {
@@ -341,6 +346,7 @@ function VariantCompareRow({
   onMutated: () => Promise<void>;
   showToast: (message: string) => void;
   shopCurrency?: string | null;
+  pricingTemplate?: PricingTemplate | null;
   onOpenManualPicker?: () => void;
   compact?: boolean;
 }) {
@@ -420,6 +426,7 @@ function VariantCompareRow({
         boundImageUrl: bound.offerImageUrl,
         boundPriceRaw: bound.offerPrice?.trim() || null,
         shopCurrency,
+        pricingTemplate,
       })
     : null;
 
@@ -440,7 +447,7 @@ function VariantCompareRow({
     <>
     <div
       className={cn(
-        "grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_7.5rem_minmax(0,1fr)] md:items-center md:gap-3",
+        "grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-center md:gap-4",
         compact ? "py-1.5" : "py-2",
         isManualActive && "rounded-[var(--radius-control)] bg-emerald-50/30 px-1",
         isNeedsReview && "rounded-[var(--radius-control)] bg-amber-50/25 px-1"
@@ -496,32 +503,43 @@ function VariantCompareRow({
         {isUnbound ? (
           <div
             className={cn(
-              "flex flex-1 flex-col gap-2 rounded-[var(--radius-control)] border border-dashed border-hairline",
+              "flex flex-1 items-center gap-3 rounded-[var(--radius-control)] border border-amber-200 bg-amber-50/50",
               compact ? "px-2 py-2" : "px-3 py-2.5"
             )}
           >
-            <p className="text-[10px] leading-snug text-ink-subtle">
-              尚未绑定货源 SKU。请从规格表中选择对应项。
-            </p>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-medium text-amber-900">
+                未匹配货源
+              </p>
+              <p className="text-[10px] text-amber-700/80">
+                {canPickSku
+                  ? "该规格尚未映射到货源 SKU"
+                  : "缺少货源链接，无法加载规格"}
+              </p>
+            </div>
             <Button
               size="sm"
-              className="w-fit"
+              variant="secondary"
+              className="h-7 shrink-0 bg-white text-[11px]"
               disabled={!canPickSku}
               title={
                 canPickSku
-                  ? "打开 itemGet SKU 规格表"
-                  : "缺少货源详情链接，无法加载 SKU"
+                  ? "打开 SKU 映射抽屉"
+                  : "缺少货源详情链接，无法加载规格"
               }
               onClick={() => onOpenManualPicker?.()}
             >
               <Hand className="h-3.5 w-3.5" />
-              手动选择…
+              去映射
             </Button>
           </div>
         ) : displayStatus === "LOADING" ? (
           <div className="flex flex-1 items-center gap-2 rounded-[var(--radius-control)] border border-hairline px-3 py-3 text-[11px] text-ink-subtle">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            载入 itemGet 规格与价格…
+            载入货源规格与价格…
           </div>
         ) : displayStatus === "ERROR" ? (
           <div className="flex flex-1 flex-col gap-2 rounded-[var(--radius-control)] border border-amber-200 bg-amber-50/40 px-3 py-3">
@@ -550,7 +568,7 @@ function VariantCompareRow({
                 disabled={acking || unbinding}
               >
                 <Hand className="h-3.5 w-3.5" />
-                重选 SKU
+                编辑映射
               </Button>
             ) : null}
           </div>
@@ -625,10 +643,10 @@ function VariantCompareRow({
                     variant="secondary"
                     onClick={() => onOpenManualPicker?.()}
                     disabled={acking || unbinding}
-                    title="从 itemGet 规格表重新选择 SKU"
+                    title="在抽屉中编辑 SKU 映射"
                   >
                     <Hand className="h-3.5 w-3.5" />
-                    {isNeedsReview ? "换一个" : "手动选择…"}
+                    {isNeedsReview ? "编辑映射" : "编辑映射"}
                   </Button>
                 ) : null}
                 {showRowActions ? (
@@ -648,9 +666,10 @@ function VariantCompareRow({
                     onClick={() => void ackVariant()}
                     disabled={acking || unbinding}
                     title="接受 AI 对齐建议"
+                    className="ml-auto"
                   >
                     {acking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    接受 AI
+                    接受
                   </Button>
                 ) : null}
                 </div>
@@ -676,12 +695,14 @@ export function SkuProductCard({
   onAligned,
   showToast,
   filterMode = "all",
+  pricingTemplate = null,
 }: {
   product: SkuProductOverview;
   shopName: string;
   onAligned: () => Promise<void>;
   showToast: (message: string) => void;
   filterMode?: SkuFilterMode;
+  pricingTemplate?: PricingTemplate | null;
 }) {
   const total = product.variants.length;
   const bound = boundVariantCount(product);
@@ -691,8 +712,6 @@ export function SkuProductCard({
   const [aligning, setAligning] = useState(false);
   const [ackingAll, setAckingAll] = useState(false);
   const [alignError, setAlignError] = useState<string | null>(null);
-  const [supplementOfferId, setSupplementOfferId] = useState("");
-  const [addingSupplement, setAddingSupplement] = useState(false);
   const [v1Detail, setV1Detail] = useState<SkuAlignProductDetail | null>(null);
   const [v1DetailLoading, setV1DetailLoading] = useState(false);
 
@@ -715,34 +734,6 @@ export function SkuProductCard({
     if (open) await refreshV1Detail();
   };
 
-  const addSupplementSource = async () => {
-    const offerId = supplementOfferId.trim();
-    if (!offerId || addingSupplement) return;
-    setAddingSupplement(true);
-    setAlignError(null);
-    try {
-      const accepted = await api.skuAlignV1AddSupplementSource(product.thirdPlatformItemId, {
-        shopName,
-        offerId,
-      });
-      if (accepted.accepted && accepted.runId) {
-        const status = await pollSkuAlignRun(shopName, accepted.runId);
-        showToast(
-          `补充货源对齐完成：${status.matchedCount} 个变体 · 无货源 ${status.noSourceCount}`
-        );
-      } else {
-        showToast("补充货源已登记");
-      }
-      setSupplementOfferId("");
-      await onAligned();
-      if (open) await refreshV1Detail();
-    } catch (err) {
-      setAlignError(autoAlignError(err));
-    } finally {
-      setAddingSupplement(false);
-    }
-  };
-
   const pendingCount = countNeedsReview(product);
   const unboundCount = countUnbound(product);
   const manualCount = product.variants.filter(
@@ -759,12 +750,18 @@ export function SkuProductCard({
     return { attentionVariants: attention, resolvedVariants: resolved };
   }, [visibleVariants]);
 
-  const [resolvedExpanded, setResolvedExpanded] = useState(false);
+  const [resolvedExpanded, setResolvedExpanded] = useState(true);
   const [manualDrawerOpen, setManualDrawerOpen] = useState(false);
   const [focusVariantId, setFocusVariantId] = useState<string | null>(null);
+  const [drawerInitialPhase, setDrawerInitialPhase] =
+    useState<DrawerPhase>("primary");
 
-  const openManualDrawer = (variantId?: string) => {
+  const openManualDrawer = (
+    variantId?: string,
+    phase: DrawerPhase = "primary"
+  ) => {
     setFocusVariantId(variantId ?? null);
+    setDrawerInitialPhase(phase);
     setManualDrawerOpen(true);
   };
 
@@ -915,12 +912,14 @@ export function SkuProductCard({
     }
   };
 
-  const showSupplementSource =
+  const showSupplementHint =
     open &&
     v1Detail &&
     !v1DetailLoading &&
     needsSupplementSource(v1Detail);
   const supplementHint = v1Detail ? buildSupplementSourceHint(v1Detail) : null;
+  const noSourceCount = v1Detail?.summary.noSourceVariants ?? 0;
+  const gapSummary = buildGapSummaryText(unboundCount, noSourceCount);
 
   // Step 3 — silent CARD_EXPAND + V1 detail when the user opens this product card.
   useEffect(() => {
@@ -974,7 +973,12 @@ export function SkuProductCard({
   };
 
   return (
-    <article className="overflow-hidden rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">
+    <article
+      className="overflow-hidden rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card"
+      {...(hasIssues(product)
+        ? { "data-sku-issue-product": product.thirdPlatformItemId }
+        : {})}
+    >
       {/* Header — always visible summary */}
       <div className="flex items-start gap-3 px-4 py-3.5">
         <button
@@ -1004,6 +1008,9 @@ export function SkuProductCard({
               {manualCount > 0 ? (
                 <Badge variant="success">手动 {manualCount}</Badge>
               ) : null}
+              {gapSummary ? (
+                <p className="mt-1 text-[11px] text-amber-800">{gapSummary}</p>
+              ) : null}
             </div>
           </div>
           <ChevronDown
@@ -1014,27 +1021,16 @@ export function SkuProductCard({
           />
         </button>
         <div className="flex shrink-0 items-center gap-2">
-          {pendingCount > 0 ? (
-            <Button
-              size="sm"
-              onClick={() => void ackAll()}
-              disabled={ackingAll || aligning}
-              title="接受该商品下全部待确认的 AI 建议"
-            >
-              {ackingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              接受本商品全部待确认（{pendingCount}）
-            </Button>
-          ) : null}
           {canManualPick ? (
             <Button
               size="sm"
               variant="secondary"
               onClick={() => openManualDrawer()}
               disabled={aligning || ackingAll}
-              title="在右侧侧边栏对照 Shopify 变体并选择货源规格"
+              title="在右侧抽屉处理当前货源映射与补充货源"
             >
               <Hand className="h-4 w-4" />
-              手动选择
+              处理 SKU 映射
             </Button>
           ) : null}
           <Button
@@ -1051,6 +1047,17 @@ export function SkuProductCard({
             )}
             {aligning ? "对齐中…" : "自动对齐 SKU"}
           </Button>
+          {pendingCount > 0 ? (
+            <Button
+              size="sm"
+              onClick={() => void ackAll()}
+              disabled={ackingAll || aligning}
+              title="接受该商品下全部待确认的 AI 建议"
+            >
+              {ackingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              接受（{pendingCount}）
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -1060,27 +1067,23 @@ export function SkuProductCard({
         </div>
       ) : null}
 
-      {showSupplementSource && supplementHint ? (
-        <div className="mx-4 mb-3 flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-hairline pt-3 text-xs text-ink-subtle">
-          <span className="min-w-[12rem] flex-1 leading-relaxed">{supplementHint}</span>
-          <Input
-            value={supplementOfferId}
-            onChange={(e) => setSupplementOfferId(e.target.value)}
-            placeholder="1688 offerId"
-            className="h-8 w-36 text-xs"
-            disabled={addingSupplement}
-            aria-label="补充货源 offerId"
-          />
+      {showSupplementHint && supplementHint ? (
+        <div className="mx-4 mb-3 flex items-center gap-3 rounded-[var(--radius-control)] border border-amber-200 bg-amber-50/50 px-3 py-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-medium text-amber-900">需要补充货源</p>
+            <p className="text-[10px] text-amber-700/80">{supplementHint}</p>
+          </div>
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => void addSupplementSource()}
-            disabled={addingSupplement || !supplementOfferId.trim()}
+            className="h-7 shrink-0 bg-white text-[11px]"
+            onClick={() => openManualDrawer(undefined, "supplement")}
+            disabled={!canManualPick || aligning || ackingAll}
           >
-            {addingSupplement ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : null}
-            登记补充货源
+            补充货源
           </Button>
         </div>
       ) : null}
@@ -1108,6 +1111,7 @@ export function SkuProductCard({
               onMutated={onMutatedWithDetail}
               showToast={showToast}
               shopCurrency={product.currency}
+              pricingTemplate={pricingTemplate}
               onOpenManualPicker={() => openManualDrawer(v.thirdPlatformSkuId)}
             />
           ))}
@@ -1138,6 +1142,10 @@ export function SkuProductCard({
                   onMutated={onMutatedWithDetail}
                   showToast={showToast}
                   shopCurrency={product.currency}
+                  pricingTemplate={pricingTemplate}
+                  onOpenManualPicker={() =>
+                    openManualDrawer(v.thirdPlatformSkuId)
+                  }
                 />
               ))}
             </ResolvedVariantsSummary>
@@ -1153,6 +1161,9 @@ export function SkuProductCard({
         detailUrl={productDetailUrl}
         tangbuyProductId={productTangbuyId}
         focusVariantId={focusVariantId}
+        initialPhase={drawerInitialPhase}
+        v1Detail={v1Detail}
+        pricingTemplate={pricingTemplate}
         onSaved={onMutatedWithDetail}
         showToast={showToast}
       />

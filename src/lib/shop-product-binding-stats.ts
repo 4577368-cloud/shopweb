@@ -38,6 +38,13 @@ export function computeShopProductBindingStats(
   };
 }
 
+/** AI auto-link awaiting human ack — not legacy ACTIVE / empty bindStatus. */
+export function isPendingImageBinding(
+  binding?: ImageBindingView | null
+): boolean {
+  return Boolean(binding?.bound && binding.bindStatus === "PENDING");
+}
+
 /** Build item-id → binding map from API list (last row wins per product). */
 export function indexImageBindings(
   bindings: ImageBindingView[]

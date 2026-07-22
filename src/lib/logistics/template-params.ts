@@ -3,12 +3,15 @@ import { codesFromSelections } from "@/components/logistics/market-multi-select"
 import type { LogisticsTemplate } from "@/lib/types";
 
 /**
- * Tangbuy gateway internal country IDs (ISO2 → id).
- * Extend as more markets are verified against estimateSkuSaleFeePrice.
- * Override at runtime via TANGBUY_COUNTRY_IDS env JSON on the server.
+ * Offline fallback only — browser quote flow resolves IDs via areaListGroup.
+ * Override via TANGBUY_COUNTRY_IDS env JSON.
  */
 export const TANGBUY_COUNTRY_IDS: Record<string, string> = {
-  US: "124487",
+  US: "3",
+  GB: "21",
+  FR: "22",
+  DE: "23",
+  CA: "24999",
 };
 
 export function resolveCountryId(countryCode: string): string | null {
@@ -30,6 +33,19 @@ export function resolveCountryId(countryCode: string): string | null {
 }
 
 /** Tangbuy estimate API shippingOption: 1=经济 2=均衡 3=快速 */
+/** Tangbuy increment codes for packaging — mirrors dropshipping estimate payload. */
+export function packagingToIncrementList(
+  packaging: PackagingType | string | undefined
+): string[] {
+  switch (packaging) {
+    case "CARTON":
+      return ["11"];
+    case "MINIMAL":
+    default:
+      return ["10"];
+  }
+}
+
 export function speedPreferenceToShippingOption(
   pref: LogisticsSpeedPreference | string | undefined
 ): number {
@@ -71,11 +87,13 @@ export interface EstimateTemplateParams {
 
 export function buildEstimateParams(
   template: LogisticsTemplate | null | undefined,
-  marketCode: string | null | undefined
+  marketCode: string | null | undefined,
+  countryIdOverride?: string | null
 ): EstimateTemplateParams | null {
   const countryCode = resolveQuoteMarketCode(template, marketCode);
   if (!countryCode) return null;
-  const countryId = resolveCountryId(countryCode);
+  const countryId =
+    countryIdOverride?.trim() || resolveCountryId(countryCode) || null;
   if (!countryId) return null;
   return {
     countryCode,
@@ -93,5 +111,20 @@ export function shippingOptionLabel(option: number): string {
       return "快速";
     default:
       return "均衡";
+  }
+}
+
+/** Prototype-style strategy subtitle on logistics page. */
+export function formatSpeedPriorityLabel(
+  pref: LogisticsSpeedPreference | string | undefined
+): string {
+  switch (pref) {
+    case "ECONOMY":
+      return "经济优先 · 8-15 天";
+    case "FAST":
+      return "快速优先 · 5-10 天";
+    case "BALANCED":
+    default:
+      return "均衡优先 · 10-18 天";
   }
 }

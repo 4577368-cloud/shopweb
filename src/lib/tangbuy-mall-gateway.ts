@@ -197,11 +197,19 @@ interface ItemGetSku {
   }> | null;
 }
 
+export interface ItemGetTimeInfo {
+  weight?: number | null;
+  volume?: number | null;
+  unPackWeight?: number | null;
+  unPackVolume?: number | null;
+}
+
 export interface ItemGetProduct {
   itemId?: string | number;
   itemName?: string | null;
   itemNameTrans?: string | null;
   description?: string | null;
+  timeInfo?: ItemGetTimeInfo | null;
   productImageList?: string[] | null;
   productAttributes?: Array<{
     attributeName?: string | null;

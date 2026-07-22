@@ -1,0 +1,1692 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SKU Intelligence Engine — 完整开发文档</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --border: #e2e2e8;
+    --text: #1a1a2e;
+    --text-secondary: #6b7280;
+    --primary: #4f46e5;
+    --primary-light: #eef2ff;
+    --green: #059669;
+    --green-light: #ecfdf5;
+    --orange: #ea580c;
+    --orange-light: #fff7ed;
+    --red: #dc2626;
+    --red-light: #fef2f2;
+    --code-bg: #f3f4f6;
+    --sidebar-w: 280px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  .layout { display: flex; min-height: 100vh; }
+
+  /* Sidebar */
+  .sidebar {
+    width: var(--sidebar-w);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    overflow-y: auto;
+    padding: 24px 16px;
+    z-index: 10;
+  }
+  .sidebar h1 {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: var(--primary);
+  }
+  .sidebar .subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+  }
+  .nav-section { margin-bottom: 16px; }
+  .nav-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    padding: 0 8px 6px;
+  }
+  .nav-item {
+    display: block;
+    padding: 6px 8px;
+    font-size: 13px;
+    color: var(--text);
+    text-decoration: none;
+    border-radius: 6px;
+    transition: all 0.15s;
+  }
+  .nav-item:hover { background: var(--primary-light); color: var(--primary); }
+  .nav-item.active { background: var(--primary); color: white; }
+
+  /* Main content */
+  .main {
+    margin-left: var(--sidebar-w);
+    flex: 1;
+    padding: 48px 56px;
+    max-width: 960px;
+  }
+  .main h2 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-top: 48px;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--primary);
+    scroll-margin-top: 20px;
+  }
+  .main h2:first-child { margin-top: 0; }
+  .main h3 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 32px;
+    margin-bottom: 12px;
+    scroll-margin-top: 20px;
+  }
+  .main h4 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 20px;
+    margin-bottom: 8px;
+    color: var(--primary);
+  }
+  .main p { margin-bottom: 12px; }
+  .main ul, .main ol { margin: 8px 0 16px 24px; }
+  .main li { margin-bottom: 4px; }
+
+  /* Code blocks */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    overflow-x: auto;
+    margin: 12px 0 16px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+  }
+  :not(pre) > code {
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 13px;
+  }
+  th {
+    background: var(--primary-light);
+    text-align: left;
+    padding: 10px 14px;
+    font-weight: 600;
+    border-bottom: 2px solid var(--primary);
+  }
+  td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:hover td { background: var(--bg); }
+
+  /* Callouts */
+  .callout {
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 12px 0;
+    border-left: 4px solid;
+  }
+  .callout-info { background: var(--primary-light); border-color: var(--primary); }
+  .callout-warn { background: var(--orange-light); border-color: var(--orange); }
+  .callout-success { background: var(--green-light); border-color: var(--green); }
+  .callout-danger { background: var(--red-light); border-color: var(--red); }
+  .callout-title { font-weight: 700; margin-bottom: 4px; }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-v1 { background: #dbeafe; color: #1e40af; }
+  .badge-v2 { background: #fef3c7; color: #92400e; }
+  .badge-v3 { background: #e0e7ff; color: #3730a3; }
+  .badge-v4 { background: #f3e8ff; color: #6b21a8; }
+  .badge-v5 { background: #fce7f3; color: #9d174d; }
+
+  /* Diagram boxes */
+  .diagram-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 16px 0;
+  }
+  .layer-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .layer-num {
+    flex-shrink: 0;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px;
+    color: white;
+  }
+  .layer-content { flex: 1; }
+  .layer-content h4 { margin-top: 0; }
+  .layer-source {
+    flex-shrink: 0;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--code-bg);
+    color: var(--text-secondary);
+  }
+
+  /* DB Schema boxes */
+  .schema-table {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 8px 0;
+  }
+  .schema-table-header {
+    background: var(--primary);
+    color: white;
+    padding: 8px 14px;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .schema-field {
+    display: flex;
+    padding: 4px 14px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .schema-field:last-child { border-bottom: none; }
+  .schema-field-name { width: 180px; font-weight: 500; font-family: monospace; }
+  .schema-field-type { width: 120px; color: var(--text-secondary); font-family: monospace; }
+  .schema-field-desc { flex: 1; color: var(--text-secondary); }
+  .pk { color: var(--orange); font-weight: 700; }
+  .fk { color: var(--primary); font-weight: 600; }
+
+  .toc-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .toc-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    text-decoration: none;
+    color: var(--text);
+    transition: all 0.15s;
+  }
+  .toc-card:hover { border-color: var(--primary); background: var(--primary-light); }
+  .toc-card-num { font-size: 12px; color: var(--primary); font-weight: 700; }
+  .toc-card-title { font-size: 14px; font-weight: 600; margin-top: 2px; }
+
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; padding: 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<!-- Sidebar Navigation -->
+<nav class="sidebar">
+  <h1>SKU Intelligence Engine</h1>
+  <p class="subtitle">完整开发文档 v1.0</p>
+
+  <div class="nav-section">
+    <div class="nav-section-title">概览</div>
+    <a class="nav-item" href="#overview">1. 项目概述</a>
+    <a class="nav-item" href="#architecture">2. 系统架构</a>
+    <a class="nav-item" href="#sku-relations">3. SKU 关系矩阵</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">核心设计</div>
+    <a class="nav-item" href="#data-model">4. 数据模型与 DB Schema</a>
+    <a class="nav-item" href="#agents">5. Agent 编排设计</a>
+    <a class="nav-item" href="#matching-engine">6. 匹配引擎与评分</a>
+    <a class="nav-item" href="#confidence">7. 置信度与路由</a>
+    <a class="nav-item" href="#auto-sourcing">8. 自动找货</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">产品交互</div>
+    <a class="nav-item" href="#review-ui">9. 审核台交互设计</a>
+    <a class="nav-item" href="#ai-repair">10. AI 修复模式</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">工程落地</div>
+    <a class="nav-item" href="#api">11. API 设计</a>
+    <a class="nav-item" href="#tech-stack">12. 技术选型</a>
+    <a class="nav-item" href="#roadmap">13. 实施路线图</a>
+    <a class="nav-item" href="#checklist">14. 开发检查清单</a>
+  </div>
+</nav>
+
+<!-- Main Content -->
+<main class="main">
+
+<!-- ==================== 1. 项目概述 ==================== -->
+<h2 id="overview">1. 项目概述</h2>
+
+<h3>1.1 要解决什么问题</h3>
+<p>将 Shopify 在售商品的 SKU 与公司货源商品 SKU 进行智能对齐。核心痛点：</p>
+<ul>
+  <li><strong>跨语言</strong>：Shopify 英文描述 vs 货源中文描述</li>
+  <li><strong>跨粒度</strong>："黑色XXL"（拆分）vs "黑色大码"（合成）</li>
+  <li><strong>跨语义</strong>："6-15岁"（精确）vs "儿童装"（模糊）</li>
+  <li><strong>跨基数</strong>：目标 5 个 SKU，货源 3 个 SKU（缺货）</li>
+  <li><strong>跨组合</strong>：套装(上衣+短裤) vs 货源拆分售卖</li>
+  <li><strong>跨数量</strong>："3件装" vs "单件"</li>
+</ul>
+
+<h3>1.2 设计目标</h3>
+<table>
+  <tr><th>场景</th><th>自动化目标</th><th>人工介入</th></tr>
+  <tr><td>完全一致</td><td>100% 自动</td><td>无</td></tr>
+  <tr><td>语言不同</td><td>AI 转换后自动</td><td>无</td></tr>
+  <tr><td>名称不同</td><td>AI 理解后自动</td><td>无</td></tr>
+  <tr><td>规格表达不同</td><td>AI 归一化后自动</td><td>低置信度时确认</td></tr>
+  <tr><td>SKU 数量不同</td><td>AI 建立关系</td><td>审核确认</td></tr>
+  <tr><td>货源不足</td><td>AI 自动找货</td><td>审核找货结果</td></tr>
+  <tr><td>无法判断</td><td>—</td><td>人工处理</td></tr>
+</table>
+
+<h3>1.3 核心设计原则</h3>
+<ol>
+  <li><strong>不直接匹配 SKU 文本，先建立商品知识层</strong>——所有商品先解构为结构化实体，再做属性对齐</li>
+  <li><strong>原子化解构</strong>——把 SKU 拆到最底层组件 + 数量，单件是组件数=1 的特例</li>
+  <li><strong>三阶段漏斗匹配</strong>——粗筛→属性匹配→LLM 推理，逐层精细化控制成本</li>
+  <li><strong>置信度三分流</strong>——自动执行 / 人工确认 / 自动找货，阈值按品类动态调整</li>
+  <li><strong>知识持久化</strong>——商品实体、匹配结果、人工修正全部存储，越用越准</li>
+  <li><strong>AI 修复中间层</strong>——匹配失败不直接丢人工，先 AI 自动重试（翻译/同义词/图搜）</li>
+</ol>
+
+<!-- ==================== 2. 系统架构 ==================== -->
+<h2 id="architecture">2. 系统架构</h2>
+
+<p>系统分为 6 层，每层取自融合方案的最强来源：</p>
+
+<div class="diagram-box">
+  <div class="layer-card" style="background: #eef2ff;">
+    <div class="layer-num" style="background: #4f46e5;">1</div>
+    <div class="layer-content">
+      <h4>商品知识图谱层 (Product Knowledge Graph)</h4>
+      <p>所有商品入库即创建 Entity：结构化属性 + 文本 embedding + 图片 embedding。持久化存储，支持增量更新和跨商品知识复用。</p>
+    </div>
+    <div class="layer-source">来源: 方案 C</div>
+  </div>
+
+  <div class="layer-card" style="background: #ecfdf5;">
+    <div class="layer-num" style="background: #059669;">2</div>
+    <div class="layer-content">
+      <h4>原子化解构层 (Atomic Deconstruction)</h4>
+      <p>SKU → <code>[{item, attributes, quantity}, ...]</code>。单件是长度 1 的特例，套装自然拆解。在此基础上应用属性等价映射表。</p>
+    </div>
+    <div class="layer-source">来源: 方案 B</div>
+  </div>
+
+  <div class="layer-card" style="background: #fff7ed;">
+    <div class="layer-num" style="background: #ea580c;">3</div>
+    <div class="layer-content">
+      <h4>三阶段匹配漏斗 (Matching Funnel)</h4>
+      <p>粗筛（商品级向量）→ 属性匹配（组件级规则+映射表）→ LLM 推理（灰区判定）。文本+图片双 embedding。</p>
+    </div>
+    <div class="layer-source">来源: 方案 A + C</div>
+  </div>
+
+  <div class="layer-card" style="background: #fef2f2;">
+    <div class="layer-num" style="background: #dc2626;">4</div>
+    <div class="layer-content">
+      <h4>关系推理 + 置信度路由 (Relation & Routing)</h4>
+      <p>关系类型判断（1:1 / 1:N / N:1 / N:M）→ 置信度评分（动态阈值）→ 路由（自动 / AI修复→人工 / 自动找货）。</p>
+    </div>
+    <div class="layer-source">来源: A + B + C</div>
+  </div>
+
+  <div class="layer-card" style="background: #f3e8ff;">
+    <div class="layer-num" style="background: #7c3aed;">5</div>
+    <div class="layer-content">
+      <h4>三模式审核台 (Review Console)</h4>
+      <p>批量模式（高量1:1）/ 积木模式（套装1:N）/ AI 修复模式（批量异常重试）+ 仪表盘概览。</p>
+    </div>
+    <div class="layer-source">来源: A + B + C</div>
+  </div>
+
+  <div class="layer-card" style="background: #fce7f3;">
+    <div class="layer-num" style="background: #be185d;">6</div>
+    <div class="layer-content">
+      <h4>学习闭环 (Learning Loop)</h4>
+      <p>知识图谱积累 + 模板记忆（套装公式参数化复用）+ 模型微调（定期 fine-tune）。</p>
+    </div>
+    <div class="layer-source">来源: A + B + C</div>
+  </div>
+</div>
+
+<!-- ==================== 3. SKU 关系矩阵 ==================== -->
+<h2 id="sku-relations">3. SKU 关系矩阵</h2>
+
+<p>这是整个系统的核心认知模型。SKU 之间存在 4 种关系类型，必须全部支持：</p>
+
+<table>
+  <tr><th>关系类型</th><th>场景示例</th><th>说明</th><th>DB 映射表</th></tr>
+  <tr>
+    <td><strong>1:1</strong></td>
+    <td>Shopify "Black XXL" → 货源 "黑色加大码"</td>
+    <td>最简单，一个目标 SKU 对应一个货源 SKU</td>
+    <td><code>sku_mapping_1to1</code></td>
+  </tr>
+  <tr>
+    <td><strong>1:N</strong></td>
+    <td>Shopify "套装(上衣+短裤)" → 货源A上衣 + 货源B短裤</td>
+    <td>一个目标 SKU 拆成多个货源 SKU</td>
+    <td><code>sku_mapping_1toN</code></td>
+  </tr>
+  <tr>
+    <td><strong>N:1</strong></td>
+    <td>Shopify 5个SKU(黑S/M/L + 白S/M) → 货源2个(黑/白)</td>
+    <td>多个目标 SKU 合并到一个货源 SKU（粒度不同）</td>
+    <td><code>sku_mapping_Nto1</code></td>
+  </tr>
+  <tr>
+    <td><strong>N:M</strong></td>
+    <td>3件装套装(2上衣+1短裤) → 货源A(上衣) + 货源B(短裤)</td>
+    <td>最复杂，多对多（1:N + 数量倍数的组合）</td>
+    <td><code>sku_mapping_1toN</code> + quantity</td>
+  </tr>
+</table>
+
+<div class="callout callout-warn">
+  <div class="callout-title">⚠️ 数据库设计要点</div>
+  传统数据库大多只设计了 1:1 映射。本系统必须支持 1:N 和 N:1，需要改写 DB Schema。N:M 本质上是 1:N + 数量系数的组合，不需要单独的映射表。
+</div>
+
+<!-- ==================== 4. 数据模型 ==================== -->
+<h2 id="data-model">4. 数据模型与 DB Schema</h2>
+
+<h3>4.1 核心表清单</h3>
+<table>
+  <tr><th>表名</th><th>用途</th><th>版本</th></tr>
+  <tr><td><code>product_entities</code></td><td>商品实体（知识图谱节点）</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td><code>sku_entities</code></td><td>SKU 实体（含原子化组件）</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td><code>sku_components</code></td><td>SKU 的原子组件（1:N 子表）</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td><code>sku_mapping_1to1</code></td><td>1:1 映射关系</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td><code>sku_mapping_1toN</code></td><td>1:N 映射关系（套装拆解）</td><td><span class="badge badge-v3">V3</span></td></tr>
+  <tr><td><code>sku_mapping_Nto1</code></td><td>N:1 映射关系（粒度合并）</td><td><span class="badge badge-v2">V2</span></td></tr>
+  <tr><td><code>attribute_mappings</code></td><td>属性等价映射表（大码→XXL）</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td><code>bundle_templates</code></td><td>套装组合模板记忆</td><td><span class="badge badge-v4">V4</span></td></tr>
+  <tr><td><code>match_feedback</code></td><td>人工修正记录</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td><code>sourcing_tasks</code></td><td>自动找货任务</td><td><span class="badge badge-v4">V4</span></td></tr>
+  <tr><td><code>match_batches</code></td><td>匹配批次（任务追踪）</td><td><span class="badge badge-v1">V1</span></td></tr>
+</table>
+
+<h3>4.2 表结构定义</h3>
+
+<h4>4.2.1 product_entities — 商品实体</h4>
+<div class="schema-table">
+  <div class="schema-table-header">product_entities</div>
+  <div class="schema-field"><span class="schema-field-name pk">id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">主键</span></div>
+  <div class="schema-field"><span class="schema-field-name">source</span><span class="schema-field-type">VARCHAR(20)</span><span class="schema-field-desc">来源: shopify / supplier_1688 / supplier_alibaba</span></div>
+  <div class="schema-field"><span class="schema-field-name">source_product_id</span><span class="schema-field-type">VARCHAR(100)</span><span class="schema-field-desc">来源平台的商品ID</span></div>
+  <div class="schema-field"><span class="schema-field-name">title</span><span class="schema-field-type">TEXT</span><span class="schema-field-desc">原始标题</span></div>
+  <div class="schema-field"><span class="schema-field-name">title_translated</span><span class="schema-field-type">TEXT</span><span class="schema-field-desc">翻译后标题（统一为中文或英文）</span></div>
+  <div class="schema-field"><span class="schema-field-name">description</span><span class="schema-field-type">TEXT</span><span class="schema-field-desc">原始描述</span></div>
+  <div class="schema-field"><span class="schema-field-name">category</span><span class="schema-field-type">VARCHAR(100)</span><span class="schema-field-desc">标准化类目 (kids_jacket, tshirt, ...)</span></div>
+  <div class="schema-field"><span class="schema-field-name">images</span><span class="schema-field-type">JSONB</span><span class="schema-field-desc">图片URL数组 ["url1", "url2"]</span></div>
+  <div class="schema-field"><span class="schema-field-name">image_embeddings</span><span class="schema-field-type">JSONB</span><span class="schema-field-desc">图片embedding数组 (每张图一个向量)</span></div>
+  <div class="schema-field"><span class="schema-field-name">text_embedding</span><span class="schema-field-type">VECTOR(1536)</span><span class="schema-field-desc">标题+描述的文本embedding</span></div>
+  <div class="schema-field"><span class="schema-field-name">attributes</span><span class="schema-field-type">JSONB</span><span class="schema-field-desc">商品级属性 {brand, gender, season, material}</span></div>
+  <div class="schema-field"><span class="schema-field-name">status</span><span class="schema-field-type">VARCHAR(20)</span><span class="schema-field-desc">active / inactive / deleted</span></div>
+  <div class="schema-field"><span class="schema-field-name">created_at</span><span class="schema-field-type">TIMESTAMP</span><span class="schema-field-desc">创建时间</span></div>
+  <div class="schema-field"><span class="schema-field-name">updated_at</span><span class="schema-field-type">TIMESTAMP</span><span class="schema-field-desc">更新时间</span></div>
+</div>
+
+<h4>4.2.2 sku_entities — SKU 实体</h4>
+<div class="schema-table">
+  <div class="schema-table-header">sku_entities</div>
+  <div class="schema-field"><span class="schema-field-name pk">id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">主键</span></div>
+  <div class="schema-field"><span class="schema-field-name fk">product_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">关联 product_entities.id</span></div>
+  <div class="schema-field"><span class="schema-field-name">source_sku_id</span><span class="schema-field-type">VARCHAR(100)</span><span class="schema-field-desc">来源平台SKU ID</span></div>
+  <div class="schema-field"><span class="schema-field-name">sku_code</span><span class="schema-field-type">VARCHAR(200)</span><span class="schema-field-desc">SKU编码/名称 (如 "BLUE-6-8Y")</span></div>
+  <div class="schema-field"><span class="schema-field-name">raw_description</span><span class="schema-field-type">TEXT</span><span class="schema-field-desc">原始描述文本</span></div>
+  <div class="schema-field"><span class="schema-field-name">is_bundle</span><span class="schema-field-type">BOOLEAN</span><span class="schema-field-desc">是否套装/组合装</span></div>
+  <div class="schema-field"><span class="schema-field-name">component_count</span><span class="schema-field-type">INT</span><span class="schema-field-desc">组件数量（1=单件，>1=套装/多件装）</span></div>
+  <div class="schema-field"><span class="schema-field-name">price</span><span class="schema-field-type">DECIMAL(10,2)</span><span class="schema-field-desc">价格</span></div>
+  <div class="schema-field"><span class="schema-field-name">stock</span><span class="schema-field-type">INT</span><span class="schema-field-desc">库存</span></div>
+  <div class="schema-field"><span class="schema-field-name">images</span><span class="schema-field-type">JSONB</span><span class="schema-field-desc">SKU 级别图片</span></div>
+  <div class="schema-field"><span class="schema-field-name">status</span><span class="schema-field-type">VARCHAR(20)</span><span class="schema-field-desc">active / inactive</span></div>
+</div>
+
+<h4>4.2.3 sku_components — SKU 原子组件</h4>
+<div class="schema-table">
+  <div class="schema-table-header">sku_components</div>
+  <div class="schema-field"><span class="schema-field-name pk">id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">主键</span></div>
+  <div class="schema-field"><span class="schema-field-name fk">sku_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">关联 sku_entities.id</span></div>
+  <div class="schema-field"><span class="schema-field-name">component_index</span><span class="schema-field-type">INT</span><span class="schema-field-desc">组件序号 (0, 1, 2...)</span></div>
+  <div class="schema-field"><span class="schema-field-name">item_name</span><span class="schema-field-type">VARCHAR(200)</span><span class="schema-field-desc">组件名称 (如 "女式夏季上衣")</span></div>
+  <div class="schema-field"><span class="schema-field-name">quantity</span><span class="schema-field-type">INT</span><span class="schema-field-desc">数量 (3件装=3, 单件=1)</span></div>
+  <div class="schema-field"><span class="schema-field-name">attributes</span><span class="schema-field-type">JSONB</span><span class="schema-field-desc">组件属性 (见下方属性 Schema)</span></div>
+  <div class="schema-field"><span class="schema-field-name">attributes_normalized</span><span class="schema-field-type">JSONB</span><span class="schema-field-desc">标准化后属性（经映射表处理）</span></div>
+  <div class="schema-field"><span class="schema-field-name">text_embedding</span><span class="schema-field-type">VECTOR(1536)</span><span class="schema-field-desc">组件描述的 embedding</span></div>
+</div>
+
+<h4>4.2.4 组件属性 Schema (JSON 结构)</h4>
+<pre><code>// attributes 字段的标准结构
+{
+  "color": "black",                    // 颜色（标准化后英文小写）
+  "color_raw": "黑色",                 // 原始颜色描述
+  "size": {
+    "system": "letter",               // letter / numeric / age / height / free
+    "value": "XXL",                   // 具体值
+    "raw": "加大码"                   // 原始描述
+  },
+  "material": "cotton",               // 材质
+  "pattern": "solid",                 // 花纹：solid / striped / printed
+  "gender": "unisex",                 // male / female / unisex / kids
+  "age_range": {                      // 年龄范围（可选）
+    "min": 6,
+    "max": 15,
+    "unit": "years"
+  },
+  "style": "casual",                  // 风格
+  "season": ["spring", "autumn"],     // 适用季节
+  "weight": null,                     // 重量（可选）
+  "custom": {}                        // 品类特有属性
+}</code></pre>
+
+<h4>4.2.5 sku_mapping_1to1 — 1:1 映射</h4>
+<div class="schema-table">
+  <div class="schema-table-header">sku_mapping_1to1</div>
+  <div class="schema-field"><span class="schema-field-name pk">id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">主键</span></div>
+  <div class="schema-field"><span class="schema-field-name fk">shopify_sku_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">Shopify 侧 SKU ID</span></div>
+  <div class="schema-field"><span class="schema-field-name fk">supplier_sku_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">货源侧 SKU ID</span></div>
+  <div class="schema-field"><span class="schema-field-name">match_score</span><span class="schema-field-type">DECIMAL(4,3)</span><span class="schema-field-desc">匹配置信度 0.000-1.000</span></div>
+  <div class="schema-field"><span class="schema-field-name">match_stage</span><span class="schema-field-type">VARCHAR(20)</span><span class="schema-field-desc">匹配阶段：vector / attribute / llm</span></div>
+  <div class="schema-field"><span class="schema-field-name">match_reason</span><span class="schema-field-type">TEXT</span><span class="schema-field-desc">匹配理由（LLM 生成）</span></div>
+  <div class="schema-field"><span class="schema-field-name">status</span><span class="schema-field-type">VARCHAR(20)</span><span class="schema-field-desc">auto_matched / human_confirmed / human_rejected / pending</span></div>
+  <div class="schema-field"><span class="schema-field-name">confirmed_by</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">确认人（null=自动）</span></div>
+  <div class="schema-field"><span class="schema-field-name">confirmed_at</span><span class="schema-field-type">TIMESTAMP</span><span class="schema-field-desc">确认时间</span></div>
+  <div class="schema-field"><span class="schema-field-name">batch_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">匹配批次ID</span></div>
+  <div class="schema-field"><span class="schema-field-name">created_at</span><span class="schema-field-type">TIMESTAMP</span><span class="schema-field-desc">创建时间</span></div>
+</div>
+
+<h4>4.2.6 sku_mapping_1toN — 1:N 映射（套装拆解）</h4>
+<div class="schema-table">
+  <div class="schema-table-header">sku_mapping_1toN</div>
+  <div class="schema-field"><span class="schema-field-name pk">id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">主键</span></div>
+  <div class="schema-field"><span class="schema-field-name fk">shopify_sku_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">Shopify 侧 SKU ID（套装）</span></div>
+  <div class="schema-field"><span class="schema-field-name fk">supplier_sku_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">货源侧 SKU ID（组件）</span></div>
+  <div class="schema-field"><span class="schema-field-name">component_index</span><span class="schema-field-type">INT</span><span class="schema-field-desc">对应 shopify SKU 的第几个组件</span></div>
+  <div class="schema-field"><span class="schema-field-name">quantity_multiplier</span><span class="schema-field-type">INT</span><span class="schema-field-desc">数量倍数 (3件装=3, 普通=1)</span></div>
+  <div class="schema-field"><span class="schema-field-name">match_score</span><span class="schema-field-type">DECIMAL(4,3)</span><span class="schema-field-desc">该组件的匹配置信度</span></div>
+  <div class="schema-field"><span class="schema-field-name">status</span><span class="schema-field-type">VARCHAR(20)</span><span class="schema-field-desc">auto / human_confirmed / pending</span></div>
+</div>
+
+<h4>4.2.7 sku_mapping_Nto1 — N:1 映射（粒度合并）</h4>
+<div class="schema-table">
+  <div class="schema-table-header">sku_mapping_Nto1</div>
+  <div class="schema-field"><span class="schema-field-name pk">id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">主键</span></div>
+  <div class="schema-field"><span class="schema-field-name fk">shopify_sku_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">Shopify 侧 SKU ID（多个）</span></div>
+  <div class="schema-field"><span class="schema-field-name fk">supplier_sku_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">货源侧 SKU ID（一个，被多个引用）</span></div>
+  <div class="schema-field"><span class="schema-field-name">missing_attributes</span><span class="schema-field-type">JSONB</span><span class="schema-field-desc">货源缺失的属性信息 {missing: ["size"]}</span></div>
+  <div class="schema-field"><span class="schema-field-name">match_score</span><span class="schema-field-type">DECIMAL(4,3)</span><span class="schema-field-desc">匹配置信度</span></div>
+  <div class="schema-field"><span class="schema-field-name">status</span><span class="schema-field-type">VARCHAR(20)</span><span class="schema-field-desc">auto / human_confirmed / pending</span></div>
+</div>
+
+<h4>4.2.8 attribute_mappings — 属性等价映射表</h4>
+<div class="schema-table">
+  <div class="schema-table-header">attribute_mappings</div>
+  <div class="schema-field"><span class="schema-field-name pk">id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">主键</span></div>
+  <div class="schema-field"><span class="schema-field-name">attribute_type</span><span class="schema-field-type">VARCHAR(50)</span><span class="schema-field-desc">color / size / material / age / gender</span></div>
+  <div class="schema-field"><span class="schema-field-name">raw_value</span><span class="schema-field-type">VARCHAR(200)</span><span class="schema-field-desc">原始值 (如 "大码", "儿童装")</span></div>
+  <div class="schema-field"><span class="schema-field-name">normalized_value</span><span class="schema-field-type">VARCHAR(200)</span><span class="schema-field-desc">标准化值 (如 "XXL", "age:6-14")</span></div>
+  <div class="schema-field"><span class="schema-field-name">confidence</span><span class="schema-field-type">DECIMAL(3,2)</span><span class="schema-field-desc">映射置信度 (0.7-1.0)</span></div>
+  <div class="schema-field"><span class="schema-field-name">source</span><span class="schema-field-type">VARCHAR(20)</span><span class="schema-field-desc">manual / ai_suggested / feedback_learned</span></div>
+  <div class="schema-field"><span class="schema-field-name">category_scope</span><span class="schema-field-type">VARCHAR(100)</span><span class="schema-field-desc">适用品类 (null=全品类)</span></div>
+</div>
+
+<h4>4.2.9 bundle_templates — 套装组合模板</h4>
+<div class="schema-table">
+  <div class="schema-table-header">bundle_templates</div>
+  <div class="schema-field"><span class="schema-field-name pk">id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">主键</span></div>
+  <div class="schema-field"><span class="schema-field-name">template_name</span><span class="schema-field-type">VARCHAR(200)</span><span class="schema-field-desc">模板名称 (如 "上衣+短裤套装")</span></div>
+  <div class="schema-field"><span class="schema-field-name">bundle_structure</span><span class="schema-field-type">JSONB</span><span class="schema-field-desc">参数化结构 (见下方示例)</span></div>
+  <div class="schema-field"><span class="schema-field-name">usage_count</span><span class="schema-field-type">INT</span><span class="schema-field-desc">使用次数（热度）</span></div>
+  <div class="schema-field"><span class="schema-field-name">success_rate</span><span class="schema-field-type">DECIMAL(3,2)</span><span class="schema-field-desc">成功率</span></div>
+</div>
+<pre><code>// bundle_structure 示例 — 参数化，不绑定具体 SKU
+{
+  "components": [
+    {"item_type": "top", "quantity": 1, "param_keys": ["color", "size"]},
+    {"item_type": "bottom", "quantity": 1, "param_keys": ["color", "size"]}
+  ],
+  "constraint": "all components share same color and size"
+}
+// 当新套装进来，AI 识别结构匹配此模板后，
+// 只需替换 color/size 参数即可自动建立 1:N 映射</code></pre>
+
+<h4>4.2.10 match_feedback — 人工修正记录</h4>
+<div class="schema-table">
+  <div class="schema-table-header">match_feedback</div>
+  <div class="schema-field"><span class="schema-field-name pk">id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">主键</span></div>
+  <div class="schema-field"><span class="schema-field-name">mapping_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">关联的映射记录ID</span></div>
+  <div class="schema-field"><span class="schema-field-name">mapping_type</span><span class="schema-field-type">VARCHAR(10)</span><span class="schema-field-desc">1to1 / 1toN / Nto1</span></div>
+  <div class="schema-field"><span class="schema-field-name">action</span><span class="schema-field-type">VARCHAR(20)</span><span class="schema-field-desc">confirmed / rejected / corrected</span></div>
+  <div class="schema-field"><span class="schema-field-name">corrected_supplier_sku_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">修正后的正确货源 SKU（如有）</span></div>
+  <div class="schema-field"><span class="schema-field-name">reason</span><span class="schema-field-type">TEXT</span><span class="schema-field-desc">修正原因</span></div>
+  <div class="schema-field"><span class="schema-field-name">user_id</span><span class="schema-field-type">UUID</span><span class="schema-field-desc">操作人</span></div>
+  <div class="schema-field"><span class="schema-field-name">created_at</span><span class="schema-field-type">TIMESTAMP</span><span class="schema-field-desc">操作时间</span></div>
+</table>
+
+<h3>4.3 ER 关系总览</h3>
+<pre><code>product_entities (1) ──── (N) sku_entities (1) ──── (N) sku_components
+       │                          │
+       │                          ├── (1) sku_mapping_1to1 (N) ──── supplier sku
+       │                          ├── (1) sku_mapping_1toN (N) ──── supplier sku (套装拆解)
+       │                          └── (N) sku_mapping_Nto1 (1) ──── supplier sku (粒度合并)
+       │
+       ├── attribute_mappings (全局知识)
+       ├── bundle_templates (套装公式记忆)
+       └── match_feedback → 反哺 attribute_mappings + 模型微调</code></pre>
+
+<!-- ==================== 5. Agent 编排 ==================== -->
+<h2 id="agents">5. Agent 编排设计</h2>
+
+<p>系统由 5 个 Agent 协作完成，每个 Agent 职责单一，通过事件驱动编排：</p>
+
+<h3>5.1 Agent 总览</h3>
+<table>
+  <tr><th>Agent</th><th>职责</th><th>输入</th><th>输出</th><th>版本</th></tr>
+  <tr><td><strong>商品理解 Agent</strong></td><td>判断两个商品是否同类</td><td>两侧商品信息</td><td>商品相似度 + 理由</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td><strong>规格解析 Agent</strong></td><td>SKU 描述 → 结构化属性</td><td>原始 SKU 描述</td><td>标准化属性 JSON</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td><strong>关系推理 Agent</strong></td><td>判断 SKU 关系类型并建立映射</td><td>两侧 SKU 组件</td><td>关系类型 + 映射方案</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td><strong>置信度评估 Agent</strong></td><td>评估匹配可信度并路由</td><td>匹配结果</td><td>分数 + 路由决策</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td><strong>自动找货 Agent</strong></td><td>缺口检测 + 搜索补充货源</td><td>缺失组件属性</td><td>候选货源列表</td><td><span class="badge badge-v4">V4</span></td></tr>
+</table>
+
+<h3>5.2 Agent 1: 商品理解 Agent (Product Understanding)</h3>
+
+<h4>职责</h4>
+<p>判断 Shopify 商品和货源商品是否是"同一个东西"（商品级粗筛）。这是匹配漏斗的第一步。</p>
+
+<h4>输入</h4>
+<pre><code>{
+  "shopify_product": {
+    "title": "Women's Summer Set (Top + Shorts)",
+    "description": "...",
+    "images": ["url1", "url2"],
+    "category_hint": "clothing"
+  },
+  "supplier_product": {
+    "title": "女士夏季两件套 上衣+短裤",
+    "description": "...",
+    "images": ["url1", "url2"]
+  }
+}</code></pre>
+
+<h4>LLM Prompt 模板</h4>
+<pre><code>你是一个电商商品对齐专家。判断以下两个商品是否是同一个商品（或同一款的不同版本）。
+
+【Shopify 商品】
+标题: {shopify_title}
+描述: {shopify_description}
+图片描述: {shopify_image_captions}
+
+【货源商品】
+标题: {supplier_title}
+描述: {supplier_description}
+图片描述: {supplier_image_captions}
+
+请输出 JSON:
+{
+  "is_same_product": true/false,
+  "similarity_score": 0.0-1.0,
+  "reasons": ["图片一致", "类目一致", "颜色一致"],
+  "differences": ["尺码体系不同"],
+  "category_confirmed": "kids_jacket"
+}</code></pre>
+
+<h4>输出</h4>
+<pre><code>{
+  "is_same_product": true,
+  "similarity_score": 0.92,
+  "reasons": ["图片一致", "类目一致", "颜色一致", "风格一致"],
+  "differences": ["尺码体系不同"],
+  "category_confirmed": "summer_set"
+}</code></pre>
+
+<h4>关键决策</h4>
+<ul>
+  <li>similarity_score ≥ 0.7 → 进入 SKU 级匹配流程</li>
+  <li>similarity_score < 0.7 → 标记为"商品不匹配"，跳过该商品对</li>
+  <li>使用 <strong>text-embedding-3-small</strong> 做文本向量粗筛（成本极低），只有向量相似度 > 0.75 的才调用 LLM</li>
+  <li>图片 embedding 用 <strong>CLIP</strong> 模型预计算，作为辅助信号</li>
+</ul>
+
+<h3>5.3 Agent 2: 规格解析 Agent (Spec Parser)</h3>
+
+<h4>职责</h4>
+<p>把 SKU 的原始描述（英文/中文/混合/口语化）解析为标准化的结构化属性。这是整个系统<strong>最核心</strong>的 Agent。</p>
+
+<h4>输入</h4>
+<pre><code>{
+  "sku_description": "Black XXL",
+  "product_context": {
+    "title": "Women's Summer Set (Top + Shorts)",
+    "category": "summer_set"
+  },
+  "source_language": "en"
+}</code></pre>
+
+<h4>LLM Prompt 模板</h4>
+<pre><code>你是 SKU 属性提取专家。将以下 SKU 描述解析为标准结构化属性。
+
+SKU 描述: "{sku_description}"
+商品标题: "{product_title}"
+商品类目: "{category}"
+
+提取规则:
+1. 颜色统一为英文小写 (black, white, navy, etc.)
+2. 尺码区分体系: letter(S/M/L/XL), numeric(36/38/40), age(6-8Y), height(110cm), free
+3. 如果是套装/多件装，设置 is_bundle=true 并拆出每个组件
+4. 数量提取: "3件装" → quantity=3, "2-pack" → quantity=2
+5. 无法确定的字段留 null，不要猜测
+
+输出 JSON:
+{
+  "is_bundle": false,
+  "components": [
+    {
+      "item_name": "...",
+      "quantity": 1,
+      "attributes": {
+        "color": "...",
+        "color_raw": "...",
+        "size": {"system": "...", "value": "...", "raw": "..."},
+        "material": null,
+        "pattern": null,
+        "gender": null,
+        "age_range": null,
+        "style": null,
+        "season": null
+      }
+    }
+  ]
+}</code></pre>
+
+<h4>输出示例（多种场景）</h4>
+
+<pre><code>// 场景1: 简单单件
+输入: "Black XXL"
+输出:
+{
+  "is_bundle": false,
+  "components": [{
+    "item_name": "main",
+    "quantity": 1,
+    "attributes": {
+      "color": "black",
+      "color_raw": "Black",
+      "size": {"system": "letter", "value": "XXL", "raw": "XXL"}
+    }
+  }]
+}
+
+// 场景2: 套装拆解
+输入: "Women's Summer Set (Top + Shorts) / Black / L"
+输出:
+{
+  "is_bundle": true,
+  "components": [
+    {"item_name": "top", "quantity": 1, "attributes": {"color": "black", "size": {"system": "letter", "value": "L"}}},
+    {"item_name": "shorts", "quantity": 1, "attributes": {"color": "black", "size": {"system": "letter", "value": "L"}}}
+  ]
+}
+
+// 场景3: 多件装
+输入: "3件装-黑色T恤(M码)"
+输出:
+{
+  "is_bundle": false,
+  "components": [{
+    "item_name": "tshirt",
+    "quantity": 3,
+    "attributes": {"color": "black", "size": {"system": "letter", "value": "M"}}
+  }]
+}
+
+// 场景4: 中文模糊描述
+输入: "黑色大码"
+输出:
+{
+  "is_bundle": false,
+  "components": [{
+    "item_name": "main",
+    "quantity": 1,
+    "attributes": {
+      "color": "black",
+      "color_raw": "黑色",
+      "size": {"system": "letter", "value": "XXL", "raw": "大码"}
+    }
+  }]
+}
+
+// 场景5: 年龄范围
+输入: "6-15 Years"
+输出:
+{
+  "is_bundle": false,
+  "components": [{
+    "item_name": "main",
+    "quantity": 1,
+    "attributes": {
+      "age_range": {"min": 6, "max": 15, "unit": "years"},
+      "size": {"system": "age", "value": "6-15", "raw": "6-15 Years"}
+    }
+  }]
+}</code></pre>
+
+<h4>关键决策</h4>
+<ul>
+  <li>使用 <strong>GPT-4o-mini</strong> 或 <strong>Claude Haiku</strong>（成本低、速度快，结构化提取足够）</li>
+  <li>解析结果先查 <code>attribute_mappings</code> 表做标准化（"大码"→"XXL"），再存入 <code>attributes_normalized</code></li>
+  <li>相同 SKU 描述做<strong>缓存</strong>，不重复调用 LLM</li>
+  <li>解析失败时 fallback 到原始文本 embedding</li>
+</ul>
+
+<h3>5.4 Agent 3: 关系推理 Agent (Relation Reasoning)</h3>
+
+<h4>职责</h4>
+<p>在组件级别建立 SKU 之间的映射关系，判断关系类型（1:1 / 1:N / N:1），生成映射方案。</p>
+
+<h4>处理逻辑</h4>
+<pre><code>// 伪代码
+function reasonRelations(shopify_skus, supplier_skus):
+    # 1. 对每个 Shopify SKU 的每个组件，找最佳匹配的货源组件
+    for shopify_sku in shopify_skus:
+        for component in shopify_sku.components:
+            best_match = findBestComponentMatch(
+                component,
+                supplier_skus.flatMap(s => s.components)
+            )
+
+    # 2. 判断关系类型
+    if shopify_sku.component_count == 1 and best_match.sku.component_count == 1:
+        relation = "1:1"
+
+    elif shopify_sku.component_count > 1:
+        # Shopify 是套装，需要多个货源
+        relation = "1:N"
+        # 检查是否所有组件都找到了货源
+        missing = components_without_match
+        if missing.length > 0:
+            trigger_auto_sourcing(missing)
+
+    elif supplier_sku_mapped_to_multiple_shopify:
+        # 多个 Shopify SKU 指向同一个货源 SKU
+        relation = "N:1"
+        # 记录缺失属性（如货源没有尺码信息）
+        record_missing_attributes()
+
+    # 3. 计算组合置信度
+    if relation == "1:N":
+        # 套装整体置信度 = 各组件置信度的加权平均
+        bundle_score = weightedAvg(component_scores)
+    elif relation == "N:1":
+        # 粒度合并置信度 = 各 Shopify SKU 置信度的最小值（短板效应）
+        merge_score = min(sku_scores)
+
+    return { relation, mapping_plan, confidence }</code></pre>
+
+<h4>关系判断规则</h4>
+<table>
+  <tr><th>条件</th><th>关系类型</th><th>处理</th></tr>
+  <tr><td>Shopify 1组件 → 货源 1组件</td><td>1:1</td><td>直接映射</td></tr>
+  <tr><td>Shopify 多组件 → 各自找到货源</td><td>1:N</td><td>多货源映射</td></tr>
+  <tr><td>Shopify 多组件 → 部分缺失</td><td>1:N (部分)</td><td>触发自动找货</td></tr>
+  <tr><td>Shopify 多SKU → 同一货源SKU</td><td>N:1</td><td>记录缺失属性</td></tr>
+  <tr><td>Shopify 单组件 quantity>1 → 货源 quantity=1</td><td>1:1 + 倍数</td><td>设 quantity_multiplier</td></tr>
+</table>
+
+<h3>5.5 Agent 4: 置信度评估 Agent (Confidence Scoring)</h3>
+
+<p>见 <a href="#confidence">第 7 节：置信度与路由</a> 的详细设计。</p>
+
+<h3>5.6 Agent 5: 自动找货 Agent (Auto-Sourcing)</h3>
+
+<p>见 <a href="#auto-sourcing">第 8 节：自动找货</a> 的详细设计。</p>
+
+<h3>5.7 Agent 编排流程</h3>
+<pre><code>[Shopify 商品/SKU 传入]
+        │
+        ▼
+┌──────────────────────────────┐
+│ Agent 1: 商品理解             │ ──→ 商品相似度 ≥ 0.7? ──→ No: 跳过
+│ (Product Understanding)      │
+└──────────────┬───────────────┘
+               │ Yes
+               ▼
+┌──────────────────────────────┐
+│ Agent 2: 规格解析 (两侧并行)   │ ──→ SKU → 原子组件 + 标准化属性
+│ (Spec Parser)                │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│ Agent 3: 关系推理             │ ──→ 1:1 / 1:N / N:1 + 映射方案
+│ (Relation Reasoning)         │
+└──────────────┬───────────────┘
+               │
+       ┌───────┴────────┐
+       ▼                ▼
+  [全匹配成功]      [部分缺失]
+       │                │
+       ▼                ▼
+┌──────────────┐  ┌──────────────────────┐
+│ Agent 4:     │  │ Agent 5: 自动找货     │
+│ 置信度评估    │  │ (Auto-Sourcing)      │
+└──────┬───────┘  └──────────┬───────────┘
+       │                     │
+       ▼                     ▼
+  [路由决策]            [候选货源 → 重新进入 Agent 2-4]
+  ├─ ≥0.9 → 自动绑定
+  ├─ 0.5-0.9 → AI修复 → 人工审核台
+  └─ <0.5 → 自动找货</code></pre>
+
+<!-- ==================== 6. 匹配引擎 ==================== -->
+<h2 id="matching-engine">6. 匹配引擎与评分</h2>
+
+<h3>6.1 三阶段漏斗设计</h3>
+
+<h4>Stage 1: 商品级粗筛 (Coarse Filter)</h4>
+<table>
+  <tr><th>项目</th><th>说明</th></tr>
+  <tr><td>目标</td><td>把 N×M 笛卡尔积缩减到可管理规模</td></tr>
+  <tr><td>方法</td><td>文本 embedding + 图片 embedding 双向量余弦相似度</td></tr>
+  <tr><td>模型</td><td>text-embedding-3-small (文本) + CLIP (图片)</td></tr>
+  <tr><td>阈值</td><td>文本相似度 > 0.75 或 图片相似度 > 0.80</td></tr>
+  <tr><td>成本</td><td>极低（预计算向量，纯数据库查询）</td></tr>
+  <tr><td>产出</td><td>候选商品对列表</td></tr>
+</table>
+
+<pre><code>-- pgvector 查询示例
+SELECT s.id as shopify_id, sup.id as supplier_id,
+       s.text_embedding <=> sup.text_embedding as text_sim,
+       -- 图片取最相似的一对
+       max_image_similarity(s.image_embeddings, sup.image_embeddings) as img_sim
+FROM product_entities s
+CROSS JOIN product_entities sup
+WHERE s.source = 'shopify' AND sup.source != 'shopify'
+  AND (s.text_embedding <=> sup.text_embedding) < 0.25  -- cosine distance < 0.25
+  AND s.category = sup.category  -- 类目必须一致
+ORDER BY text_sim ASC
+LIMIT 50;  -- 每个shopify商品最多50个候选</code></pre>
+
+<h4>Stage 2: 组件级属性匹配 (Attribute Matching)</h4>
+<p>对候选商品对的每个 SKU 的每个组件，逐属性对比：</p>
+
+<table>
+  <tr><th>匹配类型</th><th>示例</th><th>分数</th><th>说明</th></tr>
+  <tr><td>精确匹配</td><td>black = black</td><td>1.0</td><td>标准化后完全相同</td></tr>
+  <tr><td>等价匹配</td><td>大码 = XXL</td><td>0.9</td><td>映射表命中</td></tr>
+  <tr><td>模糊匹配</td><td>深蓝 ≈ navy</td><td>0.7-0.85</td><td>向量相似度</td></tr>
+  <tr><td>LLM 推断</td><td>儿童装 ≈ age 6-15</td><td>0.6-0.9</td><td>LLM 判断</td></tr>
+  <tr><td>缺失属性</td><td>一方无材质</td><td>不扣分但降权</td><td>权重 × 0.8</td></tr>
+  <tr><td>冲突属性</td><td>black vs white</td><td>0.0</td><td>直接否决</td></tr>
+</table>
+
+<h4>组件匹配评分公式</h4>
+<pre><code>// 单组件匹配分数
+component_score = Σ(attribute_score_i × weight_i) / Σ(weight_i)
+
+// 属性权重（可按品类调整）
+weights = {
+  "color":    0.30,   // 颜色最重要
+  "size":     0.25,   // 尺码
+  "material": 0.15,
+  "pattern":  0.10,
+  "gender":   0.10,
+  "style":    0.05,
+  "season":   0.05
+}
+
+// 如果某属性一方缺失，该属性不参与计算，但总权重降低
+// 如果某属性冲突（如颜色不同），component_score 直接 = 0
+
+// 套装整体分数 (1:N)
+bundle_score = Σ(component_score_i × component_weight_i) / Σ(component_weight_i)
+// component_weight 默认均等，可配置
+
+// N:1 粒度合并分数
+merge_score = min(all_sku_scores)  // 短板效应
+// 因为如果有一个 SKU 匹配不好，整个合并就不可靠</code></pre>
+
+<h4>Stage 3: LLM 灰区推理 (LLM Reasoning)</h4>
+<p>对 Stage 2 分数在 0.5-0.9 之间的组件对，调用 LLM 做最终判断：</p>
+
+<pre><code>你是 SKU 匹配专家。判断以下两个 SKU 组件是否等价。
+
+【Shopify 组件】
+原始描述: "{shopify_raw}"
+标准化属性: {shopify_attributes}
+
+【货源组件】
+原始描述: "{supplier_raw}"
+标准化属性: {supplier_attributes}
+
+请判断:
+1. 这两个组件是否可以视为同一商品？
+2. 如果不等价，差异在哪里？
+3. 置信度是多少 (0.0-1.0)？
+
+输出 JSON:
+{
+  "is_equivalent": true/false,
+  "confidence": 0.0-1.0,
+  "reason": "...",
+  "risk_factors": ["..."]
+}</code></pre>
+
+<h3>6.2 匹配漏斗成本控制</h3>
+<div class="callout callout-info">
+  <div class="callout-title">成本控制策略</div>
+  <ul>
+    <li><strong>Stage 1</strong>：纯向量查询，成本极低，过滤掉 90%+ 的不相关商品对</li>
+    <li><strong>Stage 2</strong>：规则 + 映射表，成本极低，处理大部分明确匹配</li>
+    <li><strong>Stage 3</strong>：LLM 调用，成本较高，只处理灰区（约 10-20% 的 SKU 对）</li>
+    <li><strong>属性提取缓存</strong>：相同 SKU 描述不重复调用 LLM</li>
+    <li><strong>模型分层</strong>：简单 SKU 用 GPT-4o-mini，复杂 SKU 才升级到 GPT-4o</li>
+  </ul>
+</div>
+
+<!-- ==================== 7. 置信度 ==================== -->
+<h2 id="confidence">7. 置信度与路由</h2>
+
+<h3>7.1 置信度评分体系</h3>
+
+<table>
+  <tr><th>分数区间</th><th>路由</th><th>人工介入</th><th>示例</th></tr>
+  <tr>
+    <td><strong>≥ 0.90</strong></td>
+    <td>自动匹配，直接绑定</td>
+    <td>无</td>
+    <td>Black XXL = 黑色XXL（标准化后完全一致）</td>
+  </tr>
+  <tr>
+    <td><strong>0.70 ~ 0.90</strong></td>
+    <td>AI 修复模式 → 成功则自动 / 失败则人工审核</td>
+    <td>有，但 AI 给推荐</td>
+    <td>6-15 Years ≈ 儿童款（需 AI 推理）</td>
+  </tr>
+  <tr>
+    <td><strong>0.50 ~ 0.70</strong></td>
+    <td>人工审核台</td>
+    <td>有，需人工确认</td>
+    <td>女士运动鞋 vs 女鞋（类目模糊）</td>
+  </tr>
+  <tr>
+    <td><strong>&lt; 0.50</strong></td>
+    <td>触发自动找货</td>
+    <td>仅审核找货结果</td>
+    <td>找不到匹配的货源 SKU</td>
+  </tr>
+</table>
+
+<h3>7.2 动态阈值调整</h3>
+<p>阈值不是固定的，按以下维度动态调整：</p>
+
+<pre><code>// 伪代码：动态阈值计算
+function getThresholds(category, history):
+    # 基础阈值
+    base = { auto: 0.90, repair: 0.70, manual: 0.50 }
+
+    # 按品类调整
+    if category in STANDARDIZED_CATEGORIES:  # 电子配件、标品
+        base.auto -= 0.05   # 放宽自动匹配
+    elif category in CUSTOM_CATEGORIES:      # 服装、个性化
+        base.auto += 0.03   # 收紧自动匹配
+
+    # 按历史准确率调整
+    accuracy = getHistoricalAccuracy(category)
+    if accuracy > 0.95:
+        base.auto -= 0.03   # 历史表现好，放宽
+    elif accuracy < 0.85:
+        base.auto += 0.05   # 历史表现差，收紧
+
+    # 按反馈数据量调整（冷启动期保守）
+    feedback_count = getFeedbackCount(category)
+    if feedback_count < 100:
+        base.auto = 0.95    # 冷启动期非常保守
+
+    return base</code></pre>
+
+<h3>7.3 路由决策流程</h2>
+<pre><code>match_score = computeScore(component_matches)
+
+thresholds = getThresholds(category, history)
+
+if match_score >= thresholds.auto:
+    → auto_match()           # 自动绑定，记录到映射表
+
+elif match_score >= thresholds.repair:
+    → ai_repair()            # AI 修复模式
+      → if repair_success: auto_match()
+      → else: send_to_review()
+
+elif match_score >= thresholds.manual:
+    → send_to_review()       # 人工审核台
+
+else:
+    → auto_source()          # 触发自动找货
+    → send_to_review()       # 找货结果需人工审核</code></pre>
+
+<!-- ==================== 8. 自动找货 ==================== -->
+<h2 id="auto-sourcing">8. 自动找货</h2>
+
+<h3>8.1 缺口检测</h3>
+<p>匹配完成后，统计未匹配的 Shopify SKU 组件，生成「缺口属性画像」：</p>
+
+<pre><code>// 缺口检测伪代码
+function detectGaps(shopify_product, matched_mappings):
+    all_components = shopify_product.skus.flatMap(sku => sku.components)
+    matched_components = matched_mappings.map(m => m.component)
+
+    gaps = all_components.filter(c => !matched_components.includes(c))
+
+    return gaps.map(gap => ({
+        missing_component: gap.item_name,
+        missing_attributes: gap.attributes,
+        search_keywords: generateSearchKeywords(gap),
+        // 生成搜索关键词: "黑色 女式短裤 L码"
+    }))
+
+function generateSearchKeywords(component):
+    keywords = []
+    if component.attributes.color: keywords.push(component.attributes.color)
+    if component.attributes.size: keywords.push(component.attributes.size.value)
+    keywords.push(component.item_name)
+    // 加上翻译后的关键词
+    keywords.push(translate(component.item_name, 'zh'))
+    return keywords</code></pre>
+
+<h3>8.2 自动搜索流程</h3>
+<pre><code>缺口: { item: "短裤", color: "black", size: "L" }
+        │
+        ▼
+┌─────────────────────────────────┐
+│ 生成搜索关键词                    │
+│ "黑色 短裤 L码" / "black shorts L"│
+└──────────────┬──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────┐
+│ 多平台并行搜索                    │
+│ 1688 / 拼多多 / Alibaba           │
+└──────────────┬──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────┐
+│ 搜索结果 → 进入匹配引擎            │
+│ (Agent 1 → Agent 2 → Agent 3)   │
+└──────────────┬──────────────────┘
+               │
+               ▼
+┌─────────────────────────────────┐
+│ 候选货源排序                      │
+│ 按: 匹配度 × 价格 × MOQ × 物流时效 │
+└──────────────┬──────────────────┘
+               │
+               ▼
+        推荐补充货源
+        人工审核确认</code></pre>
+
+<h3>8.3 货源评分公式</h3>
+<pre><code>sourcing_score = match_score × 0.50      // 匹配度权重最高
+               + price_score × 0.20       // 价格竞争力
+               + stock_score × 0.15       // 库存充足度
+               + logistics_score × 0.10   // 物流时效
+               + moq_score × 0.05         // 起订量友好度</code></pre>
+
+<!-- ==================== 9. 审核台 ==================== -->
+<h2 id="review-ui">9. 审核台交互设计</h2>
+
+<h3>9.1 三种审核模式</h3>
+
+<table>
+  <tr><th>模式</th><th>适用场景</th><th>交互方式</th><th>版本</th></tr>
+  <tr><td><strong>批量模式</strong></td><td>高量简单 1:1 匹配</td><td>列表 + 键盘流 + AI 推荐 + 批量确认</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td><strong>积木模式</strong></td><td>复杂套装 1:N 组合</td><td>拖拽拼装 + 数量调整框 + 可视化对比</td><td><span class="badge badge-v3">V3</span></td></tr>
+  <tr><td><strong>AI 修复模式</strong></td><td>批量异常 SKU</td><td>一键修复 + 进度展示 + 逐条确认</td><td><span class="badge badge-v2">V2</span></td></tr>
+</table>
+
+<h3>9.2 批量模式交互</h3>
+<p>系统自动判断使用哪种模式：单组件 SKU 走批量模式，多组件套装走积木模式。</p>
+
+<h4>布局</h4>
+<pre><code>┌──────────────────────────────────────────────────────┐
+│  SKU 智能匹配中心                                      │
+│                                                       │
+│  Summer Jacket  │  AI 分析完成                         │
+│                 │  18/20 SKU 已自动匹配 · 2个待确认      │
+├─────────────────┴──────────────────────────────────────┤
+│                                                       │
+│  [全选] [批量确认] [批量拒绝] [AI修复全部异常]           │
+│                                                       │
+│  ┌─────────────────────────────────────────────────┐  │
+│  │ ☑ Shopify: Black XXL                            │  │
+│  │   → AI Match 98% ──────────→ 货源: 黑色加大码    │  │
+│  │   理由: 颜色一致 尺码一致(大码=XXL) 图片一致       │  │
+│  │   [✓ 确认] [✗ 拒绝] [🔍 重新搜索]               │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ ☑ Shopify: Blue 6-8 Years                       │  │
+│  │   → AI 推荐 83% ──────────→ 货源: 儿童蓝色款      │  │
+│  │   理由: 颜色一致 年龄范围推断匹配 风险: medium     │  │
+│  │   [✓ 确认] [✗ 拒绝] [🔍 重新搜索]               │  │
+│  ├─────────────────────────────────────────────────┤  │
+│  │ ☐ Shopify: White M (未匹配)                      │  │
+│  │   → ⚠️ 货源不足，已自动搜索到 2 个候选            │  │
+│  │   候选1: 白色M码 96% [选择]                      │  │
+│  │   候选2: 白色均码 71% [选择]                      │  │
+│  └─────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────┘</code></pre>
+
+<h4>键盘快捷键</h4>
+<table>
+  <tr><th>按键</th><th>功能</th></tr>
+  <tr><td><code>Enter</code></td><td>确认当前行的 AI 推荐</td></tr>
+  <tr><td><code>Backspace</code></td><td>拒绝当前行</td></tr>
+  <tr><td><code>Tab</code></td><td>跳到下一行</td></tr>
+  <tr><td><code>Shift+Tab</code></td><td>回到上一行</td></tr>
+  <tr><td><code>Cmd+A</code></td><td>全选当前页</td></tr>
+  <tr><td><code>Cmd+Enter</code></td><td>批量确认选中项</td></tr>
+  <tr><td><code>R</code></td><td>对当前行重新搜索货源</td></tr>
+</table>
+
+<h3>9.3 积木模式交互（套装场景）</h3>
+<pre><code>┌──────────────────────────────────────────────────────┐
+│  套装匹配: Women's Summer Set (Top + Shorts) / Black / L│
+├───────────────────────────────────────────────────────┤
+│                                                       │
+│  Shopify SKU 拆解:              货源匹配:               │
+│  ┌──────────┐                  ┌──────────┐           │
+│  │ 上衣 ×1   │ ──── 98% ──────→ │ 货源A     │  [确认]   │
+│  │ Black L  │                  │ 黑色上衣L │           │
+│  └──────────┘                  └──────────┘           │
+│                                                       │
+│  ┌──────────┐                  ┌──────────┐           │
+│  │ 短裤 ×1   │ ──── 85% ──────→ │ 货源B     │  [确认]   │
+│  │ Black L  │                  │ 黑色短裤L │           │
+│  └──────────┘                  └──────────┘           │
+│                                                       │
+│  组合公式: SKU_A = 货源A × 1 + 货源B × 1               │
+│  [保存为模板] [全部确认] [调整数量]                      │
+│                                                       │
+│  ── 缺失组件 ──                                        │
+│  ┌──────────┐                  ┌──────────┐           │
+│  │ 袜子 ×1   │ ──── 未找到 ───→ │ 🔍 搜索中 │           │
+│  │ White    │                  │ 自动找货中 │           │
+│  └──────────┘                  └──────────┘           │
+└───────────────────────────────────────────────────────┘</code></pre>
+
+<h4>积木模式关键交互</h4>
+<ul>
+  <li><strong>拖拽匹配</strong>：可拖拽左侧组件到右侧货源进行手动匹配</li>
+  <li><strong>数量调整</strong>：点击数字框直接修改倍数 <code>[货源A] × [3]</code></li>
+  <li><strong>保存模板</strong>：确认后的组合公式可保存为参数化模板，同类套装自动套用</li>
+  <li><strong>组件级对比</strong>：点击任一组件对，展开详细属性对比视图</li>
+</ul>
+
+<h3>9.4 仪表盘</h3>
+<pre><code>┌──────────────────────────────────────────────────────┐
+│                    SKU 匹配仪表盘                      │
+├──────────┬──────────┬──────────┬──────────────────────┤
+│  总 SKU  │ 自动匹配  │ 待确认    │  未匹配/找货中        │
+│   120    │   96     │   18     │    6                 │
+│          │  80.0%   │  15.0%   │   5.0%               │
+├──────────┴──────────┴──────────┴──────────────────────┤
+│  本次匹配效率: 节省人工操作 96 次                        │
+│  平均置信度: 0.87                                      │
+│  AI 修复成功: 12/15 (80.0%)                            │
+└───────────────────────────────────────────────────────┘</code></pre>
+
+<!-- ==================== 10. AI 修复模式 ==================== -->
+<h2 id="ai-repair">10. AI 修复模式</h2>
+
+<h3>10.1 设计目标</h3>
+<p>匹配失败的 SKU 不直接丢给人工，先让 AI 自动尝试修复。这是减少人工操作的关键中间层。</p>
+
+<h3>10.2 修复策略（按优先级）</h3>
+<table>
+  <tr><th>策略</th><th>触发条件</th><th>操作</th><th>示例</th></tr>
+  <tr><td>翻译重试</td><td>两侧语言不同</td><td>翻译后重新匹配</td><td>"Athletic Jacket" → "运动外套" → 重新匹配</td></tr>
+  <tr><td>同义词扩展</td><td>属性不匹配</td><td>扩展同义词后重新匹配</td><td>"sneakers" → "运动鞋/跑步鞋"</td></tr>
+  <tr><td>属性推理</td><td>属性缺失</td><td>LLM 推理补全属性</td><td>"儿童装" → age 6-14</td></tr>
+  <tr><td>图片搜索</td><td>文字匹配失败</td><td>用图片 embedding 搜索</td><td>用 Shopify 图片在货源库搜相似图</td></tr>
+  <tr><td>映射表扩充</td><td>发现新等价关系</td><td>自动添加到映射表</td><td>"加大码" = "XXL" → 新增映射</td></tr>
+</table>
+
+<h3>10.3 修复流程</h3>
+<pre><code>用户点击: [AI 修复全部异常]
+
+Agent 自动执行:
+  for each unmatched_sku:
+    1. 分析失败原因 (缺少属性 / 语言不同 / 粒度不同)
+    2. 根据原因选择修复策略
+    3. 执行修复
+    4. 重新匹配
+    5. 记录结果
+
+  进度展示:
+  ┌──────────────────────────────────┐
+  │ AI 正在修复: 23 个异常 SKU        │
+  │ ████████████████░░░░  18/23 完成  │
+  │ ✓ 修复成功: 15                   │
+  │ ✗ 修复失败: 3                    │
+  │ ⏳ 处理中: 5                     │
+  └──────────────────────────────────┘
+
+  修复完成后:
+  → 成功的自动绑定（仍需人工确认，除非置信度 ≥ 0.9）
+  → 失败的进入人工审核台</code></pre>
+
+<!-- ==================== 11. API 设计 ==================== -->
+<h2 id="api">11. API 设计</h2>
+
+<h3>11.1 API 总览</h3>
+<table>
+  <tr><th>方法</th><th>路径</th><th>功能</th><th>版本</th></tr>
+  <tr><td>POST</td><td><code>/api/v1/match/batch</code></td><td>触发批量匹配任务</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td>GET</td><td><code>/api/v1/match/batch/:id</code></td><td>查询匹配任务状态</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td>GET</td><td><code>/api/v1/match/results</code></td><td>获取匹配结果列表</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td>POST</td><td><code>/api/v1/match/:id/confirm</code></td><td>人工确认匹配</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td>POST</td><td><code>/api/v1/match/:id/reject</code></td><td>人工拒绝匹配</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td>POST</td><td><code>/api/v1/match/:id/correct</code></td><td>人工修正匹配</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td>POST</td><td><code>/api/v1/match/batch-confirm</code></td><td>批量确认</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td>POST</td><td><code>/api/v1/repair/run</code></td><td>触发 AI 修复</td><td><span class="badge badge-v2">V2</span></td></tr>
+  <tr><td>POST</td><td><code>/api/v1/sourcing/search</code></td><td>触发自动找货</td><td><span class="badge badge-v4">V4</span></td></tr>
+  <tr><td>GET</td><td><code>/api/v1/sourcing/results/:task_id</code></td><td>获取找货结果</td><td><span class="badge badge-v4">V4</span></td></tr>
+  <tr><td>POST</td><td><code>/api/v1/products/sync</code></td><td>同步商品数据（Shopify/货源）</td><td><span class="badge badge-v1">V1</span></td></tr>
+  <tr><td>GET</td><td><code>/api/v1/templates</code></td><td>获取套装模板列表</td><td><span class="badge badge-v4">V4</span></td></tr>
+  <tr><td>POST</td><td><code>/api/v1/templates</code></td><td>保存套装模板</td><td><span class="badge badge-v4">V4</span></td></tr>
+  <tr><td>GET</td><td><code>/api/v1/dashboard/stats</code></td><td>获取仪表盘统计数据</td><td><span class="badge badge-v1">V1</span></td></tr>
+</table>
+
+<h3>11.2 核心 API 详细设计</h3>
+
+<h4>POST /api/v1/match/batch — 触发批量匹配</h4>
+<pre><code>// Request
+{
+  "shopify_product_ids": ["uuid1", "uuid2"],  // 可选，不传则全量
+  "supplier_scope": "all",                     // all / specific_ids
+  "options": {
+    "force_rematch": false,                    // 是否强制重新匹配
+    "auto_source_on_gap": true,                // 缺口时是否自动找货
+    "category_filter": null                    // 可选，限定品类
+  }
+}
+
+// Response
+{
+  "batch_id": "uuid",
+  "status": "processing",
+  "total_products": 50,
+  "estimated_time": "2-3 minutes"
+}</code></pre>
+
+<h4>GET /api/v1/match/results — 获取匹配结果</h4>
+<pre><code>// Query: ?batch_id=xxx&status=pending&page=1&page_size=20
+
+// Response
+{
+  "batch_id": "uuid",
+  "summary": {
+    "total_skus": 120,
+    "auto_matched": 96,
+    "pending_review": 18,
+    "unmatched": 6
+  },
+  "results": [
+    {
+      "id": "mapping_uuid",
+      "shopify_sku": {
+        "id": "uuid",
+        "sku_code": "BLUE-6-8Y",
+        "raw_description": "Blue 6-8 Years",
+        "components": [...]
+      },
+      "supplier_sku": {
+        "id": "uuid",
+        "sku_code": "儿童蓝色款",
+        "raw_description": "儿童蓝色款",
+        "components": [...]
+      },
+      "relation_type": "1:1",
+      "match_score": 0.83,
+      "match_stage": "llm",
+      "match_reason": "颜色一致，年龄范围推断匹配(6-8岁≈儿童款)",
+      "status": "pending",
+      "risk_factors": ["age_range_inferred"]
+    }
+  ],
+  "pagination": { "page": 1, "page_size": 20, "total": 18 }
+}</code></pre>
+
+<h4>POST /api/v1/match/:id/confirm — 人工确认</h4>
+<pre><code>// Request
+{
+  "user_id": "uuid",
+  "notes": "可选备注"
+}
+
+// Response
+{
+  "id": "mapping_uuid",
+  "status": "human_confirmed",
+  "confirmed_at": "2026-07-22T10:00:00Z"
+}</code></pre>
+
+<h4>POST /api/v1/match/:id/correct — 人工修正</h4>
+<pre><code>// Request
+{
+  "user_id": "uuid",
+  "corrected_supplier_sku_id": "uuid",   // 正确的货源 SKU
+  "reason": "尺码不对，应该是 XL 不是 L"
+}
+
+// Response
+{
+  "id": "new_mapping_uuid",
+  "status": "human_confirmed",
+  "feedback_recorded": true   // 修正记录已存入 match_feedback
+}</code></pre>
+
+<h4>POST /api/v1/repair/run — 触发 AI 修复</h4>
+<pre><code>// Request
+{
+  "unmatched_sku_ids": ["uuid1", "uuid2"],   // 可选，不传则修复全部异常
+  "strategies": ["translate", "synonym", "infer", "image_search"]  // 可选策略
+}
+
+// Response
+{
+  "task_id": "uuid",
+  "total": 23,
+  "status": "processing"
+}
+
+// 轮询结果 GET /api/v1/repair/run/:task_id
+{
+  "task_id": "uuid",
+  "status": "completed",
+  "total": 23,
+  "repaired": 18,
+  "failed": 5,
+  "results": [
+    {
+      "sku_id": "uuid",
+      "strategy_used": "translate",
+      "success": true,
+      "new_match_score": 0.91,
+      "new_mapping_id": "uuid"
+    }
+  ]
+}</code></pre>
+
+<!-- ==================== 12. 技术选型 ==================== -->
+<h2 id="tech-stack">12. 技术选型</h2>
+
+<h3>12.1 技术栈推荐</h3>
+<table>
+  <tr><th>组件</th><th>推荐方案</th><th>备选</th><th>说明</th></tr>
+  <tr><td>后端语言</td><td>Python 3.11+</td><td>Node.js / Go</td><td>Python 生态最适合 LLM + 数据处理</td></tr>
+  <tr><td>Web 框架</td><td>FastAPI</td><td>Flask / Django</td><td>异步支持好，自动生成 API 文档</td></tr>
+  <tr><td>数据库</td><td>PostgreSQL 15+</td><td>—</td><td>JSONB + pgvector 扩展</td></tr>
+  <tr><td>向量检索</td><td>pgvector</td><td>Qdrant / Milvus</td><td>百万级以下 pgvector 足够，与 DB 同库</td></tr>
+  <tr><td>文本 Embedding</td><td>text-embedding-3-small</td><td>BGE-M3</td><td>成本低，1536维，多语言支持好</td></tr>
+  <tr><td>图片 Embedding</td><td>CLIP (ViT-L/14)</td><td>OpenAI CLIP API</td><td>开源免费，可本地部署</td></tr>
+  <tr><td>LLM (属性提取)</td><td>GPT-4o-mini</td><td>Claude Haiku</td><td>成本低，结构化提取足够</td></tr>
+  <tr><td>LLM (灰区推理)</td><td>GPT-4o</td><td>Claude Sonnet</td><td>复杂推理需要更强模型</td></tr>
+  <tr><td>任务队列</td><td>Celery + Redis</td><td>Dramatiq / RQ</td><td>匹配任务是异步批处理</td></tr>
+  <tr><td>缓存</td><td>Redis</td><td>—</td><td>属性提取缓存、会话缓存</td></tr>
+  <tr><td>前端</td><td>React + TypeScript</td><td>Vue 3</td><td>审核台需要复杂交互</td></tr>
+  <tr><td>前端 UI 库</td><td>Ant Design / shadcn/ui</td><td>—</td><td>表格、拖拽、表单组件丰富</td></tr>
+  <tr><td>部署</td><td>Docker + K8s</td><td>—</td><td>标准容器化部署</td></tr>
+</table>
+
+<h3>12.2 LLM 调用成本估算</h3>
+<table>
+  <tr><th>操作</th><th>模型</th><th>估算成本/次</th><th>说明</th></tr>
+  <tr><td>属性提取</td><td>GPT-4o-mini</td><td>~$0.001</td><td>~500 tokens in, ~200 tokens out</td></tr>
+  <tr><td>灰区推理</td><td>GPT-4o</td><td>~$0.01</td><td>~800 tokens in, ~300 tokens out</td></tr>
+  <tr><td>文本 Embedding</td><td>text-embedding-3-small</td><td>~$0.00002</td><td>按 token 计费</td></tr>
+  <tr><td>商品理解</td><td>GPT-4o-mini</td><td>~$0.002</td><td>仅在向量粗筛后调用</td></tr>
+</table>
+<div class="callout callout-info">
+  <div class="callout-title">成本优化</div>
+  10,000 个 SKU 的全量匹配预估成本：属性提取 ~$10 + 灰区推理 ~$15（假设 15% 进灰区）+ Embedding ~$0.2 ≈ <strong>~$25</strong>。增量更新成本远低于此。
+</div>
+
+<!-- ==================== 13. 实施路线图 ==================== -->
+<h2 id="roadmap">13. 实施路线图</h2>
+
+<h3>按价值排序的分阶段交付</h3>
+
+<table>
+  <tr><th>阶段</th><th>内容</th><th>交付物</th><th>预期效果</th></tr>
+  <tr>
+    <td><span class="badge badge-v1">V1</span><br><strong>基础匹配</strong></td>
+    <td>
+      • 商品知识图谱（product_entities + sku_entities + sku_components）<br>
+      • 规格解析 Agent（LLM 属性提取）<br>
+      • 三阶段匹配漏斗（粗筛→属性→LLM）<br>
+      • 置信度评分 + 路由（自动/人工）<br>
+      • 批量审核台（列表+键盘流+AI推荐）<br>
+      • 属性等价映射表（冷启动预置）<br>
+      • 人工修正记录 + 反馈存储
+    </td>
+    <td>可用的 SKU 匹配系统</td>
+    <td><strong>降低 60-70% 人工</strong></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-v2">V2</span><br><strong>智能增强</strong></td>
+    <td>
+      • AI 修复模式（翻译/同义词/属性推理/图搜）<br>
+      • 图片 embedding 匹配（CLIP）<br>
+      • N:1 粒度推理（多 Shopify SKU → 一个货源 SKU）<br>
+      • 仪表盘（进度概览、效率统计）<br>
+      • 动态阈值调整（按品类+历史）
+    </td>
+    <td>更智能的匹配+修复能力</td>
+    <td><strong>再降 10-15% 人工</strong></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-v3">V3</span><br><strong>套装支持</strong></td>
+    <td>
+      • 套装 1:N 拆解（原子化组件匹配）<br>
+      • 积木式审核 UI（拖拽+数量调整）<br>
+      • 1:N DB Schema（sku_mapping_1toN）<br>
+      • 数量倍数识别（3件装 vs 单件）
+    </td>
+    <td>覆盖套装/组合场景</td>
+    <td><strong>覆盖套装品类</strong></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-v4">V4</span><br><strong>自动找货</strong></td>
+    <td>
+      • 缺口检测（组件级）<br>
+      • 自动找货 Agent（1688/Alibaba 搜索）<br>
+      • 候选货源排序（匹配度+价格+物流）<br>
+      • 套装模板记忆（参数化存储+自动复用）<br>
+      • 找货结果审核流程
+    </td>
+    <td>货源不足时自动化补货</td>
+    <td><strong>货源缺口自动化</strong></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-v5">V5</span><br><strong>持续进化</strong></td>
+    <td>
+      • 反馈学习闭环（修正数据 → 模型微调）<br>
+      • 映射表自动扩充（从反馈中发现新等价关系）<br>
+      • 知识图谱积累（跨商品知识复用）<br>
+      • 反向选品（系统性缺货品类识别）<br>
+      • 阈值自动优化
+    </td>
+    <td>越用越准越快</td>
+    <td><strong>持续提升准确率</strong></td>
+  </tr>
+</table>
+
+<h3>各阶段预估周期</h3>
+<table>
+  <tr><th>阶段</th><th>预估周期</th><th>团队配置</th></tr>
+  <tr><td>V1 基础匹配</td><td>3-4 周</td><td>1 后端 + 1 前端 + 1 AI/数据</td></tr>
+  <tr><td>V2 智能增强</td><td>2-3 周</td><td>同上</td></tr>
+  <tr><td>V3 套装支持</td><td>2-3 周</td><td>同上</td></tr>
+  <tr><td>V4 自动找货</td><td>2-3 周</td><td>同上 + 货源平台对接</td></tr>
+  <tr><td>V5 持续进化</td><td>持续</td><td>1 AI/数据（兼职）</td></tr>
+</table>
+
+<!-- ==================== 14. 开发检查清单 ==================== -->
+<h2 id="checklist">14. 开发检查清单</h2>
+
+<h3>V1 开发检查清单</h3>
+<pre><code>□ 数据库
+  □ 创建 product_entities 表 + pgvector 扩展
+  □ 创建 sku_entities 表
+  □ 创建 sku_components 表
+  □ 创建 sku_mapping_1to1 表
+  □ 创建 attribute_mappings 表（预置常见映射）
+  □ 创建 match_feedback 表
+  □ 创建 match_batches 表
+  □ 建立索引 (text_embedding, source_product_id, status)
+
+□ 数据采集
+  □ Shopify API 对接（拉取商品+SKU+变体）
+  □ 货源 API 对接（拉取商品+SKU+规格）
+  □ 数据同步任务（定时/手动触发）
+  □ 图片下载 + 存储
+
+□ Agent 实现
+  □ Agent 1: 商品理解（向量粗筛 + LLM 判断）
+  □ Agent 2: 规格解析（LLM 属性提取 + 映射表标准化）
+  □ Agent 3: 关系推理（1:1 匹配，V1 暂不支持 1:N）
+  □ Agent 4: 置信度评分 + 路由
+
+□ 匹配引擎
+  □ Stage 1: 文本向量粗筛（pgvector 查询）
+  □ Stage 2: 属性匹配（规则 + 映射表）
+  □ Stage 3: LLM 灰区推理
+  □ 匹配评分公式实现
+  □ 属性提取缓存（Redis）
+
+□ API
+  □ POST /match/batch
+  □ GET /match/batch/:id
+  □ GET /match/results
+  □ POST /match/:id/confirm
+  □ POST /match/:id/reject
+  □ POST /match/:id/correct
+  □ POST /match/batch-confirm
+  □ GET /dashboard/stats
+
+□ 前端审核台
+  □ 批量模式列表页
+  □ AI 推荐展示 + 置信度
+  □ 匹配理由展示
+  □ 键盘快捷键
+  □ 批量选中 + 确认/拒绝
+  □ 仪表盘
+
+□ 测试
+  □ 用历史数据验证属性提取准确率
+  □ 用历史数据验证匹配准确率
+  □ 置信度阈值校准
+  □ 性能测试（1000 SKU 匹配耗时）</code></pre>
+
+<h3>关键注意事项</h3>
+<div class="callout callout-danger">
+  <div class="callout-title">⚠️ 必须注意</div>
+  <ol>
+    <li><strong>不要纯靠 LLM 做匹配</strong>——LLM 只做属性提取和灰区推理，匹配逻辑必须代码化。纯 LLM 匹配不可控、不可解释、成本高。</li>
+    <li><strong>属性提取要做缓存</strong>——相同 SKU 描述不重复调用 LLM，这个优化能节省 50%+ 的 LLM 成本。</li>
+    <li><strong>冷启动期阈值要保守</strong>——前期 auto 阈值设 0.95+，宁可多走人工，也不要错配。随着反馈数据积累再放宽。</li>
+    <li><strong>映射表需要人工审核机制</strong>——AI 建议的新映射不能自动生效，必须人工确认后才加入。</li>
+    <li><strong>1:N 映射的 DB Schema 要提前设计</strong>——即使 V1 不实现套装拆解，表结构也要预留好，避免后期大改。</li>
+    <li><strong>图片 embedding 预计算</strong>——商品入库时就计算好 embedding，不要在匹配时实时计算。</li>
+  </ol>
+</div>
+
+<hr style="margin: 48px 0; border: none; border-top: 1px solid var(--border);">
+
+<div style="text-align: center; color: var(--text-secondary); font-size: 13px; margin-bottom: 32px;">
+  <p>SKU Intelligence Engine — 完整开发文档 v1.0</p>
+  <p>基于三方案融合架构（A: 匹配引擎+路由 | B: 原子化解构 | C: 知识图谱+AI修复）</p>
+  <p>生成日期: 2026-07-22</p>
+</div>
+
+</main>
+</div>
+
+<script>
+  // Sidebar active state on scroll
+  const sections = document.querySelectorAll('.main h2');
+  const navItems = document.querySelectorAll('.nav-item');
+
+  function updateActive() {
+    let current = '';
+    sections.forEach(section => {
+      const top = section.offsetTop - 100;
+      if (window.scrollY >= top) current = section.id;
+    });
+    navItems.forEach(item => {
+      item.classList.remove('active');
+      if (item.getAttribute('href') === '#' + current) {
+        item.classList.add('active');
+      }
+    });
+  }
+  window.addEventListener('scroll', updateActive);
+  updateActive();
+</script>
+</body>
+</html>

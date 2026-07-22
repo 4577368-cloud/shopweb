@@ -168,9 +168,16 @@ export interface LogisticsEstimateRequest {
     tangbuyGoodsId: string;
     incrementList: string[];
     quantity: number;
+    weightG?: number;
+    lengthCm?: number;
+    widthCm?: number;
+    heightCm?: number;
+    postalLimitClass?: string;
   }>;
   needOtherLine?: boolean;
   needMeasure?: boolean;
+  /** Tangbuy `currency` header; defaults to USD in browser gateway. */
+  quoteCurrency?: string;
 }
 
 export interface LogisticsEstimateResult {
@@ -181,6 +188,9 @@ export interface LogisticsEstimateResult {
   alternativeLines?: LogisticsLine[];
   estimatedWeightG?: number;
   estimatedVolumeCm3?: number;
+  estimatedLengthCm?: number;
+  estimatedWidthCm?: number;
+  estimatedHeightCm?: number;
 }
 
 export interface LogisticsEstimateResponse {
@@ -304,7 +314,7 @@ export const api = {
       { method: "DELETE" }
     ),
 
-  /** "已刊登" count: products successfully published (listed) from the Tangbuy catalog for a shop. */
+  /** Active "已刊登" count: Tangbuy catalog publishes still present in the Shopify product mirror. */
   getPublishedCount: (shop: string) =>
     request<{ count: number }>(
       `/api/plugin/catalog/published-count?shopName=${encodeURIComponent(shop)}`
@@ -747,7 +757,9 @@ export const api = {
     return localRequest<LogisticsTemplate>(url, {
       method: id ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...body, shopName: resolvedShop, id }),
+      body: JSON.stringify(
+        id ? { ...body, shopName: resolvedShop, id } : { ...body, shopName: resolvedShop }
+      ),
     });
   },
 
@@ -778,4 +790,24 @@ export const api = {
     }
     return data as UploadedImage;
   },
+
+  translateText: (
+    text: string,
+    targetLang?: string,
+    sourceLang?: string,
+    style?: "amazon" | "literal"
+  ) =>
+    localRequest<{
+      success: boolean;
+      translatedText?: string;
+      sourceLang?: string;
+      targetLang?: string;
+      engine?: "llm" | "mymemory";
+      error?: string;
+      unchanged?: boolean;
+    }>("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, targetLang, sourceLang, style }),
+    }),
 };

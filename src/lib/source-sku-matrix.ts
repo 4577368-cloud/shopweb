@@ -5,6 +5,8 @@ import {
 } from "@/lib/tangbuy-mall-gateway";
 import { parseGatewayPrice } from "@/lib/agents/products/match-rank";
 import { formatSourceCostInShopCurrency } from "@/lib/purchase-cost-display";
+import { scoreSpecMatch } from "@/lib/sku-align/spec-match";
+import type { PricingTemplate } from "@/lib/types";
 
 export type SkuDisplayStatus = "LOADING" | "READY" | "ERROR";
 
@@ -40,100 +42,20 @@ export type SourceSkuRowRanked = SourceSkuRow & {
   priceScore: number;
 };
 
-function normalizeMatchToken(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, "").trim();
-}
-
-// 同义词字典 — 颜色/尺码的中英文与简写映射
-const SYNONYM_GROUPS: string[][] = [
-  ["红", "红色", "red", "rouge", "rojo"],
-  ["蓝", "蓝色", "blue", "bleu", "azul"],
-  ["绿", "绿色", "green", "vert", "verde"],
-  ["黄", "黄色", "yellow", "jaune", "amarillo"],
-  ["黑", "黑色", "black", "noir", "negro"],
-  ["白", "白色", "white", "blanc", "blanco"],
-  ["紫", "紫色", "purple", "violet", "morado"],
-  ["粉", "粉色", "粉红", "pink", "rose"],
-  ["灰", "灰色", "gray", "grey", "gris"],
-  ["橙", "橙色", "orange", "naranja"],
-  ["棕", "棕色", "褐色", "brown", "café"],
-  ["金", "金色", "gold", "golden", "doré"],
-  ["银", "银色", "silver", "argent"],
-  ["xs", "特小"],
-  ["s", "小", "小码", "small"],
-  ["m", "中", "中码", "medium"],
-  ["l", "大", "大码", "large"],
-  ["xl", "加大", "xlarge"],
-  ["xxl", "2xl", "加加大"],
-  ["xxxl", "3xl", "加加加大"],
-  ["均码", "onesize", "one size", "free"],
-];
-
-const SYNONYM_MAP = new Map<string, Set<string>>();
-for (const group of SYNONYM_GROUPS) {
-  const normalizedGroup = new Set<string>();
-  for (const w of group) {
-    normalizedGroup.add(normalizeMatchToken(w));
-  }
-  for (const w of group) {
-    const nw = normalizeMatchToken(w);
-    SYNONYM_MAP.set(nw, normalizedGroup);
-  }
-}
-
-function tokenizeForMatch(label: string): Set<string> {
-  const out = new Set<string>();
-  for (const raw of label.split(/[\s/|,，、·:：]+/)) {
-    const t = normalizeMatchToken(raw);
-    if (t.length >= 1) out.add(t);
-  }
-  return out;
-}
-
-/** 检查两个 token 是否同义 */
-function isSynonym(a: string, b: string): boolean {
-  if (a === b) return true;
-  // 前缀包含（"红" 匹配 "红色"）
-  if (a.length >= 1 && b.length >= 1 && (a.startsWith(b) || b.startsWith(a))) {
-    // 但避免单字符误匹配（如 "s" 和 "small" 不算同义，除非在字典里）
-    const groupA = SYNONYM_MAP.get(a);
-    const groupB = SYNONYM_MAP.get(b);
-    if (groupA && groupB && groupA === groupB) return true;
-    // 只在两者都 ≤ 2 字符时允许前缀匹配
-    if (a.length <= 2 && b.length <= 2 && (a.includes(b) || b.includes(a))) {
-      return true;
-    }
-  }
-  const group = SYNONYM_MAP.get(a);
-  if (group && group.has(b)) return true;
-  return false;
-}
-
-/** Token overlap 0–1 between Shopify option label and itemGet spec label, with synonyms. */
+/**
+ * Shopify 变体标签 ↔ itemGet 规格标签的匹配分 0–1。
+ *
+ * 委托到结构化匹配器（`@/lib/sku-align/spec-match`）：先把两侧标签解析为
+ * L1 颜色 / L2 尺码体系（letter·体重斤·年龄·身高·numeric·free）/ L3 custom，
+ * 再做属性无关比对（同系维度比对+区间重叠、冲突否决、缺失降权、custom 兜底）。
+ * 无法解析出结构维度时自动退化为 token 重叠兜底。
+ */
 export function scoreVariantSpecMatch(
   variantLabel: string,
   specLabel: string
 ): number {
-  const a = tokenizeForMatch(variantLabel);
-  const b = tokenizeForMatch(specLabel);
-  if (!a.size || !b.size) return 0;
-  let hits = 0;
-  for (const t of a) {
-    if (b.has(t)) {
-      hits += 1;
-      continue;
-    }
-    // 同义词匹配
-    let synonymHit = false;
-    for (const bt of b) {
-      if (isSynonym(t, bt)) {
-        synonymHit = true;
-        break;
-      }
-    }
-    if (synonymHit) hits += 1;
-  }
-  return hits / Math.max(a.size, b.size);
+  if (!variantLabel?.trim() || !specLabel?.trim()) return 0;
+  return scoreSpecMatch(variantLabel, specLabel);
 }
 
 /** 价格接近度：0 = 完全不同，1 = 完全相同 */
@@ -360,6 +282,7 @@ export function resolveBoundSkuDisplay(input: {
   boundImageUrl?: string | null;
   boundPriceRaw?: string | null;
   shopCurrency?: string | null;
+  pricingTemplate?: PricingTemplate | null;
 }): BoundSkuDisplay {
   const id = input.tangbuySkuId?.trim();
 
@@ -374,7 +297,8 @@ export function resolveBoundSkuDisplay(input: {
       specLabel: sourceRow.specLabel,
       priceLabel: formatSourceCostInShopCurrency(
         sourceRow.procurementPrice,
-        input.shopCurrency
+        input.shopCurrency,
+        input.pricingTemplate
       ),
       priceKind: sourceRow.procurementPrice != null ? "procurement" : null,
       dataSource: "itemGet",
@@ -402,7 +326,8 @@ export function resolveBoundSkuDisplay(input: {
       priceLabel: rawPrice
         ? formatSourceCostInShopCurrency(
             parseGatewayPrice(rawPrice),
-            input.shopCurrency
+            input.shopCurrency,
+            input.pricingTemplate
           )
         : null,
       priceKind: rawPrice ? "procurement" : null,
@@ -419,7 +344,8 @@ export function resolveBoundSkuDisplay(input: {
       priceLabel: input.boundPriceRaw
         ? formatSourceCostInShopCurrency(
             parseGatewayPrice(input.boundPriceRaw),
-            input.shopCurrency
+            input.shopCurrency,
+            input.pricingTemplate
           )
         : null,
       priceKind: input.boundPriceRaw ? "procurement" : null,

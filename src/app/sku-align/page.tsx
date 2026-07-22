@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowRight,
@@ -41,7 +42,8 @@ import {
   sortProductsForWorkbench,
   type SkuFilterMode,
 } from "@/components/sku-align/sku-binding-panel";
-import { SkuAlignAiPanel } from "@/components/sku-align/sku-align-ai-panel";
+import { SkuLogisticsEntryGate } from "@/components/sku-align/sku-logistics-entry-gate";
+import { SkuAgentPanel } from "@/components/sku-align/sku-agent-panel";
 import {
   computeSkuAlignMetrics,
   countNeedsReviewInProducts,
@@ -53,9 +55,17 @@ import {
   autoAlignUnboundProducts,
   autoConfirmPendingVariants,
 } from "@/lib/sku-align/auto-align-unresolved";
+import type { SkuPageContext } from "@/lib/agents/sku-align/plan-command";
+import type { SkuCommandPlan } from "@/lib/agents/sku-align/command-schema";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
-import type { AiPanelContent, SkuProductOverview } from "@/lib/types";
+import {
+  parseSkuAlignFilterParam,
+  scrollToFirstSkuIssueProduct,
+  SKU_ALIGN_FILTER_PARAM,
+  skuAlignHref,
+} from "@/lib/sku-align/deep-link";
+import type { AiPanelContent, PricingTemplate, SkuProductOverview } from "@/lib/types";
 
 const BREADCRUMBS = [
   { label: "工作台", href: "/" },
@@ -75,7 +85,9 @@ const matchRules = [
 
 type FilterId = SkuFilterMode;
 
-export default function SkuAlignPage() {
+function SkuAlignContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { shop, showToast, isAuthorized, authSessionReady, refreshWorkflowProgress } =
     useOnboarding();
   const shopName = shop.name;
@@ -85,6 +97,7 @@ export default function SkuAlignPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [products, setProducts] = useState<SkuProductOverview[]>([]);
+  const [pricingTemplate, setPricingTemplate] = useState<PricingTemplate | null>(null);
   const hasLoadedOnceRef = useRef(false);
 
   useEffect(() => {
@@ -97,7 +110,9 @@ export default function SkuAlignPage() {
   }, [shopName]);
   const [filter, setFilter] = useState<FilterId>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const pendingScrollRef = useRef(false);
   const [confirmingPage, setConfirmingPage] = useState(false);
+  const [focusProductId, setFocusProductId] = useState<string | null>(null);
   // "result" is the SSR/hydration-safe default; the mount effect flips to "scan" on first visit.
   const [phase, setPhase] = useState<"scan" | "result">("result");
 
@@ -117,8 +132,12 @@ export default function SkuAlignPage() {
     try {
       // Snapshot repair can take minutes — never block overview refresh on it.
       void api.backfillBindingSnapshots(shopName).catch(() => null);
-      const next = await api.getSkuOverview(shopName);
+      const [next, tpl] = await Promise.all([
+        api.getSkuOverview(shopName),
+        api.getPricingTemplate(shopName).catch(() => null),
+      ]);
       setProducts(next);
+      setPricingTemplate(tpl);
       hasLoadedOnceRef.current = true;
       void refreshWorkflowProgress();
     } catch (err) {
@@ -144,6 +163,19 @@ export default function SkuAlignPage() {
     if (!isAuthorized) return;
     if (startedForShopRef.current === shopName) return;
     startedForShopRef.current = shopName;
+
+    const deepFilter = parseSkuAlignFilterParam(
+      searchParams.get(SKU_ALIGN_FILTER_PARAM)
+    );
+    if (deepFilter && deepFilter !== "all") {
+      markScanned("sku-align", shopName);
+      setPhase("result");
+      setFilter(deepFilter);
+      if (deepFilter === "partially_linked") pendingScrollRef.current = true;
+      void load();
+      return;
+    }
+
     if (hasScanned("sku-align", shopName)) {
       setPhase("result");
       void load();
@@ -153,7 +185,25 @@ export default function SkuAlignPage() {
         window.setTimeout(() => void finishToResult(), SCAN_DWELL_MS);
       });
     }
-  }, [isAuthorized, shopName, load, startScan, finishToResult]);
+  }, [isAuthorized, shopName, load, startScan, finishToResult, searchParams]);
+
+  useEffect(() => {
+    const deepFilter = parseSkuAlignFilterParam(
+      searchParams.get(SKU_ALIGN_FILTER_PARAM)
+    );
+    if (!deepFilter || deepFilter === "all") return;
+    setFilter((current) => (current === deepFilter ? current : deepFilter));
+    if (deepFilter === "partially_linked") pendingScrollRef.current = true;
+  }, [searchParams]);
+
+  const handleFilterChange = useCallback(
+    (id: FilterId) => {
+      setFilter(id);
+      if (id === "partially_linked") pendingScrollRef.current = true;
+      router.replace(skuAlignHref(id), { scroll: false });
+    },
+    [router]
+  );
 
   // Entering the workbench: silently align variants that still have no binding at all.
   useEffect(() => {
@@ -208,6 +258,18 @@ export default function SkuAlignPage() {
     return sortProductsForWorkbench(list);
   }, [products, filter, searchQuery]);
 
+  useEffect(() => {
+    if (!pendingScrollRef.current) return;
+    if (phase !== "result" || loading) return;
+    if (filter !== "partially_linked") return;
+    if (filtered.length === 0) {
+      pendingScrollRef.current = false;
+      return;
+    }
+    pendingScrollRef.current = false;
+    scrollToFirstSkuIssueProduct();
+  }, [phase, loading, filter, filtered]);
+
   const needsReviewOnPage = useMemo(
     () => countNeedsReviewInProducts(filtered),
     [filtered]
@@ -244,6 +306,8 @@ export default function SkuAlignPage() {
     return {
       issueProducts: m.issueProductCount,
       doneProducts: m.doneProductCount,
+      fullyLinkedProducts: m.fullyLinkedProductCount,
+      partiallyLinkedProducts: m.partiallyLinkedProductCount,
       needsReviewVariants: m.needsReview,
       unboundVariants: m.unbound,
       totalVariants: m.variantCount,
@@ -253,18 +317,18 @@ export default function SkuAlignPage() {
 
   const metrics: MetricSummaryItem[] = [
     {
-      label: "问题项",
-      value: stats.issueProducts,
-      hint: `${stats.needsReviewVariants} 待确认 · ${stats.unboundVariants} 未匹配`,
-      icon: <AlertTriangle className="h-4 w-4" />,
-      tone: "warning",
-    },
-    {
-      label: "已就绪",
-      value: stats.doneProducts,
-      hint: "全部变体已自动或手动对齐",
+      label: "全部关联",
+      value: stats.fullyLinkedProducts,
+      hint: "全部 SKU 已映射匹配",
       icon: <CheckCircle2 className="h-4 w-4" />,
       tone: "brand",
+    },
+    {
+      label: "部分关联",
+      value: stats.partiallyLinkedProducts,
+      hint: `${stats.needsReviewVariants} 待确认 · ${stats.unboundVariants} 未匹配`,
+      icon: <AlertTriangle className="h-4 w-4" />,
+      tone: stats.partiallyLinkedProducts > 0 ? "warning" : "neutral",
     },
     {
       label: "待确认变体",
@@ -284,7 +348,12 @@ export default function SkuAlignPage() {
 
   const filterTabs = [
     { id: "all", label: "全部", count: products.length },
-    { id: "done", label: "已就绪", count: stats.doneProducts },
+    { id: "fully_linked", label: "全部关联", count: stats.fullyLinkedProducts },
+    {
+      id: "partially_linked",
+      label: "部分关联",
+      count: stats.partiallyLinkedProducts,
+    },
   ];
 
   const copilot: AiPanelContent = {
@@ -292,16 +361,115 @@ export default function SkuAlignPage() {
     summary:
       products.length === 0
         ? "确认匹配后的商品会在这里按变体展开，我会帮你把每个变体对齐到 Tangbuy 货源 SKU。"
-        : stats.issueProducts > 0
-          ? `还有 ${stats.issueProducts} 个商品需要处理（${stats.needsReviewVariants} 待确认 · ${stats.unboundVariants} 未匹配）。高置信和单 SKU 已自动生效。`
-          : `全部 ${stats.doneProducts} 个商品已就绪，可直接进入物流确认。`,
+        : stats.partiallyLinkedProducts > 0
+          ? `还有 ${stats.partiallyLinkedProducts} 个商品部分关联（${stats.needsReviewVariants} 待确认 · ${stats.unboundVariants} 未匹配）。`
+          : `全部 ${stats.fullyLinkedProducts} 个商品已全部关联，可直接进入物流确认。`,
     bullets: [
-      `问题项：${stats.issueProducts} 个商品`,
-      `已就绪：${stats.doneProducts} 个商品`,
+      `全部关联：${stats.fullyLinkedProducts} 个商品`,
+      `部分关联：${stats.partiallyLinkedProducts} 个商品`,
       "可用上方搜索框按标题或 ID 定位商品",
       "下一步：用页面上方「进入物流确认」继续",
     ],
   };
+
+  const agentContext = useMemo<SkuPageContext>(() => ({
+    productCatalog: products,
+    focusProductId: focusProductId ?? undefined,
+    focusProduct: products.find((p) => p.thirdPlatformItemId === focusProductId) ?? undefined,
+    currentFilter: filter,
+  }), [products, focusProductId, filter]);
+
+  const previewGenerators = useMemo(
+    () => ({
+      batch_confirm_pending: async (plan: SkuCommandPlan, shopName: string) => {
+        const productIds = plan.draft.params.batchProductIds ?? [];
+        const totalCount = productIds.length;
+
+        if (totalCount === 0) {
+          throw new Error("没有可处理的商品");
+        }
+
+        const sampleCount = Math.min(3, totalCount);
+        const sampleRows: any[] = [];
+
+        for (let i = 0; i < sampleCount; i++) {
+          const productId = productIds[i];
+          const product = products.find((p) => p.thirdPlatformItemId === productId);
+          if (product) {
+            const needsReview = product.variants.filter((v) => v.bound?.bindStatus === "PENDING").length;
+            sampleRows.push({
+              label: product.title ?? "未知商品",
+              before: `${needsReview} 个待确认变体`,
+              after: "确认后自动绑定",
+            });
+          }
+        }
+
+        const extraNote =
+          sampleCount < totalCount
+            ? `以上为前 ${sampleCount} 个商品预览，剩余 ${totalCount - sampleCount} 个商品将按相同规则处理`
+            : `以上为全部 ${totalCount} 个商品`;
+
+        return {
+          sections: [
+            {
+              title: `批量确认待匹配 · 共 ${totalCount} 个商品`,
+              rows: sampleRows,
+            },
+          ],
+          extraNote,
+          impact: {
+            scope: `确认 ${totalCount} 个商品的待匹配变体`,
+            durationHint: `约 ${Math.max(3, totalCount * 2)} 秒`,
+            reversible: true,
+          },
+          payload: {
+            productIds,
+            totalCount,
+          },
+        };
+      },
+    }),
+    [products]
+  );
+
+  const commandExecutors = useMemo(
+    () => ({
+      batch_confirm_pending: async (payload: Record<string, unknown>) => {
+        const p = payload as {
+          productIds: string[];
+          totalCount: number;
+          onProgress?: (current: number, total: number, success: number, failed: number) => void;
+        };
+        const total = p.productIds.length;
+        let success = 0;
+        let failed = 0;
+
+        for (let i = 0; i < total; i++) {
+          const productId = p.productIds[i];
+          try {
+            const product = products.find((p) => p.thirdPlatformItemId === productId);
+            if (product) {
+              const filtered = [product];
+              const result = await confirmPageNeedsReview(shopName, filtered);
+              if (result.confirmedCount && result.confirmedCount > 0) {
+                success++;
+              } else {
+                failed++;
+              }
+            }
+          } catch {
+            failed++;
+          }
+          p.onProgress?.(i + 1, total, success, failed);
+        }
+
+        await load();
+        showToast(`批量确认完成：成功 ${success} 个，失败 ${failed} 个`);
+      },
+    }),
+    [products, shopName, load, showToast]
+  );
 
   const rail = (
     <AssistantRail
@@ -309,23 +477,15 @@ export default function SkuAlignPage() {
         <>
           <CopilotCard content={copilot} />
           {phase === "result" && products.length > 0 ? (
-            <SkuAlignAiPanel
-              needsReviewOnPage={needsReviewOnPage}
-              confirming={confirmingPage}
-              onConfirmPage={() => void handleConfirmPageNeedsReview()}
+            <SkuAgentPanel
+              context={agentContext}
+              shopName={shopName}
+              onFocusProduct={setFocusProductId}
+              onSetFilter={setFilter}
+              previewGenerators={previewGenerators}
+              commandExecutors={commandExecutors}
             />
           ) : null}
-          <InfoCard title="匹配规则说明">
-            <p className="mb-2">AI 基于以下维度进行匹配：</p>
-            <ul className="space-y-1.5">
-              {matchRules.map((rule) => (
-                <li key={rule} className="flex gap-2">
-                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
-                  <span>{rule}</span>
-                </li>
-              ))}
-            </ul>
-          </InfoCard>
         </>
       }
     />
@@ -450,21 +610,16 @@ export default function SkuAlignPage() {
         {...wb.panelProps}
         actions={
           <div className="flex items-center gap-2">
+            <SkuLogisticsEntryGate />
             <Button
               variant="secondary"
               onClick={restartScan}
-              className="w-9 px-0"
+              className="h-7 w-7 px-0"
               title="重新整理（重新对齐 SKU 并预热货源明细）"
               aria-label="重新整理"
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="h-3.5 w-3.5" />
             </Button>
-            <Link href="/logistics">
-              <Button>
-                进入物流确认
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </Link>
           </div>
         }
       >
@@ -476,7 +631,7 @@ export default function SkuAlignPage() {
               variant="chip"
               tabs={filterTabs}
               value={filter}
-              onValueChange={(id) => setFilter(id as FilterId)}
+              onValueChange={(id) => handleFilterChange(id as FilterId)}
             />
             <div className="ml-auto flex min-w-0 items-center gap-2">
               <div className="relative min-w-[12rem] flex-1 sm:w-56 sm:flex-none">
@@ -557,9 +712,11 @@ export default function SkuAlignPage() {
               description={
                 searchQuery.trim()
                   ? "试试更短的关键词，或切换到「全部」查看完整列表。"
-                  : filter === "done"
-                    ? "还没有全部变体对齐完成的商品。切换到「全部」查看待处理项。"
-                    : "当前列表为空。"
+                  : filter === "fully_linked"
+                    ? "还没有全部 SKU 都映射完成的商品。切换到「部分关联」或「全部」查看待处理项。"
+                    : filter === "partially_linked"
+                      ? "暂无部分关联的商品。切换到「全部关联」查看已完成项。"
+                      : "当前列表为空。"
               }
             />
           ) : (
@@ -572,6 +729,7 @@ export default function SkuAlignPage() {
                   onAligned={load}
                   showToast={showToast}
                   filterMode={filter}
+                  pricingTemplate={pricingTemplate}
                 />
               ))}
             </div>
@@ -579,5 +737,21 @@ export default function SkuAlignPage() {
         </div>
       </WorkbenchPanel>
     </WorkbenchShell>
+  );
+}
+
+export default function SkuAlignPage() {
+  return (
+    <Suspense
+      fallback={
+        <WorkbenchShell sidebar={<StepSidebar />}>
+          <WorkbenchPanel title="SKU 绑定">
+            <TableSkeleton rows={5} />
+          </WorkbenchPanel>
+        </WorkbenchShell>
+      }
+    >
+      <SkuAlignContent />
+    </Suspense>
   );
 }

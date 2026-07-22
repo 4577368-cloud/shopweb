@@ -1,4 +1,9 @@
 import { isLikelySkuSpecLabel } from "@/lib/batch-link/source-display-title";
+import { resolveIdentityWithPreferredPool } from "@/lib/tangbuy/preferred-pool";
+import {
+  mergeIdentityIntoBinding,
+  writeProductSourceIdentity,
+} from "@/lib/product-source-identity";
 import type { ConfirmImageMatchRequest, ImageBindingView, CatalogRecommendation } from "@/lib/types";
 import {
   buildTangbuyProductUrl,
@@ -157,4 +162,26 @@ export function withManualMatchBindingMeta(
       viewTitle ||
       null,
   };
+}
+
+/** Persist cross-ID snapshot after manual / catalog link confirm. */
+export async function finalizeManualMatchBinding(
+  shopName: string,
+  thirdPlatformItemId: string,
+  view: ImageBindingView,
+  req: ConfirmImageMatchRequest
+): Promise<ImageBindingView> {
+  const identity = await resolveIdentityWithPreferredPool({
+    tangbuyProductId: req.offerProductId,
+    tangbuySkuId: req.offerSkuId,
+    detailUrl: req.detailUrl,
+    titleHint: req.offerTitle,
+    shopName,
+    skipPoolIngest: false,
+  });
+  writeProductSourceIdentity(shopName, thirdPlatformItemId, identity);
+  return mergeIdentityIntoBinding(
+    withManualMatchBindingMeta(view, req.offerTitle),
+    identity
+  );
 }

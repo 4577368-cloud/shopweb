@@ -128,11 +128,9 @@ export function railTaskChips(
     push("go_discover");
   }
 
-  // Always keep one pricing strategy chip (even when pricing is the active task)
-  const pricingId = ctx.pricing.configured
-    ? "explain_pricing"
-    : "configure_pricing";
-  if (!ordered.includes(pricingId)) ordered.push(pricingId);
+  if (!ctx.pricing.configured) {
+    push("configure_pricing");
+  }
 
   return ordered.filter(
     (id) =>

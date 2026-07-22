@@ -1,20 +1,22 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { useMemo } from "react";
+import { Loader2, Sparkles, TrendingDown } from "lucide-react";
+import { CopilotCard } from "@/components/workbench/assistant-rail";
+import { InfoCard } from "@/components/workbench/info-card";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import {
+  computeLogisticsPlanMetrics,
   countAutoVsManual,
-  DECISION_LABELS,
+  formatTemplateMeta,
 } from "@/lib/logistics/display";
-import type { LogisticsDecisionStatus, LogisticsTypeCode } from "@/lib/types";
-
-const QUEUE_ORDER: LogisticsDecisionStatus[] = [
-  "pending_sku",
-  "pending_postal_meta",
-  "needs_review",
-  "restricted",
-];
+import type {
+  AiPanelContent,
+  LogisticsAnalysis,
+  LogisticsDecisionStatus,
+  LogisticsTemplate,
+  LogisticsTypeCode,
+} from "@/lib/types";
 
 const RISK_LABELS: Partial<Record<LogisticsTypeCode, string>> = {
   BATTERY_MAGNETIC: "带电/带磁",
@@ -23,125 +25,189 @@ const RISK_LABELS: Partial<Record<LogisticsTypeCode, string>> = {
 };
 
 export function LogisticsAiPanel({
+  analysis,
+  activeTemplate,
   decisionStatusCounts,
   highRiskTypes,
   skuReadyForNext,
   quoting,
   accepting,
-  saving,
-  quoteTargetCount,
   readyAcceptCount,
+  pendingCount,
   onFocusStatus,
   onAcceptAllReady,
   onFetchQuotes,
-  onSaveSync,
+  onOpenTemplate,
 }: {
+  analysis: LogisticsAnalysis | null;
+  activeTemplate: LogisticsTemplate | null;
   decisionStatusCounts?: Record<LogisticsDecisionStatus, number>;
   highRiskTypes?: LogisticsTypeCode[];
   skuReadyForNext: boolean;
   quoting: boolean;
   accepting: boolean;
-  saving: boolean;
-  quoteTargetCount: number;
   readyAcceptCount: number;
+  pendingCount: number;
   onFocusStatus: (status: LogisticsDecisionStatus) => void;
   onAcceptAllReady: () => void;
   onFetchQuotes: () => void;
-  onSaveSync: () => void;
+  onOpenTemplate: () => void;
 }) {
+  const metrics = computeLogisticsPlanMetrics(analysis);
   const { auto, manual } = countAutoVsManual(decisionStatusCounts);
 
+  const copilot: AiPanelContent = useMemo(() => {
+    const bullets: string[] = [
+      `已分析 ${metrics.productCount} 个商品 · ${metrics.variantCount} 个 SKU`,
+      `AI 自动规划 ${auto} 项 · 待你确认 ${manual} 项`,
+    ];
+    if (activeTemplate) {
+      bullets.push(formatTemplateMeta(activeTemplate));
+    }
+
+    const alerts =
+      manual > 0
+        ? [
+            {
+              id: "pending-review",
+              text: `${manual} 个 SKU 需补充信息或确认邮限，其余已由 AI 完成规划。`,
+              targetId: "pending-review",
+            },
+          ]
+        : undefined;
+
+    return {
+      title: "AI 物流助手",
+      summary:
+        pendingCount > 0
+          ? `AI 已为 ${metrics.aiAutoCount} 个 SKU 匹配重量、体积与推荐线路。你只需处理 ${pendingCount} 个 AI 无法确定的异常。`
+          : metrics.aiAutoCount > 0
+            ? "全部 SKU 已完成 AI 物流规划。确认方案后即可保存并进入同步。"
+            : "等待 SKU 绑定完成后，AI 将自动读取商品规格并生成履约方案。",
+      bullets,
+      alerts,
+      nextAction:
+        readyAcceptCount > 0
+          ? {
+              label: accepting ? "确认中…" : `一键确认 ${readyAcceptCount} 个方案`,
+              action: "accept_all",
+              disabled: accepting || quoting,
+            }
+          : pendingCount > 0
+            ? {
+                label: "查看待确认项",
+                action: "focus_issues",
+              }
+            : undefined,
+    };
+  }, [
+    activeTemplate,
+    auto,
+    accepting,
+    manual,
+    metrics.aiAutoCount,
+    metrics.productCount,
+    metrics.variantCount,
+    pendingCount,
+    quoting,
+    readyAcceptCount,
+  ]);
+
+  const savings = useMemo(() => {
+    const tips: string[] = [];
+    if (activeTemplate?.speedPreference === "FAST") {
+      tips.push("当前偏好「快速」时效，可切换「均衡」模板以降低部分 SKU 运费。");
+    }
+    if (activeTemplate?.packaging === "CARTON") {
+      tips.push("纸箱包装会增加体积重，服装类可尝试「极简包装」。");
+    }
+    if (tips.length === 0 && metrics.aiAutoCount > 0) {
+      tips.push("批量确认 AI 方案可一次完成履约配置，无需逐条处理。");
+    }
+    return tips;
+  }, [activeTemplate, metrics.aiAutoCount]);
+
   return (
-    <div className="flex flex-col gap-3 text-sm">
-      <section className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3">
-        <h3 className="text-xs font-semibold text-ink">物流决策</h3>
-        <p className="mt-2 text-xs text-ink">
-          <span className="font-semibold tabular-nums">{auto}</span> 可自动
-          <span className="mx-1 text-ink-subtle">·</span>
-          <span className="font-semibold tabular-nums">{manual}</span> 需你处理
-        </p>
-      </section>
+    <div className="flex flex-col gap-2">
+      <CopilotCard
+        heading="AI 物流助手"
+        content={copilot}
+        onNextAction={(action) => {
+          if (action === "accept_all") onAcceptAllReady();
+          if (action === "focus_issues") onFocusStatus("needs_review");
+        }}
+        onAlertClick={() => onFocusStatus("needs_review")}
+      />
 
-      <section className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3">
-        <h3 className="text-xs font-semibold text-ink">问题队列</h3>
-        <ul className="mt-2 space-y-1">
-          {QUEUE_ORDER.map((status) => {
-            const count = decisionStatusCounts?.[status] ?? 0;
-            if (count <= 0) return null;
-            return (
-              <li key={status}>
-                <button
-                  type="button"
-                  onClick={() => onFocusStatus(status)}
-                  className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs hover:bg-surface-muted"
-                >
-                  <span className="text-ink-muted">{DECISION_LABELS[status]}</span>
-                  <span className="font-semibold tabular-nums text-ink">{count}</span>
-                </button>
+      {savings.length > 0 ? (
+        <InfoCard
+          title="节省成本机会"
+          icon={<TrendingDown className="h-3.5 w-3.5 text-brand" />}
+          tone="brand"
+        >
+          <ul className="space-y-1.5">
+            {savings.map((tip) => (
+              <li key={tip} className="flex gap-2">
+                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-brand" />
+                <span>{tip}</span>
               </li>
-            );
-          })}
-          {manual === 0 ? (
-            <li className="px-2 py-1 text-xs text-ink-subtle">无待处理项</li>
-          ) : null}
-        </ul>
-      </section>
+            ))}
+          </ul>
+        </InfoCard>
+      ) : null}
 
-      <section className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3">
-        <h3 className="text-xs font-semibold text-ink">批量动作</h3>
-        <div className="mt-2 flex flex-col gap-2">
+      <InfoCard title="快捷操作">
+        <div className="flex flex-col gap-2">
           <Button
             size="sm"
-            variant="secondary"
-            className="h-8 justify-start text-xs"
-            disabled={quoteTargetCount === 0 || quoting}
-            onClick={onFetchQuotes}
-          >
-            {quoting ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-            ) : null}
-            拉取线路报价 ({quoteTargetCount})
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
             className="h-8 justify-start text-xs"
             disabled={readyAcceptCount === 0 || accepting || quoting}
             onClick={onAcceptAllReady}
           >
             {accepting ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-            ) : null}
-            接受全部可报价 ({readyAcceptCount})
+            ) : (
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            确认全部 AI 方案 ({readyAcceptCount})
           </Button>
-          <p className="text-[10px] leading-4 text-ink-subtle">
-            含已确认规格，可重复拉取；接受前会自动拉取线路。
-          </p>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 justify-start text-xs"
+            disabled={metrics.aiAutoCount === 0 || quoting}
+            onClick={onFetchQuotes}
+          >
+            {quoting ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : null}
+            刷新线路报价
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 justify-start text-xs"
+            onClick={onOpenTemplate}
+          >
+            调整物流模板
+          </Button>
         </div>
-      </section>
+      </InfoCard>
 
       {(highRiskTypes?.length ?? 0) > 0 || !skuReadyForNext ? (
-        <section className="rounded-[var(--radius-card)] border border-amber-100 bg-amber-50/50 p-3">
-          <h3 className="text-xs font-semibold text-amber-900">风险</h3>
-          <ul className="mt-1.5 space-y-1 text-[11px] text-amber-900/90">
+        <InfoCard title="AI 建议" tone="warning">
+          <ul className="space-y-1.5">
             {!skuReadyForNext ? (
-              <li>部分商品 SKU 未齐，待SKU 项需先对齐</li>
+              <li>部分商品 SKU 未齐，请先完成 SKU 绑定。</li>
             ) : null}
             {(highRiskTypes ?? []).map((t) => (
-              <li key={t}>高风险类型: {RISK_LABELS[t] ?? t}</li>
+              <li key={t}>
+                检测到 {RISK_LABELS[t] ?? t} 类商品，AI 已标记为需人工确认邮限。
+              </li>
             ))}
           </ul>
-        </section>
+        </InfoCard>
       ) : null}
-
-      <Button
-        size="sm"
-        className={cn("h-9 w-full")}
-        disabled={saving}
-        onClick={onSaveSync}
-      >
-        {saving ? "保存中…" : "保存并进入同步"}
-      </Button>
     </div>
   );
 }

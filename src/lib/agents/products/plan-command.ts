@@ -23,7 +23,8 @@ function needsFocusProduct(intent: ProductCommandDraft["intent"]): boolean {
   return (
     intent === "rerun_candidate_search" ||
     intent === "explain_product_match" ||
-    intent === "update_listing_price"
+    intent === "update_listing_price" ||
+    intent === "update_product_copy"
   );
 }
 
@@ -92,6 +93,43 @@ function resolveCurrency(
     ctx.focusProduct?.shopCurrency?.toUpperCase() ??
     "USD"
   );
+}
+
+function resolveBatchProductIds(
+  draft: ProductCommandDraft,
+  ctx: ProductsPageContext
+): { ids: string[]; label: string } {
+  const filter = draft.params.batchFilter ?? "all";
+  const all = ctx.productCatalog;
+
+  let filtered: typeof all;
+  switch (filter) {
+    case "pending":
+      filtered = all.filter((p) => p.bindState === "pending");
+      break;
+    case "confirmed":
+      filtered = all.filter((p) => p.bindState === "confirmed");
+      break;
+    case "unbound":
+      filtered = all.filter((p) => p.bindState === "unbound" || !p.bindState);
+      break;
+    default:
+      filtered = all;
+  }
+
+  const limit = draft.params.batchLimit ?? 0;
+  const result = limit > 0 ? filtered.slice(0, limit) : filtered;
+  const ids = result.map((p) => p.productId);
+
+  const filterLabels: Record<string, string> = {
+    all: "全部商品",
+    pending: "待确认商品",
+    confirmed: "已确认商品",
+    unbound: "未匹配商品",
+  };
+  const label = filterLabels[filter] ?? "全部商品";
+
+  return { ids, label };
 }
 
 export function planProductCommand(
@@ -258,6 +296,196 @@ export function planProductCommand(
         executable: true,
       };
     }
+    case "update_product_copy": {
+      const copyField = draft.params.copyField ?? "title";
+      const copyAction = draft.params.copyAction ?? "translate";
+      const targetLang = draft.params.copyTargetLang;
+      const copyStyle = draft.params.copyStyle ?? "amazon";
+      const fieldLabel =
+        copyField === "title" ? "标题" : copyField === "description" ? "描述" : "全部文案";
+      const actionLabel =
+        copyAction === "translate"
+          ? `本土化${targetLang ? `为 ${targetLang.toUpperCase()}` : ""}`
+          : copyAction === "rewrite"
+            ? "改写"
+            : "优化";
+
+      if (!productId) {
+        return {
+          draft,
+          operation: `${actionLabel}商品${fieldLabel}`,
+          targetLabel: focusTitle,
+          detailLines: [],
+          executable: false,
+          clarify:
+            "请先在左侧列表中点一下目标商品（右侧会显示「已选 · 商品名」），再说「翻译这个商品标题」。",
+        };
+      }
+
+      if (copyAction === "translate" && !targetLang) {
+        return {
+          draft,
+          operation: `${actionLabel}商品${fieldLabel}`,
+          targetLabel: focusTitle,
+          detailLines: [],
+          executable: false,
+          clarify: "请说明目标语言，例如「把标题翻译成英文」。",
+        };
+      }
+
+      const detailLines: string[] = [];
+      detailLines.push(`目标字段：${fieldLabel}`);
+      detailLines.push(`操作类型：${actionLabel}`);
+      if (copyAction === "translate" && targetLang) {
+        detailLines.push(`目标语言：${targetLang.toUpperCase()}`);
+        detailLines.push(
+          copyStyle === "literal"
+            ? "模式：直译"
+            : "模式：去噪 + Amazon 结构重组（批发/跨境/营销词过滤，非直译）"
+        );
+      }
+      detailLines.push("确认后将生成新标题并更新到 Shopify");
+
+      return {
+        draft: {
+          ...draft,
+          productId,
+          confirmationRequired: true,
+          params: { ...draft.params, copyField, copyAction, copyTargetLang: targetLang, copyStyle },
+        },
+        operation: `${actionLabel}商品${fieldLabel}`,
+        targetLabel: focusTitle,
+        detailLines,
+        executable: true,
+      };
+    }
+    case "batch_update_product_copy": {
+      const copyField = draft.params.copyField ?? "title";
+      const copyAction = draft.params.copyAction ?? "translate";
+      const targetLang = draft.params.copyTargetLang;
+      const copyStyle = draft.params.copyStyle ?? "amazon";
+      const fieldLabel =
+        copyField === "title" ? "标题" : copyField === "description" ? "描述" : "全部文案";
+      const actionLabel =
+        copyAction === "translate"
+          ? `本土化${targetLang ? `为 ${targetLang.toUpperCase()}` : ""}`
+          : copyAction === "rewrite"
+            ? "改写"
+            : "优化";
+
+      if (copyAction === "translate" && !targetLang) {
+        return {
+          draft,
+          operation: `批量${actionLabel}商品${fieldLabel}`,
+          targetLabel: "未指定语言",
+          detailLines: [],
+          executable: false,
+          clarify: "请说明目标语言，例如「把所有商品标题翻译成英文」。",
+        };
+      }
+
+      const batchResult = resolveBatchProductIds(draft, ctx);
+      const totalCount = batchResult.ids.length;
+
+      if (totalCount === 0) {
+        return {
+          draft,
+          operation: `批量${actionLabel}商品${fieldLabel}`,
+          targetLabel: batchResult.label,
+          detailLines: [],
+          executable: false,
+          clarify: `当前「${batchResult.label}」范围内没有商品，无法执行批量操作。`,
+        };
+      }
+
+      const detailLines: string[] = [];
+      detailLines.push(`处理范围：${batchResult.label}（共 ${totalCount} 个商品）`);
+      detailLines.push(`目标字段：${fieldLabel}`);
+      detailLines.push(`操作类型：${actionLabel}`);
+      if (copyAction === "translate" && targetLang) {
+        detailLines.push(`目标语言：${targetLang.toUpperCase()}`);
+        detailLines.push(
+          copyStyle === "literal"
+            ? "模式：直译"
+            : "模式：去噪 + Amazon 结构重组（批发/跨境/营销词过滤，非直译）"
+        );
+      }
+      detailLines.push("确认后将逐个生成新标题并更新到 Shopify");
+
+      return {
+        draft: {
+          ...draft,
+          targetScope: "all",
+          confirmationRequired: true,
+          params: {
+            ...draft.params,
+            copyField,
+            copyAction,
+            copyTargetLang: targetLang,
+            copyStyle,
+            batchProductIds: batchResult.ids,
+          },
+        },
+        operation: `批量${actionLabel}商品${fieldLabel}`,
+        targetLabel: `${batchResult.label} · ${totalCount} 个`,
+        detailLines,
+        executable: true,
+      };
+    }
+    case "batch_update_listing_price": {
+      const multiplier = draft.params.batchPriceMultiplier;
+      const fixedPrice = draft.params.batchPriceFixed;
+
+      if (!multiplier && !fixedPrice) {
+        return {
+          draft,
+          operation: "批量修改商品售价",
+          targetLabel: "未指定价格",
+          detailLines: [],
+          executable: false,
+          clarify: "请说明定价方式，例如「所有商品定价改为采购价2倍」或「所有商品售价改成9.9」。",
+        };
+      }
+
+      const batchResult = resolveBatchProductIds(draft, ctx);
+      const totalCount = batchResult.ids.length;
+
+      if (totalCount === 0) {
+        return {
+          draft,
+          operation: "批量修改商品售价",
+          targetLabel: batchResult.label,
+          detailLines: [],
+          executable: false,
+          clarify: `当前「${batchResult.label}」范围内没有商品，无法执行批量操作。`,
+        };
+      }
+
+      const detailLines: string[] = [];
+      detailLines.push(`处理范围：${batchResult.label}（共 ${totalCount} 个商品）`);
+      if (multiplier) {
+        detailLines.push(`定价方式：采购价 × ${multiplier}`);
+      } else if (fixedPrice) {
+        detailLines.push(`定价方式：固定价格 ${fixedPrice}`);
+      }
+      detailLines.push("确认后将逐个更新商品售价到 Shopify");
+
+      return {
+        draft: {
+          ...draft,
+          targetScope: "all",
+          confirmationRequired: true,
+          params: {
+            ...draft.params,
+            batchProductIds: batchResult.ids,
+          },
+        },
+        operation: "批量修改商品售价",
+        targetLabel: `${batchResult.label} · ${totalCount} 个`,
+        detailLines,
+        executable: true,
+      };
+    }
     default:
       return {
         draft,
@@ -330,6 +558,48 @@ export function resolveCommandExecution(
         variantSkuId: draft.params.variantSkuId,
       };
     }
+    case "update_product_copy": {
+      const copyField = draft.params.copyField ?? "title";
+      const copyAction = draft.params.copyAction ?? "translate";
+      if (!productId) return null;
+      return {
+        type: "product_copy_update",
+        productId,
+        productTitle: plan.targetLabel,
+        copyField,
+        copyAction,
+        targetLang: draft.params.copyTargetLang,
+        tone: draft.params.copyTone,
+      };
+    }
+    case "batch_update_product_copy": {
+      const copyField = draft.params.copyField ?? "title";
+      const copyAction = draft.params.copyAction ?? "translate";
+      const productIds = draft.params.batchProductIds ?? [];
+      if (productIds.length === 0) return null;
+      return {
+        type: "batch_product_copy_update",
+        productIds,
+        totalCount: productIds.length,
+        copyField,
+        copyAction,
+        targetLang: draft.params.copyTargetLang,
+        tone: draft.params.copyTone,
+        filterLabel: plan.targetLabel,
+      };
+    }
+    case "batch_update_listing_price": {
+      const productIds = draft.params.batchProductIds ?? [];
+      if (productIds.length === 0) return null;
+      return {
+        type: "batch_listing_price_update",
+        productIds,
+        totalCount: productIds.length,
+        batchPriceMultiplier: draft.params.batchPriceMultiplier,
+        batchPriceFixed: draft.params.batchPriceFixed,
+        filterLabel: plan.targetLabel,
+      };
+    }
     default:
       return null;
   }
@@ -338,7 +608,10 @@ export function resolveCommandExecution(
 export function commandRequiresConfirmation(plan: ProductCommandPlan): boolean {
   return (
     plan.draft.confirmationRequired ||
-    plan.draft.intent === "update_listing_price"
+    plan.draft.intent === "update_listing_price" ||
+    plan.draft.intent === "update_product_copy" ||
+    plan.draft.intent === "batch_update_product_copy" ||
+    plan.draft.intent === "batch_update_listing_price"
   );
 }
 
@@ -356,6 +629,12 @@ function commandOperationLabel(intent: ProductCommandDraft["intent"]): string {
       return "打开定价设置";
     case "update_listing_price":
       return "修改商品售价";
+    case "update_product_copy":
+      return "修改商品文案";
+    case "batch_update_product_copy":
+      return "批量修改商品文案";
+    case "batch_update_listing_price":
+      return "批量修改商品售价";
     default:
       return "执行命令";
   }

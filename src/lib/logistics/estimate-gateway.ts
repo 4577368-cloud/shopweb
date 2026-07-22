@@ -1,6 +1,11 @@
 import type { LogisticsEstimateRequest, LogisticsEstimateResponse } from "@/lib/api";
 import { normalizeTangbuyEstimateResponse } from "@/lib/logistics/estimate-normalize";
-import { resolveCountryId } from "@/lib/logistics/template-params";
+import {
+  packagingToIncrementList,
+  resolveCountryId,
+} from "@/lib/logistics/template-params";
+import { resolveTangbuyCountryId } from "@/lib/logistics/tangbuy-country";
+import { toTangbuyPostLimitType } from "@/lib/logistics/postal-limit-map";
 import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
 
 const ESTIMATE_PATH = "/gateway/plugin/logistic/estimateSkuSaleFeePrice";
@@ -21,31 +26,45 @@ function gatewayToken(): string {
   return token;
 }
 
-function buildTangbuyEstimateBody(body: LogisticsEstimateRequest) {
+async function buildTangbuyEstimateBody(body: LogisticsEstimateRequest) {
   const code = body.countryCode?.trim().toUpperCase();
   if (!code) {
     throw new Error("缺少 countryCode");
   }
-  const countryId = body.countryId?.trim() || resolveCountryId(code);
+  const countryId =
+    body.countryId?.trim() ||
+    (await resolveTangbuyCountryId(code)) ||
+    resolveCountryId(code);
   if (!countryId) {
     throw new Error(
-      `未配置国家 ${code} 的 countryId，请在物流模板中选择已支持市场`
+      `未配置国家 ${code} 的 Tangbuy countryId。请在 dropshipping.tangbuy.cc 对该市场试算一次，从网络请求复制 countryId，并写入 .env.local：TANGBUY_COUNTRY_IDS={"${code}":"..."}`
     );
   }
+
+  const defaultIncrements = packagingToIncrementList(body.packaging);
 
   return {
     countryId,
     countryCode: code,
     shippingOption: body.shippingOption ?? 2,
-    skuList: body.variants.map((v) => ({
-      providerType: "alibaba",
-      skuId: v.tangbuySkuId,
-      goodsId: v.tangbuyGoodsId,
-      incrementDTO: {
-        incrementList: v.incrementList,
-      },
-      num: v.quantity ?? 1,
-    })),
+    skuList: body.variants.map((v) => {
+      const incrementList =
+        v.incrementList?.length > 0 ? v.incrementList : defaultIncrements;
+      const entry: Record<string, unknown> = {
+        providerType: "alibaba",
+        skuId: v.tangbuySkuId,
+        goodsId: v.tangbuyGoodsId,
+        incrementDTO: { incrementList },
+        num: v.quantity ?? 1,
+      };
+      if (v.weightG != null && Number.isFinite(v.weightG)) entry.weight = v.weightG;
+      if (v.lengthCm != null && Number.isFinite(v.lengthCm)) entry.length = v.lengthCm;
+      if (v.widthCm != null && Number.isFinite(v.widthCm)) entry.width = v.widthCm;
+      if (v.heightCm != null && Number.isFinite(v.heightCm)) entry.height = v.heightCm;
+      const postLimit = toTangbuyPostLimitType(v.postalLimitClass);
+      if (postLimit) entry.postLimitType = postLimit;
+      return entry;
+    }),
     needOtherLine: body.needOtherLine ?? true,
     needMeasure: body.needMeasure ?? true,
   };
@@ -67,7 +86,7 @@ export async function estimateLogisticsFromBrowser(
     throw new Error("请提供至少一个 variant");
   }
 
-  const tangbuyRequest = buildTangbuyEstimateBody(body);
+  const tangbuyRequest = await buildTangbuyEstimateBody(body);
   const url = `${gatewayBaseUrl()}${ESTIMATE_PATH}`;
 
   const res = await fetch(url, {
@@ -77,7 +96,7 @@ export async function estimateLogisticsFromBrowser(
       Authorization: `Bearer ${gatewayToken()}`,
       Origin: "https://dropshipping.tangbuy.cc",
       Referer: "https://dropshipping.tangbuy.cc/",
-      currency: "CNY",
+      currency: body.quoteCurrency?.trim().toUpperCase() || "USD",
       device: "pc",
       lang: "cn",
       "tang-request-device": "web",
@@ -89,6 +108,7 @@ export async function estimateLogisticsFromBrowser(
     body: JSON.stringify(tangbuyRequest),
   });
 
+  const traceId = res.headers.get("traceId") ?? res.headers.get("traceid") ?? undefined;
   const text = await res.text();
   let raw: unknown;
   try {
@@ -98,14 +118,32 @@ export async function estimateLogisticsFromBrowser(
   }
 
   if (!res.ok) {
-    throw new Error(`Tangbuy 线路报价失败 (${res.status})`);
+    throw new Error(
+      traceId
+        ? `Tangbuy 线路报价失败 (${res.status}) · traceId=${traceId}`
+        : `Tangbuy 线路报价失败 (${res.status})`
+    );
   }
   if (!raw || typeof raw !== "object") {
     throw new Error("Tangbuy 网关返回非 JSON");
   }
 
-  return normalizeTangbuyEstimateResponse(
-    raw as Record<string, unknown>,
-    body.variants
-  );
+  const envelope = raw as Record<string, unknown>;
+  const gatewayCode = typeof envelope.code === "number" ? envelope.code : undefined;
+  if (gatewayCode != null && gatewayCode !== 200) {
+    const msg =
+      (typeof envelope.msg === "string" && envelope.msg.trim()) ||
+      (typeof envelope.message === "string" && envelope.message.trim()) ||
+      `Tangbuy 线路报价失败 (${gatewayCode})`;
+    throw new Error(traceId ? `${msg} · traceId=${traceId}` : msg);
+  }
+
+  const quoteCurrency = body.quoteCurrency?.trim().toUpperCase() || "USD";
+
+  return normalizeTangbuyEstimateResponse(envelope, body.variants, {
+    countryCode: body.countryCode?.trim().toUpperCase(),
+    countryId: tangbuyRequest.countryId,
+    traceId,
+    feeCurrency: quoteCurrency,
+  });
 }

@@ -259,7 +259,7 @@ const sampleAnalysis = {
           estimatedHeightCm: 5,
           measureSource: "MERCHANT",
           decisionStatus: "ready_for_quote",
-          decisionReason: "数据完整，可发起报价",
+          decisionReason: "",
         },
         {
           thirdPlatformSkuId: "gid://shopify/ProductVariant/987654322",
@@ -325,7 +325,7 @@ const sampleAnalysis = {
           estimatedHeightCm: 8,
           measureSource: "MERCHANT",
           decisionStatus: "ready_for_quote",
-          decisionReason: "数据完整，可发起报价",
+          decisionReason: "",
         },
         {
           thirdPlatformSkuId: "gid://shopify/ProductVariant/987654325",

@@ -1,6 +1,7 @@
 export interface ProductCatalogEntry {
   productId: string;
   title: string;
+  bindState?: string;
 }
 
 export type ProductTargetResolution =

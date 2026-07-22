@@ -69,14 +69,18 @@ export function EditedProfitLine({
   next,
   phases,
   className,
+  inline = false,
 }: {
   label?: string;
   previous?: { amount: number; currency: string } | null;
   next?: { amount: number; currency: string } | null;
   phases?: AiFieldEditPhases;
   className?: string;
+  inline?: boolean;
 }) {
   if (!next) return null;
+
+  const Tag = inline ? "span" : "p";
 
   const showTransition =
     previous != null &&
@@ -84,19 +88,28 @@ export function EditedProfitLine({
 
   if (!showTransition) {
     return (
-      <p className={cn("mt-0.5 text-[11px] font-semibold tabular-nums", className)}>
+      <Tag
+        className={cn(
+          inline
+            ? "inline-flex items-baseline gap-0.5 text-[11px] font-semibold tabular-nums"
+            : "mt-0.5 text-[11px] font-semibold tabular-nums",
+          className
+        )}
+      >
         <span className="text-slate-500">{label}</span>
         <span className={profitTone(next.amount)}>
           {formatTargetMoney(next.amount, next.currency)}
         </span>
-      </p>
+      </Tag>
     );
   }
 
   return (
-    <p
+    <Tag
       className={cn(
-        "mt-0.5 inline-flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] font-semibold",
+        inline
+          ? "inline-flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] font-semibold"
+          : "mt-0.5 inline-flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] font-semibold",
         className
       )}
     >
@@ -121,7 +134,7 @@ export function EditedProfitLine({
       >
         {formatTargetMoney(next.amount, next.currency)}
       </span>
-    </p>
+    </Tag>
   );
 }
 

@@ -30,7 +30,9 @@ export function buildShopProductMinis(
       hints.push("待你确认关联");
       if (b?.matchScore != null) {
         const s = b.matchScore;
-        hints.push(s <= 1 ? `匹配度 ${Math.round(s * 100)}%` : `匹配指数 ${Math.round(s)}`);
+        hints.push(
+          s <= 1 ? `标题综合分 ${Math.round(s * 100)}%` : `标题 ${Math.round(s)}%`
+        );
       }
       if (!b?.offerImageUrl) hints.push("货源图待补全");
     } else if (state === "unbound") {

@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { ThumbImage } from "@/components/ui/thumb-image";
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -56,13 +56,13 @@ export function CatalogProductCard({
     <article className="flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface p-3 shadow-card">
       <div className="relative aspect-square w-full overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
         {item.imageUrl && !imgError ? (
-          <Image
+          <ThumbImage
             src={item.imageUrl}
             alt={item.title}
             fill
             sizes="240px"
+            pixelWidth={480}
             className="object-cover"
-            unoptimized
             referrerPolicy="no-referrer"
             onError={() => setImgError(true)}
           />

@@ -1,6 +1,7 @@
 import type { AgentResponse } from "@/lib/agents/types";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
+import { purchaseDisplayAlignedWithPricing } from "@/lib/agents/products/page-context";
 import { handleProductFocusIntent } from "@/lib/agents/products/product-focus-handlers";
 
 /**
@@ -59,12 +60,23 @@ function summarizeStatus(ctx: ProductsPageContext): AgentResponse {
   }
   explanation.push(
     `已分析在售商品 ${ctx.analyzedCount} 个`,
-    `已匹配（含待确认） ${ctx.matchedCount} 个 · 待确认 ${ctx.pendingCount} · 未匹配 ${ctx.unboundCount}`,
-    ctx.purchaseDisplay.summaryLine,
-    ctx.pricing.configured
-      ? `上架定价：${ctx.pricing.summaryLine}`
-      : "上架定价尚未完成有效配置（发现新品建议售价需先配定价）"
+    `已匹配（含待确认） ${ctx.matchedCount} 个 · 待确认 ${ctx.pendingCount} · 未匹配 ${ctx.unboundCount}`
   );
+  const purchaseAligned = purchaseDisplayAlignedWithPricing(
+    ctx.pricing,
+    ctx.purchaseDisplay
+  );
+  if (ctx.pricing.configured) {
+    explanation.push(
+      purchaseAligned
+        ? `汇率 ${ctx.pricing.exchangeRate}（${ctx.pricing.targetCurrency}）：采购成本与上架定价共用；采购展示不含倍率加价`
+        : ctx.purchaseDisplay.summaryLine
+    );
+    explanation.push(`上架定价：${ctx.pricing.summaryLine}`);
+  } else {
+    explanation.push(ctx.purchaseDisplay.summaryLine);
+    explanation.push("上架定价尚未完成有效配置（发现新品建议售价需先配定价）");
+  }
   if (ctx.recommendedCategoryNames.length > 0) {
     explanation.push(`推荐类目：${ctx.recommendedCategoryNames.join("、")}`);
   }

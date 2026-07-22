@@ -1,4 +1,4 @@
-import type { ImageSearchProduct } from "@/lib/types";
+import type { ImageSearchProduct, PricingTemplate } from "@/lib/types";
 import {
   costInPurchaseDisplayCurrency,
   resolvePurchaseCostDisplayContext,
@@ -8,10 +8,11 @@ import {
 export function profitPerOrderPurchaseDisplay(
   shopPrice: number | null | undefined,
   shopCurrency: string | null | undefined,
-  costCny: number | null | undefined
+  costCny: number | null | undefined,
+  pricingTemplate?: PricingTemplate | null
 ): { amount: number; currency: string } | null {
   if (shopPrice == null || shopPrice <= 0) return null;
-  const ctx = resolvePurchaseCostDisplayContext(shopCurrency);
+  const ctx = resolvePurchaseCostDisplayContext(shopCurrency, pricingTemplate);
   const cost = costInPurchaseDisplayCurrency(costCny, ctx);
   if (cost == null) return null;
   const shopCur = (shopCurrency ?? "").trim().toUpperCase();

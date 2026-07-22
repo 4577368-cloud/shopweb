@@ -28,6 +28,7 @@ export interface BatchLinkCardDrive {
   state: BatchLinkCardState;
   searchResult?: ImageSearchResult | null;
   matchScores?: Record<string, number>;
+  imageScores?: Record<string, number | null>;
   highlightTopCandidate?: boolean;
   selectButtonPhase?: BatchLinkSelectButtonPhase;
   errorMessage?: string;

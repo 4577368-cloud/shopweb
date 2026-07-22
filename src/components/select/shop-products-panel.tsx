@@ -1,10 +1,11 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Clock,
   ExternalLink,
@@ -25,6 +26,7 @@ import {
   useAiFieldEditPhases,
 } from "@/components/ui/edited-field-value";
 import { ImageZoomOverlay } from "@/components/ui/image-zoom-overlay";
+import { ThumbImage } from "@/components/ui/thumb-image";
 import { useOnboarding } from "@/context/onboarding-context";
 import {
   AI_BEFORE_AFTER_MS,
@@ -41,6 +43,7 @@ import type {
   ImageSearchProduct,
   ImageSearchResult,
   OfferDetail,
+  PricingTemplate,
   ShopMirrorProduct,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -76,11 +79,27 @@ import {
   loadVariantReadyIds,
   preflightBatchLinkScope,
 } from "@/lib/batch-link/preflight";
+import { confirmCandidateBinding } from "@/lib/batch-link/confirm-binding";
 import {
-  mergeConfirmedBindingView,
+  candidateStorageKey,
+  formatImageMatchLabel,
+  formatTitleMatchLabel,
+  imageGateBlockedHint,
+  passesImageRecommendGate,
+} from "@/lib/batch-link/image-match";
+import {
+  filterLinkableProducts,
+  SHOP_PRODUCTS_PAGE_SIZE,
+} from "@/lib/batch-link/scope";
+import {
   resolveBoundSourceDisplayTitle,
   snapTitleNeedsItemGetFallback,
 } from "@/lib/batch-link/source-display-title";
+import { backfillProductSourceIdentity } from "@/lib/logistics/resolve-estimate-goods-id";
+import {
+  mergeIdentityIntoBinding,
+  mergeStoredIdentityIntoBinding,
+} from "@/lib/product-source-identity";
 import { useBatchLinkQueue } from "@/hooks/use-batch-link-queue";
 
 export interface AgentIntentRequest {
@@ -107,16 +126,41 @@ function resolveCardMatchScore(
   return null;
 }
 
+function resolveCandidateTitleScore(
+  c: ImageSearchProduct,
+  scores: Record<string, number>
+): number | null {
+  const key = candidateStorageKey(c);
+  return scores[c.productId] ?? scores[key] ?? normalizeMatchScore(c.similarityScore);
+}
+
+function resolveCandidateImageScore(
+  c: ImageSearchProduct,
+  scores: Record<string, number | null>
+): number | null {
+  const key = candidateStorageKey(c);
+  return scores[c.productId] ?? scores[key] ?? null;
+}
+
 function middleMatchHeadline(
   cardState: "matched" | "pending" | "unbound",
   hasCurrent: boolean,
-  score: number | null
+  titleScore: number | null,
+  imageScore: number | null
 ): string {
   if (cardState === "unbound" && !hasCurrent) return "未找到可靠匹配";
   if (cardState === "pending") {
-    return score != null ? `待确认 · 匹配度 ${score}%` : "待确认";
+    if (titleScore != null && imageScore != null) {
+      return `待确认 · 标题 ${titleScore}% · 图像 ${imageScore}%`;
+    }
+    if (titleScore != null) return `待确认 · 标题 ${titleScore}%`;
+    return "待确认";
   }
-  return score != null ? `匹配度 ${score}%` : "已自动匹配";
+  if (titleScore != null && imageScore != null) {
+    return `标题 ${titleScore}% · 图像 ${imageScore}%`;
+  }
+  if (titleScore != null) return `标题 ${titleScore}%`;
+  return "已自动匹配";
 }
 
 /**
@@ -243,9 +287,10 @@ function parsePrice(raw?: string | null): number | null {
 function formatPurchaseCostLabel(
   costCny: number | null,
   shopCurrency: string | null | undefined,
-  fallbackRaw?: string | null
+  fallbackRaw?: string | null,
+  pricingTemplate?: PricingTemplate | null
 ): string {
-  const ctx = resolvePurchaseCostDisplayContext(shopCurrency);
+  const ctx = resolvePurchaseCostDisplayContext(shopCurrency, pricingTemplate);
   const inTarget = costInPurchaseDisplayCurrency(costCny, ctx);
   if (inTarget != null) {
     return `采购价 ${formatPurchaseCostMoney(inTarget, ctx.currency)}`;
@@ -269,14 +314,14 @@ function matchReasons(opts: {
   signals?: string[];
 }): string[] {
   const out: string[] = [];
-  if (opts.imageSource === "ORIGINAL") out.push("按货源原图图搜命中");
-  else if (opts.imageSource === "SHOPIFY") out.push("按商品主图图搜命中");
+  if (opts.imageSource === "ORIGINAL") out.push("按货源原图发起图搜");
+  else if (opts.imageSource === "SHOPIFY") out.push("已用店铺主图图搜");
   else out.push("图搜命中");
   const q = (opts.appliedQuery ?? "").trim();
   if (opts.querySource === "TITLE" && q) out.push(`标题校准「${q}」`);
   else if (opts.querySource === "LLM" && q) out.push(`AI 识图校准「${q}」`);
   if (opts.matchScore != null && opts.matchScore > 0) {
-    out.push(`图像匹配度 ${formatSimilarity(opts.matchScore)}`);
+    out.push(`标题综合分 ${formatSimilarity(opts.matchScore)}`);
   }
   for (const s of opts.signals ?? []) out.push(s);
   return out.slice(0, 4);
@@ -300,7 +345,7 @@ function evidenceTags(opts: {
   }
   const tags: { label: string; tone: "ok" | "warn" | "neutral" }[] = [];
   if (opts.imageSource === "ORIGINAL" || opts.imageSource === "SHOPIFY") {
-    tags.push({ label: "图片相似", tone: "ok" });
+    tags.push({ label: "已用店铺图搜", tone: "ok" });
   } else if (!opts.unbound) {
     tags.push({ label: "图搜命中", tone: "ok" });
   }
@@ -340,6 +385,7 @@ export function ShopProductsPanel({
   onSearchModeConsumed,
   onBatchLinkProgressChange,
   onBatchLinkFinished,
+  onPageLinkableScopeChange,
   onProductFocus,
   onMinisChange,
   onBindingsChange,
@@ -351,6 +397,8 @@ export function ShopProductsPanel({
   onAiFieldEditConsumed,
   linkingLocked = false,
   searchQuery = "",
+  highlighted = false,
+  pricingTemplate = null,
 }: {
   onActivity?: () => void;
   /** Optional controlled filter — lets the page's top CTA jump straight to e.g. 待确认. */
@@ -369,6 +417,13 @@ export function ShopProductsPanel({
   onSearchModeConsumed?: () => void;
   onBatchLinkProgressChange?: (progress: BatchLinkProgress) => void;
   onBatchLinkFinished?: (progress: BatchLinkProgress) => void;
+  /** Current page linkable product ids — for scoped「一键关联」. */
+  onPageLinkableScopeChange?: (scope: {
+    ids: string[];
+    page: number;
+    totalPages: number;
+    pageSize: number;
+  }) => void;
   onProductFocus?: (productId: string) => void;
   onMinisChange?: (minis: {
     pending: ShopProductMini[];
@@ -394,6 +449,10 @@ export function ShopProductsPanel({
   linkingLocked?: boolean;
   /** Search query from parent component */
   searchQuery?: string;
+  /** Highlight filter tabs (for AI action feedback) */
+  highlighted?: boolean;
+  /** Saved pricing template — purchase cost display follows its FX when configured. */
+  pricingTemplate?: PricingTemplate | null;
 }) {
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
@@ -415,6 +474,7 @@ export function ShopProductsPanel({
   // 回显: itemId -> ACTIVE binding. Server is the source of truth; refreshed on load/sync.
   const [bindings, setBindings] = useState<Record<string, ImageBindingView>>({});
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async (opts?: { silent?: boolean }): Promise<ShopMirrorProduct[] | null> => {
     const silent = opts?.silent ?? false;
@@ -430,10 +490,41 @@ export function ShopProductsPanel({
       setProducts(items);
       const map: Record<string, ImageBindingView> = {};
       for (const b of bound) {
-        if (b.thirdPlatformItemId) map[b.thirdPlatformItemId] = b;
+        if (!b.thirdPlatformItemId) continue;
+        map[b.thirdPlatformItemId] = mergeStoredIdentityIntoBinding(
+          shopName,
+          b.thirdPlatformItemId,
+          b
+        );
       }
       setBindings(map);
       onShopProductsChange?.(items, map);
+
+      void (async () => {
+        const productById = new Map(
+          items.map((p) => [p.thirdPlatformItemId, p] as const)
+        );
+        const updates: Record<string, ImageBindingView> = {};
+        for (const [itemId, binding] of Object.entries(map)) {
+          if (!binding.bound || !binding.tangbuyProductId) continue;
+          if (binding.sourceIdentity?.internalGoodsId?.trim()) continue;
+          const product = productById.get(itemId);
+          const identity = await backfillProductSourceIdentity({
+            shopName,
+            thirdPlatformItemId: itemId,
+            tangbuyProductId: binding.tangbuyProductId,
+            tangbuySkuId: binding.tangbuySkuId,
+            detailUrl: binding.detailUrl,
+            titleHint: product?.title ?? binding.offerTitle,
+          });
+          if (identity) {
+            updates[itemId] = mergeIdentityIntoBinding(binding, identity);
+          }
+        }
+        if (Object.keys(updates).length > 0) {
+          setBindings((prev) => ({ ...prev, ...updates }));
+        }
+      })();
       return items;
     } catch (err) {
       if (!silent) setError(readableError(err));
@@ -455,13 +546,22 @@ export function ShopProductsPanel({
     [onActivity]
   );
 
-  const scrollToCard = useCallback(
+  const scrollToBatchLinkProduct = useCallback(
     (productId: string) => {
       onProductFocus?.(productId);
-      const el = document.querySelector(
-        `[data-product-id="${CSS.escape(productId)}"]`
-      );
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      requestAnimationFrame(() => {
+        const el = document.querySelector(
+          `[data-product-id="${CSS.escape(productId)}"]`
+        );
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const topInset = 96;
+        const bottomInset = 48;
+        const inView =
+          rect.top >= topInset && rect.bottom <= window.innerHeight - bottomInset;
+        if (inView) return;
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     },
     [onProductFocus]
   );
@@ -470,7 +570,7 @@ export function ShopProductsPanel({
     useBatchLinkQueue({
       shopName,
       onBound: handleBound,
-      onScrollToProduct: scrollToCard,
+      onScrollToProduct: scrollToBatchLinkProduct,
     });
 
   useEffect(() => {
@@ -491,7 +591,7 @@ export function ShopProductsPanel({
       const pendingSet = pendingNewAnalysisIds ?? new Set<string>();
 
       if (scope.length === 0) {
-        if (source !== "auto") showToast("暂无可关联商品");
+        if (source !== "auto") showToast("当前页暂无可关联商品");
         onBatchLinkFinished?.({ ...INITIAL_BATCH_LINK_PROGRESS, source, done: true });
         return;
       }
@@ -528,7 +628,7 @@ export function ShopProductsPanel({
 
       setFilter("all");
       if (source === "manual") {
-        showToast(`开始为 ${preflight.readyProducts.length} 个商品逐个图搜关联…`);
+        showToast(`开始为当前页 ${preflight.readyProducts.length} 个商品逐个图搜关联…`);
       }
 
       void startBatchLink(preflight.readyProducts, {
@@ -606,6 +706,14 @@ export function ShopProductsPanel({
       unbound: products.length - pending - confirmed,
     };
   }, [products, stateOf, pendingNewAnalysisIds]);
+
+  // Empty pending tab is not useful — return to「全部」after the last ack/unbind.
+  useEffect(() => {
+    if (loading) return;
+    if (filter !== "pending") return;
+    if (counts.pending > 0) return;
+    setFilter("all");
+  }, [loading, filter, counts.pending, setFilter]);
 
   const pendingNewAnalysisKey = useMemo(
     () =>
@@ -704,6 +812,64 @@ export function ShopProductsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- signal edge only
   }, [rematchUnboundSignal]);
 
+  const batchLinkSessionActive =
+    batchLinkProgress.sessionOrder.length > 0 &&
+    (batchLinkProgress.active || batchLinkProgress.done);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, searchQuery]);
+
+  const displayProducts = useMemo(() => {
+    const usePagedBatchSort =
+      batchLinkProgress.active &&
+      filter === "all" &&
+      filtered.length <= SHOP_PRODUCTS_PAGE_SIZE;
+    if (usePagedBatchSort) {
+      return sortProductsForBatchLink(filtered, batchLinkProgress);
+    }
+    if (batchLinkSessionActive && filter === "all" && filtered.length <= SHOP_PRODUCTS_PAGE_SIZE) {
+      return sortProductsForBatchLink(filtered, batchLinkProgress);
+    }
+    return filtered;
+  }, [batchLinkProgress, batchLinkSessionActive, filter, filtered]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(displayProducts.length / SHOP_PRODUCTS_PAGE_SIZE)
+  );
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const paginatedProducts = useMemo(() => {
+    const start = (page - 1) * SHOP_PRODUCTS_PAGE_SIZE;
+    let slice = displayProducts.slice(start, start + SHOP_PRODUCTS_PAGE_SIZE);
+    if (
+      batchLinkSessionActive &&
+      filter === "all" &&
+      displayProducts.length > SHOP_PRODUCTS_PAGE_SIZE
+    ) {
+      slice = sortProductsForBatchLink(slice, batchLinkProgress);
+    }
+    return slice;
+  }, [batchLinkProgress, batchLinkSessionActive, displayProducts, filter, page]);
+
+  const pageLinkableProducts = useMemo(
+    () => filterLinkableProducts(paginatedProducts, bindings),
+    [paginatedProducts, bindings]
+  );
+
+  useEffect(() => {
+    onPageLinkableScopeChange?.({
+      ids: pageLinkableProducts.map((p) => p.thirdPlatformItemId),
+      page,
+      totalPages,
+      pageSize: SHOP_PRODUCTS_PAGE_SIZE,
+    });
+  }, [pageLinkableProducts, page, totalPages, onPageLinkableScopeChange]);
+
   const batchLinkRequestSeen = useRef(0);
   useEffect(() => {
     if (!batchLinkRequest?.signal || batchLinkRequest.signal === batchLinkRequestSeen.current) {
@@ -714,19 +880,10 @@ export function ShopProductsPanel({
       ? products.filter((p) =>
           batchLinkRequest.productIds!.includes(p.thirdPlatformItemId)
         )
-      : products.filter((p) => stateOf(p) === null);
+      : pageLinkableProducts;
     void runBatchLink(scope, batchLinkRequest.source);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- signal edge only
-  }, [batchLinkRequest]);
-
-  const batchLinkSessionActive =
-    batchLinkProgress.sessionOrder.length > 0 &&
-    (batchLinkProgress.active || batchLinkProgress.done);
-
-  const displayProducts = useMemo(() => {
-    if (!batchLinkSessionActive || filter !== "all") return filtered;
-    return sortProductsForBatchLink(filtered, batchLinkProgress);
-  }, [batchLinkProgress, batchLinkSessionActive, filter, filtered]);
+  }, [batchLinkRequest, pageLinkableProducts, products, runBatchLink]);
 
   useEffect(() => {
     if (!onMinisChange) return;
@@ -750,7 +907,7 @@ export function ShopProductsPanel({
     );
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
     onScrollToConsumed?.();
-  }, [scrollToProductId, displayProducts, onScrollToConsumed]);
+  }, [scrollToProductId, paginatedProducts, onScrollToConsumed]);
 
   return (
     <>
@@ -765,9 +922,9 @@ export function ShopProductsPanel({
           ]}
           value={filter}
           onValueChange={(id) => {
-            if (linkingLocked) return;
             setFilter(id as ShopFilter);
           }}
+          highlighted={highlighted}
         />
         <div className="flex items-center gap-2">
           {counts.pending > 0 ? (
@@ -817,20 +974,28 @@ export function ShopProductsPanel({
         />
       ) : (
         <div className="grid grid-cols-1 gap-3">
-          {displayProducts.map((p) => (
+          {paginatedProducts.map((p) => (
             <ShopProductCard
               key={p.id}
               item={p}
               shopName={shopName}
               binding={bindings[p.thirdPlatformItemId] ?? null}
+              pricingTemplate={pricingTemplate}
               isNewArrival={pendingNewAnalysisIds?.has(p.thirdPlatformItemId) ?? false}
               listingPriceEdit={
                 aiFieldEdits?.[
                   aiFieldEditKey(p.thirdPlatformItemId, "listingPrice")
                 ] ?? null
               }
+              titleEdit={
+                aiFieldEdits?.[aiFieldEditKey(p.thirdPlatformItemId, "title")] ??
+                null
+              }
               onListingPriceEditConsumed={() =>
                 onAiFieldEditConsumed?.(p.thirdPlatformItemId, "listingPrice")
+              }
+              onTitleEditConsumed={() =>
+                onAiFieldEditConsumed?.(p.thirdPlatformItemId, "title")
               }
               onBound={handleBound}
               onOpenDetail={() => setDetailItemId(p.thirdPlatformItemId)}
@@ -845,6 +1010,38 @@ export function ShopProductsPanel({
           ))}
         </div>
       )}
+
+      {!loading &&
+      !newArrivalsAwaitingList &&
+      displayProducts.length > SHOP_PRODUCTS_PAGE_SIZE ? (
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1 || linkingLocked}
+            title="上一页"
+            aria-label="上一页"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="min-w-[5.5rem] text-center text-xs text-ink-subtle tabular-nums">
+            第 {page} / {totalPages} 页
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages || linkingLocked}
+            title="下一页"
+            aria-label="下一页"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : null}
 
       <ShopProductDetailDrawer
         open={detailItemId != null}
@@ -874,8 +1071,11 @@ function ShopProductCard({
   isNewArrival = false,
   listingPriceEdit = null,
   onListingPriceEditConsumed,
+  titleEdit = null,
+  onTitleEditConsumed,
   batchLinkDrive = undefined,
   linkingLocked = false,
+  pricingTemplate = null,
 }: {
   item: ShopMirrorProduct;
   shopName: string;
@@ -893,12 +1093,17 @@ function ShopProductCard({
   isNewArrival?: boolean;
   listingPriceEdit?: AiFieldEditRecord | null;
   onListingPriceEditConsumed?: () => void;
+  titleEdit?: AiFieldEditRecord | null;
+  onTitleEditConsumed?: () => void;
   batchLinkDrive?: BatchLinkCardDrive;
   linkingLocked?: boolean;
+  pricingTemplate?: PricingTemplate | null;
 }) {
   const { showToast } = useOnboarding();
   const listingPriceEditPhases = useAiFieldEditPhases(listingPriceEdit);
+  const titleEditPhases = useAiFieldEditPhases(titleEdit, onTitleEditConsumed);
   const listingPriceLabel = resolveListingPriceDisplay(item, listingPriceEdit);
+  const displayTitle = titleEdit?.nextDisplay ?? item.title ?? "(无标题)";
   const hasImage = Boolean(item.primaryImageUrl);
 
   useEffect(() => {
@@ -928,12 +1133,15 @@ function ShopProductCard({
   );
   const [searchPhase, setSearchPhase] = useState<string | null>(null);
   const [matchScores, setMatchScores] = useState<Record<string, number>>({});
+  const [imageScores, setImageScores] = useState<Record<string, number | null>>({});
   const [recommendedIdx, setRecommendedIdx] = useState(0);
   const topCandidateRef = useRef<HTMLDivElement>(null);
+  const prevTrayOpenRef = useRef(false);
 
   useEffect(() => {
     if (!batchLinkDrive) return;
-    const { state, searchResult, matchScores } = batchLinkDrive;
+    const { state, searchResult, matchScores, imageScores: driveImageScores } =
+      batchLinkDrive;
     if (state === "searching" || state === "queued") {
       setSearchError(null);
     }
@@ -950,6 +1158,7 @@ function ShopProductCard({
     ) {
       setResult(searchResult);
       setMatchScores(matchScores ?? {});
+      setImageScores(driveImageScores ?? {});
       setRecommendedIdx(0);
       setCurrentIdx(0);
       setTrayOpen(true);
@@ -999,6 +1208,17 @@ function ShopProductCard({
     binding?.bound && binding.tangbuyProductId ? binding.tangbuyProductId : null;
   // AI 待确认 (PENDING) vs 已确认 (ACTIVE). Legacy rows without a status are treated as confirmed.
   const bindPending = Boolean(binding?.bound) && binding?.bindStatus === "PENDING";
+
+  useEffect(() => {
+    const justOpened = trayOpen && !prevTrayOpenRef.current;
+    prevTrayOpenRef.current = trayOpen;
+    if (!justOpened || !result?.items?.length || !boundOfferId) return;
+    const top = result.items[0];
+    if (top && top.productId !== boundOfferId) {
+      setRecommendedIdx(0);
+      setCurrentIdx(0);
+    }
+  }, [trayOpen, result, boundOfferId]);
   const bindConfirmed = Boolean(binding?.bound) && !bindPending;
   // Published from the Tangbuy catalog → already a 1:1 source link; no matching needed.
   const fromPublish = Boolean(binding?.bound) && binding?.bindSource === "FROM_PUBLISH";
@@ -1119,10 +1339,12 @@ function ShopProductCard({
       if (pipeline.error || !pipeline.result) {
         setResult(null);
         setMatchScores({});
+        setImageScores({});
         setSearchError(pipeline.error ?? imageSearchError(new Error("图搜失败")));
         return;
       }
       setMatchScores(pipeline.matchScores);
+      setImageScores(pipeline.imageScores);
       const ranked = pipeline.rankedItems;
       setRecommendedIdx(0);
       setResult(pipeline.result);
@@ -1130,6 +1352,7 @@ function ShopProductCard({
     } catch (err) {
       setResult(null);
       setMatchScores({});
+      setImageScores({});
       setSearchError(imageSearchError(err));
     } finally {
       window.clearInterval(timer);
@@ -1153,33 +1376,26 @@ function ShopProductCard({
   };
 
   const confirmMatch = async (candidate: ImageSearchProduct) => {
-    if (confirmingId) return;
+    if (confirmingId || !result) return;
+    const wasRebind = Boolean(boundOfferId);
     setConfirmingId(candidate.productId);
     setConfirmError(null);
+    showToast(wasRebind ? "正在改绑货源…" : "正在绑定货源…");
     try {
-      const view = await api.confirmImageMatch({
-        shopName,
-        thirdPlatformItemId: item.thirdPlatformItemId,
-        offerProductId: candidate.productId,
-        offerSkuId: candidate.skuId,
-        detailUrl: candidate.detailUrl,
-        similarityScore: candidate.similarityScore,
-        imageSource: result?.imageSource,
-        querySource: result?.querySource,
-        appliedQuery: result?.appliedQuery,
-        offerImageUrl: candidate.imageUrl,
-        offerPrice: candidate.price,
-        offerTitle: candidate.title?.trim() || null,
+      const merged = await confirmCandidateBinding(shopName, item, candidate, result, {
+        imageScores,
+        titleScores: matchScores,
       });
-      const merged = mergeConfirmedBindingView(view, candidate);
       onBound(item.thirdPlatformItemId, merged);
       if (merged.offerTitle?.trim()) {
         setItemGetTitle(merged.offerTitle.trim());
       }
       setTrayOpen(false);
-      showToast(boundOfferId ? "已改绑货源" : "已绑定货源");
+      showToast(wasRebind ? "已改绑货源" : "已绑定货源");
     } catch (err) {
-      setConfirmError(imageMatchError(err));
+      const msg = imageMatchError(err);
+      setConfirmError(msg);
+      showToast(msg);
     } finally {
       setConfirmingId(null);
     }
@@ -1262,13 +1478,16 @@ function ShopProductCard({
       title: c.title ?? null,
       priceCny: parseGatewayPrice(c.price),
       matchScore:
-        matchScores[c.productId] ?? normalizeMatchScore(c.similarityScore),
+        matchScores[c.productId] ??
+        matchScores[candidateStorageKey(c)] ??
+        normalizeMatchScore(c.similarityScore),
+      imageScore: resolveCandidateImageScore(c, imageScores),
       rank: idx,
       soldCount: c.soldCount,
       repurchaseRate: c.repurchaseRate,
       inventory: c.inventory,
     }));
-  }, [candidates, matchScores]);
+  }, [candidates, matchScores, imageScores]);
 
   const shopPrice = item.minPrice ?? item.maxPrice ?? null;
   const shopCurrency = item.currency;
@@ -1344,7 +1563,7 @@ function ShopProductCard({
     parseGatewayPrice((offerPriceText(offer) ?? "").replace(/¥/g, ""));
 
   const formatOfferCost = (cny: number | null, fallbackRaw?: string | null) =>
-    formatPurchaseCostLabel(cny, shopCurrency, fallbackRaw);
+    formatPurchaseCostLabel(cny, shopCurrency, fallbackRaw, pricingTemplate);
 
   const reco =
     rightMode === "candidate" && current
@@ -1370,7 +1589,8 @@ function ShopProductCard({
     ? profitPerOrderPurchaseDisplay(
         effectiveShopPrice,
         shopCurrency,
-        reco.costCny
+        reco.costCny,
+        pricingTemplate
       )
     : null;
   const previousProfit =
@@ -1380,7 +1600,8 @@ function ShopProductCard({
       ? profitPerOrderPurchaseDisplay(
           listingPriceEdit.previousValue,
           shopCurrency,
-          reco.costCny
+          reco.costCny,
+          pricingTemplate
         )
       : null;
   const boundLoading =
@@ -1436,15 +1657,19 @@ function ShopProductCard({
     return { label: "未匹配", variant: "unbound" as const };
   }, [batchLinkDrive?.state, batchLinking, batchQueued, bindPending, boundOfferId, fromPublish, fromManual, current]);
 
-  const displayScore = resolveCardMatchScore(
+  const displayTitleScore = resolveCardMatchScore(
     binding ?? undefined,
     current,
     matchScores
   );
+  const displayImageScore = current
+    ? resolveCandidateImageScore(current, imageScores)
+    : null;
   const matchHeadline = middleMatchHeadline(
     cardState,
     Boolean(current),
-    displayScore
+    displayTitleScore,
+    displayImageScore
   );
 
   const tags = evidenceTags({
@@ -1454,7 +1679,7 @@ function ShopProductCard({
       rightMode === "candidate" ? result?.imageSource : binding?.imageSource,
     querySource:
       rightMode === "candidate" ? result?.querySource : binding?.querySource,
-    matchScore: displayScore,
+    matchScore: displayTitleScore,
     signals:
       rightMode === "candidate" && current
         ? candidateSignals(current)
@@ -1559,13 +1784,13 @@ function ShopProductCard({
               onClick={(e) => openImageZoom(e, item.primaryImageUrl, item.title ?? "Shopify 商品")}
             >
               {hasImage ? (
-                <Image
+                <ThumbImage
                   src={item.primaryImageUrl!}
                   alt={item.title ?? ""}
                   fill
                   sizes="72px"
+                  pixelWidth={144}
                   className="object-cover"
-                  unoptimized
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
@@ -1574,9 +1799,13 @@ function ShopProductCard({
               )}
             </button>
             <div className="min-w-0 flex-1">
-              <p className="line-clamp-2 text-sm font-semibold leading-snug text-slate-900">
-                {item.title ?? "(无标题)"}
-              </p>
+              <EditedFieldValue
+                edit={titleEdit}
+                phases={titleEditPhases}
+                className="line-clamp-2 text-sm font-semibold leading-snug text-slate-900"
+              >
+                <span>{displayTitle}</span>
+              </EditedFieldValue>
               <EditedFieldValue
                 edit={listingPriceEdit}
                 phases={listingPriceEditPhases}
@@ -1675,13 +1904,13 @@ function ShopProductCard({
                   onClick={(e) => openImageZoom(e, reco.image, reco.title ?? "推荐货源")}
                 >
                   {reco.image ? (
-                    <Image
+                    <ThumbImage
                       src={reco.image}
                       alt={reco.title ?? ""}
                       fill
                       sizes="72px"
+                      pixelWidth={144}
                       className="object-contain"
-                      unoptimized
                       referrerPolicy="no-referrer"
                     />
                   ) : (
@@ -1911,7 +2140,7 @@ function ShopProductCard({
             {(confirmingId || acking || searching) && (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             )}
-            {primaryLabel}
+            {confirmingId ? "处理中…" : primaryLabel}
           </Button>
         ) : null}
       </div>
@@ -1993,15 +2222,19 @@ function ShopProductCard({
             <div className="mt-2.5 flex items-stretch gap-2 overflow-x-auto pb-1">
               {candidates.map((c, idx) => {
                 const signals = candidateSignals(c);
-                const score =
-                  matchScores[c.productId] ??
-                  normalizeMatchScore(c.similarityScore);
+                const titleScore = resolveCandidateTitleScore(c, matchScores);
+                const imageScore = resolveCandidateImageScore(c, imageScores);
+                const imageBlockedHint = imageGateBlockedHint(imageScore);
                 const isCurrent = idx === currentIdx;
-                const isTop = idx === recommendedIdx;
+                const isTop =
+                  idx === recommendedIdx && passesImageRecommendGate(imageScore);
                 const isBoundCand =
                   boundOfferId != null && boundOfferId === c.productId;
                 const costCny = parseGatewayPrice(c.price);
-                const purchaseCtx = resolvePurchaseCostDisplayContext(shopCurrency);
+                const purchaseCtx = resolvePurchaseCostDisplayContext(
+                  shopCurrency,
+                  pricingTemplate
+                );
                 const costTarget = costInPurchaseDisplayCurrency(costCny, purchaseCtx);
                 const costLabel =
                   costTarget != null
@@ -2060,13 +2293,13 @@ function ShopProductCard({
                       }
                     >
                       {c.imageUrl ? (
-                        <Image
+                        <ThumbImage
                           src={c.imageUrl}
                           alt={c.title || c.productId}
                           fill
                           sizes="180px"
+                          pixelWidth={360}
                           className="object-contain"
-                          unoptimized
                           referrerPolicy="no-referrer"
                         />
                       ) : null}
@@ -2094,9 +2327,25 @@ function ShopProductCard({
                       </p>
                     ) : null}
                     <div className="mt-1 flex min-h-[1.25rem] flex-wrap content-start gap-1">
-                      {score != null ? (
-                        <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
-                          匹配 {score}%
+                      {formatTitleMatchLabel(titleScore) ? (
+                        <span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-800">
+                          {formatTitleMatchLabel(titleScore)}
+                        </span>
+                      ) : null}
+                      {formatImageMatchLabel(imageScore) ? (
+                        <span
+                          className={cn(
+                            "rounded-full px-1.5 py-0.5 text-[10px]",
+                            imageBlockedHint
+                              ? "bg-amber-50 text-amber-800"
+                              : "bg-emerald-50 text-emerald-700"
+                          )}
+                        >
+                          {formatImageMatchLabel(imageScore)}
+                        </span>
+                      ) : imageBlockedHint ? (
+                        <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-800">
+                          {imageBlockedHint}
                         </span>
                       ) : null}
                       {signals.slice(0, 1).map((s) => (
@@ -2140,8 +2389,10 @@ function ShopProductCard({
                             void confirmMatch(c);
                           }}
                         >
-                          {isBatchSelectTarget &&
-                          batchLinkDrive?.selectButtonPhase === "loading" ? (
+                          {confirmingId === c.productId ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : isBatchSelectTarget &&
+                            batchLinkDrive?.selectButtonPhase === "loading" ? (
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
                             "选用"

@@ -1,5 +1,18 @@
 import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
 
+export const SHOP_PRODUCTS_PAGE_SIZE = 15;
+
+/** Unbound mirror rows with a primary image. */
+export function filterLinkableProducts(
+  products: ShopMirrorProduct[],
+  bindingsByItemId: Record<string, ImageBindingView>
+): ShopMirrorProduct[] {
+  return products.filter((p) => {
+    const b = bindingsByItemId[p.thirdPlatformItemId];
+    return !b?.bound && Boolean(p.primaryImageUrl?.trim());
+  });
+}
+
 /** Unbound mirror rows with a primary image; new arrivals ordered first. */
 export function buildBatchLinkScope(
   products: ShopMirrorProduct[],

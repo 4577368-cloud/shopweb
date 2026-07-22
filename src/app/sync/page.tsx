@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   CheckCircle2,
   CircleDot,
   Loader2,
   PackageCheck,
   SkipForward,
-  AlertTriangle,
+  X,
 } from "lucide-react";
 import { WorkbenchPageFrame } from "@/components/workbench/workbench-page";
 import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
@@ -19,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SyncKindBadge } from "@/components/ui/status-badge";
 import { mockSyncSummary } from "@/data/mock";
 import { useOnboarding } from "@/context/onboarding-context";
+import { consumeLogisticsSyncExceptionCount } from "@/lib/logistics/sync-handoff";
 import type { AiPanelContent } from "@/lib/types";
 
 export default function SyncPage() {
@@ -30,6 +32,16 @@ export default function SyncPage() {
     isAuthorized,
     skuReadyForNext,
   } = useOnboarding();
+
+  const [logisticsExceptionCount, setLogisticsExceptionCount] = useState<
+    number | null
+  >(null);
+  const [logisticsExceptionDismissed, setLogisticsExceptionDismissed] =
+    useState(false);
+
+  useEffect(() => {
+    setLogisticsExceptionCount(consumeLogisticsSyncExceptionCount());
+  }, []);
 
   const summary = mockSyncSummary;
   const phase =
@@ -52,8 +64,8 @@ export default function SyncPage() {
     }
     if (phase === "blocked") {
       return {
-        title: "前置未完成",
-        summary: "物流配置尚未保存，无法执行同步。请先确认物流偏好。",
+        title: "物流配置未保存",
+        summary: "建议先完成物流确认再同步，也可直接同步已就绪的部分。",
         bullets: [
           skuReadyForNext
             ? "SKU 对齐已达门槛"
@@ -64,7 +76,7 @@ export default function SyncPage() {
         alerts: [
           {
             id: "need-logistics",
-            text: "请先在确认物流页保存方案，再回到本页执行同步。",
+            text: "可点击「仍要同步」跳过物流配置，直接同步已就绪内容。",
           },
         ],
       };
@@ -120,13 +132,21 @@ export default function SyncPage() {
     }
     if (phase === "blocked") {
       return (
-        <Link href="/logistics">
-          <Button>去确认物流</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/logistics">
+            <Button>去确认物流</Button>
+          </Link>
+          <Button
+            variant="secondary"
+            onClick={() => startSync({ force: true })}
+          >
+            仍要同步
+          </Button>
+        </div>
       );
     }
     if (phase === "ready") {
-      return <Button onClick={startSync}>开始同步到店铺</Button>;
+      return <Button onClick={() => startSync()}>开始同步到店铺</Button>;
     }
     if (phase === "syncing") {
       return (
@@ -166,6 +186,26 @@ export default function SyncPage() {
         />
       }
     >
+      {logisticsExceptionCount != null &&
+      !logisticsExceptionDismissed &&
+      (phase === "ready" || phase === "syncing" || phase === "completed") ? (
+        <div className="mb-3 flex items-start gap-2 rounded-[var(--radius-card)] border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-xs text-amber-950">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
+          <p className="min-w-0 flex-1">
+            已带 {logisticsExceptionCount} 项物流例外继续同步
+          </p>
+          <button
+            type="button"
+            onClick={() => setLogisticsExceptionDismissed(true)}
+            className="shrink-0 rounded p-0.5 text-amber-800/70 hover:bg-amber-100 hover:text-amber-950"
+            title="关闭提示"
+            aria-label="关闭提示"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : null}
+
       {phase === "blocked" ? (
         <Card className="mb-3 border-amber-200 bg-amber-50/40">
           <CardContent className="flex items-center gap-4 py-5">
@@ -175,12 +215,12 @@ export default function SyncPage() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-semibold text-slate-900">
-                  前置未完成
+                  物流配置未保存
                 </h2>
                 <Badge variant="warning">待确认</Badge>
               </div>
               <p className="mt-1 text-sm text-slate-600">
-                尚未保存物流配置。请先完成「确认物流」，再回到本页执行同步。
+                尚未保存物流配置。建议先完成「确认物流」再同步；也可直接同步已就绪的部分。
               </p>
               <ul className="mt-2 space-y-1 text-xs text-slate-500">
                 <li>· 物流方案：未保存</li>
@@ -189,6 +229,18 @@ export default function SyncPage() {
                   {skuReadyForNext ? "已达门槛" : "仍有待处理项"}
                 </li>
               </ul>
+              <div className="mt-3 flex items-center gap-2">
+                <Link href="/logistics">
+                  <Button size="sm">去确认物流</Button>
+                </Link>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => startSync({ force: true })}
+                >
+                  仍要同步
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

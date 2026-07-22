@@ -95,3 +95,18 @@ export function countryLabel(code: string): string {
   const c = findCountry(code);
   return c ? `${c.nameZh} (${c.code})` : code;
 }
+
+export function countryMarketLabel(code: string): string {
+  const c = findCountry(code);
+  return c ? `${c.nameZh}市场` : `${code} 市场`;
+}
+
+/** ISO2 → regional indicator flag emoji. */
+export function countryFlagEmoji(code: string): string {
+  const upper = code.trim().toUpperCase();
+  if (upper.length !== 2) return "🌐";
+  const points = [...upper].map(
+    (char) => 0x1f1e6 + char.charCodeAt(0) - 65
+  );
+  return String.fromCodePoint(...points);
+}

@@ -19,22 +19,24 @@ interface SegmentedTabsProps {
    */
   variant?: "solid" | "chip";
   className?: string;
+  highlighted?: boolean;
 }
 
-/**
- * Controlled segmented tabs (Step 3). Two prototype-derived flavours behind one API so the pages don't
- * each reinvent tab styling. Brand is used only for the active state.
- */
 export function SegmentedTabs({
   tabs,
   value,
   onValueChange,
   variant = "solid",
   className,
+  highlighted,
 }: SegmentedTabsProps) {
   if (variant === "chip") {
     return (
-      <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+      <div className={cn(
+        "flex flex-wrap items-center gap-1.5 transition-all duration-500",
+        highlighted && "ring-2 ring-emerald-400/60 rounded-lg bg-emerald-50/50",
+        className
+      )}>
         {tabs.map((tab) => {
           const active = tab.id === value;
           return (
@@ -46,7 +48,8 @@ export function SegmentedTabs({
                 "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
                 active
                   ? "bg-brand-soft text-brand-strong"
-                  : "bg-surface-muted text-ink-muted hover:text-ink"
+                  : "bg-surface-muted text-ink-muted hover:text-ink",
+                highlighted && active && "ring-1 ring-emerald-500/80"
               )}
             >
               <span>{tab.label}</span>
@@ -65,7 +68,8 @@ export function SegmentedTabs({
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1 rounded-[var(--radius-control)] border border-hairline bg-surface-muted p-0.5",
+        "inline-flex items-center gap-1 rounded-[var(--radius-control)] border border-hairline bg-surface-muted p-0.5 transition-all duration-500",
+        highlighted && "ring-2 ring-emerald-400/60",
         className
       )}
     >
@@ -80,7 +84,8 @@ export function SegmentedTabs({
               "relative z-10 inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-xs font-medium transition-colors",
               active
                 ? "bg-brand text-white shadow-card"
-                : "text-ink-muted hover:text-ink"
+                : "text-ink-muted hover:text-ink",
+              highlighted && active && "ring-1 ring-emerald-500/80"
             )}
           >
             <span>{tab.label}</span>

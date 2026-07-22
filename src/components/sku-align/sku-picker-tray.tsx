@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { ThumbImage } from "@/components/ui/thumb-image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ImageOff, Loader2, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,16 +14,19 @@ import {
 } from "@/lib/source-sku-matrix";
 import { cn } from "@/lib/utils";
 import { formatSourceCostInShopCurrency } from "@/lib/purchase-cost-display";
+import type { PricingTemplate } from "@/lib/types";
 
 const MATCH_HINT_THRESHOLD = 0.5;
 
 function formatProcurementPrice(
   price?: number | null,
-  shopCurrency?: string | null
+  shopCurrency?: string | null,
+  pricingTemplate?: PricingTemplate | null
 ): string {
   if (price == null || Number.isNaN(price)) return "—";
   return (
-    formatSourceCostInShopCurrency(price, shopCurrency) ?? `${price.toFixed(2)} CNY`
+    formatSourceCostInShopCurrency(price, shopCurrency, pricingTemplate) ??
+    `${price.toFixed(2)} CNY`
   );
 }
 
@@ -41,13 +44,13 @@ function SkuThumb({
   return (
     <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
       {src ? (
-        <Image
+        <ThumbImage
           src={src}
           alt={alt}
           fill
           sizes="56px"
+          pixelWidth={112}
           className="object-cover"
-          unoptimized
           referrerPolicy="no-referrer"
         />
       ) : (
@@ -75,6 +78,7 @@ export type SkuPickerTrayProps = {
   onBound: () => Promise<void>;
   showToast: (message: string) => void;
   shopCurrency?: string | null;
+  pricingTemplate?: PricingTemplate | null;
 };
 
 /**
@@ -96,6 +100,7 @@ export function SkuPickerTray({
   onBound,
   showToast,
   shopCurrency,
+  pricingTemplate = null,
 }: SkuPickerTrayProps) {
   const [rows, setRows] = useState<SourceSkuRowRanked[]>([]);
   const [loading, setLoading] = useState(false);
@@ -272,7 +277,7 @@ export function SkuPickerTray({
                   </div>
                 ) : null}
                 <p className="mt-1.5 text-xs font-semibold text-ink">
-                  采购价 {formatProcurementPrice(row.procurementPrice, shopCurrency)}
+                  采购价 {formatProcurementPrice(row.procurementPrice, shopCurrency, pricingTemplate)}
                 </p>
                 <p className="mt-0.5 truncate text-[10px] text-ink-subtle">
                   skuId {row.skuId}

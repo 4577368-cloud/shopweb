@@ -202,7 +202,12 @@ export type LogisticsDecisionStatus =
   | "restricted"
   | "needs_review";
 
-export type QuoteStatus = "NOT_REQUESTED" | "PENDING" | "SUCCESS" | "FAILED";
+export type QuoteStatus =
+  | "NOT_REQUESTED"
+  | "PENDING"
+  | "INGESTING"
+  | "SUCCESS"
+  | "FAILED";
 
 export interface LogisticsLine {
   lineCode: string;
@@ -210,6 +215,8 @@ export interface LogisticsLine {
   estimatedFee: number;
   currency: string;
   estimatedDays: number;
+  /** Raw Tangbuy transitTime, e.g. "10-20". */
+  transitTimeLabel?: string;
   carrier: string;
   supportsBattery?: boolean;
   trackingAvailable: boolean;
@@ -238,6 +245,11 @@ export interface VariantLogisticsDecision {
   quoteStatus?: QuoteStatus;
   recommendedLine?: LogisticsLine;
   alternativeLines?: LogisticsLine[];
+  /** Shopify listing price for margin display. */
+  listingPrice?: number | null;
+  listingCurrency?: string | null;
+  /** Tangbuy procurement cost (CNY) from binding snapshot. */
+  procurementCostCny?: number | null;
 }
 
 export type PackagingType = "MINIMAL" | "CARTON";
@@ -501,6 +513,36 @@ export interface ShopProductUpdatePayload {
 // 对应后端 ImageSearchProductVO；price 为网关原始字符串。
 // ---------------------------------------------------------------------------
 
+/** Client-side snapshot of IDs across 1688 offer ↔ Tangbuy 商品库. */
+export type PoolIngestStatus =
+  | "not_needed"
+  | "submitted"
+  | "already_exists"
+  | "resolved"
+  | "pending_resolve"
+  | "failed"
+  | "skipped";
+
+export interface ProductSourceIdentity {
+  offerId1688?: string | null;
+  internalGoodsId?: string | null;
+  catalogItemId?: string | null;
+  tangbuySkuId?: string | null;
+  tangbuyCatalogUrl?: string | null;
+  offerDetailUrl?: string | null;
+  dataSource?: string | null;
+  resolvedVia?:
+    | "catalog_match"
+    | "offer_sku_lookup"
+    | "internal_direct"
+    | "pool_ingest_resolved"
+    | "1688_only"
+    | null;
+  resolvedAt?: string | null;
+  poolIngestStatus?: PoolIngestStatus | null;
+  poolIngestedAt?: string | null;
+}
+
 /** POST /api/plugin/match/image-search 返回的归一化 1688 候选（后端已按相似度降序，前端不重排）。 */
 export interface ImageSearchProduct {
   productId: string;
@@ -520,6 +562,14 @@ export interface ImageSearchProduct {
   minOrderQty?: number | null;
   inventory?: number | null;
   skuId?: string | null;
+  /** true = 来自 Tangbuy 商品库 keyword 搜（productId 为 internal goodsId） */
+  catalogSource?: boolean;
+  internalGoodsId?: string | null;
+  catalogItemId?: string | null;
+  offerId1688?: string | null;
+  tangbuyCatalogUrl?: string | null;
+  dataSource?: string | null;
+  catalogResolvedVia?: string | null;
 }
 
 /** 本次图搜用的图源：原始货源图 / Shopify 转存图（后端决定）。 */
@@ -598,6 +648,8 @@ export interface ImageBindingView {
   offerPrice?: string | null;
   /** 确认时落库的货源标题快照。 */
   offerTitle?: string | null;
+  /** 前端合并：1688 offerId + 商品库 goodsId 等跨 ID 快照（localStorage 回填）。 */
+  sourceIdentity?: ProductSourceIdentity | null;
 }
 
 /** Persisted Shopify order header (GET /api/plugin/order/header/list). */

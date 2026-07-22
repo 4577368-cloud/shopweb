@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Boxes,
@@ -62,6 +62,17 @@ const capabilities: { icon: typeof Database; title: string; desc: string }[] = [
 ];
 
 type Phase = "unbound" | "restoring" | "authorized";
+type ProductSyncState = "idle" | "syncing" | "done" | "error";
+
+/** 已同步商品展示：成功且为 0 → 暂无商品；未拉到数据 → 暂未获取。 */
+function formatSyncedProductLabel(
+  state: ProductSyncState,
+  count: number
+): string {
+  if (state === "syncing") return "同步中…";
+  if (state === "error" || state === "idle") return "暂未获取";
+  return count === 0 ? "暂无商品" : String(count);
+}
 
 function fmtDate(iso?: string | null): string {
   if (!iso) return "";
@@ -88,13 +99,19 @@ export default function AuthorizePage() {
   const [publishedCount, setPublishedCount] = useState<number | null>(null);
   const [editingDomain, setEditingDomain] = useState(false);
   const [savedShop, setSavedShop] = useState<string | null>(null);
+  const [productSyncState, setProductSyncState] =
+    useState<ProductSyncState>("idle");
+  const [mirrorProductCount, setMirrorProductCount] = useState<number | null>(
+    null
+  );
+  const syncAttemptedRef = useRef(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     setSavedShop(window.localStorage.getItem(SHOP_STORAGE_KEY));
   }, [authSessionReady]);
 
-  // Real post-auth stats: 已关联货源 (distinct bound products) + 已刊登 (products published from catalog).
+  // Real post-auth stats: 已关联货源 (distinct bound products) + 已刊登 (catalog publishes still on Shopify).
   const loadStats = useCallback(async (shopName: string) => {
     try {
       const [list, published] = await Promise.all([
@@ -122,27 +139,93 @@ export default function AuthorizePage() {
     void loadStats(shop.name);
   }, [isAuthorized, shop.name, loadStats]);
 
+  const pullProductMirror = useCallback(async () => {
+    const shopName = shop.name;
+    const shopDomain = shop.domain;
+    if (!shopName || !shopDomain) return null;
+
+    setProductSyncState("syncing");
+    try {
+      const synced = await api.syncShopProducts(shopName);
+      const status = await api.getShopStatus(shopDomain);
+      const list = await api.getShopProducts(shopName).catch(() => []);
+      const count = Math.max(
+        synced.productCount ?? 0,
+        status.productCount ?? 0,
+        list.length
+      );
+
+      setMirrorProductCount(count);
+      hydrateAuthorizedShop({
+        name: status.shopName ?? shopName,
+        domain: status.shopDomain ?? shopDomain,
+        authorizedAt:
+          fmtDate(status.authorizedAt) || (shop.authorizedAt ?? ""),
+        productCount: count,
+      });
+      setProductSyncState("done");
+      return count;
+    } catch {
+      setProductSyncState("error");
+      return null;
+    }
+  }, [
+    shop.name,
+    shop.domain,
+    shop.authorizedAt,
+    hydrateAuthorizedShop,
+  ]);
+
+  // After OAuth, backend auth status often lags product mirror — pull once automatically.
+  useEffect(() => {
+    if (!isAuthorized || !shop.name || !shop.domain) return;
+    if (shop.productCount > 0) {
+      setMirrorProductCount(shop.productCount);
+      setProductSyncState("done");
+      return;
+    }
+    if (syncAttemptedRef.current) return;
+    syncAttemptedRef.current = true;
+    void pullProductMirror();
+  }, [isAuthorized, shop.name, shop.domain, shop.productCount, pullProductMirror]);
+
   // Re-check status + bound count so the async post-auth product sync can surface without a reload.
   const refresh = useCallback(async () => {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      const status = await api.getShopStatus(shop.domain);
-      if (status.authorized) {
-        hydrateAuthorizedShop({
-          name: status.shopName ?? shop.name,
-          domain: status.shopDomain ?? shop.domain,
-          authorizedAt: fmtDate(status.authorizedAt) || (shop.authorizedAt ?? ""),
-          productCount: status.productCount ?? 0,
-        });
-        await loadStats(status.shopName ?? shop.name);
+      const pulled = await pullProductMirror();
+      if (pulled == null) {
+        const status = await api.getShopStatus(shop.domain);
+        if (status.authorized) {
+          hydrateAuthorizedShop({
+            name: status.shopName ?? shop.name,
+            domain: status.shopDomain ?? shop.domain,
+            authorizedAt: fmtDate(status.authorizedAt) || (shop.authorizedAt ?? ""),
+            productCount: status.productCount ?? 0,
+          });
+          setMirrorProductCount(status.productCount ?? 0);
+          await loadStats(status.shopName ?? shop.name);
+        }
+        showToast("商品数暂未获取，请稍后重试");
+        return;
       }
+      await loadStats(shop.name);
     } catch {
       showToast("刷新失败，请稍后重试");
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, shop.domain, shop.name, shop.authorizedAt, hydrateAuthorizedShop, loadStats, showToast]);
+  }, [
+    refreshing,
+    shop.domain,
+    shop.name,
+    shop.authorizedAt,
+    hydrateAuthorizedShop,
+    loadStats,
+    pullProductMirror,
+    showToast,
+  ]);
 
   // Fallback connect on the return-landing page: reuse the shared launcher (validate → remember →
   // full-page navigate to the backend install → Shopify consent). No OAuth logic lives here.
@@ -162,14 +245,20 @@ export default function AuthorizePage() {
       : "unbound";
   const trimmedDomain = shopDomainInput.trim();
   const hasPrefilledShop = Boolean(savedShop) && !editingDomain && Boolean(trimmedDomain);
-  const syncing = isAuthorized && shop.productCount === 0;
+  const displayProductCount = mirrorProductCount ?? shop.productCount;
+  const syncing = productSyncState === "syncing";
+  const syncedProductLabel = formatSyncedProductLabel(
+    productSyncState,
+    displayProductCount
+  );
 
   const { copilot, suggestions } = buildAssistant(phase, {
     shopName: shop.name,
     shopDomain: shop.domain,
     authorizedAt: shop.authorizedAt,
-    productCount: shop.productCount,
+    productCount: displayProductCount,
     boundCount,
+    productSyncState,
     canConnect: Boolean(trimmedDomain) && !authorizing,
     onConnect: () => startShopifyInstall(),
   });
@@ -257,10 +346,9 @@ export default function AuthorizePage() {
                   name={shop.name}
                   domain={shop.domain}
                   authorizedAt={shop.authorizedAt}
-                  productCount={shop.productCount}
+                  syncedProductLabel={syncedProductLabel}
                   boundCount={boundCount}
                   publishedCount={publishedCount}
-                  syncing={syncing}
                 />
               ) : phase === "restoring" ? (
                 <RestoringBlock />
@@ -394,24 +482,39 @@ function buildAssistant(
     authorizedAt?: string;
     productCount: number;
     boundCount: number | null;
+    productSyncState: ProductSyncState;
     canConnect: boolean;
     onConnect: () => void;
   }
 ): { copilot: AiPanelContent; suggestions: AssistantSuggestion[] } {
-  const { shopName, shopDomain, authorizedAt, productCount, boundCount, canConnect } = ctx;
+  const {
+    shopName,
+    shopDomain,
+    authorizedAt,
+    productCount,
+    boundCount,
+    productSyncState,
+    canConnect,
+  } = ctx;
 
   if (phase === "authorized") {
     const boundText =
       boundCount != null ? `，其中 ${boundCount} 个已关联 Tangbuy 货源` : "";
+    const syncedSummary =
+      productSyncState === "done"
+        ? productCount === 0
+          ? "Shopify 店铺暂无商品"
+          : `已同步 ${productCount} 个商品`
+        : productSyncState === "syncing"
+          ? "商品同步进行中"
+          : "商品数暂未获取";
     return {
       copilot: {
         title: "接入完成",
-        summary: `已连接 ${shopName}（${shopDomain}）。已同步 ${productCount} 个商品${boundText}。`,
+        summary: `已连接 ${shopName}（${shopDomain}）。${syncedSummary}${boundText}。`,
         bullets: [
           `授权时间：${authorizedAt || "—"}`,
-          productCount === 0
-            ? "商品同步进行中，稍后点「刷新」查看"
-            : `已同步商品：${productCount} 个`,
+          `已同步商品：${formatSyncedProductLabel(productSyncState, productCount)}`,
           boundCount != null ? `已关联货源：${boundCount} 个` : "已关联货源：读取中…",
         ],
         nextAction: { label: "进入智能选品", href: "/products" },
@@ -427,8 +530,8 @@ function buildAssistant(
         },
         {
           id: "count0",
-          q: "商品数为什么可能是 0？",
-          a: "授权后商品在后台异步同步，稍等片刻点「刷新」即可看到最新的已同步商品数。",
+          q: "「暂无商品」和「暂未获取」有什么区别？",
+          a: "「暂无商品」表示已成功拉取且 Shopify 店铺确实没有商品；「暂未获取」表示同步未完成或接口异常，可点刷新重试。",
         },
         {
           id: "bound",
@@ -613,18 +716,16 @@ function ConnectSummary({
   name,
   domain,
   authorizedAt,
-  productCount,
+  syncedProductLabel,
   boundCount,
   publishedCount,
-  syncing,
 }: {
   name: string;
   domain: string;
   authorizedAt?: string;
-  productCount: number;
+  syncedProductLabel: string;
   boundCount: number | null;
   publishedCount: number | null;
-  syncing: boolean;
 }) {
   return (
     <div className="mt-4 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft px-3 py-2">
@@ -632,10 +733,7 @@ function ConnectSummary({
         <SummaryStat label="店铺" value={name} />
         <SummaryStat label="店铺域名" value={domain} />
         <SummaryStat label="授权时间" value={authorizedAt || "—"} />
-        <SummaryStat
-          label="已同步商品"
-          value={syncing ? "同步中…" : String(productCount)}
-        />
+        <SummaryStat label="已同步商品" value={syncedProductLabel} />
         <SummaryStat
           label="已关联货源"
           value={boundCount == null ? "读取中…" : String(boundCount)}

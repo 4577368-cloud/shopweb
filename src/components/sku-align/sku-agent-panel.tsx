@@ -1,0 +1,394 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Send, Loader2 } from "lucide-react";
+import type { AgentSuggestedAction } from "@/lib/agents/types";
+import type { SkuPageContext } from "@/lib/agents/sku-align/plan-command";
+import {
+  type SkuCommandClassifyContext,
+} from "@/lib/agents/sku-align/classify-command";
+import { classifySkuCommandInput } from "@/lib/agents/sku-align/command-client";
+import { getSkuCommandUIConfig } from "@/lib/agents/sku-align/command-ui-config";
+import {
+  planSkuCommand,
+  commandRequiresConfirmation,
+  resolveSkuCommandExecution,
+} from "@/lib/agents/sku-align/plan-command";
+import type { SkuCommandExecution, SkuCommandPlan } from "@/lib/agents/sku-align/command-schema";
+import type { SkillExecutionFeedback } from "@/lib/agents/sku-align/skills";
+import { buildSkuSkillFeedback, skuCommandBelongsToSkill } from "@/lib/agents/sku-align/skills";
+import { readableError } from "@/lib/api";
+import { CommandAgentExecution } from "@/components/workbench/command-agent-execution";
+import { SkillFeedbackCard } from "@/components/workbench/skill-feedback-card";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import type { ConfirmPreviewResult } from "@/components/select/command-confirm-card";
+import type { ExecutionStep, BatchProgress } from "@/components/select/execution-pipeline";
+
+export type SkuPreviewGenerator = (
+  plan: SkuCommandPlan,
+  shopName: string
+) => Promise<ConfirmPreviewResult>;
+
+export type SkuCommandExecutor = (payload: Record<string, unknown>) => Promise<void>;
+
+export interface SkuAgentPanelProps {
+  context: SkuPageContext;
+  shopName: string;
+  onApplySuggestedAction?: (action: AgentSuggestedAction) => void;
+  onFocusProduct?: (productId: string) => void;
+  onSetFilter?: (filter: "all" | "fully_linked" | "partially_linked") => void;
+  previewGenerators?: Record<string, SkuPreviewGenerator>;
+  commandExecutors?: Record<string, SkuCommandExecutor>;
+}
+
+export function SkuAgentPanel({
+  context,
+  shopName,
+  onApplySuggestedAction,
+  onFocusProduct,
+  onSetFilter,
+  previewGenerators = {},
+  commandExecutors = {},
+}: SkuAgentPanelProps) {
+  const [commandPlan, setCommandPlan] = useState<SkuCommandPlan | null>(null);
+  const [commandExecuting, setCommandExecuting] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [input, setInput] = useState("");
+  const [clarify, setClarify] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ConfirmPreviewResult | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [execStep, setExecStep] = useState<ExecutionStep | null>(null);
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
+  const [skillFeedback, setSkillFeedback] = useState<SkillExecutionFeedback | null>(null);
+  const requestSeq = useRef(0);
+  const previewSeq = useRef(0);
+
+  const uiConfig = useMemo(
+    () =>
+      commandPlan ? getSkuCommandUIConfig(commandPlan.draft.intent) : null,
+    [commandPlan]
+  );
+
+  const exampleCommands = useMemo(() => {
+    const examples: string[] = [];
+    const partiallyLinked = context.productCatalog.filter((p) => {
+      const active = p.variants.filter((v) => v.bound?.bindStatus === "ACTIVE").length;
+      const pending = p.variants.filter((v) => v.bound?.bindStatus === "PENDING").length;
+      return pending > 0 || (active > 0 && active < p.variants.length);
+    }).length;
+    if (partiallyLinked > 0) examples.push("批量确认待匹配");
+    examples.push("只看部分关联", "重新对齐", "解释匹配");
+    return examples;
+  }, [context.productCatalog]);
+
+  const classifyContext = useMemo<SkuCommandClassifyContext>(() => ({
+    focusProductTitle: context.focusProduct?.title ?? null,
+    focusProductId: context.focusProductId ?? null,
+    currentFilter: context.currentFilter ?? null,
+    needsReviewCount: context.productCatalog.filter((p) => {
+      const active = p.variants.filter((v) => v.bound?.bindStatus === "ACTIVE").length;
+      const pending = p.variants.filter((v) => v.bound?.bindStatus === "PENDING").length;
+      return pending > 0 || (active > 0 && active < p.variants.length);
+    }).length,
+    fullyLinkedCount: context.productCatalog.filter((p) => {
+      return p.variants.length > 0 && p.variants.every((v) => v.bound?.bindStatus === "ACTIVE");
+    }).length,
+    partiallyLinkedCount: context.productCatalog.filter((p) => {
+      const active = p.variants.filter((v) => v.bound?.bindStatus === "ACTIVE").length;
+      const pending = p.variants.filter((v) => v.bound?.bindStatus === "PENDING").length;
+      return pending > 0 || (active > 0 && active < p.variants.length);
+    }).length,
+  }), [context]);
+
+  const handleSubmit = useCallback(async () => {
+    const text = input.trim();
+    if (!text) return;
+
+    setLoading(true);
+    setClarify(null);
+    setCommandPlan(null);
+    setPreview(null);
+    setSkillFeedback(null);
+    setExecStep(null);
+
+    const seq = ++requestSeq.current;
+
+    try {
+      const classifyResult = await classifySkuCommandInput(text, classifyContext);
+      if (requestSeq.current !== seq) return;
+
+      if (classifyResult.confidence === "high" && classifyResult.draft) {
+        const plan = planSkuCommand(classifyResult.draft, context);
+        setCommandPlan(plan);
+        return;
+      }
+
+      setClarify(classifyResult.clarify ?? "无法理解您的命令，请试试其他说法。");
+    } catch (err) {
+      if (requestSeq.current !== seq) return;
+      setClarify(readableError(err) || "命令处理失败，请稍后重试。");
+    } finally {
+      if (requestSeq.current === seq) {
+        setLoading(false);
+        setInput("");
+      }
+    }
+  }, [input, context, classifyContext]);
+
+  const executeCommand = useCallback(async (plan: SkuCommandPlan) => {
+    const execution = resolveSkuCommandExecution(plan);
+    if (!execution) {
+      setClarify(plan.clarify ?? "无法执行该命令。");
+      return;
+    }
+    setCommandExecuting(true);
+    setCommandPlan(null);
+    setPreview(null);
+    setClarify(null);
+    setSkillFeedback(null);
+    try {
+      await applyCommandExecution(plan, execution);
+      if (skuCommandBelongsToSkill(plan.draft.intent)) {
+        const feedback = buildSkuSkillFeedback(plan, context);
+        if (feedback) setSkillFeedback(feedback);
+      }
+    } catch (err) {
+      setClarify(readableError(err) || "命令执行失败，请稍后重试。");
+    } finally {
+      setCommandExecuting(false);
+    }
+  }, [context]);
+
+  const applyCommandExecution = async (
+    plan: SkuCommandPlan,
+    execution: SkuCommandExecution
+  ) => {
+    const productId = plan.draft.productId ?? plan.draft.params.productId;
+
+    if (execution.type === "set_filter") {
+      onSetFilter?.(execution.filterMode);
+      return;
+    }
+    if (execution.type === "focus_product") {
+      onFocusProduct?.(execution.productId);
+      return;
+    }
+    if (execution.type === "rerun_auto_align") {
+      if (productId) {
+        onFocusProduct?.(productId);
+      }
+      return;
+    }
+  };
+
+  const generatePreview = useCallback(async () => {
+    if (!commandPlan) return;
+    const generator = previewGenerators[commandPlan.draft.intent];
+    if (!generator) {
+      setPreviewError("该命令暂无预览生成器");
+      setPreviewLoading(false);
+      setExecStep("error");
+      return;
+    }
+    const seq = ++previewSeq.current;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreview(null);
+    setExecStep("executing");
+    try {
+      const result = await generator(commandPlan, shopName);
+      if (previewSeq.current !== seq) return;
+      setPreview(result);
+      setExecStep("preview_ready");
+    } catch (err) {
+      if (previewSeq.current !== seq) return;
+      setPreviewError(readableError(err) || "预览生成失败");
+      setExecStep("error");
+    } finally {
+      if (previewSeq.current === seq) setPreviewLoading(false);
+    }
+  }, [commandPlan, previewGenerators, shopName]);
+
+  useEffect(() => {
+    if (!commandPlan) return;
+    if (uiConfig?.requiresPreview || commandRequiresConfirmation(commandPlan)) {
+      void generatePreview();
+    }
+  }, [commandPlan, uiConfig, generatePreview]);
+
+  const handleConfirmWithPreview = useCallback(async (payload: Record<string, unknown>) => {
+    if (!commandPlan) return;
+    const executor = commandExecutors[commandPlan.draft.intent];
+    if (!executor) {
+      setClarify("该命令暂无执行器");
+      setExecStep("error");
+      return;
+    }
+
+    const isBatch = commandPlan.draft.intent === "batch_confirm_pending";
+    const belongsToSkill = skuCommandBelongsToSkill(commandPlan.draft.intent);
+
+    setCommandExecuting(true);
+    setClarify(null);
+    setBatchProgress(null);
+    setSkillFeedback(null);
+
+    if (isBatch) {
+      setExecStep("batch_running");
+    } else {
+      setExecStep("applying");
+    }
+
+    try {
+      const payloadWithProgress = isBatch
+        ? {
+            ...payload,
+            onProgress: (current: number, total: number, success: number, failed: number) => {
+              setBatchProgress({ current, total, success, failed });
+            },
+          }
+        : payload;
+
+      await executor(payloadWithProgress);
+      setExecStep("done");
+
+      if (belongsToSkill) {
+        const feedback = buildSkuSkillFeedback(commandPlan, context, {
+          successCount: isBatch ? batchProgress?.success : undefined,
+          failedCount: isBatch ? batchProgress?.failed : undefined,
+          totalCount: isBatch ? batchProgress?.total : undefined,
+        });
+        if (feedback) setSkillFeedback(feedback);
+      }
+    } catch (err) {
+      setClarify(readableError(err) || "执行失败，请稍后重试。");
+      setExecStep("error");
+    } finally {
+      setCommandExecuting(false);
+    }
+  }, [commandPlan, commandExecutors, context]);
+
+  const handleQuickCommand = useCallback((cmd: string) => {
+    setInput(cmd);
+    void handleSubmit();
+  }, [handleSubmit]);
+
+  const handleNextStep = useCallback(
+    (step: { label: string; kind?: string; filterMode?: string }) => {
+      if (step.kind === "set_shop_filter" && step.filterMode) {
+        onSetFilter?.(step.filterMode as "all" | "fully_linked" | "partially_linked");
+      }
+    },
+    [onSetFilter]
+  );
+
+  return (
+    <section className="space-y-3">
+      <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-xs">
+        <div className="flex flex-wrap gap-1.5">
+          {exampleCommands.map((cmd) => (
+            <button
+              key={cmd}
+              type="button"
+              onClick={() => handleQuickCommand(cmd)}
+              className="rounded-lg border border-hairline px-2 py-1 text-[11px] font-medium text-ink-muted hover:border-brand-soft hover:text-brand transition-colors"
+            >
+              {cmd}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            placeholder="输入命令，如：批量确认待匹配"
+            disabled={loading}
+            className="flex-1 rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-1.5 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft disabled:opacity-50"
+          />
+          <Button
+            size="sm"
+            className="h-8 px-2"
+            onClick={handleSubmit}
+            disabled={loading || !input.trim()}
+          >
+            {loading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Send className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {clarify ? (
+        <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          {clarify}
+        </div>
+      ) : null}
+
+      <CommandAgentExecution
+        commandPlan={commandPlan}
+        uiConfig={uiConfig}
+        requiresConfirmation={
+          commandPlan ? commandRequiresConfirmation(commandPlan) : false
+        }
+        execStep={execStep}
+        preview={preview}
+        previewError={previewError}
+        previewLoading={previewLoading}
+        batchProgress={batchProgress}
+        commandExecuting={commandExecuting}
+        onCancel={() => {
+          setCommandPlan(null);
+          setPreview(null);
+          setExecStep(null);
+          setBatchProgress(null);
+          setSkillFeedback(null);
+        }}
+        onAutoApply={handleConfirmWithPreview}
+        onDirectExecute={() => {
+          if (commandPlan) void executeCommand(commandPlan);
+        }}
+      />
+
+      {execStep === "done" && !skillFeedback ? (
+        <div className="rounded-[var(--radius-card)] border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+          执行完成
+        </div>
+      ) : null}
+
+      {skillFeedback ? (
+        <SkillFeedbackCard feedback={skillFeedback} onNextStep={handleNextStep} />
+      ) : null}
+
+      {!commandPlan && !skillFeedback && !clarify ? (
+        <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-xs">
+          <div className="font-semibold text-ink mb-2">匹配规则说明</div>
+          <ul className="space-y-1.5">
+            <li className="flex gap-2">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
+              <span className="text-ink-muted">商品标题与关键词</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
+              <span className="text-ink-muted">规格（颜色 / 尺寸 / 材质等）</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
+              <span className="text-ink-muted">图片相似度</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
+              <span className="text-ink-muted">类目与属性</span>
+            </li>
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
+}

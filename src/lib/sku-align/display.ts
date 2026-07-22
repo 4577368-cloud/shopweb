@@ -7,7 +7,7 @@ export type SkuVariantDisplayState =
   | "needs_review"
   | "unbound";
 
-export type SkuFilterMode = "issues" | "all" | "done";
+export type SkuFilterMode = "all" | "fully_linked" | "partially_linked";
 
 export const DISPLAY_STATE_LABELS: Record<SkuVariantDisplayState, string> = {
   active_auto: "已自动对齐",
@@ -142,15 +142,24 @@ export function matchesSkuProductSearch(
   return false;
 }
 
+export function isFullyLinked(product: SkuProductOverview): boolean {
+  return isFullyResolved(product);
+}
+
+/** Some variants still unmapped or awaiting review — not fully linked. */
+export function isPartiallyLinked(product: SkuProductOverview): boolean {
+  return product.variants.length > 0 && !isFullyResolved(product);
+}
+
 export function filterProducts(
   products: SkuProductOverview[],
   mode: SkuFilterMode
 ): SkuProductOverview[] {
   switch (mode) {
-    case "issues":
-      return products.filter(hasIssues);
-    case "done":
-      return products.filter(isFullyResolved);
+    case "fully_linked":
+      return products.filter(isFullyLinked);
+    case "partially_linked":
+      return products.filter(isPartiallyLinked);
     default:
       return products;
   }
@@ -160,7 +169,7 @@ export function filterVariants(
   variants: SkuVariant[],
   mode: SkuFilterMode
 ): SkuVariant[] {
-  if (mode === "issues") {
+  if (mode === "partially_linked") {
     return variants.filter((v) => isIssueState(deriveVariantDisplayState(v)));
   }
   return variants;
@@ -170,7 +179,7 @@ export function shouldDefaultExpand(
   product: SkuProductOverview,
   mode: SkuFilterMode
 ): boolean {
-  if (mode === "issues") return true;
+  if (mode === "partially_linked") return true;
   if (mode === "all") return hasIssues(product);
   return false;
 }
@@ -199,6 +208,8 @@ export interface SkuAlignMetrics {
   legacyPending: number;
   issueProductCount: number;
   doneProductCount: number;
+  fullyLinkedProductCount: number;
+  partiallyLinkedProductCount: number;
 }
 
 export function computeSkuAlignMetrics(
@@ -214,10 +225,16 @@ export function computeSkuAlignMetrics(
     legacyPending: 0,
     issueProductCount: 0,
     doneProductCount: 0,
+    fullyLinkedProductCount: 0,
+    partiallyLinkedProductCount: 0,
   };
   for (const p of products) {
     if (hasIssues(p)) m.issueProductCount++;
-    if (isFullyResolved(p)) m.doneProductCount++;
+    if (isFullyResolved(p)) {
+      m.doneProductCount++;
+      m.fullyLinkedProductCount++;
+    }
+    if (isPartiallyLinked(p)) m.partiallyLinkedProductCount++;
     for (const v of p.variants) {
       m.variantCount++;
       const state = deriveVariantDisplayState(v);

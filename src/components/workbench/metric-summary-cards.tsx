@@ -24,15 +24,14 @@ interface MetricSummaryCardsProps {
 }
 
 /**
- * The KPI summary strip used at the top of the work area (prototypes: /sku-align 4 counts,
- * /products 4 metrics). A responsive grid of light cards, each with a big value, a label, an optional
- * hint, and a tinted icon bubble. Presentational only; callers pass already-computed values.
+ * The KPI summary strip used at the top of the work area (prototypes: /sku-align 4 counts).
+ * Compact cards: value + label on one line, optional hint below, tinted icon bubble.
  */
 export function MetricSummaryCards({ items, className }: MetricSummaryCardsProps) {
   return (
     <div
       className={cn(
-        "grid gap-2.5",
+        "grid gap-2",
         items.length >= 4
           ? "grid-cols-2 lg:grid-cols-4"
           : items.length === 3
@@ -44,21 +43,25 @@ export function MetricSummaryCards({ items, className }: MetricSummaryCardsProps
       {items.map((item) => (
         <div
           key={item.label}
-          className="flex items-start justify-between gap-2 rounded-[var(--radius-card)] border border-hairline bg-surface px-3.5 py-3 shadow-card"
+          className="flex items-center justify-between gap-2 rounded-[var(--radius-card)] border border-hairline bg-surface px-3 py-2 shadow-card"
         >
           <div className="min-w-0">
-            <p className="text-2xl font-semibold leading-7 tracking-tight text-ink">
-              {item.value}
+            <p className="flex min-w-0 items-baseline gap-1.5 leading-tight">
+              <span className="shrink-0 text-lg font-semibold tabular-nums tracking-tight text-ink">
+                {item.value}
+              </span>
+              <span className="truncate text-xs text-ink-muted">{item.label}</span>
             </p>
-            <p className="mt-0.5 truncate text-xs text-ink-muted">{item.label}</p>
             {item.hint ? (
-              <p className="mt-0.5 truncate text-[11px] text-ink-subtle">{item.hint}</p>
+              <p className="mt-0.5 truncate text-[11px] leading-snug text-ink-subtle">
+                {item.hint}
+              </p>
             ) : null}
           </div>
           {item.icon ? (
             <span
               className={cn(
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
                 iconToneMap[item.tone ?? "default"]
               )}
             >

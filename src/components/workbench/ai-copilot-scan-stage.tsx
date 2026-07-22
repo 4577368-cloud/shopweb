@@ -268,7 +268,36 @@ export function AiCopilotScanStage({
                 <p className="text-right text-sm text-ink-muted">{briefing}</p>
               ) : null}
             </div>
-            {!done ? (
+            {done ? (
+              <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-4">
+                  <SummaryStat label="店铺商品" value={stats.productCount} />
+                  <SummaryStat
+                    label="推荐匹配"
+                    value={stats.matchedCount}
+                    tone="accent"
+                  />
+                  <SummaryStat
+                    label="待确认"
+                    value={stats.pendingCount}
+                    tone={stats.pendingCount > 0 ? "warn" : "default"}
+                  />
+                  {stats.shopContext.orderCount != null ? (
+                    <SummaryStat
+                      label="待发货订单"
+                      value={unfulfilled ?? 0}
+                      tone={(unfulfilled ?? 0) > 0 ? "warn" : "default"}
+                    />
+                  ) : null}
+                </div>
+                <Button
+                  className="h-11 w-full shrink-0 px-6 lg:w-auto"
+                  onClick={onViewResult}
+                >
+                  查看 AI 推荐结果 →
+                </Button>
+              </div>
+            ) : (
               <div className="mt-3 space-y-1.5">
                 <div className="flex items-baseline justify-between text-xs">
                   <span className="text-ink-muted">总体进度</span>
@@ -285,7 +314,6 @@ export function AiCopilotScanStage({
                     className="h-full rounded-full bg-gradient-to-r from-brand via-emerald-500 to-emerald-400 transition-[width] duration-700 ease-out"
                     style={{ width: `${overallPct}%` }}
                   />
-                  {/* moving sheen */}
                   <div
                     className="absolute inset-y-0 w-16 animate-pulse rounded-full bg-white/30 blur-md"
                     style={{ left: `calc(${overallPct}% - 4rem)` }}
@@ -297,7 +325,7 @@ export function AiCopilotScanStage({
                   </p>
                 ) : null}
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       </section>
@@ -312,49 +340,6 @@ export function AiCopilotScanStage({
           ))}
         </div>
       </section>
-
-      {done ? (
-        <section className="rounded-2xl border border-hairline bg-white p-4 shadow-card sm:p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                  <CheckCircle2 className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-ink">首轮 AI 选品已完成</p>
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <SummaryStat label="店铺商品" value={stats.productCount} />
-                <SummaryStat
-                  label="推荐匹配"
-                  value={stats.matchedCount}
-                  tone="accent"
-                />
-                <SummaryStat
-                  label="待确认"
-                  value={stats.pendingCount}
-                  tone={stats.pendingCount > 0 ? "warn" : "default"}
-                />
-                {stats.shopContext.orderCount != null ? (
-                  <SummaryStat
-                    label="待发货订单"
-                    value={unfulfilled ?? 0}
-                    tone={(unfulfilled ?? 0) > 0 ? "warn" : "default"}
-                  />
-                ) : null}
-              </div>
-            </div>
-            <Button
-              className="h-11 w-full shrink-0 px-6 lg:w-auto"
-              onClick={onViewResult}
-            >
-              查看 AI 推荐结果 →
-            </Button>
-          </div>
-        </section>
-      ) : null}
     </div>
   );
 }

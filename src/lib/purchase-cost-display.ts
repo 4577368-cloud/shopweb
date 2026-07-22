@@ -1,9 +1,12 @@
 /**
  * Purchase-cost display for「我的 Shopify」tab only.
  *
- * Converts CNY procurement cost → shop display currency using default FX.
- * No multiplier, no addend, no listing strategy — cost display only.
+ * Converts CNY procurement cost → shop display currency.
+ * When a non-default pricing template is configured, uses the same FX as listing
+ * pricing (no multiplier, no addend). Otherwise falls back to shop-currency defaults.
  */
+
+import type { PricingTemplate } from "@/lib/types";
 
 /** CNY per 1 unit of display currency (÷ only). Not used for listing sale price. */
 export const DEFAULT_PURCHASE_FX = {
@@ -16,6 +19,8 @@ export const DEFAULT_PURCHASE_CURRENCY_FALLBACK = "USD";
 export interface PurchaseCostDisplayContext {
   currency: string;
   exchangeRate: number;
+  /** True when FX comes from the saved pricing template (not shop default). */
+  fromPricingTemplate: boolean;
 }
 
 export function normalizeCurrencyCode(raw?: string | null): string | null {
@@ -38,13 +43,36 @@ export function resolvePurchaseDisplayFxRate(currency: string): number {
   return DEFAULT_PURCHASE_FX.USD;
 }
 
+export function isEffectivePricingTemplate(
+  template: PricingTemplate | null | undefined
+): template is PricingTemplate {
+  return (
+    template != null &&
+    !template.isDefault &&
+    Number.isFinite(template.exchangeRate) &&
+    template.exchangeRate > 0
+  );
+}
+
 export function resolvePurchaseCostDisplayContext(
-  shopCurrency?: string | null
+  shopCurrency?: string | null,
+  pricingTemplate?: PricingTemplate | null
 ): PurchaseCostDisplayContext {
+  if (isEffectivePricingTemplate(pricingTemplate)) {
+    const currency =
+      normalizeCurrencyCode(pricingTemplate.targetCurrency) ??
+      resolvePurchaseDisplayCurrency(shopCurrency);
+    return {
+      currency,
+      exchangeRate: pricingTemplate.exchangeRate,
+      fromPricingTemplate: true,
+    };
+  }
   const currency = resolvePurchaseDisplayCurrency(shopCurrency);
   return {
     currency,
     exchangeRate: resolvePurchaseDisplayFxRate(currency),
+    fromPricingTemplate: false,
   };
 }
 
@@ -80,9 +108,10 @@ export function formatShopListingPrice(
 /** CNY procurement cost → shop display currency string (no「采购价」prefix). */
 export function formatSourceCostInShopCurrency(
   costCny: number | null | undefined,
-  shopCurrency?: string | null
+  shopCurrency?: string | null,
+  pricingTemplate?: PricingTemplate | null
 ): string | null {
-  const ctx = resolvePurchaseCostDisplayContext(shopCurrency);
+  const ctx = resolvePurchaseCostDisplayContext(shopCurrency, pricingTemplate);
   const inTarget = costInPurchaseDisplayCurrency(costCny, ctx);
   if (inTarget == null) return null;
   return formatPurchaseCostMoney(inTarget, ctx.currency);

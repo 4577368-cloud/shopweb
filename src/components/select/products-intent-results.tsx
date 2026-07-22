@@ -2,10 +2,11 @@
 
 import type { ReactNode } from "react";
 import { useState } from "react";
-import Image from "next/image";
+import { ThumbImage } from "@/components/ui/thumb-image";
 import type { ClientAgentResponse } from "@/lib/agents/runtime/client";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
+import { purchaseDisplayAlignedWithPricing } from "@/lib/agents/products/page-context";
 import type { ShopProductMini } from "@/lib/agents/products/shop-minis";
 import type { AgentSuggestedAction } from "@/lib/agents/types";
 import { Button } from "@/components/ui/button";
@@ -111,6 +112,7 @@ export function StatusFactSummary({
   onCollapse?: () => void;
 }) {
   const p = context.pricing;
+  const purchaseAligned = purchaseDisplayAlignedWithPricing(p, context.purchaseDisplay);
   const pricingLine = p.configured
     ? `${p.targetCurrency ?? "—"} · 汇率 ${p.exchangeRate ?? "—"} · 倍率 ×${p.multiplier ?? "—"}`
     : "未配置";
@@ -140,11 +142,16 @@ export function StatusFactSummary({
       <div className="mt-1.5 space-y-0.5 text-[11px] leading-relaxed text-slate-600">
         <p>
           <span className="text-slate-400">定价</span> {pricingLine}
+          {purchaseAligned ? (
+            <span className="text-slate-500"> · 采购/物流同汇率（不含倍率）</span>
+          ) : null}
         </p>
-        <p>
-          <span className="text-slate-400">采购价展示</span>{" "}
-          {context.purchaseDisplay.summaryLine.replace(/^采购价展示：/, "")}
-        </p>
+        {!purchaseAligned ? (
+          <p>
+            <span className="text-slate-400">采购价展示</span>{" "}
+            {context.purchaseDisplay.summaryLine.replace(/^采购价展示：/, "")}
+          </p>
+        ) : null}
         <p>
           <span className="text-slate-400">已匹配</span>{" "}
           {context.matchedCount} / {context.analyzedCount}
@@ -201,15 +208,14 @@ function FactCell({ label, value }: { label: string; value: string }) {
 function PricingExplainCard({
   context,
   onAction,
-  suppressPrimaryCta,
 }: IntentResultProps) {
   const p = context.pricing;
-  return (
-    <ExecShell
-      title="定价因果链"
-      eyebrow="任务"
-      footer={
-        suppressPrimaryCta ? null : (
+  if (p.configured) {
+    return (
+      <ExecShell
+        title="定价已就绪"
+        eyebrow="已完成"
+        footer={
           <TextLink
             label="查看 / 调整定价"
             onClick={() =>
@@ -219,7 +225,41 @@ function PricingExplainCard({
               })
             }
           />
-        )
+        }
+      >
+        <ol className="space-y-1 text-[11px] text-slate-700">
+          <li>
+            <span className="text-slate-400">1</span> 采购成本（RMB）
+          </li>
+          <li>
+            <span className="text-slate-400">2</span> 汇率 {p.exchangeRate ?? "—"} →{" "}
+            {p.targetCurrency ?? "目标币"}
+          </li>
+          <li>
+            <span className="text-slate-400">3</span> 倍率 ×{p.multiplier ?? "—"}
+            {p.addend ? ` · 加价 +${p.addend}` : ""} → 建议售价
+          </li>
+        </ol>
+        <p className="mt-2 text-[10px] text-slate-500">
+          定价规则已生效，建议售价会按此规则计算。
+        </p>
+      </ExecShell>
+    );
+  }
+  return (
+    <ExecShell
+      title="定价因果链"
+      eyebrow="任务"
+      footer={
+        <TextLink
+          label="打开定价侧栏"
+          onClick={() =>
+            onAction({
+              kind: "open_pricing_drawer",
+              label: "打开定价侧栏",
+            })
+          }
+        />
       }
     >
       <ol className="space-y-1 text-[11px] text-slate-700">
@@ -227,18 +267,10 @@ function PricingExplainCard({
           <span className="text-slate-400">1</span> 采购成本（RMB）
         </li>
         <li>
-          <span className="text-slate-400">2</span>{" "}
-          {p.configured
-            ? `汇率 ${p.exchangeRate ?? "—"} → ${p.targetCurrency ?? "目标币"}`
-            : "定价规则尚未有效配置"}
+          <span className="text-slate-400">2</span> 定价规则尚未有效配置
         </li>
         <li>
-          <span className="text-slate-400">3</span>{" "}
-          {p.configured
-            ? `倍率 ×${p.multiplier ?? "—"}${
-                p.addend ? ` · 加价 +${p.addend}` : ""
-              } → 建议售价`
-            : "配置后才会生成可信建议售价"}
+          <span className="text-slate-400">3</span> 配置后才会生成可信建议售价
         </li>
       </ol>
     </ExecShell>
@@ -293,13 +325,13 @@ function MiniProductRow({
     >
       <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded border border-slate-100 bg-slate-50">
         {item.imageUrl ? (
-          <Image
+          <ThumbImage
             src={item.imageUrl}
             alt=""
             fill
             sizes="32px"
+            pixelWidth={64}
             className="object-cover"
-            unoptimized
           />
         ) : null}
       </div>

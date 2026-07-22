@@ -3,31 +3,57 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { AssistantRail } from "@/components/workbench/assistant-rail";
-import { StickyActionBar } from "@/components/workbench/sticky-action-bar";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeleton";
-import { LogisticsAiPanel } from "@/components/logistics/logistics-ai-panel";
+import { LogisticsAgentPanel } from "@/components/logistics/logistics-agent-panel";
+import { LogisticsTemplateSetupCard } from "@/components/logistics/logistics-template-setup-card";
 import {
   LogisticsDecisionList,
   type LogisticsFocusTarget,
+  type MeasureOverride,
 } from "@/components/logistics/logistics-decision-list";
-import { LogisticsSummaryHeader } from "@/components/logistics/logistics-summary-header";
+import { LogisticsPlanStatusCard } from "@/components/logistics/logistics-plan-status-card";
+import { LogisticsSyncConfirmCard } from "@/components/logistics/logistics-sync-confirm-card";
 import { LogisticsTemplateDrawer } from "@/components/logistics/logistics-template-drawer";
+import { PricingStrategyRailCard } from "@/components/select/pricing-strategy-rail-card";
+import type { LogisticsCommandPlan } from "@/lib/agents/logistics/command-schema";
 import { codesFromSelections } from "@/components/logistics/market-multi-select";
 import { useOnboarding } from "@/context/onboarding-context";
+import { useLogisticsIncrementalPipeline } from "@/hooks/use-logistics-incremental-pipeline";
+import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
 import { api, readableError, type LogisticsAcceptDecisionRequest, type LogisticsEstimateResult } from "@/lib/api";
 import type { LogisticsFilterMode } from "@/lib/logistics/display";
 import {
   buildEstimateParams,
   listTemplateCountryCodes,
+  packagingToIncrementList,
   resolveQuoteMarketCode,
 } from "@/lib/logistics/template-params";
+import { resolveTangbuyCountryId } from "@/lib/logistics/tangbuy-country";
+import {
+  evaluateLogisticsCompletionGate,
+  deriveLogisticsStepSnapshot,
+  type CompletionGateResult,
+} from "@/lib/logistics/completion-gate";
+import { stashLogisticsSyncExceptionCount } from "@/lib/logistics/sync-handoff";
+import {
+  collectProductQuotableVariantIds,
+  computeLogisticsPlanMetrics,
+} from "@/lib/logistics/display";
+import {
+  mergeQuoteResultsIntoAnalysis,
+  readQuoteCache,
+  writeQuoteCache,
+} from "@/lib/logistics/quote-cache";
+import { enrichVariantsWithMeasures } from "@/lib/logistics/variant-measures";
+import { enrichVariantsWithEstimateGoodsIds } from "@/lib/logistics/resolve-estimate-goods-id";
+import { quoteStatusForGoodsBlock } from "@/lib/logistics/estimate-goods-block";
 import type {
   LogisticsAnalysis,
   LogisticsDecisionStatus,
@@ -55,7 +81,7 @@ const DEFAULT_TEMPLATE = (shopName: string): LogisticsTemplate => ({
 
 function LogisticsContent() {
   const router = useRouter();
-  const { shop, isAuthorized, authSessionReady, saveLogistics, showToast, skuReadyForNext } =
+  const { shop, isAuthorized, authSessionReady, saveLogistics, showToast, skuReadyForNext, workflowSku, logisticsCompleted, publishLogisticsStepSnapshot } =
     useOnboarding();
   const shopName = shop.name?.trim() || shop.domain?.trim() || "";
   const wb = useWorkbenchPage("logistics");
@@ -74,18 +100,30 @@ function LogisticsContent() {
     Map<string, LogisticsEstimateResult>
   >(new Map());
   const [quoting, setQuoting] = useState(false);
-  const [quotingVariantId, setQuotingVariantId] = useState<string | null>(null);
+  const [quotingProductId, setQuotingProductId] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [focusTarget, setFocusTarget] = useState<LogisticsFocusTarget | null>(
     null
   );
   const [quoteMarketCode, setQuoteMarketCode] = useState<string | null>(null);
   const [pricingTemplate, setPricingTemplate] = useState<PricingTemplate | null>(null);
+  const [measureOverrides, setMeasureOverrides] = useState<Map<string, MeasureOverride>>(
+    new Map()
+  );
+  const [showSyncConfirm, setShowSyncConfirm] = useState(false);
+
+  const planMetrics = useMemo(
+    () => computeLogisticsPlanMetrics(analysis, quoteResults),
+    [analysis, quoteResults]
+  );
+
+  const hasSavedTemplate = hasSavedLogisticsTemplate(templates);
 
   const templateScopeKey = useMemo(() => {
     if (!activeTemplate) return "";
     return [
       activeTemplate.id,
+      activeTemplate.packaging,
       activeTemplate.speedPreference,
       JSON.stringify(activeTemplate.markets ?? []),
     ].join("|");
@@ -93,8 +131,18 @@ function LogisticsContent() {
 
   useEffect(() => {
     setQuoteMarketCode(resolveQuoteMarketCode(activeTemplate, null));
-    setQuoteResults(new Map());
-  }, [templateScopeKey]);
+    if (!shopName || !templateScopeKey) {
+      setQuoteResults(new Map());
+      return;
+    }
+    const cached = readQuoteCache(shopName, templateScopeKey);
+    setQuoteResults(cached);
+    if (cached.size > 0) {
+      setAnalysis((prev) =>
+        prev ? mergeQuoteResultsIntoAnalysis(prev, cached) : prev
+      );
+    }
+  }, [templateScopeKey, shopName, activeTemplate]);
 
   const load = useCallback(
     async (forceClassify: boolean) => {
@@ -237,50 +285,104 @@ function LogisticsContent() {
   const handleSelectTemplate = (template: LogisticsTemplate) => {
     setActiveTemplate(template);
     setQuoteMarketCode(resolveQuoteMarketCode(template, null));
-    setShowDrawer(false);
   };
 
-  const handleSave = async (goSync = false) => {
+  const handleSave = async (goSync = false, syncExceptionCount?: number) => {
     if (!activeTemplate || saving) return;
     const codes = codesFromSelections(activeTemplate.markets);
     if (codes.length === 0) {
-      showToast("请先配置物流模板并选择销售国家");
+      showToast("先选销售国家");
       return;
     }
-    saveLogistics();
-    if (goSync) router.push("/sync");
+    setSaving(true);
+    try {
+      saveLogistics();
+      if (goSync) {
+        if (syncExceptionCount && syncExceptionCount > 0) {
+          stashLogisticsSyncExceptionCount(syncExceptionCount);
+        }
+        router.push("/sync");
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const collectQuotableVariants = useCallback(() => {
+  const handleSaveAndSync = () => {
+    if (completionGate.tier === "blocked") {
+      showToast(completionGate.blockers[0] ?? "先处理阻塞项");
+      return;
+    }
+    if (completionGate.tier === "confirm") {
+      setShowSyncConfirm(true);
+      return;
+    }
+    void handleSave(true);
+  };
+
+  const collectQuotableVariants = useCallback(
+    (
+      overrides: Map<string, MeasureOverride> = measureOverrides,
+      opts?: { includeExceptions?: boolean }
+    ) => {
+    const incrementList = packagingToIncrementList(activeTemplate?.packaging);
+    const quotableStatuses: VariantLogisticsDecision["decisionStatus"][] =
+      opts?.includeExceptions
+        ? [
+            "ready_for_quote",
+            "confirmed",
+            "needs_review",
+            "restricted",
+            "pending_postal_meta",
+          ]
+        : ["ready_for_quote", "confirmed"];
     const variants: Array<{
       thirdPlatformSkuId: string;
+      thirdPlatformItemId: string;
       tangbuySkuId: string;
       tangbuyGoodsId: string;
+      titleHint?: string;
       incrementList: string[];
       quantity: number;
+      detailUrl?: string;
+      weightG?: number;
+      lengthCm?: number;
+      widthCm?: number;
+      heightCm?: number;
+      postalLimitClass?: string;
       decisionStatus: VariantLogisticsDecision["decisionStatus"];
     }> = [];
     for (const p of analysis?.productProfiles ?? []) {
       for (const v of p.variantDecisions ?? []) {
         if (
-          (v.decisionStatus === "ready_for_quote" ||
-            v.decisionStatus === "confirmed") &&
+          quotableStatuses.includes(v.decisionStatus) &&
           v.tangbuySkuId &&
           v.tangbuyGoodsId
         ) {
+          const override = overrides.get(v.thirdPlatformSkuId);
           variants.push({
             thirdPlatformSkuId: v.thirdPlatformSkuId,
+            thirdPlatformItemId: p.thirdPlatformItemId,
             tangbuySkuId: v.tangbuySkuId,
             tangbuyGoodsId: v.tangbuyGoodsId,
-            incrementList: [],
+            titleHint: p.title ?? undefined,
+            incrementList,
             quantity: 1,
+            detailUrl: p.detailUrl ?? undefined,
+            weightG: override?.weightG ?? v.estimatedWeightG ?? undefined,
+            lengthCm: override?.lengthCm ?? v.estimatedLengthCm ?? undefined,
+            widthCm: override?.widthCm ?? v.estimatedWidthCm ?? undefined,
+            heightCm: override?.heightCm ?? v.estimatedHeightCm ?? undefined,
+            postalLimitClass: v.postalLimitClass ?? undefined,
             decisionStatus: v.decisionStatus,
           });
         }
       }
     }
     return variants;
-  }, [analysis?.productProfiles]);
+  },
+    [activeTemplate?.packaging, analysis?.productProfiles, measureOverrides]
+  );
 
   const collectReadyVariants = useCallback(() => {
     return collectQuotableVariants().filter(
@@ -288,53 +390,137 @@ function LogisticsContent() {
     );
   }, [collectQuotableVariants]);
 
-  const quoteTargetCount = useMemo(
-    () => collectQuotableVariants().length,
-    [collectQuotableVariants]
-  );
-
   const readyAcceptCount = useMemo(
     () => collectReadyVariants().length,
     [collectReadyVariants]
   );
 
   const fetchQuotesForVariants = useCallback(
-    async (variantIds?: string[]) => {
-      const all = collectQuotableVariants();
+    async (
+      variantIds?: string[],
+      overrides?: Map<string, MeasureOverride>,
+      opts?: { includeExceptions?: boolean }
+    ) => {
+      const overrideMap = overrides ?? measureOverrides;
+      const all = collectQuotableVariants(overrideMap, {
+        includeExceptions: opts?.includeExceptions,
+      });
       const targets = variantIds?.length
         ? all.filter((v) => variantIds.includes(v.thirdPlatformSkuId))
         : all;
       if (targets.length === 0) return new Map<string, LogisticsEstimateResult>();
 
-      const params = buildEstimateParams(activeTemplate, quoteMarketCode);
-      if (!params) {
+      const marketCode = resolveQuoteMarketCode(activeTemplate, quoteMarketCode);
+      if (!marketCode) {
         showToast("请先在模板中配置销售市场");
         return null;
       }
+      const countryId = await resolveTangbuyCountryId(marketCode);
+      const params = buildEstimateParams(activeTemplate, quoteMarketCode, countryId);
+      if (!params) {
+        showToast(
+          `未解析到 ${marketCode} 的 Tangbuy countryId，请在 dropshipping 后台试算并从网络请求复制，写入 TANGBUY_COUNTRY_IDS`
+        );
+        return null;
+      }
 
-      const response = await api.estimateLogistics({
-        shopName,
-        countryCode: params.countryCode,
-        countryId: params.countryId,
-        shippingOption: params.shippingOption,
-        packaging: params.packaging,
-        variants: targets.map(
-          ({ decisionStatus: _status, ...variant }) => variant
-        ),
-        needOtherLine: true,
-        needMeasure: true,
+      const payloadVariants = targets.map(
+        ({ decisionStatus: _status, ...variant }) => ({ ...variant })
+      );
+      await enrichVariantsWithMeasures(payloadVariants);
+      const resolvedVariants = await enrichVariantsWithEstimateGoodsIds(
+        payloadVariants,
+        shopName
+      );
+
+      setAnalysis((prev) => {
+        if (!prev) return prev;
+        const bySku = new Map(
+          resolvedVariants.map((v) => [v.thirdPlatformSkuId, v] as const)
+        );
+        return {
+          ...prev,
+          productProfiles: (prev.productProfiles ?? []).map((product) => ({
+            ...product,
+            variantDecisions: (product.variantDecisions ?? []).map((variant) => {
+              const enriched = bySku.get(variant.thirdPlatformSkuId);
+              if (!enriched) return variant;
+              return {
+                ...variant,
+                estimatedWeightG: enriched.weightG ?? variant.estimatedWeightG,
+                estimatedLengthCm: enriched.lengthCm ?? variant.estimatedLengthCm,
+                estimatedWidthCm: enriched.widthCm ?? variant.estimatedWidthCm,
+                estimatedHeightCm: enriched.heightCm ?? variant.estimatedHeightCm,
+                measureSource:
+                  enriched.weightG || enriched.lengthCm
+                    ? "itemGet"
+                    : variant.measureSource,
+              };
+            }),
+          })),
+        };
       });
+
+      const quotableVariants = resolvedVariants.filter((v) => v.estimateGoodsId);
+      const unresolvedVariants = resolvedVariants.filter((v) => v.estimateGoodsError);
       const resultsMap = new Map<string, LogisticsEstimateResult>();
-      for (const r of response.results) {
-        resultsMap.set(r.thirdPlatformSkuId, r);
+
+      for (const unresolved of unresolvedVariants) {
+        const blockReason = unresolved.estimateBlockReason ?? "unresolved_offer";
+        resultsMap.set(unresolved.thirdPlatformSkuId, {
+          thirdPlatformSkuId: unresolved.thirdPlatformSkuId,
+          quoteStatus: quoteStatusForGoodsBlock(blockReason),
+          errorMessage: unresolved.estimateGoodsError,
+        });
+      }
+
+      if (quotableVariants.length > 0) {
+        const response = await api.estimateLogistics({
+          shopName,
+          countryCode: params.countryCode,
+          countryId: params.countryId,
+          shippingOption: params.shippingOption,
+          packaging: params.packaging,
+          quoteCurrency: pricingTemplate?.targetCurrency?.trim().toUpperCase() || "USD",
+          variants: quotableVariants.map(
+            ({
+              estimateGoodsId: _id,
+              estimateGoodsError: _err,
+              titleHint: _title,
+              thirdPlatformItemId: _itemId,
+              sourceIdentity: _identity,
+              ...variant
+            }) => ({
+              ...variant,
+              tangbuyGoodsId: variant.tangbuyGoodsId,
+            })
+          ),
+          needOtherLine: true,
+          needMeasure: quotableVariants.some(
+            (v) =>
+              v.weightG == null ||
+              v.lengthCm == null ||
+              v.widthCm == null ||
+              v.heightCm == null
+          ),
+        });
+        for (const r of response.results) {
+          resultsMap.set(r.thirdPlatformSkuId, r);
+        }
       }
       setQuoteResults((prev) => {
         const next = new Map(prev);
         for (const [skuId, result] of resultsMap) {
           next.set(skuId, result);
         }
+        if (shopName && templateScopeKey) {
+          writeQuoteCache(shopName, templateScopeKey, next);
+        }
         return next;
       });
+      setAnalysis((prev) =>
+        prev ? mergeQuoteResultsIntoAnalysis(prev, resultsMap) : prev
+      );
 
       const confirmedQuotes: NonNullable<
         LogisticsAcceptDecisionRequest["quotes"]
@@ -365,46 +551,198 @@ function LogisticsContent() {
       quoteMarketCode,
       shopName,
       showToast,
+      templateScopeKey,
+      measureOverrides,
+      pricingTemplate,
     ]
   );
+
+  const fetchQuotesForPipeline = useCallback(
+    (variantIds?: string[]) =>
+      fetchQuotesForVariants(variantIds, measureOverrides, {
+        includeExceptions: true,
+      }),
+    [fetchQuotesForVariants, measureOverrides]
+  );
+
+  const pipeline = useLogisticsIncrementalPipeline({
+    shopName,
+    analysis,
+    templateScopeKey,
+    quoteResults,
+    fetchQuotesForVariants: fetchQuotesForPipeline,
+    acceptDecision: api.acceptLogisticsDecision,
+    setAnalysis,
+    showToast,
+  });
+
+  const completionGate = useMemo(
+    () =>
+      evaluateLogisticsCompletionGate({
+        hasSavedTemplate,
+        pipelineActive: pipeline.pipelineRunning,
+        analysis,
+        quoteResults,
+        templateMarketsConfigured: Boolean(
+          activeTemplate && codesFromSelections(activeTemplate.markets).length > 0
+        ),
+      }),
+    [
+      hasSavedTemplate,
+      pipeline.pipelineRunning,
+      analysis,
+      quoteResults,
+      activeTemplate,
+    ]
+  );
+
+  const skuBindingGap = useMemo(() => {
+    if (workflowSku) {
+      return {
+        products: workflowSku.issueProductCount,
+        skus: workflowSku.needsReview + workflowSku.unbound,
+      };
+    }
+    let products = 0;
+    let skus = 0;
+    for (const product of analysis?.productProfiles ?? []) {
+      const pending = (product.variantDecisions ?? []).filter(
+        (v) => v.decisionStatus === "pending_sku"
+      );
+      if (pending.length > 0) {
+        products += 1;
+        skus += pending.length;
+      }
+    }
+    return { products, skus };
+  }, [workflowSku, analysis]);
+
+  useEffect(() => {
+    if (!isAuthorized) {
+      publishLogisticsStepSnapshot(null);
+      return;
+    }
+    publishLogisticsStepSnapshot(
+      deriveLogisticsStepSnapshot({
+        skuReady: skuReadyForNext,
+        pipelineActive: pipeline.pipelineActive,
+        gate: completionGate,
+        logisticsCompleted,
+      })
+    );
+  }, [
+    isAuthorized,
+    skuReadyForNext,
+    pipeline.pipelineActive,
+    completionGate,
+    logisticsCompleted,
+    publishLogisticsStepSnapshot,
+  ]);
+
+  const handleStartEstimate = useCallback(() => {
+    pipeline.resetScopeRun();
+    void pipeline.runIncrementalPipeline({ force: true });
+  }, [pipeline.resetScopeRun, pipeline.runIncrementalPipeline]);
+
+  const handleRetryPipeline = useCallback(() => {
+    handleStartEstimate();
+  }, [handleStartEstimate]);
+
+  const handleFetchQuoteForVariant = (
+    variant: VariantLogisticsDecision,
+    override?: MeasureOverride
+  ) => {
+    if (override) {
+      setMeasureOverrides((prev) => {
+        const next = new Map(prev);
+        next.set(variant.thirdPlatformSkuId, override);
+        return next;
+      });
+      setAnalysis((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          productProfiles: prev.productProfiles.map((product) => ({
+            ...product,
+            variantDecisions: (product.variantDecisions ?? []).map((v) =>
+              v.thirdPlatformSkuId === variant.thirdPlatformSkuId
+                ? {
+                    ...v,
+                    estimatedWeightG: override.weightG ?? v.estimatedWeightG,
+                    estimatedLengthCm: override.lengthCm ?? v.estimatedLengthCm,
+                    estimatedWidthCm: override.widthCm ?? v.estimatedWidthCm,
+                    estimatedHeightCm: override.heightCm ?? v.estimatedHeightCm,
+                    measureSource:
+                      override.weightG || override.lengthCm ? "manual" : v.measureSource,
+                  }
+                : v
+            ),
+          })),
+        };
+      });
+    }
+    void handleFetchQuotes([variant.thirdPlatformSkuId], override);
+  };
+
+  const handleFetchQuotesForProduct = (
+    _productId: string,
+    variants: VariantLogisticsDecision[]
+  ) => {
+    const ids = collectProductQuotableVariantIds(
+      variants,
+      quoteResults,
+      pipeline.pipelineRunning
+    );
+    if (ids.length === 0) {
+      showToast("本商品没有可拉取报价的 SKU");
+      return;
+    }
+    setQuotingProductId(_productId);
+    void handleFetchQuotes(ids).finally(() => setQuotingProductId(null));
+  };
 
   const fetchQuotesForReady = useCallback(async () => {
     const readyIds = collectReadyVariants().map((v) => v.thirdPlatformSkuId);
     return fetchQuotesForVariants(readyIds);
   }, [collectReadyVariants, fetchQuotesForVariants]);
 
-  const handleFetchQuotes = async (variantIds?: string[]) => {
+  const handleFetchQuotes = async (
+    variantIds?: string[],
+    singleOverride?: MeasureOverride
+  ) => {
+    const overrideMap =
+      singleOverride && variantIds?.length === 1
+        ? new Map([[variantIds[0]!, singleOverride]])
+        : measureOverrides;
     const targets = variantIds?.length
-      ? collectQuotableVariants().filter((v) =>
+      ? collectQuotableVariants(overrideMap).filter((v) =>
           variantIds.includes(v.thirdPlatformSkuId)
         )
-      : collectQuotableVariants();
+      : collectQuotableVariants(overrideMap);
     if (quoting || targets.length === 0) {
       if (targets.length === 0) showToast("没有可拉取线路的规格");
       return;
     }
 
     setQuoting(true);
-    if (variantIds?.length === 1) {
-      setQuotingVariantId(variantIds[0] ?? null);
-    }
     try {
-      const resultsMap = await fetchQuotesForVariants(variantIds);
+      const resultsMap = await fetchQuotesForVariants(variantIds, overrideMap);
       if (!resultsMap) return;
       const params = buildEstimateParams(activeTemplate, quoteMarketCode);
       const withLine = [...resultsMap.values()].filter((r) => r.recommendedLine)
         .length;
+      const firstError = [...resultsMap.values()].find((r) => r.errorMessage)?.errorMessage;
       showToast(
         withLine > 0
           ? `已拉取 ${withLine}/${resultsMap.size} 条线路（${params?.countryCode ?? ""} · 时效${params?.shippingOption ?? ""}）`
-          : `已请求 ${resultsMap.size} 条报价，但未返回可用线路`
+          : firstError ||
+              `已请求 ${resultsMap.size} 条报价，但 Tangbuy 未返回可用线路（${params?.countryCode ?? ""}）`
       );
       setFilterMode("all");
     } catch (err) {
       showToast(readableError(err));
     } finally {
       setQuoting(false);
-      setQuotingVariantId(null);
     }
   };
 
@@ -487,7 +825,15 @@ function LogisticsContent() {
       );
       if (quotable.length === 0) {
         setFilterMode("all");
-        showToast("未获取到可用线路报价，请检查模板市场或稍后重试「拉取可报价线路」");
+        const resultList = [...results.values()];
+        const ingesting = resultList.some((r) => r.quoteStatus === "INGESTING");
+        const firstError = resultList.find((r) => r.errorMessage)?.errorMessage;
+        showToast(
+          ingesting
+            ? "商品正在同步 Tangbuy 商品库，请稍后再拉取物流报价"
+            : firstError ||
+                "未获取到可用线路报价，请检查模板市场或稍后重试「拉取可报价线路」"
+        );
         return;
       }
 
@@ -530,11 +876,52 @@ function LogisticsContent() {
     setFocusTarget({ status });
   };
 
+  const logisticsPreviewGenerators = useMemo(
+    () => ({
+      accept_all_ready: async (_plan: LogisticsCommandPlan) => {
+        const total = readyAcceptCount;
+        if (total === 0) {
+          throw new Error("没有可确认的可报价项");
+        }
+        return {
+          sections: [
+            {
+              title: `批量确认 · ${total} 个可报价 SKU`,
+              rows: [
+                {
+                  label: "物流决策",
+                  before: "待确认",
+                  after: "接受 AI 推荐线路",
+                },
+              ],
+            },
+          ],
+          impact: {
+            scope: `${total} 个 SKU 物流方案`,
+            durationHint: `约 ${Math.max(5, total * 2)} 秒`,
+            reversible: false,
+          },
+          payload: { totalCount: total },
+        };
+      },
+    }),
+    [readyAcceptCount]
+  );
+
+  const logisticsCommandExecutors = useMemo(
+    () => ({
+      accept_all_ready: async () => {
+        await handleAcceptAllReady();
+      },
+    }),
+    [handleAcceptAllReady]
+  );
+
   if (!authSessionReady) {
     return (
       <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
         <WorkbenchPanel
-          title="物流选择"
+          title="AI 物流方案"
           breadcrumbs={BREADCRUMBS}
           {...wb.panelProps}
         >
@@ -564,7 +951,7 @@ function LogisticsContent() {
         {...wb.shellProps}
       >
         <WorkbenchPanel
-          title="物流选择"
+          title="AI 物流方案"
           breadcrumbs={BREADCRUMBS}
           {...wb.panelProps}
         >
@@ -588,19 +975,44 @@ function LogisticsContent() {
       rail={
         <AssistantRail
           assistantContent={
-            <LogisticsAiPanel
+            <LogisticsAgentPanel
+              analysis={analysis}
+              activeTemplate={activeTemplate}
               decisionStatusCounts={analysis?.decisionStatusCounts}
               highRiskTypes={analysis?.highRiskTypes}
               skuReadyForNext={skuReadyForNext}
-              quoting={quoting}
+              quoting={quoting || pipeline.pipelineActive}
               accepting={accepting}
-              saving={saving}
-              quoteTargetCount={quoteTargetCount}
               readyAcceptCount={readyAcceptCount}
+              pendingCount={planMetrics.pendingCount}
+              confirmedCount={analysis?.decisionStatusCounts?.confirmed ?? 0}
               onFocusStatus={handleFocusStatus}
               onAcceptAllReady={() => void handleAcceptAllReady()}
               onFetchQuotes={() => void handleFetchQuotes()}
-              onSaveSync={() => void handleSave(true)}
+              onOpenTemplate={() => setShowDrawer(true)}
+              pipelineProgress={pipeline.progress}
+              pipelineActive={pipeline.pipelineActive}
+              pendingReviewCount={planMetrics.pendingCount}
+              onRetryPipeline={handleRetryPipeline}
+              onCancelPipeline={pipeline.cancelPipeline}
+              previewGenerators={logisticsPreviewGenerators}
+              commandExecutors={logisticsCommandExecutors}
+              planMetrics={planMetrics}
+              completionGate={completionGate}
+              pipelineRunning={pipeline.pipelineRunning}
+              saving={saving}
+              skuBindingGap={skuBindingGap}
+              onStartEstimate={handleStartEstimate}
+              onSaveAndSync={handleSaveAndSync}
+              onViewUnidentified={() => setFilterMode("unidentified")}
+              onViewIssues={() => setFilterMode("issues")}
+            />
+          }
+          strategyCards={
+            <PricingStrategyRailCard
+              template={pricingTemplate}
+              analysisReady={Boolean(analysis)}
+              onConfigure={() => router.push("/products")}
             />
           }
         />
@@ -608,58 +1020,71 @@ function LogisticsContent() {
       {...wb.shellProps}
     >
       <WorkbenchPanel
-        title="物流选择"
+        title="AI 物流方案"
         breadcrumbs={BREADCRUMBS}
         {...wb.panelProps}
-        footer={
-          <StickyActionBar
-            info={
-              analysis
-                ? `基于 ${analysis.analyzedCount} 个已关联商品`
-                : "物流决策工作台"
-            }
-          >
+        actions={
+          hasSavedTemplate && analysis ? (
             <Button
-              variant="secondary"
-              onClick={() => router.push("/sku-align")}
+              size="sm"
+              onClick={handleStartEstimate}
+              disabled={
+                loading ||
+                pipeline.pipelineRunning ||
+                planMetrics.autoReadyCount === 0
+              }
+              title={
+                planMetrics.autoReadyCount > 0
+                  ? `批量拉取 ${planMetrics.autoReadyCount} 个待报价 SKU 的线路`
+                  : "当前没有待报价 SKU"
+              }
             >
-              返回 SKU 对齐
+              {pipeline.pipelineRunning ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
+              {pipeline.pipelineRunning
+                ? "预估中…"
+                : planMetrics.autoReadyCount > 0
+                  ? `一键预估 (${planMetrics.autoReadyCount})`
+                  : "一键预估"}
             </Button>
-            <Button onClick={() => void handleSave(true)} disabled={saving}>
-              {saving ? "保存中…" : "保存并进入同步"}
-              <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-            </Button>
-          </StickyActionBar>
+          ) : null
         }
       >
-        <div className="space-y-3">
-          <LogisticsSummaryHeader
-            analysis={analysis}
-            templates={templates}
-            activeTemplate={activeTemplate}
-            filterMode={filterMode}
-            onFilterModeChange={setFilterMode}
-            onSelectTemplate={setActiveTemplate}
-            onAddTemplate={() => {
-              setActiveTemplate(null);
-              setShowDrawer(true);
-            }}
-            onOpenTemplateConfig={() => setShowDrawer(true)}
-            onReclassify={() => void load(true)}
-            reclassifying={loading || classifying}
-            quoteMarketCode={quoteMarketCode}
-            onQuoteMarketChange={(code) => {
-              if (listTemplateCountryCodes(activeTemplate).includes(code)) {
-                setQuoteMarketCode(code);
-                setQuoteResults(new Map());
-              }
-            }}
-          />
+        <div className="space-y-4">
+          {!hasSavedTemplate && !loading ? (
+            <LogisticsTemplateSetupCard onOpenTemplate={() => setShowDrawer(true)} />
+          ) : null}
+
+          {hasSavedTemplate && analysis ? (
+            <LogisticsPlanStatusCard
+              analysis={analysis}
+              activeTemplate={activeTemplate}
+              filterMode={filterMode}
+              onFilterModeChange={setFilterMode}
+              quoteMarketCode={quoteMarketCode}
+              onOpenStrategy={() => setShowDrawer(true)}
+              pipelineProgress={pipeline.progress}
+              quoteResults={quoteResults}
+            />
+          ) : null}
+
+          {showSyncConfirm ? (
+            <LogisticsSyncConfirmCard
+              gate={completionGate}
+              saving={saving}
+              onConfirm={() => {
+                setShowSyncConfirm(false);
+                void handleSave(true, completionGate.exceptionCount);
+              }}
+              onCancel={() => setShowSyncConfirm(false)}
+            />
+          ) : null}
 
           {loading && !analysis ? (
             <div className="flex items-center gap-2 py-12 text-sm text-ink-subtle">
               <Loader2 className="h-4 w-4 animate-spin" />
-              正在生成物流决策…
+              正在生成 AI 物流方案…
             </div>
           ) : error && !analysis ? (
             <div className="rounded-[var(--radius-card)] border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
@@ -673,20 +1098,32 @@ function LogisticsContent() {
                 重试
               </Button>
             </div>
-          ) : analysis ? (
+          ) : hasSavedTemplate && analysis ? (
             <LogisticsDecisionList
               analysis={analysis}
               filterMode={filterMode}
               quoteResults={quoteResults}
+              activeTemplate={activeTemplate}
               correctingId={correctingId}
               focusTarget={focusTarget}
               onCorrect={(id, type) => void handleCorrect(id, type)}
               onAcceptAi={(v, pid) => void handleAcceptAi(v, pid)}
-              onFetchQuote={(v) => void handleFetchQuotes([v.thirdPlatformSkuId])}
+              onFetchProductQuotes={(productId, variants) =>
+                handleFetchQuotesForProduct(productId, variants)
+              }
+              onMeasureOverride={(variantId, next) => {
+                setMeasureOverrides((prev) => {
+                  const map = new Map(prev);
+                  map.set(variantId, next);
+                  return map;
+                });
+              }}
               accepting={accepting}
-              quotingVariantId={quotingVariantId}
+              quotingProductId={quotingProductId}
               onClearFocus={() => setFocusTarget(null)}
               pricing={pricingTemplate}
+              pipelineActive={pipeline.pipelineActive}
+              pipelineProgress={pipeline.progress}
             />
           ) : null}
         </div>

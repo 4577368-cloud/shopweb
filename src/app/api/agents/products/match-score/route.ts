@@ -12,7 +12,7 @@ interface CandidateIn {
 
 /**
  * POST /api/agents/products/match-score
- * When image-search similarity is missing, ask the model for 0–100 visual/product match scores.
+ * When image-search similarity is missing, ask the model for title-only match scores.
  * Does not invent catalog data — only scores given candidates.
  */
 export async function POST(request: Request) {
@@ -55,11 +55,11 @@ export async function POST(request: Request) {
       messages: [
         {
           role: "system",
-          content: `你是跨境选品匹配评分器。根据店铺商品与候选货源的标题/图片 URL，给出 0–100 的视觉与商品相似度分数。
+          content: `你是跨境选品匹配评分器。仅根据店铺商品标题与候选货源标题的文本相似度打分（品类/款式/材质/关键词），不要猜测图片内容。
 规则：
 1. 只输出 JSON：{"scores":{"<productId>": <number>}}
 2. 每个 productId 必须来自输入列表，不得编造 id
-3. 分数为整数 1–100；明显同款偏高，无关偏低
+3. 分数为整数 1–100；标题明显同款偏高，无关偏低
 4. 不要输出其它键或解释`,
         },
         {

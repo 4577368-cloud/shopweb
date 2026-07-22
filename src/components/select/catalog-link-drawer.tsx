@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { ThumbImage } from "@/components/ui/thumb-image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ImageOff, Loader2, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,9 @@ import { Field, Input } from "@/components/ui/input";
 import { api, readableError } from "@/lib/api";
 import {
   buildManualMatchConfirmRequest,
+  finalizeManualMatchBinding,
   loadManualMatchProduct,
   resolveCatalogProductUrl,
-  withManualMatchBindingMeta,
 } from "@/lib/manual-image-match";
 import { mapItemGetToSourceSkuMatrix } from "@/lib/source-sku-matrix";
 import type { CatalogRecommendation, ImageBindingView, ShopMirrorProduct } from "@/lib/types";
@@ -194,7 +194,7 @@ export function CatalogLinkDrawer({
         selectedSkuId,
       });
       const view = await api.confirmImageMatch(req);
-      withManualMatchBindingMeta(view, req.offerTitle);
+      await finalizeManualMatchBinding(shopName, selectedItemId, view, req);
       showToast("已关联货源");
       onLinked?.(selectedItemId);
       onClose();
@@ -254,12 +254,13 @@ export function CatalogLinkDrawer({
               <div className="flex gap-3 rounded-[var(--radius-control)] border border-hairline bg-surface-muted/40 p-3">
                 <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
                   {sourceHero ? (
-                    <Image
+                    <ThumbImage
                       src={sourceHero}
                       alt={sourceTitle}
                       fill
+                      sizes="64px"
+                      pixelWidth={128}
                       className="object-cover"
-                      unoptimized
                       referrerPolicy="no-referrer"
                     />
                   ) : (
@@ -343,13 +344,13 @@ export function CatalogLinkDrawer({
                         >
                           <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded border border-hairline bg-surface-muted">
                             {product.primaryImageUrl ? (
-                              <Image
+                              <ThumbImage
                                 src={product.primaryImageUrl}
                                 alt={product.title ?? ""}
                                 fill
                                 sizes="44px"
+                                pixelWidth={88}
                                 className="object-cover"
-                                unoptimized
                               />
                             ) : (
                               <div className="flex h-full items-center justify-center text-[9px] text-ink-subtle">

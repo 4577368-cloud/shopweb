@@ -51,12 +51,15 @@ export function LogisticsTemplateDrawer({
 }) {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<LogisticsTemplate>>({});
+  /** null = creating a new template; string = editing an existing one */
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeTemplate) {
       setFormData(activeTemplate);
+      setEditingId(activeTemplate.id ?? null);
       const countryCodes = codesFromSelections(activeTemplate.markets);
       if (countryCodes.length > 0) {
         const firstCode = countryCodes[0];
@@ -141,12 +144,13 @@ export function LogisticsTemplateDrawer({
 
       const saved = await onSave(
         upsertData,
-        activeTemplate?.id &&
-          activeTemplate.id !== "default" &&
-          templates.some((t) => t.id === activeTemplate.id)
-          ? activeTemplate.id
+        editingId &&
+          editingId !== "default" &&
+          templates.some((t) => t.id === editingId)
+          ? editingId
           : undefined
       );
+      setEditingId(saved.id);
       onSelect(saved);
     } catch (err) {
       setError((err as Error).message);
@@ -156,13 +160,16 @@ export function LogisticsTemplateDrawer({
   };
 
   const handleDelete = async () => {
-    if (!activeTemplate) return;
-    if (!confirm(`确定删除模板 "${activeTemplate.name}" 吗？`)) return;
+    if (!editingId) return;
+    const target = templates.find((t) => t.id === editingId);
+    if (!target) return;
+    if (!confirm(`确定删除模板 "${target.name}" 吗？`)) return;
 
     try {
-      await onDelete(activeTemplate.id);
-      if (templates.length > 1) {
-        onSelect(templates[0]);
+      await onDelete(editingId);
+      const remaining = templates.filter((t) => t.id !== editingId);
+      if (remaining.length > 0) {
+        onSelect(remaining[0]);
       } else {
         onClose();
       }
@@ -172,6 +179,7 @@ export function LogisticsTemplateDrawer({
   };
 
   const handleNewTemplate = () => {
+    setEditingId(null);
     setFormData({
       shopName,
       packaging: "MINIMAL",
@@ -202,13 +210,22 @@ export function LogisticsTemplateDrawer({
           <div className="flex items-center gap-2">
             {templates.length > 0 ? (
               <select
-                value={activeTemplate?.id ?? ""}
+                value={editingId ?? ""}
                 onChange={(e) => {
-                  const selected = templates.find((t) => t.id === e.target.value);
-                  if (selected) onSelect(selected);
+                  const nextId = e.target.value;
+                  if (!nextId) {
+                    handleNewTemplate();
+                    return;
+                  }
+                  const selected = templates.find((t) => t.id === nextId);
+                  if (selected) {
+                    setEditingId(selected.id);
+                    onSelect(selected);
+                  }
                 }}
                 className="rounded-[var(--radius-control)] border border-hairline bg-surface px-2 py-1 text-xs text-ink"
               >
+                <option value="">新建模板</option>
                 {templates.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
@@ -220,6 +237,8 @@ export function LogisticsTemplateDrawer({
               type="button"
               onClick={handleNewTemplate}
               className="rounded p-1 text-ink-muted hover:bg-surface-muted hover:text-ink"
+              title="新建模板"
+              aria-label="新建模板"
             >
               <Plus className="h-4 w-4" />
             </button>
@@ -368,7 +387,7 @@ export function LogisticsTemplateDrawer({
         </div>
 
         <footer className="flex items-center gap-2 border-t border-hairline px-4 py-3">
-          {activeTemplate && templates.length > 1 ? (
+          {editingId && templates.some((t) => t.id === editingId) && templates.length > 1 ? (
             <Button variant="danger" size="sm" onClick={handleDelete}>
               <Trash2 className="mr-1 h-3 w-3" />
               删除
@@ -380,7 +399,7 @@ export function LogisticsTemplateDrawer({
           </Button>
           <Button size="sm" onClick={handleSave} disabled={isSaving || countryCodes.length === 0}>
             <Save className="mr-1 h-3 w-3" />
-            {isSaving ? "保存中…" : "保存模板"}
+            {isSaving ? "保存中…" : editingId ? "保存模板" : "创建模板"}
           </Button>
         </footer>
       </aside>

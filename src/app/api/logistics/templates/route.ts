@@ -102,7 +102,7 @@ export async function POST(request: Request) {
 
   const now = new Date();
   const newTemplate: LogisticsTemplate = {
-    id: body.id || `template_${Date.now()}`,
+    id: `template_${Date.now()}`,
     shopName: body.shopName || shopName,
     name: body.name || `物流模板 ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`,
     packaging: body.packaging,
@@ -151,21 +151,4 @@ export async function PUT(request: Request) {
   saveTemplatesToStorage(shopName, templates);
 
   return NextResponse.json(templates[index]);
-}
-
-export async function DELETE(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const shopName = searchParams.get("shopName");
-  const pathname = new URL(request.url).pathname;
-  const id = pathname.split("/").pop();
-
-  if (!shopName || !id) {
-    return NextResponse.json({ error: "缺少 shopName 或 id 参数" }, { status: 400 });
-  }
-
-  const templates = getTemplatesFromStorage(shopName);
-  const filtered = templates.filter((t) => t.id !== id);
-  saveTemplatesToStorage(shopName, filtered);
-
-  return NextResponse.json({ success: true }, { status: 200 });
 }

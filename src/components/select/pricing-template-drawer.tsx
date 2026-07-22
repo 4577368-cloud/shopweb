@@ -69,6 +69,8 @@ export interface PricingTemplateDrawerProps {
   /** Soft-reset to system default so first-time setup can be experienced again. */
   onClear?: () => void;
   clearing?: boolean;
+  /** Highlight the drawer for AI action feedback */
+  highlighted?: boolean;
 }
 
 function PricingCalculationBreakdown({
@@ -147,6 +149,7 @@ export function PricingTemplateDrawer({
   onSave,
   onClear,
   clearing = false,
+  highlighted = false,
 }: PricingTemplateDrawerProps) {
   const [form, setForm] = useState<TemplateForm | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -236,7 +239,7 @@ export function PricingTemplateDrawer({
         aria-label="关闭定价面板"
         onClick={onClose}
       />
-      <aside className="relative z-10 flex h-full w-full max-w-md flex-col border-l border-hairline bg-surface shadow-xl">
+      <aside className={`relative z-10 flex h-full w-full max-w-md flex-col border-l border-hairline bg-surface shadow-xl transition-all duration-500 ${highlighted ? "ring-2 ring-emerald-400/60" : ""}`}>
         <header className="flex items-center justify-between border-b border-hairline px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-ink">定价模板</h2>

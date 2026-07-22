@@ -1,6 +1,20 @@
 export type { AgentResponse, AgentId, AgentSuggestedAction, AgentFilterPreset } from "@/lib/agents/types";
 
 export type {
+  BaseCommandPlan,
+  CommandClassifyResult,
+  CommandSensitivity,
+  CommandUIConfig,
+  SkillExecutionFeedback,
+  SkillNextStep,
+} from "@/lib/agents/shared";
+
+export {
+  classifyCommandInput,
+  getCommandUIConfig,
+} from "@/lib/agents/shared";
+
+export type {
   BasePageContext,
   AgentCopyFields,
   AgentCopySource,

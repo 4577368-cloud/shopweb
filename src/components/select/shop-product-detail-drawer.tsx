@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { ThumbImage } from "@/components/ui/thumb-image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -470,12 +470,13 @@ export function ShopProductDetailDrawer({
               <div className="flex gap-3">
                 <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
                   {hero ? (
-                    <Image
+                    <ThumbImage
                       src={hero}
                       alt={detail.title ?? ""}
                       fill
+                      sizes="96px"
+                      pixelWidth={192}
                       className="object-cover"
-                      unoptimized
                       referrerPolicy="no-referrer"
                     />
                   ) : (
@@ -666,12 +667,13 @@ export function ShopProductDetailDrawer({
                         )}
                       >
                         {m.url ? (
-                          <Image
+                          <ThumbImage
                             src={m.url}
                             alt={m.alt ?? ""}
                             fill
+                            sizes="120px"
+                            pixelWidth={240}
                             className="object-cover"
-                            unoptimized
                             referrerPolicy="no-referrer"
                           />
                         ) : null}

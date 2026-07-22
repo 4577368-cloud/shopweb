@@ -124,14 +124,29 @@ export function buildPricingContext(
   };
 }
 
+export function purchaseDisplayAlignedWithPricing(
+  pricing: ProductsPricingContext,
+  purchase: ProductsPurchaseDisplayContext
+): boolean {
+  return (
+    pricing.configured &&
+    pricing.exchangeRate === purchase.exchangeRate &&
+    pricing.targetCurrency === purchase.currency
+  );
+}
+
 export function buildPurchaseDisplayContext(
-  shopCurrencyHint?: string | null
+  shopCurrencyHint?: string | null,
+  template?: PricingTemplate | null
 ): ProductsPurchaseDisplayContext {
-  const ctx = resolvePurchaseCostDisplayContext(shopCurrencyHint);
+  const ctx = resolvePurchaseCostDisplayContext(shopCurrencyHint, template);
+  const summaryLine = ctx.fromPricingTemplate
+    ? `采购价展示：${ctx.currency} · 汇率 ${ctx.exchangeRate}（与定价模板一致，不含倍率加价）`
+    : `采购价展示：${ctx.currency} · 默认汇率 ${ctx.exchangeRate}（不含倍率加价）`;
   return {
     currency: ctx.currency,
     exchangeRate: ctx.exchangeRate,
-    summaryLine: `采购价展示：${ctx.currency} · 默认汇率 ${ctx.exchangeRate}（不含倍率加价）`,
+    summaryLine,
   };
 }
 
@@ -139,7 +154,10 @@ export function buildProductsPageContext(
   input: BuildProductsPageContextInput
 ): ProductsPageContext {
   const pricing = buildPricingContext(input.template);
-  const purchaseDisplay = buildPurchaseDisplayContext(input.shopCurrencyHint);
+  const purchaseDisplay = buildPurchaseDisplayContext(
+    input.shopCurrencyHint,
+    input.template
+  );
   return {
     page: "products",
     phase: input.phase,

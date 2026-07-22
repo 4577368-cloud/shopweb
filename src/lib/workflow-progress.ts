@@ -67,9 +67,13 @@ export function deriveSkuStepStatus(
 export function deriveLogisticsStepStatus(
   authorized: boolean,
   skuComplete: boolean,
-  logisticsCompleted: boolean
+  logisticsCompleted: boolean,
+  sku?: WorkflowSkuProgress | null | undefined
 ): StepStatus {
-  if (!authorized || !skuComplete) return "not_started";
+  if (!authorized) return "not_started";
+  // 允许部分 SKU 完成时进入物流（只要有已绑定的 SKU）
+  const hasAnyBoundSku = sku && sku.productCount > 0 && (sku.activeAuto + sku.manualActive) > 0;
+  if (!skuComplete && !hasAnyBoundSku) return "not_started";
   if (logisticsCompleted) return "completed";
   return "in_progress";
 }

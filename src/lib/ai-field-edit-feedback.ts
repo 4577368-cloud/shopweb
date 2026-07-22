@@ -140,6 +140,20 @@ export function resolveListingPriceDisplay(
   return formatPriceRange(item);
 }
 
+/** Re-apply pending AI title edits after a list refresh. */
+export function applyTitleEditsToProducts(
+  products: ShopMirrorProduct[],
+  edits: Record<string, AiFieldEditRecord>
+): ShopMirrorProduct[] {
+  return products.map((p) => {
+    const edit = edits[aiFieldEditKey(p.thirdPlatformItemId, "title")];
+    if (!edit?.nextDisplay?.trim()) return p;
+    const next = edit.nextDisplay.trim();
+    if ((p.title ?? "").trim() === next) return p;
+    return { ...p, title: next };
+  });
+}
+
 /** Re-apply pending AI listing-price patches after a list refresh. */
 export function applyListingEditsToProducts(
   products: ShopMirrorProduct[],
