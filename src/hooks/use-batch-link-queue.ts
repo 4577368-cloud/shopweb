@@ -370,7 +370,21 @@ export function useBatchLinkQueue({
     setProgress(INITIAL_BATCH_LINK_PROGRESS);
   }, []);
 
+  /** Clear stale batch failure/review UI after the user manually links or confirms. */
+  const markCardResolved = useCallback(
+    (productId: string) => {
+      patchCard(productId, {
+        state: "idle",
+        errorMessage: undefined,
+        highlightTopCandidate: false,
+        selectButtonPhase: "idle",
+        doneFlash: false,
+      });
+    },
+    [patchCard]
+  );
+
   const isRunning = progress.active;
 
-  return { progress, start, reset, isRunning };
+  return { progress, start, reset, markCardResolved, isRunning };
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import type { RecommendedCategory } from "@/lib/catalog-sourcing-types";
+import { useT } from "@/i18n/LocaleProvider";
+import { localizeRecommendedCategoryName } from "@/lib/recommended-categories";
 import { cn } from "@/lib/utils";
 
 export interface RecommendedCategoryChipsProps {
@@ -18,12 +20,15 @@ export function RecommendedCategoryChips({
   onClear,
   className,
 }: RecommendedCategoryChipsProps) {
+  const t = useT();
   if (!categories.length) return null;
   const hasSelection = selectedIds.length > 0;
 
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      <span className="text-[11px] text-ink-subtle">推荐类目</span>
+      <span className="text-[11px] text-ink-subtle">
+        {t("recommendedCategories.label")}
+      </span>
       {categories.map((c) => {
         const active = selectedIds.includes(c.id);
         return (
@@ -38,7 +43,7 @@ export function RecommendedCategoryChips({
                 : "bg-brand-soft text-brand-strong hover:bg-brand/15"
             )}
           >
-            {c.name}
+            {localizeRecommendedCategoryName(t, c.id, c.name)}
             {c.count > 0 ? (
               <span className={cn("text-[10px]", active ? "text-white/80" : "text-brand/70")}>
                 {Math.round(c.share * 100)}%
@@ -53,7 +58,7 @@ export function RecommendedCategoryChips({
           onClick={onClear}
           className="text-[11px] font-medium text-ink-muted hover:text-ink"
         >
-          取消推荐筛选
+          {t("recommendedCategories.clearFilter")}
         </button>
       ) : null}
     </div>

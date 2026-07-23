@@ -79,6 +79,11 @@ import { ManualMatchDrawer } from "@/components/select/manual-match-drawer";
 import { SourceSupplierConfirmCard } from "@/components/select/source-supplier-confirm-card";
 import { isManualImageBinding } from "@/lib/manual-image-match";
 import { fetchItemDetail, isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
+import {
+  applyBatchAckToBindings,
+  batchAckPendingBindings,
+  listPendingAckProductIds,
+} from "@/lib/batch-link/batch-ack-pending";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
 import { sortProductsForBatchLink } from "@/lib/batch-link/sort-products";
 import type { BatchLinkCardDrive, BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
@@ -204,16 +209,31 @@ function middleMatchHeadline(
     }
     return t("shopProducts.pending");
   }
-  if (titleScore != null && imageScore != null) {
-    return t("shopProducts.scoresTitleImage", {
-      title: titleScore,
-      image: imageScore,
-    });
+  if (cardState === "matched") {
+    if (titleScore != null && imageScore != null) {
+      return t("shopProducts.scoresTitleImage", {
+        title: titleScore,
+        image: imageScore,
+      });
+    }
+    if (titleScore != null) {
+      return t("shopProducts.scoresTitleOnly", { title: titleScore });
+    }
+    return t("shopProducts.autoMatched");
   }
-  if (titleScore != null) {
-    return t("shopProducts.scoresTitleOnly", { title: titleScore });
+  if (hasCurrent) {
+    if (titleScore != null && imageScore != null) {
+      return t("shopProducts.scoresTitleImage", {
+        title: titleScore,
+        image: imageScore,
+      });
+    }
+    if (titleScore != null) {
+      return t("shopProducts.scoresTitleOnly", { title: titleScore });
+    }
+    return t("shopProducts.clickFindCandidates");
   }
-  return t("shopProducts.autoMatched");
+  return t("shopProducts.noReliableMatch");
 }
 
 function publishLinkHeadline(
@@ -605,10 +625,14 @@ export function ShopProductsPanel({
 
   const batchLinkBusyRef = useRef(false);
   const batchWasActiveRef = useRef(false);
+  const markCardResolvedRef = useRef<(productId: string) => void>(() => {});
 
   const handleBound = useCallback(
     (itemId: string, view: ImageBindingView) => {
       setBindings((prev) => ({ ...prev, [itemId]: view }));
+      if (view.bound || view.bindStatus === "ACTIVE") {
+        markCardResolvedRef.current(itemId);
+      }
       // Avoid full-list skeleton reload between per-card steps — sync at batch end.
       if (!batchLinkBusyRef.current) onActivity?.();
     },
@@ -635,12 +659,17 @@ export function ShopProductsPanel({
     [onProductFocus]
   );
 
-  const { progress: batchLinkProgress, start: startBatchLink, isRunning: batchLinkRunning } =
-    useBatchLinkQueue({
-      shopName,
-      onBound: handleBound,
-      onScrollToProduct: scrollToBatchLinkProduct,
-    });
+  const {
+    progress: batchLinkProgress,
+    start: startBatchLink,
+    isRunning: batchLinkRunning,
+    markCardResolved,
+  } = useBatchLinkQueue({
+    shopName,
+    onBound: handleBound,
+    onScrollToProduct: scrollToBatchLinkProduct,
+  });
+  markCardResolvedRef.current = markCardResolved;
 
   const {
     cardStates: publishRevealStates,
@@ -787,7 +816,7 @@ export function ShopProductsPanel({
     }
     mirrorRefreshSeen.current = mirrorRefreshSignal;
     if (batchLinkBusyRef.current) return;
-    void load();
+    void load({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- signal edge only
   }, [mirrorRefreshSignal]);
 
@@ -860,7 +889,7 @@ export function ShopProductsPanel({
     if (pendingNewAnalysisKey === pendingNewAnalysisKeySeen.current) return;
     pendingNewAnalysisKeySeen.current = pendingNewAnalysisKey;
     if (batchLinkBusyRef.current) return;
-    void load();
+    void load({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when awareness ids change
   }, [pendingNewAnalysisKey]);
 
@@ -871,25 +900,15 @@ export function ShopProductsPanel({
 
   const handleBatchAck = async () => {
     if (batchAcking) return;
-    const pendingIds = products
-      .filter((p) => stateOf(p) === "pending")
-      .map((p) => p.thirdPlatformItemId);
+    const pendingIds = listPendingAckProductIds(products, bindings);
     if (pendingIds.length === 0) {
       showToast(t("shopProducts.toastNoPending"));
       return;
     }
     setBatchAcking(true);
     try {
-      const result = await api.batchAckImageBindings(shopName, pendingIds);
-      for (const id of pendingIds) {
-        if (!result.failed.includes(id)) {
-          setBindings((b) => {
-            const prev = b[id];
-            if (!prev?.bound) return b;
-            return { ...b, [id]: { ...prev, bindStatus: "ACTIVE" as const } };
-          });
-        }
-      }
+      const result = await batchAckPendingBindings(shopName, pendingIds);
+      setBindings((prev) => applyBatchAckToBindings(prev, pendingIds, result.failed));
       onActivity?.();
       showToast(
         result.failed.length > 0
@@ -1196,7 +1215,7 @@ export function ShopProductsPanel({
         itemId={detailItemId}
         onClose={() => setDetailItemId(null)}
         onSaved={() => {
-          void load();
+          void load({ silent: true });
           onActivity?.();
         }}
       />
@@ -1937,16 +1956,10 @@ function ShopProductCard({
     if (batchLinking) {
       return { label: t("shopProducts.statusLinking"), variant: "linking" as const };
     }
-    if (batchLinkDrive?.state === "needs_review") {
-      return { label: t("shopProducts.statusPendingSource"), variant: "pending" as const };
-    }
-    if (batchLinkDrive?.state === "failed") {
-      return { label: t("shopProducts.statusFailed"), variant: "unbound" as const };
-    }
-    if (needsManualAck) {
-      return { label: t("shopProducts.pending"), variant: "pending" as const };
-    }
-    if (boundOfferId) {
+    if (boundOfferId || bindConfirmed) {
+      if (needsManualAck) {
+        return { label: t("shopProducts.pending"), variant: "pending" as const };
+      }
       return {
         label: fromPublish
           ? t("shopProducts.statusPublishLink")
@@ -1956,11 +1969,31 @@ function ShopProductCard({
         variant: "matched" as const,
       };
     }
+    if (batchLinkDrive?.state === "needs_review") {
+      return { label: t("shopProducts.statusPendingSource"), variant: "pending" as const };
+    }
+    if (batchLinkDrive?.state === "failed") {
+      return { label: t("shopProducts.statusFailed"), variant: "unbound" as const };
+    }
+    if (needsManualAck) {
+      return { label: t("shopProducts.pending"), variant: "pending" as const };
+    }
     if (current) {
       return { label: t("shopProducts.statusSelected"), variant: "selected" as const };
     }
     return { label: t("shopProducts.statusUnmatched"), variant: "unbound" as const };
-  }, [batchLinkDrive?.state, batchLinking, batchQueued, needsManualAck, boundOfferId, fromPublish, fromManual, current, t]);
+  }, [
+    batchLinkDrive?.state,
+    batchLinking,
+    batchQueued,
+    bindConfirmed,
+    needsManualAck,
+    boundOfferId,
+    fromPublish,
+    fromManual,
+    current,
+    t,
+  ]);
 
   const displayTitleScore =
     batchLinkDrive?.titleScore ??
@@ -1977,6 +2010,11 @@ function ShopProductCard({
     batchLinkDrive && batchLinkDrive.state !== "idle"
       ? formatBatchCardQueueLine(t, batchLinkDrive)
       : null;
+  const showBatchQueueFeedback =
+    Boolean(batchQueueLine) &&
+    !boundOfferId &&
+    !bindConfirmed &&
+    batchLinkDrive?.state !== "done";
 
   const matchHeadline = linkAnimating
     ? publishLinkHeadline(
@@ -2353,7 +2391,10 @@ function ShopProductCard({
             </div>
           ) : (
             <div className="flex flex-1 items-center rounded-lg border border-dashed border-surface-border px-3 py-2 text-[11px] text-muted-foreground">
-              {batchLinkDrive?.state === "failed" && batchLinkDrive.errorMessage
+              {batchLinkDrive?.state === "failed" &&
+              batchLinkDrive.errorMessage &&
+              !boundOfferId &&
+              !bindConfirmed
                 ? batchLinkDrive.errorMessage
                 : hasImage
                   ? t("shopProducts.clickFindCandidates")
@@ -2590,14 +2631,14 @@ function ShopProductCard({
         </div>
       ) : null}
 
-      {batchQueueLine ? (
+      {showBatchQueueFeedback ? (
         <div
           className={cn(
             "mt-2 rounded-lg border px-3 py-2 text-[11px] leading-relaxed",
             batchLinkDrive?.state === "failed"
               ? "border-red-200 bg-red-50 text-red-800"
               : batchLinkDrive?.state === "needs_review"
-                ? "border-amber-200 bg-amber-50 text-amber-900"
+                ? "border-amber-200 bg-amber-50 text-amber-800"
                 : batchLinkDrive?.state === "done"
                   ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                   : "border-sky-200 bg-sky-50 text-sky-800"

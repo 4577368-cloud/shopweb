@@ -4,6 +4,7 @@ import { Loader2, RefreshCw, Search, X } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import type { RecommendedCategory } from "@/lib/catalog-sourcing-types";
 import { useT } from "@/i18n/LocaleProvider";
+import { localizeRecommendedCategoryName } from "@/lib/recommended-categories";
 import { cn } from "@/lib/utils";
 
 export interface SmartSourcingSummaryBarProps {
@@ -99,7 +100,7 @@ export function SmartSourcingSummaryBar({
                   {topCats.map((c, i) => (
                     <span key={c.id} className="text-ink">
                       {i > 0 ? " / " : ""}
-                      {c.name}
+                      {localizeRecommendedCategoryName(t, c.id, c.name)}
                     </span>
                   ))}
                 </>

@@ -16,10 +16,14 @@ import { cn } from "@/lib/utils";
 export function BatchLinkProgressCard({
   batchLinkProgress = null,
   unboundMatchJob = null,
+  pendingAckCount = 0,
+  onBatchAckPending,
   className,
 }: {
   batchLinkProgress?: BatchLinkProgress | null;
   unboundMatchJob?: MatchJobProgress | null;
+  pendingAckCount?: number;
+  onBatchAckPending?: () => void;
   className?: string;
 }) {
   const t = useT();
@@ -155,6 +159,23 @@ export function BatchLinkProgressCard({
       {queueActive && queueTotal > 0 ? (
         <div className="mt-1.5 text-[10px] text-slate-500">
           {queueProcessed} / {queueTotal}
+        </div>
+      ) : null}
+
+      {queueDone && pendingAckCount > 0 && onBatchAckPending ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-emerald-200/80 pt-2">
+          <p className="min-w-0 flex-1 text-[10px] leading-snug text-emerald-900">
+            {t("batchLink.pendingAckHint", { count: pendingAckCount })}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-7 shrink-0 text-[11px]"
+            onClick={onBatchAckPending}
+          >
+            {t("batchLink.pendingAckAction", { count: pendingAckCount })}
+          </Button>
         </div>
       ) : null}
 

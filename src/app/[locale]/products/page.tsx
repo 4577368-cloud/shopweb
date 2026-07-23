@@ -24,6 +24,11 @@ import {
   type AiFieldId,
 } from "@/lib/ai-field-edit-feedback";
 import {
+  applyBatchAckToBindings,
+  batchAckPendingBindings,
+  listPendingAckProductIds,
+} from "@/lib/batch-link/batch-ack-pending";
+import {
   computeShopProductBindingStats,
   indexImageBindings,
 } from "@/lib/shop-product-binding-stats";
@@ -66,7 +71,10 @@ import {
 } from "@/lib/agents/products/product-focus-snapshot";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { AgentResponse } from "@/lib/agents/types";
-import { deriveRecommendedCategories } from "@/lib/recommended-categories";
+import {
+  deriveRecommendedCategories,
+  localizeRecommendedCategoryName,
+} from "@/lib/recommended-categories";
 import type {
   AiPanelContent,
   ImageBindingView,
@@ -502,7 +510,9 @@ function SelectContent() {
         pendingCount,
         unboundCount: unbound,
         analysisReady,
-        recommendedCategoryNames: recommendedCategories.map((c) => c.name),
+        recommendedCategoryNames: recommendedCategories.map((c) =>
+          localizeRecommendedCategoryName(t, c.id, c.name)
+        ),
         filterSummary,
         template,
         focusProductId,
@@ -653,6 +663,42 @@ function SelectContent() {
         setTab(action.tab);
         highlight("tabs");
       }
+      if (action.kind === "batch_ack_pending") {
+        if (action.tab) setTab(action.tab);
+        if (action.shopFilter) {
+          setShopFilter(action.shopFilter);
+          highlight("filters");
+        }
+        void (async () => {
+          const ids = listPendingAckProductIds(shopProducts, bindingsMap);
+          if (ids.length === 0) {
+            showToast(t("shopProducts.toastNoPending"));
+            return;
+          }
+          try {
+            const result = await batchAckPendingBindings(shopName, ids);
+            const nextBindings = applyBatchAckToBindings(
+              bindingsMap,
+              ids,
+              result.failed
+            );
+            syncSummaryFromShopData(shopProducts, nextBindings);
+            bumpMirrorRefresh();
+            await loadSummary();
+            showToast(
+              result.failed.length > 0
+                ? t("shopProducts.toastBatchAckPartial", {
+                    ok: result.ok,
+                    failed: result.failed.length,
+                  })
+                : t("shopProducts.toastBatchAckDone", { ok: result.ok })
+            );
+          } catch (err) {
+            showToast(readableError(err));
+          }
+        })();
+        return;
+      }
       if (action.kind === "set_shop_filter") {
         if (action.tab) setTab(action.tab);
         if (action.shopFilter) setShopFilter(action.shopFilter);
@@ -684,7 +730,7 @@ function SelectContent() {
         });
       }
     },
-    [openPricingDrawer, setTab, focusProduct, pendingMinis, unboundMinis]
+    [openPricingDrawer, setTab, focusProduct, pendingMinis, unboundMinis, shopProducts, bindingsMap, shopName, syncSummaryFromShopData, bumpMirrorRefresh, loadSummary, showToast, t, highlight]
   );
 
   const clearAiFieldEdit = useCallback((productId: string, field: AiFieldId) => {

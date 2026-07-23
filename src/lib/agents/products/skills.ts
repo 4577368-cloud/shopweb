@@ -1,14 +1,11 @@
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
 import type { ProductCommandPlan } from "@/lib/agents/products/command-schema";
 import type { SuggestedActionKind } from "@/lib/agents/types";
+import type { TranslateFn } from "@/i18n/server";
 
 /** 轻量级 Skill — 第一轮不做状态机，只做命令→任务的映射和反馈包装 */
 export interface ProductSkill {
   id: string;
-  name: string;
-  description: string;
-
-  /** 哪些命令属于这个 skill */
   commandIds: string[];
 
   /** 根据页面上下文判断是否处于活跃状态 */
@@ -18,7 +15,7 @@ export interface ProductSkill {
   progress: (ctx: ProductsPageContext) => number | null;
 
   /** 生成下一步建议 */
-  nextSteps: (ctx: ProductsPageContext) => SkillNextStep[];
+  nextSteps: (ctx: ProductsPageContext, t: TranslateFn) => SkillNextStep[];
 }
 
 export interface SkillNextStep {
@@ -49,12 +46,18 @@ export interface SkillExecutionFeedback {
   nextSteps: SkillNextStep[];
 }
 
+function skillKey(skillId: string, suffix: string) {
+  return `productSkills.${skillId}.${suffix}`;
+}
+
+function skillName(t: TranslateFn, skillId: string) {
+  return t(skillKey(skillId, "name"));
+}
+
 // ── Skill 1: 清理待确认 ──────────────────────────────────────────
 
 const cleanupPendingSkill: ProductSkill = {
   id: "cleanup_pending",
-  name: "清理待确认",
-  description: "审核并确认 AI 自动关联的货源绑定",
   commandIds: ["open_filter", "batch_ack_pending"],
 
   isActive: (ctx) => ctx.pendingCount > 0,
@@ -65,25 +68,29 @@ const cleanupPendingSkill: ProductSkill = {
     return Math.round((processed / ctx.analyzedCount) * 100);
   },
 
-  nextSteps: (ctx) => {
+  nextSteps: (ctx, t) => {
     const steps: SkillNextStep[] = [];
     if (ctx.pendingCount > 0) {
       steps.push({
-        label: `查看 ${ctx.pendingCount} 个待确认商品`,
+        label: t(skillKey("cleanup_pending", "viewPending"), {
+          count: ctx.pendingCount,
+        }),
         kind: "set_shop_filter",
         shopFilter: "pending",
       });
     }
     if (ctx.unboundCount > 0) {
       steps.push({
-        label: `处理 ${ctx.unboundCount} 个未匹配`,
+        label: t(skillKey("cleanup_pending", "handleUnbound"), {
+          count: ctx.unboundCount,
+        }),
         kind: "set_shop_filter",
         shopFilter: "unbound",
       });
     }
     if (steps.length === 0) {
       steps.push({
-        label: "去添加新品",
+        label: t(skillKey("cleanup_pending", "discoverNew")),
         kind: "set_tab",
         tab: "catalog",
       });
@@ -96,34 +103,29 @@ const cleanupPendingSkill: ProductSkill = {
 
 const batchTranslateSkill: ProductSkill = {
   id: "batch_translate",
-  name: "批量翻译",
-  description: "批量翻译商品标题或描述到目标语言",
   commandIds: ["batch_update_product_copy", "update_product_copy"],
 
   isActive: () => true,
 
   progress: () => null,
 
-  nextSteps: (ctx) => {
+  nextSteps: (ctx, t) => {
     const steps: SkillNextStep[] = [];
     if (ctx.pendingCount > 0) {
       steps.push({
-        label: `确认 ${ctx.pendingCount} 个待关联`,
+        label: t(skillKey("batch_translate", "confirmPending"), {
+          count: ctx.pendingCount,
+        }),
         kind: "set_shop_filter",
         shopFilter: "pending",
       });
     }
     if (!ctx.pricing.configured) {
       steps.push({
-        label: "配置定价策略",
+        label: t(skillKey("batch_translate", "configurePricing")),
         kind: "open_pricing_drawer",
       });
     }
-    steps.push({
-      label: "检查商品列表",
-      kind: "set_shop_filter",
-      shopFilter: "all",
-    });
     return steps;
   },
 };
@@ -132,8 +134,6 @@ const batchTranslateSkill: ProductSkill = {
 
 const pricingDiagnosticSkill: ProductSkill = {
   id: "pricing_diagnostic",
-  name: "定价诊断",
-  description: "检查和优化店铺定价策略配置",
   commandIds: ["open_pricing_editor", "update_listing_price", "batch_update_listing_price"],
 
   isActive: (ctx) => !ctx.pricing.configured || ctx.pricing.isDefault,
@@ -143,22 +143,24 @@ const pricingDiagnosticSkill: ProductSkill = {
     return 0;
   },
 
-  nextSteps: (ctx) => {
+  nextSteps: (ctx, t) => {
     const steps: SkillNextStep[] = [];
     if (!ctx.pricing.configured || ctx.pricing.isDefault) {
       steps.push({
-        label: "打开定价设置",
+        label: t(skillKey("pricing_diagnostic", "openPricing")),
         kind: "open_pricing_drawer",
       });
     } else {
       steps.push({
-        label: "查看定价摘要",
+        label: t(skillKey("pricing_diagnostic", "viewPricingSummary")),
         kind: "open_pricing_drawer",
       });
     }
     if (ctx.unboundCount > 0) {
       steps.push({
-        label: `处理 ${ctx.unboundCount} 个未匹配`,
+        label: t(skillKey("pricing_diagnostic", "handleUnbound"), {
+          count: ctx.unboundCount,
+        }),
         kind: "set_shop_filter",
         shopFilter: "unbound",
       });
@@ -167,14 +169,10 @@ const pricingDiagnosticSkill: ProductSkill = {
   },
 };
 
-// ── Skill 注册表 ─────────────────────────────────────────────────
-
 // ── Skill 4: 商品上下架 ────────────────────────────────────────────
 
 const listingStatusSkill: ProductSkill = {
   id: "listing_status",
-  name: "商品上下架",
-  description: "将 Shopify 商品放到草稿或归档下架",
   commandIds: [
     "draft_product",
     "archive_product",
@@ -185,9 +183,9 @@ const listingStatusSkill: ProductSkill = {
   isActive: () => true,
   progress: () => null,
 
-  nextSteps: () => [
+  nextSteps: (_ctx, t) => [
     {
-      label: "查看全部商品",
+      label: t(skillKey("listing_status", "viewAll")),
       kind: "set_shop_filter",
       shopFilter: "all",
     },
@@ -213,8 +211,27 @@ export function findSkillByCommandId(intent: string): ProductSkill | null {
   return SKILL_MAP.get(intent) ?? null;
 }
 
+function appendBatchOutcomeLines(
+  t: TranslateFn,
+  detailLines: string[],
+  opts?: { successCount?: number; failedCount?: number; totalCount?: number }
+) {
+  const total = opts?.totalCount ?? 0;
+  const success = opts?.successCount ?? total;
+  const failed = opts?.failedCount ?? 0;
+  if (total <= 0) return;
+  detailLines.push(t("productSkills.common.processed", { count: total }));
+  if (success > 0) {
+    detailLines.push(t("productSkills.common.success", { count: success }));
+  }
+  if (failed > 0) {
+    detailLines.push(t("productSkills.common.failed", { count: failed }));
+  }
+}
+
 /** 生成命令执行后的任务反馈 */
 export function buildSkillFeedback(
+  t: TranslateFn,
   plan: ProductCommandPlan,
   ctx: ProductsPageContext,
   opts?: {
@@ -227,71 +244,75 @@ export function buildSkillFeedback(
   if (!skill) return null;
 
   const progress = skill.progress(ctx);
-  const nextSteps = skill.nextSteps(ctx);
+  const nextSteps = skill.nextSteps(ctx, t);
   const detailLines: string[] = [];
 
-  // 根据命令类型生成摘要
   switch (plan.draft.intent) {
-    case "batch_update_product_copy": {
-      const total = opts?.totalCount ?? plan.draft.params.batchProductIds?.length ?? 0;
-      const success = opts?.successCount ?? total;
-      const failed = opts?.failedCount ?? 0;
-      if (total > 0) {
-        detailLines.push(`已处理 ${total} 个商品`);
-        if (success > 0) detailLines.push(`成功 ${success} 个`);
-        if (failed > 0) detailLines.push(`失败 ${failed} 个`);
-      }
+    case "batch_update_product_copy":
+      appendBatchOutcomeLines(t, detailLines, {
+        totalCount: opts?.totalCount ?? plan.draft.params.batchProductIds?.length ?? 0,
+        successCount: opts?.successCount,
+        failedCount: opts?.failedCount,
+      });
       break;
-    }
-    case "update_product_copy": {
-      detailLines.push(`已更新「${plan.targetLabel}」的文案`);
-      break;
-    }
-    case "update_listing_price": {
+    case "update_product_copy":
       detailLines.push(
-        `已将「${plan.targetLabel}」售价更新为 ${plan.draft.params.currency} ${plan.draft.params.price}`
+        t(skillKey("batch_translate", "updatedCopy"), {
+          title: plan.targetLabel,
+        })
       );
       break;
-    }
-    case "batch_update_listing_price": {
-      const total = opts?.totalCount ?? plan.draft.params.batchProductIds?.length ?? 0;
-      const success = opts?.successCount ?? total;
-      const failed = opts?.failedCount ?? 0;
-      if (total > 0) {
-        detailLines.push(`已处理 ${total} 个商品`);
-        if (success > 0) detailLines.push(`成功 ${success} 个`);
-        if (failed > 0) detailLines.push(`失败 ${failed} 个`);
-      }
+    case "update_listing_price":
+      detailLines.push(
+        t(skillKey("pricing_diagnostic", "updatedPrice"), {
+          title: plan.targetLabel,
+          currency: plan.draft.params.currency ?? "",
+          price: plan.draft.params.price ?? "",
+        })
+      );
       break;
-    }
+    case "batch_update_listing_price":
+      appendBatchOutcomeLines(t, detailLines, {
+        totalCount: opts?.totalCount ?? plan.draft.params.batchProductIds?.length ?? 0,
+        successCount: opts?.successCount,
+        failedCount: opts?.failedCount,
+      });
+      break;
     case "draft_product":
-    case "archive_product": {
-      detailLines.push(`已更新「${plan.targetLabel}」的 Shopify 状态`);
+    case "archive_product":
+      detailLines.push(
+        t(skillKey("listing_status", "updatedStatus"), {
+          title: plan.targetLabel,
+        })
+      );
       break;
-    }
     case "batch_draft_products":
-    case "batch_archive_products": {
-      const total = opts?.totalCount ?? plan.draft.params.batchProductIds?.length ?? 0;
-      const success = opts?.successCount ?? total;
-      const failed = opts?.failedCount ?? 0;
-      if (total > 0) {
-        detailLines.push(`已处理 ${total} 个商品`);
-        if (success > 0) detailLines.push(`成功 ${success} 个`);
-        if (failed > 0) detailLines.push(`失败 ${failed} 个`);
-      }
+    case "batch_archive_products":
+      appendBatchOutcomeLines(t, detailLines, {
+        totalCount: opts?.totalCount ?? plan.draft.params.batchProductIds?.length ?? 0,
+        successCount: opts?.successCount,
+        failedCount: opts?.failedCount,
+      });
       break;
-    }
-    case "open_filter": {
-      detailLines.push(`已切换到「${plan.targetLabel}」视图`);
+    case "open_filter":
+      detailLines.push(
+        t(skillKey("cleanup_pending", "switchedFilter"), {
+          filter: plan.targetLabel,
+        })
+      );
       break;
-    }
     default:
-      detailLines.push(plan.operation);
+      if (plan.operation.trim()) detailLines.push(plan.operation);
   }
 
+  const localizedSkillName = skillName(t, skill.id);
+
   return {
-    skillName: skill.name,
-    summary: `${skill.name} · ${plan.operation}`,
+    skillName: localizedSkillName,
+    summary: t("productSkills.summary", {
+      skill: localizedSkillName,
+      operation: plan.operation,
+    }),
     detailLines,
     progress,
     nextSteps,

@@ -185,7 +185,7 @@ export function ProductsAgentPanel({
       await applyCommandExecution(plan, execution);
       // L1 直接执行命令也生成 skill feedback
       if (commandBelongsToSkill(plan.draft.intent)) {
-        const feedback = buildSkillFeedback(plan, context);
+        const feedback = buildSkillFeedback(t, plan, context);
         if (feedback) setSkillFeedback(feedback);
       }
     } catch (err) {
@@ -311,7 +311,7 @@ export function ProductsAgentPanel({
 
       // 生成 skill feedback，不自动消失
       if (belongsToSkill) {
-        const feedback = buildSkillFeedback(commandPlan, context, {
+        const feedback = buildSkillFeedback(t, commandPlan, context, {
           successCount: isBatch ? batchProgress?.success : undefined,
           failedCount: isBatch ? batchProgress?.failed : undefined,
           totalCount: isBatch ? (payload.totalCount as number) : undefined,
@@ -358,7 +358,7 @@ export function ProductsAgentPanel({
       await executor(execution as Record<string, unknown>);
       // 高敏感命令（update_listing_price）也属于 pricing_diagnostic skill
       if (commandPlan && commandBelongsToSkill(intent)) {
-        const feedback = buildSkillFeedback(commandPlan, context);
+        const feedback = buildSkillFeedback(t, commandPlan, context);
         if (feedback) setSkillFeedback(feedback);
       }
       if (!skillFeedback) {
@@ -535,7 +535,23 @@ export function ProductsAgentPanel({
   return (
     <div className={cn("flex min-h-0 flex-col gap-2.5", className)}>
       {showBatchProgress ? (
-        <BatchLinkProgressCard batchLinkProgress={batchLinkProgress} />
+        <BatchLinkProgressCard
+          batchLinkProgress={batchLinkProgress}
+          pendingAckCount={context.pendingCount}
+          onBatchAckPending={
+            context.pendingCount > 0
+              ? () =>
+                  onApplySuggestedAction?.({
+                    kind: "batch_ack_pending",
+                    tab: "shop",
+                    shopFilter: "pending",
+                    label: t("productsAgent.batchAckAll", {
+                      count: context.pendingCount,
+                    }),
+                  })
+              : undefined
+          }
+        />
       ) : null}
 
       <ActiveTaskCard
@@ -544,6 +560,7 @@ export function ProductsAgentPanel({
         action={activeTask.action}
         onAction={(a) => {
           dispatchAction(a);
+          if (a.kind === "batch_ack_pending") return;
           // Do not open a duplicate execution card for the same primary intent
           // unless it's useful (e.g. configure still shows tip). Prefer navigate only.
           if (
@@ -612,19 +629,17 @@ export function ProductsAgentPanel({
             type="button"
             onClick={() =>
               onApplySuggestedAction?.({
-                kind: "set_shop_filter",
+                kind: "batch_ack_pending",
+                tab: "shop",
                 shopFilter: "pending",
-                label: t("productsAgent.pendingFilter", {
+                label: t("productsAgent.batchAckAll", {
                   count: context.pendingCount,
                 }),
               })
             }
-            className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100/80"
+            className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50/80 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100/80"
           >
-            <span>{t("productsAgent.pending")}</span>
-            <span className="rounded-full bg-amber-200/80 px-1.5 py-0.5 text-[10px]">
-              {context.pendingCount}
-            </span>
+            <span>{t("productsAgent.batchAckAll", { count: context.pendingCount })}</span>
           </button>
         ) : null}
 
