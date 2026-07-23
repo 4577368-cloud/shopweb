@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Download, FileText, ListChecks } from "lucide-react";
+import { ArrowRight, Download, FileText, ListChecks } from "@/lib/ui/icons";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 
 function shopifyAdminUrl(shopDomain?: string): string {
   const match = shopDomain?.trim().match(/^([^.]+)\.myshopify\.com/i);
@@ -20,6 +22,9 @@ export function CompletionScreen({
   onExportReport?: () => void;
   onViewSummary?: () => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.98 }}
@@ -37,14 +42,14 @@ export function CompletionScreen({
       </motion.div>
 
       <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-        You&apos;re all set —
+        {t("syncCeremony.completionHeading")}
         <br />
-        your store is ready to sell.
+        {t("syncCeremony.completionHeadingLine2")}
       </h1>
 
-      <p className="mt-4 text-sm font-medium text-ink">恭喜完成开店准备！</p>
+      <p className="mt-4 text-sm font-medium text-ink">{t("syncCeremony.completionCongrats")}</p>
       <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
-        商品已在 Shopify 就绪，SKU 映射已写入 Tangbuy；物流确认暂存于本应用，尚未同步履约系统。
+        {t("syncCeremony.completionDesc")}
       </p>
       {shopDomain ? (
         <p className="mt-1 text-xs text-ink-subtle">{shopDomain}</p>
@@ -54,21 +59,21 @@ export function CompletionScreen({
         {onViewSummary ? (
           <Button type="button" className="h-11 w-full" onClick={onViewSummary}>
             <FileText className="h-4 w-4" />
-            查看准备详情
+            {t("syncCeremony.viewSummary")}
           </Button>
         ) : null}
 
         <div className="grid grid-cols-2 gap-2">
-          <Link href="/" className="col-span-1">
+          <Link href={localePath(locale, "/")} className="col-span-1">
             <Button variant="secondary" className="h-10 w-full">
-              进入工作台
+              {t("syncCeremony.enterWorkbench")}
               <ArrowRight className="h-4 w-4" />
             </Button>
           </Link>
-          <Link href="/products" className="col-span-1">
+          <Link href={localePath(locale, "/products")} className="col-span-1">
             <Button variant="secondary" className="h-10 w-full">
               <ListChecks className="h-4 w-4" />
-              待优化项
+              {t("syncCeremony.pendingOptimizations")}
             </Button>
           </Link>
         </div>
@@ -80,7 +85,7 @@ export function CompletionScreen({
           onClick={onExportReport}
         >
           <Download className="h-4 w-4" />
-          导出准备报告
+          {t("syncCeremony.exportReport")}
         </Button>
       </div>
 
@@ -88,9 +93,9 @@ export function CompletionScreen({
         href={shopifyAdminUrl(shopDomain)}
         target="_blank"
         rel="noopener noreferrer"
-        className="mt-5 text-sm font-medium text-brand-strong hover:underline"
+        className="mt-5 text-sm font-medium text-link hover:text-link-hover hover:underline"
       >
-        前往 Shopify 后台
+        {t("syncCeremony.openShopifyAdmin")}
       </a>
     </motion.div>
   );

@@ -16,6 +16,22 @@ export const DISPLAY_STATE_LABELS: Record<SkuVariantDisplayState, string> = {
   unbound: "未匹配",
 };
 
+export function displayStateLabel(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  state: SkuVariantDisplayState
+): string {
+  switch (state) {
+    case "active_auto":
+      return t("sku.displayActiveAuto");
+    case "manual_active":
+      return t("sku.displayManualActive");
+    case "needs_review":
+      return t("sku.displayNeedsReview");
+    default:
+      return t("sku.displayUnbound");
+  }
+}
+
 /** 高置信度阈值 — PENDING + matchScore≥此值 视为已自动对齐，无需手动确认。 */
 export const AUTO_CONFIRM_THRESHOLD = 0.8;
 

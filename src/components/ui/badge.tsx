@@ -6,14 +6,15 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-slate-100 text-slate-700",
-        teal: "bg-brand-soft text-brand-strong",
-        brand: "bg-brand-soft text-brand-strong",
-        success: "bg-emerald-50 text-emerald-700",
-        warning: "bg-amber-50 text-amber-700",
-        danger: "bg-red-50 text-red-700",
-        info: "bg-sky-50 text-sky-700",
-        outline: "border border-slate-200 text-slate-600 bg-white",
+        default: "bg-muted text-foreground",
+        /** Accent / catalog tags — not workflow status */
+        teal: "bg-info-soft text-info",
+        brand: "bg-brand-soft text-brand-accent",
+        success: "bg-success-soft text-success",
+        warning: "bg-warning-soft text-warning",
+        danger: "bg-destructive-soft text-destructive",
+        info: "bg-info-soft text-info",
+        outline: "border border-surface-border bg-surface text-muted-foreground",
       },
     },
     defaultVariants: {

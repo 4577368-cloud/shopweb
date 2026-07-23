@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Send } from "lucide-react";
+import { ChevronDown, Send } from "@/lib/ui/icons";
 import type { AgentSuggestedAction } from "@/lib/agents/types";
 import {
   PRODUCTS_INTENTS,
@@ -42,6 +42,8 @@ import {
 } from "@/components/select/products-intent-results";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { controlClassName } from "@/lib/ui/control-styles";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 export type PreviewGenerator = (
   plan: ProductCommandPlan,
@@ -91,6 +93,8 @@ export function ProductsAgentPanel({
   batchLinkProgress = null,
   className,
 }: ProductsAgentPanelProps) {
+  const t = useT();
+  const locale = useLocale();
   const [activeIntent, setActiveIntent] = useState<ProductsIntentId | null>(
     null
   );
@@ -111,7 +115,7 @@ export function ProductsAgentPanel({
   const previewSeq = useRef(0);
   const autoKey = useRef<string | null>(null);
 
-  const activeTask = useMemo(() => computeActiveTask(context), [context]);
+  const activeTask = useMemo(() => computeActiveTask(context, t), [context, t]);
 
   const orderedChips = useMemo(
     () => railTaskChips(context, activeTask.intent),
@@ -130,14 +134,18 @@ export function ProductsAgentPanel({
         : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
     );
 
-  // 快速动作栏用到的示例命令
   const exampleCommands = useMemo(() => {
     const examples: string[] = [];
-    if (context.pendingCount > 0) examples.push("确认全部待关联");
-    if (context.unboundCount > 0) examples.push("重搜未匹配");
-    examples.push("改价为9.9", "翻译标题", "只看待确认", "把这个商品放到草稿");
+    if (context.pendingCount > 0) examples.push(t("productsAgent.exampleConfirmAll"));
+    if (context.unboundCount > 0) examples.push(t("productsAgent.exampleRematch"));
+    examples.push(
+      t("productsAgent.examplePrice"),
+      t("productsAgent.exampleTranslate"),
+      t("productsAgent.examplePendingOnly"),
+      t("productsAgent.exampleDraft")
+    );
     return examples.slice(0, 4);
-  }, [context.pendingCount, context.unboundCount]);
+  }, [context.pendingCount, context.unboundCount, t]);
 
   const dispatchAction = (action: AgentSuggestedAction) => {
     onApplySuggestedAction?.(action);
@@ -152,7 +160,7 @@ export function ProductsAgentPanel({
     setResponse(null);
     setCommandPlan(null);
     setPreview(null);
-    void fetchProductsAgentResponse(id, context)
+    void fetchProductsAgentResponse(id, context, { locale })
       .then((result) => {
         if (requestSeq.current !== seq) return;
         setResponse(result);
@@ -163,9 +171,9 @@ export function ProductsAgentPanel({
   };
 
   const executeCommand = async (plan: ProductCommandPlan) => {
-    const execution = resolveCommandExecution(plan);
+    const execution = resolveCommandExecution(t, plan);
     if (!execution) {
-      setClarify(plan.clarify ?? "无法执行该命令。");
+      setClarify(plan.clarify ?? t("productsAgent.errCannotExecute"));
       return;
     }
     setCommandExecuting(true);
@@ -181,7 +189,7 @@ export function ProductsAgentPanel({
         if (feedback) setSkillFeedback(feedback);
       }
     } catch (err) {
-      setClarify(readableError(err) || "命令执行失败，请稍后重试。");
+      setClarify(readableError(err) || t("productsAgent.errCommandFailed"));
     } finally {
       setCommandExecuting(false);
     }
@@ -231,7 +239,7 @@ export function ProductsAgentPanel({
     if (!commandPlan || !uiConfig?.requiresPreview) return;
     const generator = previewGenerators[commandPlan.draft.intent];
     if (!generator) {
-      setPreviewError("该命令暂无预览生成器");
+      setPreviewError(t("productsAgent.errNoPreviewGenerator"));
       setPreviewLoading(false);
       setExecStep("error");
       return;
@@ -248,12 +256,12 @@ export function ProductsAgentPanel({
       setExecStep("preview_ready");
     } catch (err) {
       if (previewSeq.current !== seq) return;
-      setPreviewError(readableError(err) || "预览生成失败");
+      setPreviewError(readableError(err) || t("productsAgent.errPreviewFailed"));
       setExecStep("error");
     } finally {
       if (previewSeq.current === seq) setPreviewLoading(false);
     }
-  }, [commandPlan, uiConfig, previewGenerators, context.shopName]);
+  }, [commandPlan, uiConfig, previewGenerators, context.shopName, t]);
 
   useEffect(() => {
     if (commandPlan && uiConfig?.requiresPreview) {
@@ -265,7 +273,7 @@ export function ProductsAgentPanel({
     if (!commandPlan) return;
     const executor = commandExecutors[commandPlan.draft.intent];
     if (!executor) {
-      setClarify("该命令暂无执行器");
+      setClarify(t("productsAgent.errNoExecutor"));
       setExecStep("error");
       return;
     }
@@ -330,17 +338,17 @@ export function ProductsAgentPanel({
         }, 1200);
       }
     } catch (err) {
-      setClarify(readableError(err) || "命令执行失败，请稍后重试。");
+      setClarify(readableError(err) || t("productsAgent.errCommandFailed"));
       setExecStep("error");
     } finally {
       setCommandExecuting(false);
     }
-  }, [commandPlan, commandExecutors, context, batchProgress]);
+  }, [commandPlan, commandExecutors, context, batchProgress, t]);
 
   const handleCustomConfirm = useCallback(async (intent: string, execution: any) => {
     const executor = commandExecutors[intent];
     if (!executor) {
-      setClarify("该命令暂无执行器");
+      setClarify(t("productsAgent.errNoExecutor"));
       return;
     }
     setCommandExecuting(true);
@@ -360,11 +368,11 @@ export function ProductsAgentPanel({
         setResponse(null);
       }
     } catch (err) {
-      setClarify(readableError(err) || "命令执行失败，请稍后重试。");
+      setClarify(readableError(err) || t("productsAgent.errCommandFailed"));
     } finally {
       setCommandExecuting(false);
     }
-  }, [commandExecutors, commandPlan, context, skillFeedback]);
+  }, [commandExecutors, commandPlan, context, skillFeedback, t]);
 
   const handleCommandClassified = async (text: string, seq: number) => {
     // 构建页面上下文，让 LLM 理解当前页面状态
@@ -375,38 +383,41 @@ export function ProductsAgentPanel({
         : null,
       focusProductBindState: context.focusProduct?.bindState
         ? context.focusProduct.bindState === "confirmed"
-          ? "已确认"
+          ? t("productsAgent.bindStateConfirmed")
           : context.focusProduct.bindState === "pending"
-            ? "待确认"
-            : "未匹配"
+            ? t("productsAgent.bindStatePending")
+            : t("productsAgent.bindStateUnbound")
         : null,
       pricingConfigured: context.pricing?.configured ?? null,
       pricingSummary: context.pricing?.summaryLine ?? null,
-      currentTab: context.tab === "shop" ? "Shopify 商品" : "选品发现",
+      currentTab:
+        context.tab === "shop"
+          ? t("productsAgent.tabShop")
+          : t("productsAgent.tabCatalog"),
       currentFilter: context.shopFilter
         ? context.shopFilter === "all"
-          ? "全部"
+          ? t("productsAgent.filterAll")
           : context.shopFilter === "pending"
-            ? "待确认"
+            ? t("productsAgent.bindStatePending")
             : context.shopFilter === "confirmed"
-              ? "已确认"
+              ? t("productsAgent.bindStateConfirmed")
               : context.shopFilter === "unbound"
-                ? "未匹配"
-                : "新入库"
+                ? t("productsAgent.bindStateUnbound")
+                : t("productsAgent.filterNewArrivals")
         : null,
       pendingCount: context.pendingCount,
       unboundCount: context.unboundCount,
       analyzedCount: context.analyzedCount,
     };
-    const classified = await classifyProductCommandInput(text, classifyCtx);
+    const classified = await classifyProductCommandInput(text, classifyCtx, locale);
     if (requestSeq.current !== seq) return;
 
     if (classified.confidence === "high" && classified.draft) {
-      const plan = planProductCommand(classified.draft, context);
+      const plan = planProductCommand(t, classified.draft, context);
       if (!plan.executable) {
         setCommandPlan(null);
         setPreview(null);
-        setClarify(plan.clarify ?? "无法执行该命令。");
+        setClarify(plan.clarify ?? t("productsAgent.errCannotExecute"));
         setLoading(false);
         return;
       }
@@ -425,13 +436,13 @@ export function ProductsAgentPanel({
       return;
     }
 
-    const qa = await classifyProductsShortInput(text);
+    const qa = await classifyProductsShortInput(text, locale);
     if (requestSeq.current !== seq) return;
     if (qa.confidence === "none") {
       setCommandPlan(null);
       setPreview(null);
       setClarify(
-        classified.clarify ?? qa.clarify ?? "请换个说法或点击上方任务。"
+        classified.clarify ?? qa.clarify ?? t("productsAgent.errTryAnother")
       );
       setLoading(false);
       return;
@@ -440,7 +451,10 @@ export function ProductsAgentPanel({
     setCommandPlan(null);
     setPreview(null);
     setActiveIntent(qa.intent);
-    const result = await fetchProductsAgentResponse(qa.intent, context);
+    const result = await fetchProductsAgentResponse(qa.intent, context, {
+      userText: text,
+      locale,
+    });
     if (requestSeq.current !== seq) return;
     setResponse(result);
     setLoading(false);
@@ -451,7 +465,7 @@ export function ProductsAgentPanel({
     if (id === "configure_pricing") {
       setMoreOpen(false);
       setClarify(null);
-      dispatchAction({ kind: "open_pricing_drawer", label: "定价策略" });
+      dispatchAction({ kind: "open_pricing_drawer", label: t("productsAgent.pricingStrategy") });
       setActiveIntent(id);
       setResponse(null);
       return;
@@ -459,7 +473,7 @@ export function ProductsAgentPanel({
     if (id === "explain_pricing" && !context.pricing.configured) {
       setMoreOpen(false);
       setClarify(null);
-      dispatchAction({ kind: "open_pricing_drawer", label: "定价策略" });
+      dispatchAction({ kind: "open_pricing_drawer", label: t("productsAgent.pricingStrategy") });
       setActiveIntent(id);
       setResponse(null);
       return;
@@ -502,7 +516,7 @@ export function ProductsAgentPanel({
     setSkillFeedback(null);
     void handleCommandClassified(text, seq).catch(() => {
       if (requestSeq.current !== seq) return;
-      setClarify("命令识别暂时不可用，请点击上方任务芯片。");
+      setClarify(t("productsAgent.errClassifyUnavailable"));
       setLoading(false);
     });
   };
@@ -543,14 +557,14 @@ export function ProductsAgentPanel({
 
       {context.focusProduct ? (
         <p className="line-clamp-1 text-[10px] text-slate-500">
-          <span className="text-slate-400">已选</span>
+          <span className="text-slate-400">{t("productsAgent.focusSelected")}</span>
           <span className="mx-1 text-slate-300">·</span>
           {context.focusProduct.title}
-          <span className="ml-1 text-slate-400">（可说「这个商品…」）</span>
+          <span className="ml-1 text-slate-400">{t("productsAgent.focusHint")}</span>
         </p>
       ) : (
         <p className="text-[10px] leading-snug text-slate-400">
-          未选中商品：请点列表中的商品，或在命令里写商品名（如「把拖鞋的售价改成 9.9」）
+          {t("productsAgent.noFocusHint")}
         </p>
       )}
 
@@ -561,7 +575,7 @@ export function ProductsAgentPanel({
           onClick={() =>
             onApplySuggestedAction?.({
               kind: "open_pricing_drawer",
-              label: "定价设置",
+              label: t("productsAgent.pricingSettings"),
             })
           }
           className={cn(
@@ -574,21 +588,23 @@ export function ProductsAgentPanel({
           <span className="text-slate-400">⚙</span>
           <span>
             {context.pricing.configured
-              ? `定价 ${context.pricing.targetCurrency}`
-              : "配置定价"}
+              ? t("productsAgent.pricingConfigured", {
+                  currency: context.pricing.targetCurrency ?? "",
+                })
+              : t("productsAgent.configurePricing")}
           </span>
         </button>
 
         <button
           type="button"
           onClick={() => {
-            setInput("所有商品标题翻译成英文");
+            setInput(t("productsAgent.translateAllEn"));
             setTimeout(() => submitShortInput(), 50);
           }}
           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50"
         >
           <span className="text-slate-400">📝</span>
-          <span>翻译</span>
+          <span>{t("productsAgent.translate")}</span>
         </button>
 
         {context.pendingCount > 0 ? (
@@ -598,12 +614,14 @@ export function ProductsAgentPanel({
               onApplySuggestedAction?.({
                 kind: "set_shop_filter",
                 shopFilter: "pending",
-                label: `待确认 ${context.pendingCount}`,
+                label: t("productsAgent.pendingFilter", {
+                  count: context.pendingCount,
+                }),
               })
             }
             className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100/80"
           >
-            <span>待确认</span>
+            <span>{t("productsAgent.pending")}</span>
             <span className="rounded-full bg-amber-200/80 px-1.5 py-0.5 text-[10px]">
               {context.pendingCount}
             </span>
@@ -617,12 +635,14 @@ export function ProductsAgentPanel({
               onApplySuggestedAction?.({
                 kind: "set_shop_filter",
                 shopFilter: "unbound",
-                label: `未匹配 ${context.unboundCount}`,
+                label: t("productsAgent.unboundFilter", {
+                  count: context.unboundCount,
+                }),
               })
             }
             className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50"
           >
-            <span>未匹配</span>
+            <span>{t("productsAgent.unbound")}</span>
             <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px]">
               {context.unboundCount}
             </span>
@@ -642,10 +662,10 @@ export function ProductsAgentPanel({
           value={input}
           maxLength={PRODUCTS_SHORT_INPUT_MAX}
           disabled={loading}
-          placeholder="输入命令或提问…"
+          placeholder={t("productsAgent.inputPlaceholder")}
           onChange={(e) => setInput(e.target.value)}
-          className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none disabled:opacity-60"
-          aria-label="短命令输入"
+          className={cn(controlClassName, "h-auto min-w-0 flex-1 rounded-lg py-2 text-xs")}
+          aria-label={t("productsAgent.inputAria")}
         />
         <Button
           type="submit"
@@ -653,8 +673,8 @@ export function ProductsAgentPanel({
           variant="secondary"
           disabled={loading || !input.trim()}
           className="h-9 w-9 shrink-0 rounded-lg px-0"
-          title="发送"
-          aria-label="发送短命令"
+          title={t("productsAgent.send")}
+          aria-label={t("productsAgent.sendAria")}
         >
           <Send className="h-4 w-4" />
         </Button>
@@ -662,7 +682,7 @@ export function ProductsAgentPanel({
 
       {/* 示例命令 - 改用下划线 chip 样式 */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[10px] text-slate-400">试试：</span>
+        <span className="text-[10px] text-slate-400">{t("productsAgent.tryLabel")}</span>
         {exampleCommands.map((text) => (
           <button
             key={text}
@@ -683,18 +703,19 @@ export function ProductsAgentPanel({
       <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/40 px-3 py-1.5">
         <div className="flex items-center gap-3">
           <span className="text-[10px] text-slate-500">
-            <span className="text-slate-400">已分析</span> {context.analyzedCount}
+            <span className="text-slate-400">{t("productsAgent.analyzed")}</span>{" "}
+            {context.analyzedCount}
           </span>
           {context.pendingCount > 0 && (
             <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-700">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
-              待确认 {context.pendingCount}
+              {t("productsAgent.pending")} {context.pendingCount}
             </span>
           )}
           {context.unboundCount > 0 && (
             <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-600">
               <span className="h-1.5 w-1.5 rounded-full bg-slate-300"></span>
-              未匹配 {context.unboundCount}
+              {t("productsAgent.unbound")} {context.unboundCount}
             </span>
           )}
         </div>
@@ -703,7 +724,7 @@ export function ProductsAgentPanel({
           onClick={() => runIntent("summarize_shop_status")}
           className="shrink-0 text-[10px] font-medium text-slate-500 hover:text-slate-700"
         >
-          详情
+          {t("productsAgent.details")}
         </button>
       </div>
       ) : null}
@@ -759,30 +780,30 @@ export function ProductsAgentPanel({
 
       {/* Skill 任务反馈卡片 */}
       {skillFeedback && !commandPlan ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50/80 px-2.5 py-2">
+        <div className="rounded-md border border-brand-accent/20 bg-brand-soft/80 px-2.5 py-2">
           <div className="flex items-center gap-1.5">
-            <span className="text-emerald-600">
+            <span className="text-brand-accent">
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
             </span>
-            <span className="text-[10px] font-medium uppercase tracking-wide text-emerald-700/80">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-brand-accent/80">
               {skillFeedback.skillName}
             </span>
           </div>
-          <h3 className="mt-0.5 text-xs font-semibold text-emerald-950">
+          <h3 className="mt-0.5 text-xs font-semibold text-ink">
             {skillFeedback.summary}
           </h3>
 
           {skillFeedback.progress != null ? (
             <div className="mt-1.5">
-              <div className="flex items-center justify-between text-[10px] text-emerald-800/70">
-                <span>总体进度</span>
+              <div className="flex items-center justify-between text-[10px] text-ink-muted">
+                <span>{t("productsAgent.overallProgress")}</span>
                 <span>{skillFeedback.progress}%</span>
               </div>
-              <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-emerald-200/60">
+              <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-brand-soft">
                 <div
-                  className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                  className="h-full rounded-full bg-brand-accent transition-all duration-300"
                   style={{ width: `${skillFeedback.progress}%` }}
                 />
               </div>
@@ -792,7 +813,7 @@ export function ProductsAgentPanel({
           {skillFeedback.detailLines.length > 0 ? (
             <div className="mt-1.5 space-y-0.5">
               {skillFeedback.detailLines.map((line, i) => (
-                <p key={i} className="text-[11px] text-emerald-900/80">
+                <p key={i} className="text-[11px] text-ink-muted">
                   {line}
                 </p>
               ))}
@@ -801,7 +822,7 @@ export function ProductsAgentPanel({
 
           {skillFeedback.nextSteps.length > 0 ? (
             <div className="mt-2">
-              <p className="text-[10px] font-medium text-emerald-800/60">下一步</p>
+              <p className="text-[10px] font-medium text-ink-subtle">{t("productsAgent.nextSteps")}</p>
               <div className="mt-1 flex flex-wrap gap-1">
                 {skillFeedback.nextSteps.map((step, i) => (
                   <button
@@ -821,7 +842,7 @@ export function ProductsAgentPanel({
                       }
                       setSkillFeedback(null);
                     }}
-                    className="rounded border border-emerald-300/60 bg-emerald-100/60 px-2 py-0.5 text-[10px] text-emerald-800 hover:bg-emerald-200/60 transition-colors"
+                    className="rounded border border-brand-accent/25 bg-brand-soft px-2 py-0.5 text-[10px] text-brand-accent hover:bg-brand-soft/80 transition-colors"
                   >
                     {step.label}
                   </button>
@@ -834,16 +855,16 @@ export function ProductsAgentPanel({
             <button
               type="button"
               onClick={() => setSkillFeedback(null)}
-              className="text-[10px] text-emerald-700/60 hover:text-emerald-800"
+              className="text-[10px] text-ink-subtle hover:text-ink"
             >
-              关闭
+              {t("productsAgent.close")}
             </button>
           </div>
         </div>
       ) : null}
 
       {loading && !commandPlan ? (
-        <p className="text-[11px] text-slate-400">正在识别…</p>
+        <p className="text-[11px] text-slate-400">{t("productsAgent.recognizing")}</p>
       ) : response && activeIntent ? (
         <ProductsIntentResult
           intent={activeIntent}

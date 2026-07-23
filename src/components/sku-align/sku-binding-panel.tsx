@@ -11,7 +11,7 @@ import {
   Loader2,
   Plus,
   Wand2,
-} from "lucide-react";
+} from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api, ApiError } from "@/lib/api";
@@ -43,6 +43,7 @@ import {
   type SkuFilterMode,
   type SkuVariantDisplayState,
 } from "@/lib/sku-align/display";
+import { useT } from "@/i18n/LocaleProvider";
 
 export type ProductMatchState = "full" | "partial" | "none";
 
@@ -72,7 +73,10 @@ export function boundVariantCount(product: SkuProductOverview): number {
 }
 
 /** Map auto-align backend errors to a readable message by machine-code prefix. */
-function autoAlignError(err: unknown): string {
+function autoAlignError(
+  err: unknown,
+  t: ReturnType<typeof useT>
+): string {
   let raw = "";
   if (err instanceof ApiError) {
     if (err.status === 0) return err.message;
@@ -81,46 +85,50 @@ function autoAlignError(err: unknown): string {
   } else if (err instanceof Error) {
     raw = err.message;
   }
-  if (raw.startsWith("NOT_BOUND")) return "该商品尚未绑定货源，请先在「智能选品」确认匹配";
-  if (raw.startsWith("NO_VARIANT")) return "该商品无可用变体，请重新同步商品";
-  if (raw.startsWith("NO_OFFER_SKU")) return "该 Tangbuy 货源未返回可用 SKU";
-  if (raw.startsWith("AOP_CRED_MISSING")) return "Tangbuy 货源平台凭证未配置";
-  if (raw.startsWith("AOP_TOKEN_INVALID")) return "Tangbuy 货源授权已失效，请重新授权";
-  if (isOfferNotFoundMessage(raw)) return "该货源已下架或无效，请换一个候选";
-  if (raw.startsWith("GATEWAY_BUSY")) return "Tangbuy 货源服务繁忙，请稍后重试";
+  if (raw.startsWith("NOT_BOUND")) return t("skuBinding.errNotBound");
+  if (raw.startsWith("NO_VARIANT")) return t("skuBinding.errNoVariant");
+  if (raw.startsWith("NO_OFFER_SKU")) return t("skuBinding.errNoOfferSku");
+  if (raw.startsWith("AOP_CRED_MISSING")) return t("skuBinding.errAopCred");
+  if (raw.startsWith("AOP_TOKEN_INVALID")) return t("skuBinding.errAopToken");
+  if (isOfferNotFoundMessage(raw)) return t("skuBinding.errOfferGone");
+  if (raw.startsWith("GATEWAY_BUSY")) return t("skuBinding.errGatewayBusy");
   if (raw.startsWith("SKU_NOT_IN_MATRIX")) {
-    return raw.includes(":") ? raw.split(":").slice(1).join(":").trim() : "所选 SKU 不在货源规格表中";
+    return raw.includes(":")
+      ? raw.split(":").slice(1).join(":").trim()
+      : t("skuBinding.errSkuNotInMatrix");
   }
-  if (raw.startsWith("NO_UNRESOLVED_VARIANT")) return "当前没有需要补充货源的变体";
-  if (raw.startsWith("SUPPLEMENT_LIMIT")) return "V1 每个商品仅支持 1 个补充货源";
-  if (raw.startsWith("SUPPLEMENT_SAME_AS_PRIMARY")) return "补充货源不能与主货源相同";
-  return raw || "自动对齐失败";
+  if (raw.startsWith("NO_UNRESOLVED_VARIANT")) return t("skuBinding.errNoUnresolved");
+  if (raw.startsWith("SUPPLEMENT_LIMIT")) return t("skuBinding.errSupplementLimit");
+  if (raw.startsWith("SUPPLEMENT_SAME_AS_PRIMARY")) return t("skuBinding.errSupplementSame");
+  return raw || t("skuBinding.errAutoAlignFailed");
 }
 
 function MatchStatePill({
   state,
   bound,
   total,
+  t,
 }: {
   state: ProductMatchState;
   bound: number;
   total: number;
+  t: ReturnType<typeof useT>;
 }) {
   if (state === "full") {
     return (
       <Badge variant="success">
-        全部匹配 {bound}/{total}
+        {t("skuBinding.fullMatch", { bound, total })}
       </Badge>
     );
   }
   if (state === "partial") {
     return (
       <Badge variant="warning">
-        部分匹配 {bound}/{total}
+        {t("skuBinding.partialMatch", { bound, total })}
       </Badge>
     );
   }
-  return <Badge variant="outline">未匹配</Badge>;
+  return <Badge variant="outline">{t("skuBinding.unmatched")}</Badge>;
 }
 
 /** Small square thumbnail with graceful "no image" fallback. */
@@ -159,10 +167,15 @@ function Thumb({
   );
 }
 
-function buildVariantPreviewLine(variants: SkuVariant[]): string {
+function buildVariantPreviewLine(
+  variants: SkuVariant[],
+  t: ReturnType<typeof useT>
+): string {
   const preview = variants.slice(0, 4).map((v) => v.optionLabel);
   const rest = variants.length - preview.length;
-  return `${preview.join(" · ")}${rest > 0 ? ` 等 ${variants.length} 个规格` : ""}`;
+  return `${preview.join(" · ")}${
+    rest > 0 ? t("skuBinding.variantPreviewMore", { count: variants.length }) : ""
+  }`;
 }
 
 const ICON_BTN =
@@ -186,6 +199,7 @@ export function SkuProductCard({
   filterMode?: SkuFilterMode;
   pricingTemplate?: PricingTemplate | null;
 }) {
+  const t = useT();
   const total = product.variants.length;
   const bound = boundVariantCount(product);
   const state = productMatchState(product);
@@ -281,15 +295,18 @@ export function SkuProductCard({
       });
       if (status) {
         showToast(
-          `自动对齐完成：${status.matchedCount} 个变体已对齐 · 建议 ${status.suggestedCount}`
+          t("skuBinding.alignDone", {
+            matched: status.matchedCount,
+            suggested: status.suggestedCount,
+          })
         );
         await onAligned();
         await refreshV1Detail();
       } else {
-        showToast("对齐任务未受理，请稍后重试或点标题进入对照页手动调整");
+        showToast(t("skuBinding.alignNotAccepted"));
       }
     } catch (err) {
-      setAlignError(autoAlignError(err));
+      setAlignError(autoAlignError(err, t));
     } finally {
       setAligning(false);
     }
@@ -297,11 +314,11 @@ export function SkuProductCard({
 
   const showSupplementHint =
     v1Detail && !v1DetailLoading && needsSupplementSource(v1Detail);
-  const supplementHint = v1Detail ? buildSupplementSourceHint(v1Detail) : null;
+  const supplementHint = v1Detail ? buildSupplementSourceHint(t, v1Detail) : null;
   const noSourceCount = v1Detail?.summary.noSourceVariants ?? 0;
-  const gapSummary = buildGapSummaryText(unboundCount, noSourceCount);
+  const gapSummary = buildGapSummaryText(t, unboundCount, noSourceCount);
 
-  const alignedPreview = buildVariantPreviewLine(visibleVariants);
+  const alignedPreview = buildVariantPreviewLine(visibleVariants, t);
 
   return (
     <article
@@ -315,7 +332,9 @@ export function SkuProductCard({
           href={workbenchHref}
           onClick={stashHandoff}
           className="flex min-w-0 flex-1 items-start gap-3 text-left hover:opacity-90"
-          aria-label={`查看 ${product.title ?? productId} 的 SKU 对照`}
+          aria-label={t("skuBinding.viewSkuAria", {
+            title: product.title ?? productId,
+          })}
         >
           <Thumb
             src={product.imageUrl}
@@ -324,19 +343,27 @@ export function SkuProductCard({
           />
           <div className="min-w-0 flex-1">
             <h3 className="line-clamp-1 text-sm font-semibold leading-5 text-ink">
-              {product.title ?? "(无标题)"}
+              {product.title ?? t("skuBinding.noTitle")}
             </h3>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-[11px] text-ink-subtle">{total} 个变体</span>
-              <MatchStatePill state={state} bound={bound} total={total} />
+              <span className="text-[11px] text-ink-subtle">
+                {t("skuBinding.variantCount", { count: total })}
+              </span>
+              <MatchStatePill state={state} bound={bound} total={total} t={t} />
               {pendingCount > 0 ? (
-                <Badge variant="warning">待确认 {pendingCount}</Badge>
+                <Badge variant="warning">
+                  {t("skuBinding.pendingConfirm", { count: pendingCount })}
+                </Badge>
               ) : null}
               {unboundCount > 0 ? (
-                <Badge variant="outline">未匹配 {unboundCount}</Badge>
+                <Badge variant="outline">
+                  {t("skuBinding.unboundCount", { count: unboundCount })}
+                </Badge>
               ) : null}
               {manualCount > 0 ? (
-                <Badge variant="success">手动 {manualCount}</Badge>
+                <Badge variant="success">
+                  {t("skuBinding.manualCount", { count: manualCount })}
+                </Badge>
               ) : null}
               {gapSummary ? (
                 <p className="mt-1 text-[11px] text-amber-800">{gapSummary}</p>
@@ -352,8 +379,8 @@ export function SkuProductCard({
               <Link
                 href={replaceHref}
                 className={ICON_BTN}
-                title="整款替换主货源"
-                aria-label="整款替换主货源"
+                title={t("skuBinding.replaceSource")}
+                aria-label={t("skuBinding.replaceSource")}
                 onClick={(e) => {
                   if (busy) e.preventDefault();
                   else stashHandoff();
@@ -365,8 +392,8 @@ export function SkuProductCard({
               <Link
                 href={supplementHref}
                 className={ICON_BTN}
-                title="为缺口规格补充货源"
-                aria-label="为缺口规格补充货源"
+                title={t("skuBinding.supplementSource")}
+                aria-label={t("skuBinding.supplementSource")}
                 onClick={(e) => {
                   if (busy) e.preventDefault();
                   else stashHandoff();
@@ -382,8 +409,8 @@ export function SkuProductCard({
             className={ICON_BTN}
             onClick={() => void runAutoAlign()}
             disabled={busy}
-            title="按 Tangbuy 货源 SKU 矩阵自动对齐绑定"
-            aria-label={aligning ? "对齐中" : "自动对齐 SKU"}
+            title={aligning ? t("skuBinding.aligning") : t("skuBinding.autoAlign")}
+            aria-label={aligning ? t("skuBinding.aligning") : t("skuBinding.autoAlign")}
           >
             {aligning ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -405,17 +432,19 @@ export function SkuProductCard({
           href={supplementHref}
           onClick={stashHandoff}
           className="mx-4 mb-3 flex items-center gap-3 rounded-[var(--radius-control)] border border-amber-200 bg-amber-50/50 px-3 py-2.5 transition-colors hover:bg-amber-50"
-          aria-label="进入补充货源流程"
+          aria-label={t("skuBinding.enterSupplement")}
         >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100">
             <AlertTriangle className="h-4 w-4 text-amber-600" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-medium text-amber-900">需要补充货源</p>
+            <p className="text-[11px] font-medium text-amber-900">
+              {t("skuBinding.needSupplement")}
+            </p>
             <p className="text-[10px] text-amber-700/80">{supplementHint}</p>
           </div>
           <span className="shrink-0 text-[11px] font-medium text-amber-900">
-            去补充
+            {t("skuBinding.goSupplement")}
             <ChevronRight className="ml-0.5 inline h-3.5 w-3.5" />
           </span>
         </Link>
@@ -425,7 +454,9 @@ export function SkuProductCard({
             <AlertTriangle className="h-4 w-4 text-amber-600" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-medium text-amber-900">需要补充货源</p>
+            <p className="text-[11px] font-medium text-amber-900">
+              {t("skuBinding.needSupplement")}
+            </p>
             <p className="text-[10px] text-amber-700/80">{supplementHint}</p>
           </div>
         </div>
@@ -436,27 +467,32 @@ export function SkuProductCard({
           href={workbenchHref}
           onClick={stashHandoff}
           className="flex w-full items-center gap-2 border-t border-hairline/60 px-4 py-2.5 transition-colors hover:bg-surface-muted/40"
-          aria-label="查看 SKU 对照"
+          aria-label={t("skuBinding.viewSkuMapping")}
         >
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-subtle" />
           {state === "full" || bound > 0 ? (
             <Badge variant="success" className="shrink-0 px-1.5 py-0 text-[10px]">
-              已对齐 {bound}
+              {t("skuBinding.alignedCount", { count: bound })}
             </Badge>
           ) : null}
           <span className="shrink-0 text-[10px] text-ink-subtle">
             {manualCount > 0
-              ? `自动 ${countActiveAuto(product)} · 手动 ${manualCount}`
+              ? t("skuBinding.statusAutoManual", {
+                  auto: countActiveAuto(product),
+                  manual: manualCount,
+                })
               : pendingCount > 0
-                ? `待确认 ${pendingCount}`
+                ? t("skuBinding.pendingConfirm", { count: pendingCount })
                 : unboundCount > 0
-                  ? `未匹配 ${unboundCount}`
-                  : "全部自动对齐"}
+                  ? t("skuBinding.unboundCount", { count: unboundCount })
+                  : t("skuBinding.allAutoAligned")}
           </span>
           <span className="min-w-0 flex-1 truncate text-[11px] text-ink-muted">
             {alignedPreview}
           </span>
-          <span className="shrink-0 text-[11px] font-medium text-brand">查看对照</span>
+          <span className="shrink-0 text-[11px] font-medium text-brand">
+            {t("skuBinding.viewMapping")}
+          </span>
         </Link>
       ) : null}
     </article>

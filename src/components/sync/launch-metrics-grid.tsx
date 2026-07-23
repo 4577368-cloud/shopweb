@@ -29,7 +29,7 @@ export function LaunchMetricsGrid({
         <h3 className="text-sm font-semibold text-ink">{t("sync.cardShopify")}</h3>
         <Link
           href={localePath(locale, shopify.ctaHref)}
-          className="text-xs font-medium text-brand-strong hover:underline"
+          className="text-xs font-medium text-link hover:text-link-hover hover:underline"
         >
           {t("sync.viewProducts")}
         </Link>
@@ -58,7 +58,7 @@ export function LaunchMetricsGrid({
         <h3 className="text-sm font-semibold text-ink">{t("sync.cardFulfillment")}</h3>
         <Link
           href={localePath(locale, fulfillment.ctaHref)}
-          className="text-xs font-medium text-brand-strong hover:underline"
+          className="text-xs font-medium text-link hover:text-link-hover hover:underline"
         >
           {t("sync.skuDetails")}
         </Link>

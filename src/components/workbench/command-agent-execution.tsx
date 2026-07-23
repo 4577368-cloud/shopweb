@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/lib/ui/icons";
 import type { BaseCommandPlan } from "@/lib/agents/shared/command-plan";
 import type { CommandUIConfig } from "@/lib/agents/shared/command-ui-config";
 import type { ConfirmPreviewResult } from "@/components/select/command-confirm-card";
@@ -9,6 +9,7 @@ import {
   type BatchProgress,
   type ExecutionStep,
 } from "@/components/select/execution-pipeline";
+import { useT } from "@/i18n/LocaleProvider";
 import { Button } from "@/components/ui/button";
 
 export interface CommandAgentExecutionProps {
@@ -44,6 +45,7 @@ export function CommandAgentExecution({
   onAutoApply,
   onDirectExecute,
 }: CommandAgentExecutionProps) {
+  const t = useT();
   if (!commandPlan) return null;
 
   const usePipeline =
@@ -78,7 +80,7 @@ export function CommandAgentExecution({
       <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3">
         <div className="flex items-center gap-1.5 text-xs text-ink-muted">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          执行中…
+          {t("commandUi.executing")}
         </div>
       </div>
     );
@@ -98,7 +100,7 @@ export function CommandAgentExecution({
       ) : null}
       {commandPlan.executable ? (
         <Button size="sm" className="mt-3 w-full" onClick={onDirectExecute}>
-          执行
+          {t("commandUi.execute")}
         </Button>
       ) : null}
     </div>

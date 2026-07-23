@@ -10,7 +10,7 @@ import {
 } from "@/hooks/use-ai-field-edit-highlight";
 
 function profitTone(amount: number): string {
-  return amount >= 0 ? "text-emerald-600" : "text-red-600";
+  return amount >= 0 ? "text-brand-accent" : "text-red-600";
 }
 
 export function EditedFieldValue({

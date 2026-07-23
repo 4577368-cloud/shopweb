@@ -14,7 +14,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Sparkles,
-} from "lucide-react";
+} from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -29,60 +29,37 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { api } from "@/lib/api";
 import { SHOP_STORAGE_KEY, launchShopifyInstall } from "@/lib/shopify-install";
 import type { AiPanelContent } from "@/lib/types";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
+import { localeHtmlLang } from "@/i18n/config";
 import { cn } from "@/lib/utils";
-
-const trustSignals = [
-  "官方安全授权",
-  "数据加密传输",
-  "只读访问权限",
-  "不会修改你的店铺数据",
-];
-
-const capabilities: { icon: typeof Database; title: string; desc: string }[] = [
-  {
-    icon: Database,
-    title: "同步基础数据",
-    desc: "自动同步商品、库存、订单等基础数据",
-  },
-  {
-    icon: LineChart,
-    title: "分析店铺表现",
-    desc: "AI 分析热销品、利润空间、流量来源等",
-  },
-  {
-    icon: Sparkles,
-    title: "发现优化机会",
-    desc: "找到可替换商品、降本机会和利润增长点",
-  },
-  {
-    icon: Boxes,
-    title: "推荐优供应链",
-    desc: "匹配更优供应链，提升利润和履约效率",
-  },
-];
 
 type Phase = "unbound" | "restoring" | "authorized";
 type ProductSyncState = "idle" | "syncing" | "done" | "error";
+type TranslateFn = ReturnType<typeof useT>;
 
-/** 已同步商品展示：成功且为 0 → 暂无商品；未拉到数据 → 暂未获取。 */
+/** Synced product display: success with 0 → no products; no data yet → not fetched. */
 function formatSyncedProductLabel(
+  t: TranslateFn,
   state: ProductSyncState,
   count: number
 ): string {
-  if (state === "syncing") return "同步中…";
-  if (state === "error" || state === "idle") return "暂未获取";
-  return count === 0 ? "暂无商品" : String(count);
+  if (state === "syncing") return t("authorize.syncing");
+  if (state === "error" || state === "idle") return t("authorize.notFetched");
+  return count === 0 ? t("authorize.noProducts") : String(count);
 }
 
-function fmtDate(iso?: string | null): string {
+function fmtDate(locale: string, iso?: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? ""
-    : d.toLocaleString("zh-CN", { hour12: false });
+  if (Number.isNaN(d.getTime())) return "";
+  const htmlLang = localeHtmlLang[locale as keyof typeof localeHtmlLang] ?? locale;
+  return d.toLocaleString(htmlLang, { hour12: false });
 }
 
 export default function AuthorizePage() {
+  const t = useT();
+  const locale = useLocale();
   const {
     authStatus,
     shopDomainInput,
@@ -160,7 +137,7 @@ export default function AuthorizePage() {
         name: status.shopName ?? shopName,
         domain: status.shopDomain ?? shopDomain,
         authorizedAt:
-          fmtDate(status.authorizedAt) || (shop.authorizedAt ?? ""),
+          fmtDate(locale, status.authorizedAt) || (shop.authorizedAt ?? ""),
         productCount: count,
       });
       setProductSyncState("done");
@@ -201,18 +178,18 @@ export default function AuthorizePage() {
           hydrateAuthorizedShop({
             name: status.shopName ?? shop.name,
             domain: status.shopDomain ?? shop.domain,
-            authorizedAt: fmtDate(status.authorizedAt) || (shop.authorizedAt ?? ""),
+            authorizedAt: fmtDate(locale, status.authorizedAt) || (shop.authorizedAt ?? ""),
             productCount: status.productCount ?? 0,
           });
           setMirrorProductCount(status.productCount ?? 0);
           await loadStats(status.shopName ?? shop.name);
         }
-        showToast("商品数暂未获取，请稍后重试");
+        showToast(t("authorize.toastProductCountFailed"));
         return;
       }
       await loadStats(shop.name);
     } catch {
-      showToast("刷新失败，请稍后重试");
+      showToast(t("authorize.toastRefreshFailed"));
     } finally {
       setRefreshing(false);
     }
@@ -248,11 +225,26 @@ export default function AuthorizePage() {
   const displayProductCount = mirrorProductCount ?? shop.productCount;
   const syncing = productSyncState === "syncing";
   const syncedProductLabel = formatSyncedProductLabel(
+    t,
     productSyncState,
     displayProductCount
   );
 
-  const { copilot, suggestions } = buildAssistant(phase, {
+  const trustSignals = [
+    t("authorize.trustOfficial"),
+    t("authorize.trustEncrypted"),
+    t("authorize.trustReadOnly"),
+    t("authorize.trustNoModify"),
+  ];
+
+  const capabilities = [
+    { icon: Database, title: t("authorize.capSyncTitle"), desc: t("authorize.capSyncDesc") },
+    { icon: LineChart, title: t("authorize.capAnalyzeTitle"), desc: t("authorize.capAnalyzeDesc") },
+    { icon: Sparkles, title: t("authorize.capOptimizeTitle"), desc: t("authorize.capOptimizeDesc") },
+    { icon: Boxes, title: t("authorize.capSupplyTitle"), desc: t("authorize.capSupplyDesc") },
+  ];
+
+  const { copilot, suggestions } = buildAssistant(t, phase, {
     shopName: shop.name,
     shopDomain: shop.domain,
     authorizedAt: shop.authorizedAt,
@@ -274,7 +266,7 @@ export default function AuthorizePage() {
               suggestions={suggestions}
               suggestionsKey={phase}
               variant="onboarding"
-              heading="接入助手"
+              heading={t("authorize.assistantHeading")}
               onNextAction={(action) => {
                 if (action === "connect") startShopifyInstall();
               }}
@@ -284,7 +276,7 @@ export default function AuthorizePage() {
       }
     >
       <WorkbenchPanel
-        title="授权店铺"
+        title={t("authorize.pageTitle")}
         actions={
           isAuthorized ? (
             <div className="flex items-center gap-2">
@@ -293,11 +285,11 @@ export default function AuthorizePage() {
                 onClick={() => startShopifyInstall(shop.domain)}
               >
                 <RefreshCw className="h-4 w-4" />
-                重新授权
+                {t("authorize.reauthorize")}
               </Button>
-              <Link href="/products">
+              <Link href={localePath(locale, "/products")}>
                 <Button>
-                  进入智能选品
+                  {t("authorize.goProducts")}
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
@@ -305,7 +297,7 @@ export default function AuthorizePage() {
           ) : (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-2.5 py-1 text-[11px] font-medium text-ink-muted">
               <ShieldCheck className="h-3.5 w-3.5 text-brand" />
-              安全加密 · 官方授权
+              {t("authorize.securityBadge")}
             </span>
           )
         }
@@ -315,7 +307,7 @@ export default function AuthorizePage() {
             <div className="border-b border-hairline px-5 py-4">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-semibold tracking-tight text-ink">
-                  连接你的 Shopify 店铺
+                  {t("authorize.connectTitle")}
                 </h2>
                 {phase === "authorized" ? (
                   <Button
@@ -324,8 +316,8 @@ export default function AuthorizePage() {
                     onClick={() => void refresh()}
                     disabled={refreshing}
                     className="h-7 w-7 shrink-0 px-0"
-                    title="刷新接入摘要"
-                    aria-label="刷新"
+                    title={t("authorize.refreshSummary")}
+                    aria-label={t("authorize.refreshAria")}
                   >
                     {refreshing ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -336,15 +328,21 @@ export default function AuthorizePage() {
                 ) : null}
               </div>
               <p className="mt-0.5 text-xs text-ink-muted">
-                只需 2 步，即可开始 AI 分析并优化你的店铺
+                {t("authorize.connectSubtitle")}
               </p>
             </div>
 
             <div className="px-5 py-5">
-              <TwoStepProgress authorizing={authorizing} phase={phase} syncing={syncing} />
+              <TwoStepProgress
+                t={t}
+                authorizing={authorizing}
+                phase={phase}
+                syncing={syncing}
+              />
 
               {phase === "authorized" ? (
                 <ConnectSummary
+                  t={t}
                   name={shop.name}
                   domain={shop.domain}
                   authorizedAt={shop.authorizedAt}
@@ -353,7 +351,7 @@ export default function AuthorizePage() {
                   publishedCount={publishedCount}
                 />
               ) : phase === "restoring" ? (
-                <RestoringBlock />
+                <RestoringBlock t={t} />
               ) : (
                 <div className="mt-5 space-y-3">
                   {/* CTA-first: connecting is the hero action; domain is a secondary, prefilled field. */}
@@ -365,14 +363,14 @@ export default function AuthorizePage() {
                     {authorizing ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        授权中…
+                        {t("authorize.authorizing")}
                       </>
                     ) : (
                       <>
                         <Link2 className="h-4 w-4" />
                         {hasPrefilledShop
-                          ? `连接 ${trimmedDomain}`
-                          : "连接 Shopify 店铺"}
+                          ? t("authorize.connectDomain", { domain: trimmedDomain })
+                          : t("authorize.connectShop")}
                       </>
                     )}
                   </Button>
@@ -380,22 +378,22 @@ export default function AuthorizePage() {
                   {hasPrefilledShop ? (
                     <div className="flex items-center justify-between gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-3 py-2">
                       <span className="min-w-0 truncate text-xs text-ink-muted">
-                        将连接上次的店铺：
+                        {t("authorize.lastShopHint")}
                         <span className="font-medium text-ink">{trimmedDomain}</span>
                       </span>
                       <button
                         type="button"
                         onClick={() => setEditingDomain(true)}
-                        className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-brand-strong hover:underline"
+                        className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-link hover:text-link-hover hover:underline"
                       >
                         <Pencil className="h-3 w-3" />
-                        换个店铺
+                        {t("authorize.changeShop")}
                       </button>
                     </div>
                   ) : (
                     <Field
-                      label="店铺域名"
-                      hint="首次连接需填写，例如 northwind-home.myshopify.com"
+                      label={t("authorize.shopDomainLabel")}
+                      hint={t("authorize.shopDomainHint")}
                     >
                       <div className="relative">
                         <Input
@@ -430,7 +428,7 @@ export default function AuthorizePage() {
 
           <section>
             <h3 className="mb-2.5 text-sm font-semibold text-ink">
-              连接后，AI 将自动为你完成
+              {t("authorize.afterConnectTitle")}
             </h3>
             <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
               {capabilities.map(({ icon: Icon, title, desc }) => (
@@ -438,7 +436,7 @@ export default function AuthorizePage() {
                   key={title}
                   className="rounded-[var(--radius-card)] border border-hairline bg-surface px-3.5 py-3.5 shadow-card"
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-soft text-brand-strong">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
                     <Icon className="h-4 w-4" />
                   </span>
                   <p className="mt-2.5 text-sm font-medium text-ink">{title}</p>
@@ -450,23 +448,23 @@ export default function AuthorizePage() {
             </div>
           </section>
 
-          <section className="flex items-center justify-between gap-4 rounded-[var(--radius-card)] border border-emerald-100 bg-brand-soft px-4 py-3.5">
+          <section className="flex items-center justify-between gap-4 rounded-[var(--radius-card)] border border-brand-accent/20 bg-brand-soft px-4 py-3.5">
             <div className="flex items-start gap-2.5">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
               <div>
                 <p className="text-sm font-medium text-ink">
-                  我们如何使用你的数据？
+                  {t("authorize.dataUsageTitle")}
                 </p>
                 <p className="mt-0.5 text-xs leading-5 text-ink-muted">
-                  我们仅读取必要数据用于分析和服务交付，不会修改、删除或泄露你的任何数据。
+                  {t("authorize.dataUsageDesc")}
                 </p>
               </div>
             </div>
             <Link
               href="#"
-              className="shrink-0 text-xs font-medium text-brand-strong hover:underline"
+              className="shrink-0 text-xs font-medium text-link hover:text-link-hover hover:underline"
             >
-              了解更多 →
+              {t("authorize.learnMore")}
             </Link>
           </section>
         </div>
@@ -477,6 +475,7 @@ export default function AuthorizePage() {
 
 /** Builds the state-driven copilot content + guided suggestions (Phase A: fixed, real answers). */
 function buildAssistant(
+  t: TranslateFn,
   phase: Phase,
   ctx: {
     shopName: string;
@@ -500,53 +499,62 @@ function buildAssistant(
   } = ctx;
 
   if (phase === "authorized") {
-    const syncedLabel = formatSyncedProductLabel(productSyncState, productCount);
+    const syncedLabel = formatSyncedProductLabel(t, productSyncState, productCount);
     const boundLabel =
-      boundCount != null ? `${boundCount} 个` : "读取中…";
+      boundCount != null ? t("authorize.countWithUnit", { count: boundCount }) : t("authorize.loading");
+    const syncedExplain =
+      productSyncState === "done" && productCount === 0
+        ? t("authorize.copilotDoneSyncedExplainEmpty")
+        : productSyncState === "error" || productSyncState === "idle"
+          ? t("authorize.copilotDoneSyncedExplainPending")
+          : t("authorize.copilotDoneSyncedExplainDone");
     return {
       copilot: {
-        title: "接入完成",
-        summary: `已连接 ${shopName}（${shopDomain}）。`,
+        title: t("authorize.copilotDoneTitle"),
+        summary: t("authorize.copilotDoneSummary", { shopName, shopDomain }),
         bullets: [],
         metrics: [
-          { label: "授权时间", value: authorizedAt || "—" },
-          { label: "已同步商品", value: syncedLabel },
-          { label: "已关联货源", value: boundLabel },
+          { label: t("authorize.statAuthorizedAt"), value: authorizedAt || "—" },
+          { label: t("authorize.statSyncedProducts"), value: syncedLabel },
+          { label: t("authorize.statBoundSources"), value: boundLabel },
           {
-            label: "建议下一步",
+            label: t("authorize.statSuggestedNext"),
             value:
               boundCount != null && boundCount > 0
-                ? "继续优化货源"
-                : "开始关联货源",
+                ? t("authorize.copilotDoneNextOptimize")
+                : t("authorize.copilotDoneNextLink"),
           },
         ],
         nextAction: {
-          label: "进入智能选品",
+          label: t("authorize.copilotDoneNextAction"),
           href: "/products",
           description:
             boundCount != null && boundCount > 0
-              ? `已为 ${boundCount} 个商品关联货源，可继续选品与优化。`
-              : "为在售商品图搜关联 Tangbuy 货源。",
+              ? t("authorize.copilotDoneNextDescLinked", { count: boundCount })
+              : t("authorize.copilotDoneNextDescEmpty"),
         },
       },
       suggestions: [
         {
           id: "next",
-          q: "接下来做什么？",
+          q: t("authorize.copilotDoneSuggestNextQ"),
           a:
             boundCount != null && boundCount > 0
-              ? `点击「进入智能选品」，继续处理待确认或未关联的在售商品。当前已关联 ${boundCount} 个。`
-              : "点击「进入智能选品」，系统会为在售商品自动图搜并推荐 Tangbuy 货源。",
+              ? t("authorize.copilotDoneSuggestNextAWithBound", { count: boundCount })
+              : t("authorize.copilotDoneSuggestNextAEmpty"),
         },
         {
           id: "stats",
-          q: "这些数字怎么看？",
-          a: `「已同步商品」${syncedLabel}：${productSyncState === "done" && productCount === 0 ? "店铺确实没有商品" : productSyncState === "error" || productSyncState === "idle" ? "同步未完成，可点左侧刷新" : "已从 Shopify 拉取镜像"}。「已关联货源」指已确认绑定 Tangbuy 的在售商品数。`,
+          q: t("authorize.copilotDoneSuggestStatsQ"),
+          a: t("authorize.copilotDoneSuggestStatsA", {
+            synced: syncedLabel,
+            syncedExplain,
+          }),
         },
         {
           id: "refresh",
-          q: "数字不对怎么办？",
-          a: "点授权卡片标题旁的刷新按钮，重新拉取 Shopify 镜像与货源统计。若仍异常，可尝试重新授权。",
+          q: t("authorize.copilotDoneSuggestRefreshQ"),
+          a: t("authorize.copilotDoneSuggestRefreshA"),
         },
       ],
     };
@@ -555,77 +563,73 @@ function buildAssistant(
   if (phase === "restoring") {
     return {
       copilot: {
-        title: "正在接入",
-        summary: "正在恢复授权并读取店铺数据，请稍候。",
+        title: t("authorize.copilotRestoringTitle"),
+        summary: t("authorize.copilotRestoringSummary"),
         bullets: [],
         metrics: [
-          { label: "当前步骤", value: "校验授权" },
-          { label: "预计耗时", value: "约 10 秒" },
+          { label: t("authorize.copilotRestoringCurrentStep"), value: t("authorize.copilotRestoringStep") },
+          { label: t("authorize.copilotRestoringEtaLabel"), value: t("authorize.copilotRestoringEta") },
         ],
       },
       suggestions: [
         {
           id: "doing",
-          q: "现在在做什么？",
-          a: "正在校验 Shopify 授权，并拉取店铺与商品镜像。",
+          q: t("authorize.copilotRestoringSuggestDoingQ"),
+          a: t("authorize.copilotRestoringSuggestDoingA"),
         },
         {
           id: "wait",
-          q: "需要我操作吗？",
-          a: "不需要，完成后会自动展示接入摘要。",
+          q: t("authorize.copilotRestoringSuggestWaitQ"),
+          a: t("authorize.copilotRestoringSuggestWaitA"),
         },
       ],
     };
   }
 
-  // unbound
   return {
     copilot: {
-      title: "开始接入",
-      summary:
-        "连接 Shopify 后，我会同步商品镜像，并帮你在后续步骤匹配 Tangbuy 货源。",
+      title: t("authorize.copilotStartTitle"),
+      summary: t("authorize.copilotStartSummary"),
       bullets: [],
       metrics: [
-        { label: "授权方式", value: "Shopify 官方" },
-        { label: "数据权限", value: "只读" },
+        { label: t("authorize.copilotStartAuthMethodLabel"), value: t("authorize.copilotStartAuthMethod") },
+        { label: t("authorize.copilotStartPermissionLabel"), value: t("authorize.copilotStartPermission") },
       ],
       nextAction: {
-        label: canConnect ? "连接 Shopify 店铺" : "填写店铺域名",
+        label: canConnect ? t("authorize.copilotStartConnect") : t("authorize.copilotStartEnterDomain"),
         action: "connect",
         disabled: !canConnect,
-        disabledReason: canConnect
-          ? undefined
-          : "请先在中间填写店铺域名，再发起授权。",
-        description: canConnect
-          ? "跳转 Shopify 确认授权，完成后自动返回。"
-          : undefined,
+        disabledReason: canConnect ? undefined : t("authorize.copilotStartDisabledReason"),
+        description: canConnect ? t("authorize.copilotStartConnectDesc") : undefined,
       },
     },
     suggestions: [
       {
         id: "how",
-        q: "怎么连接店铺？",
-        a: "填写 .myshopify.com 域名，点击连接按钮，在 Shopify 官方页确认授权即可。",
+        q: t("authorize.copilotStartSuggestHowQ"),
+        a: t("authorize.copilotStartSuggestHowA"),
       },
       {
         id: "data",
-        q: "会读取哪些数据？",
-        a: "只读商品、库存、订单等基础数据，用于分析与货源匹配，不会修改店铺。",
+        q: t("authorize.copilotStartSuggestDataQ"),
+        a: t("authorize.copilotStartSuggestDataA"),
       },
       {
         id: "time",
-        q: "大概要多久？",
-        a: "授权通常 1 分钟内完成，商品镜像会在后台自动同步。",
+        q: t("authorize.copilotStartSuggestTimeQ"),
+        a: t("authorize.copilotStartSuggestTimeA"),
       },
     ],
   };
 }
 
 function TwoStepProgress({
+  t,
   authorizing,
   phase,
   syncing,
 }: {
+  t: TranslateFn;
   authorizing: boolean;
   phase: Phase;
   syncing?: boolean;
@@ -638,7 +642,7 @@ function TwoStepProgress({
 
   return (
     <div className="flex items-center gap-3">
-      <StepPill index={1} label="选择店铺" done={step1Done} active={!step1Done} />
+      <StepPill index={1} label={t("authorize.stepSelectShop")} done={step1Done} active={!step1Done} />
       {/* When authorized, the connector carries the "授权成功" status badge (centered over the line). */}
       <div className="relative flex flex-1 items-center">
         <span
@@ -648,15 +652,21 @@ function TwoStepProgress({
           )}
         />
         {authorized ? (
-          <span className="absolute left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-emerald-200 bg-brand-soft px-3 py-1 text-xs font-medium text-brand-strong shadow-card">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            授权成功{syncing ? " · 同步中" : ""}
+          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 inline-flex max-w-[80%] flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-full border border-brand-accent/25 bg-brand-soft px-3 py-1 text-center text-xs font-medium leading-tight text-brand-accent shadow-card">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+            <span>{t("authorize.authSuccess")}</span>
+            {syncing ? (
+              <span className="inline-flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {t("authorize.authSuccessSyncing")}
+              </span>
+            ) : null}
           </span>
         ) : null}
       </div>
       <StepPill
         index={2}
-        label="授权并连接"
+        label={t("authorize.stepAuthorize")}
         done={step2Done}
         active={step2Active}
         loading={connecting}
@@ -698,9 +708,10 @@ function StepPill({
       </span>
       <span
         className={cn(
-          "text-xs font-medium",
+          "min-w-0 truncate text-xs font-medium",
           done || active ? "text-ink" : "text-ink-subtle"
         )}
+        title={label}
       >
         {label}
       </span>
@@ -709,17 +720,17 @@ function StepPill({
 }
 
 /** Post-redirect "接入中" state: real status restore, no fake scanning. */
-function RestoringBlock() {
+function RestoringBlock({ t }: { t: TranslateFn }) {
   return (
     <div className="mt-5 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-4 py-4">
       <div className="flex items-center gap-2 text-sm font-medium text-ink">
         <Loader2 className="h-4 w-4 animate-spin text-brand" />
-        正在恢复授权状态…
+        {t("authorize.restoringTitle")}
       </div>
       <ul className="mt-2.5 space-y-1.5 text-xs text-ink-muted">
-        <li>· 校验 Shopify 授权</li>
-        <li>· 读取店铺与已同步商品</li>
-        <li>· 正在同步店铺基础数据</li>
+        <li>· {t("authorize.restoringStep1")}</li>
+        <li>· {t("authorize.restoringStep2")}</li>
+        <li>· {t("authorize.restoringStep3")}</li>
       </ul>
     </div>
   );
@@ -727,6 +738,7 @@ function RestoringBlock() {
 
 /** Authorized state: real fields only (no orders / revenue, which have no reliable source yet). */
 function ConnectSummary({
+  t,
   name,
   domain,
   authorizedAt,
@@ -734,6 +746,7 @@ function ConnectSummary({
   boundCount,
   publishedCount,
 }: {
+  t: TranslateFn;
   name: string;
   domain: string;
   authorizedAt?: string;
@@ -742,19 +755,19 @@ function ConnectSummary({
   publishedCount: number | null;
 }) {
   return (
-    <div className="mt-4 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft px-3 py-2">
+    <div className="mt-4 rounded-[var(--radius-control)] border border-brand-accent/20 bg-brand-soft px-3 py-2">
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs sm:grid-cols-3">
-        <SummaryStat label="店铺" value={name} />
-        <SummaryStat label="店铺域名" value={domain} />
-        <SummaryStat label="授权时间" value={authorizedAt || "—"} />
-        <SummaryStat label="已同步商品" value={syncedProductLabel} />
+        <SummaryStat label={t("authorize.statShop")} value={name} />
+        <SummaryStat label={t("authorize.statDomain")} value={domain} />
+        <SummaryStat label={t("authorize.statAuthorizedAt")} value={authorizedAt || "—"} />
+        <SummaryStat label={t("authorize.statSyncedProducts")} value={syncedProductLabel} />
         <SummaryStat
-          label="已关联货源"
-          value={boundCount == null ? "读取中…" : String(boundCount)}
+          label={t("authorize.statBoundSources")}
+          value={boundCount == null ? t("authorize.loading") : String(boundCount)}
         />
         <SummaryStat
-          label="已刊登"
-          value={publishedCount == null ? "读取中…" : String(publishedCount)}
+          label={t("authorize.statPublished")}
+          value={publishedCount == null ? t("authorize.loading") : String(publishedCount)}
         />
       </div>
     </div>

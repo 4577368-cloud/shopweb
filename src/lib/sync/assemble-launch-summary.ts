@@ -1,3 +1,4 @@
+import type { TranslateFn } from "@/i18n/server";
 import { api } from "@/lib/api";
 import { computeLogisticsPlanMetrics } from "@/lib/logistics/display";
 import {
@@ -31,29 +32,34 @@ import {
 } from "@/lib/sync/fulfillment-copy";
 
 function buildProductChecks(
-  itemId: string,
   binding: ImageBindingView | undefined,
   skuItem: SkuAlignOverview["items"][number] | undefined,
-  logisticsConfirmed: boolean
+  logisticsConfirmed: boolean,
+  t: TranslateFn
 ): string[] {
   const checks: string[] = [];
   if (binding?.bound && binding.bindStatus === "ACTIVE") {
-    checks.push("已关联货源");
+    checks.push(t("launchSummary.checkSourceLinked"));
   } else if (binding?.bound) {
-    checks.push("货源候选待确认");
+    checks.push(t("launchSummary.checkSourcePending"));
   }
   if (skuItem) {
     if (skuItem.alignedVariants >= skuItem.totalVariants && skuItem.totalVariants > 0) {
-      checks.push("SKU 映射完成");
+      checks.push(t("launchSummary.checkSkuComplete"));
     } else if (skuItem.alignedVariants > 0) {
-      checks.push(`SKU 已映射 ${skuItem.alignedVariants}/${skuItem.totalVariants}`);
+      checks.push(
+        t("launchSummary.checkSkuPartial", {
+          aligned: skuItem.alignedVariants,
+          total: skuItem.totalVariants,
+        })
+      );
     }
   }
   if (logisticsConfirmed) {
-    checks.push("物流线路已确认（本地）");
+    checks.push(t("launchSummary.checkLogisticsConfirmed"));
   }
   if (checks.length === 0) {
-    checks.push("已纳入开店准备清单");
+    checks.push(t("launchSummary.checkInLaunchList"));
   }
   return checks;
 }
@@ -73,7 +79,8 @@ function buildCarouselProducts(
   shopProducts: ShopMirrorProduct[],
   bindingsMap: Record<string, ImageBindingView>,
   skuOverview: SkuAlignOverview | null,
-  analysis: LogisticsAnalysis | null
+  analysis: LogisticsAnalysis | null,
+  t: TranslateFn
 ): LaunchProduct[] {
   const skuByItem = new Map(
     (skuOverview?.items ?? []).map((item) => [item.thirdPlatformItemId, item])
@@ -108,7 +115,7 @@ function buildCarouselProducts(
       return {
         itemId,
         image,
-        title: title || "未命名商品",
+        title: title || t("launchSummary.unnamedProduct"),
         product,
         skuItem,
         binding,
@@ -132,10 +139,10 @@ function buildCarouselProducts(
     title: row.title,
     image: row.image,
     checks: buildProductChecks(
-      row.itemId,
       bindingsMap[row.itemId],
       row.skuItem,
-      isProductLogisticsConfirmed(row.itemId, analysis)
+      isProductLogisticsConfirmed(row.itemId, analysis),
+      t
     ),
   }));
 }
@@ -168,7 +175,8 @@ function buildCeremonyStats(
 function buildFollowUps(
   binding: ReturnType<typeof computeShopProductBindingStats>,
   skuOverview: SkuAlignOverview | null,
-  logistics: ReturnType<typeof computeLogisticsPlanMetrics>
+  logistics: ReturnType<typeof computeLogisticsPlanMetrics>,
+  t: TranslateFn
 ): FollowUpItem[] {
   const items: FollowUpItem[] = [];
 
@@ -177,10 +185,10 @@ function buildFollowUps(
     items.push({
       id: "sku-unmapped",
       count: unmappedSkus,
-      title: `${unmappedSkus} 个变体尚未映射货源 SKU`,
-      description: "不影响已上架商品销售，建议尽快补齐映射。",
+      title: t("launchSummary.followUpUnmappedTitle", { count: unmappedSkus }),
+      description: t("launchSummary.followUpUnmappedDesc"),
       href: "/sku-align",
-      actionLabel: "去处理",
+      actionLabel: t("launchSummary.followUpUnmappedAction"),
     });
   }
 
@@ -191,10 +199,10 @@ function buildFollowUps(
     items.push({
       id: "logistics-issues",
       count: logisticsIssues,
-      title: `${logisticsIssues} 个变体物流待确认或报价失败`,
-      description: "可回到物流页重新拉取线路或手动确认。",
+      title: t("launchSummary.followUpLogisticsTitle", { count: logisticsIssues }),
+      description: t("launchSummary.followUpLogisticsDesc"),
       href: "/logistics",
-      actionLabel: "去处理",
+      actionLabel: t("launchSummary.followUpLogisticsAction"),
     });
   }
 
@@ -202,10 +210,10 @@ function buildFollowUps(
     items.push({
       id: "link-pending",
       count: binding.pending,
-      title: `${binding.pending} 个商品关联待确认`,
-      description: "候选匹配已生成，等待你确认或替换货源。",
+      title: t("launchSummary.followUpBindingPendingTitle", { count: binding.pending }),
+      description: t("launchSummary.followUpBindingPendingDesc"),
       href: "/products",
-      actionLabel: "去处理",
+      actionLabel: t("launchSummary.followUpBindingPendingAction"),
     });
   }
 
@@ -213,10 +221,10 @@ function buildFollowUps(
     items.push({
       id: "no-source",
       count: binding.unbound,
-      title: `${binding.unbound} 个商品未关联货源`,
-      description: "这些商品尚未绑定采购来源，无法自动履约。",
+      title: t("launchSummary.followUpUnboundTitle", { count: binding.unbound }),
+      description: t("launchSummary.followUpUnboundDesc"),
       href: "/products",
-      actionLabel: "去处理",
+      actionLabel: t("launchSummary.followUpUnboundAction"),
     });
   }
 
@@ -227,7 +235,8 @@ function buildProgressTasks(
   binding: ReturnType<typeof computeShopProductBindingStats>,
   skuOverview: SkuAlignOverview | null,
   logistics: ReturnType<typeof computeLogisticsPlanMetrics>,
-  followUpCount: number
+  followUpCount: number,
+  t: TranslateFn
 ): { tasks: ProgressTask[]; targetPercent: number } {
   const skuAligned = (skuOverview?.items ?? []).reduce(
     (sum, item) => sum + item.alignedVariants,
@@ -250,34 +259,50 @@ function buildProgressTasks(
   const tasks: ProgressTask[] = [
     {
       id: "source-links",
-      label: "货源关联",
+      label: t("launchSummary.statSourceLinks"),
       detail:
         binding.analyzed > 0
-          ? `${binding.confirmed + binding.pending} / ${binding.analyzed} 商品`
+          ? t("launchSummary.statSourceDetail", {
+              linked: binding.confirmed + binding.pending,
+              total: binding.analyzed,
+            })
           : undefined,
       status: bindingDone ? "done" : bindingPartial ? "running" : "pending",
     },
     {
       id: "sku-map",
-      label: "SKU 履约映射",
-      detail: skuTotal > 0 ? `${skuAligned} / ${skuTotal} 变体` : undefined,
+      label: t("launchSummary.statSkuMapping"),
+      detail:
+        skuTotal > 0
+          ? t("launchSummary.statSkuDetail", { aligned: skuAligned, total: skuTotal })
+          : undefined,
       status: skuDone ? "done" : skuPartial ? "running" : "pending",
     },
     {
       id: "logistics",
-      label: "物流方案确认",
+      label: t("launchSummary.statLogistics"),
       detail:
         logistics.variantCount > 0
           ? logistics.quotedCount > 0
-            ? `已报价 ${logistics.quotedCount} · 本地确认 ${logistics.confirmedCount} / ${logistics.variantCount}`
-            : `本地确认 ${logistics.confirmedCount} / ${logistics.variantCount} 变体`
+            ? t("launchSummary.statLogisticsQuoted", {
+                quoted: logistics.quotedCount,
+                confirmed: logistics.confirmedCount,
+                total: logistics.variantCount,
+              })
+            : t("launchSummary.statLogisticsConfirmed", {
+                confirmed: logistics.confirmedCount,
+                total: logistics.variantCount,
+              })
           : undefined,
       status: logisticsDone ? "done" : logisticsPartial ? "running" : "pending",
     },
     {
       id: "follow-ups",
-      label: "待关注事项",
-      detail: followUpCount > 0 ? `${followUpCount} 项` : "无",
+      label: t("launchSummary.statFollowUp"),
+      detail:
+        followUpCount > 0
+          ? t("launchSummary.statFollowUpCount", { count: followUpCount })
+          : t("launchSummary.statFollowUpNone"),
       status: followUpCount > 0 ? "running" : "done",
     },
   ];
@@ -297,7 +322,8 @@ function buildProgressTasks(
 function buildPipelineSteps(
   binding: ReturnType<typeof computeShopProductBindingStats>,
   skuOverview: SkuAlignOverview | null,
-  logistics: ReturnType<typeof computeLogisticsPlanMetrics>
+  logistics: ReturnType<typeof computeLogisticsPlanMetrics>,
+  t: TranslateFn
 ): PipelineStep[] {
   const skuAligned = (skuOverview?.items ?? []).reduce(
     (sum, item) => sum + item.alignedVariants,
@@ -308,68 +334,77 @@ function buildPipelineSteps(
   return [
     {
       id: "authorize",
-      title: "授权店铺",
+      title: t("launchSummary.timelineAuth"),
       status: "completed",
-      badge: "已完成",
-      summary: "店铺连接成功",
+      badge: t("launchSummary.timelineAuthBadge"),
+      summary: t("launchSummary.timelineAuthSummary"),
     },
     {
       id: "products",
-      title: "选品关联",
+      title: t("launchSummary.timelineProducts"),
       status: "completed",
-      badge: "已完成",
-      summary: `${binding.confirmed + binding.pending} / ${binding.analyzed} 商品已关联货源`,
+      badge: t("launchSummary.timelineProductsBadge"),
+      summary: t("launchSummary.timelineProductsSummary", {
+        linked: binding.confirmed + binding.pending,
+        total: binding.analyzed,
+      }),
     },
     {
       id: "ai-optimize",
-      title: "AI 优化",
+      title: t("launchSummary.timelineAi"),
       status: "completed",
-      badge: "已完成",
+      badge: t("launchSummary.timelineAiBadge"),
       summary:
         binding.confirmed > 0
-          ? `已确认关联 ${binding.confirmed} 个商品`
-          : "关联数据已汇总",
+          ? t("launchSummary.timelineAiSummaryConfirmed", { count: binding.confirmed })
+          : t("launchSummary.timelineAiSummaryDefault"),
     },
     {
       id: "sku-map",
-      title: "SKU 映射",
+      title: t("launchSummary.timelineSku"),
       status: skuTotal > 0 && skuAligned >= skuTotal ? "completed" : "completed",
-      badge: "已完成",
+      badge: t("launchSummary.timelineSkuBadge"),
       summary:
         skuTotal > 0
-          ? `${skuAligned} / ${skuTotal} 变体已映射`
-          : "暂无 SKU 数据",
+          ? t("launchSummary.timelineSkuSummary", { aligned: skuAligned, total: skuTotal })
+          : t("launchSummary.timelineSkuSummaryEmpty"),
     },
     {
       id: "logistics",
-      title: "物流匹配",
+      title: t("launchSummary.timelineLogistics"),
       status: "completed",
-      badge: "已完成",
+      badge: t("launchSummary.timelineLogisticsBadge"),
       summary:
         logistics.variantCount > 0
-          ? `${logistics.confirmedCount} / ${logistics.variantCount} 变体已确认`
-          : "暂无物流数据",
+          ? t("launchSummary.timelineLogisticsSummary", {
+              confirmed: logistics.confirmedCount,
+              total: logistics.variantCount,
+            })
+          : t("launchSummary.timelineLogisticsSummaryEmpty"),
     },
     {
       id: "sync-complete",
-      title: "同步完成",
+      title: t("launchSummary.timelineSync"),
       status: "active",
-      badge: "当前",
-      summary: "开店准备报告已生成",
+      badge: t("launchSummary.timelineSyncBadge"),
+      summary: t("launchSummary.timelineSyncSummary"),
     },
   ];
 }
 
-function formatLogisticsStrategy(template: LogisticsTemplate | null): {
+function formatLogisticsStrategy(
+  template: LogisticsTemplate | null,
+  t: TranslateFn
+): {
   markets: string;
   speed: string;
   packaging: string;
 } {
   if (!template) {
     return {
-      markets: "未配置",
-      speed: "—",
-      packaging: "—",
+      markets: t("launchSummary.marketsNotConfigured"),
+      speed: t("launchSummary.strategyDash"),
+      packaging: t("launchSummary.strategyDash"),
     };
   }
   const markets =
@@ -377,16 +412,16 @@ function formatLogisticsStrategy(template: LogisticsTemplate | null): {
       ?.flatMap((m) => m.countryCodes ?? [])
       .filter(Boolean)
       .slice(0, 4)
-      .join(" / ") || "未配置市场";
+      .join(" / ") || t("launchSummary.marketsNotConfigured");
   const speedMap: Record<string, string> = {
-    fast: "优先时效",
-    balanced: "均衡时效",
-    economy: "经济优先",
+    fast: t("launchSummary.speedFast"),
+    balanced: t("launchSummary.speedBalanced"),
+    economy: t("launchSummary.speedEconomy"),
   };
   const packMap: Record<string, string> = {
-    minimal: "极简包装",
-    standard: "标准包装",
-    reinforced: "加固包装",
+    minimal: t("launchSummary.packMinimal"),
+    standard: t("launchSummary.packStandard"),
+    reinforced: t("launchSummary.packReinforced"),
   };
   return {
     markets,
@@ -395,7 +430,37 @@ function formatLogisticsStrategy(template: LogisticsTemplate | null): {
   };
 }
 
-export async function assembleLaunchSummary(shopName: string): Promise<LaunchSummary> {
+function buildPricingStrategy(template: PricingTemplate | null, t: TranslateFn) {
+  if (!template || template.isDefault) {
+    return {
+      sourceLabel: t("sync.pricingSourceLabel"),
+      exchangeRate: 7.0,
+      multiplier: 2.8,
+      addend: 0.99,
+      targetCurrency: "USD",
+      rounding: t("launchSummary.pricingNotSaved"),
+      isDefault: true,
+    };
+  }
+  return {
+    sourceLabel: t("sync.pricingSourceLabel"),
+    exchangeRate: template.exchangeRate,
+    multiplier: template.multiplier,
+    addend: template.addend ?? 0,
+    targetCurrency: template.targetCurrency ?? "USD",
+    rounding: template.roundingStrategy
+      ? t("launchSummary.pricingRounding", {
+          strategy: template.roundingStrategy,
+        })
+      : t("launchSummary.pricingDefault"),
+    isDefault: false,
+  };
+}
+
+export async function assembleLaunchSummary(
+  shopName: string,
+  t: TranslateFn
+): Promise<LaunchSummary> {
   const [
     shopProducts,
     bindings,
@@ -426,19 +491,21 @@ export async function assembleLaunchSummary(shopName: string): Promise<LaunchSum
       ? mergeQuoteResultsIntoAnalysis(logisticsAnalysis, quoteResults)
       : logisticsAnalysis;
   const logistics = computeLogisticsPlanMetrics(mergedAnalysis, quoteResults);
-  const followUps = buildFollowUps(binding, skuOverview, logistics);
+  const followUps = buildFollowUps(binding, skuOverview, logistics, t);
   const { tasks, targetPercent } = buildProgressTasks(
     binding,
     skuOverview,
     logistics,
-    followUps.length
+    followUps.length,
+    t
   );
 
   const products = buildCarouselProducts(
     shopProducts,
     bindingsMap,
     skuOverview,
-    mergedAnalysis
+    mergedAnalysis,
+    t
   );
 
   const stats = buildCeremonyStats(
@@ -449,7 +516,7 @@ export async function assembleLaunchSummary(shopName: string): Promise<LaunchSum
     products.length
   );
 
-  const logisticsStrategy = formatLogisticsStrategy(activeTemplate);
+  const logisticsStrategy = formatLogisticsStrategy(activeTemplate, t);
 
   const skuAligned = (skuOverview?.items ?? []).reduce(
     (sum, item) => sum + item.alignedVariants,
@@ -461,13 +528,13 @@ export async function assembleLaunchSummary(shopName: string): Promise<LaunchSum
     meta: {
       shopName,
       shopDomain: shopName,
-      completedAt: new Date().toLocaleString("zh-CN"),
+      completedAt: new Date().toLocaleString(),
       locale: "zh-CN",
       dataSource: "live",
     },
     pipeline: {
       currentStepId: "sync-complete",
-      steps: buildPipelineSteps(binding, skuOverview, logistics),
+      steps: buildPipelineSteps(binding, skuOverview, logistics, t),
     },
     shopifyWrites: {
       newListings: binding.confirmed,
@@ -492,7 +559,7 @@ export async function assembleLaunchSummary(shopName: string): Promise<LaunchSum
       ctaLabel: "sync.ctaViewSku",
     },
     strategy: {
-      pricing: buildPricingStrategy(pricingTemplate),
+      pricing: buildPricingStrategy(pricingTemplate, t),
       logistics: logisticsStrategy,
     },
     products,
@@ -503,30 +570,5 @@ export async function assembleLaunchSummary(shopName: string): Promise<LaunchSum
       footnote: LAUNCH_PROGRESS_FOOTNOTE,
     },
     followUps,
-  };
-}
-
-function buildPricingStrategy(template: PricingTemplate | null) {
-  if (!template || template.isDefault) {
-    return {
-      sourceLabel: "sync.pricingSourceLabel",
-      exchangeRate: 7.0,
-      multiplier: 2.8,
-      addend: 0.99,
-      targetCurrency: "USD",
-      rounding: "尚未保存定价策略",
-      isDefault: true,
-    };
-  }
-  return {
-    sourceLabel: "采购价 (CNY)",
-    exchangeRate: template.exchangeRate,
-    multiplier: template.multiplier,
-    addend: template.addend ?? 0,
-    targetCurrency: template.targetCurrency ?? "USD",
-    rounding: template.roundingStrategy
-      ? `取整：${template.roundingStrategy}`
-      : "按店铺定价策略",
-    isDefault: false,
   };
 }

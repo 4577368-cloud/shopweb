@@ -157,18 +157,18 @@ export function skuWorkflowStatus(status: SkuAlignStatus): WorkflowStatus {
 }
 
 const rowActionVariants = cva(
-  "inline-flex items-center justify-center gap-1 whitespace-nowrap rounded border text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40",
+  "inline-flex items-center justify-center gap-1 whitespace-nowrap rounded border text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 disabled:pointer-events-none disabled:opacity-40",
   {
     variants: {
       tone: {
         default:
-          "h-7 border-slate-200 bg-white px-2 text-slate-700 hover:bg-slate-50",
+          "h-7 border-surface-border bg-surface px-2 text-foreground hover:bg-surface-hover",
         primary:
-          "h-7 border-brand bg-brand px-2 text-white hover:bg-brand-strong",
+          "h-7 border-brand bg-brand px-2 text-brand-foreground hover:bg-brand-hover",
         danger:
-          "h-7 border-red-200 bg-white px-2 text-red-700 hover:bg-red-50",
+          "h-7 border-destructive/30 bg-surface px-2 text-destructive hover:bg-destructive-soft",
         ghost:
-          "h-7 border-transparent bg-transparent px-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800",
+          "h-7 border-transparent bg-transparent px-1.5 text-muted-foreground hover:bg-surface-hover hover:text-foreground",
       },
     },
     defaultVariants: { tone: "default" },

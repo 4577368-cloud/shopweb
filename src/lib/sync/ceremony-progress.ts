@@ -3,6 +3,11 @@ import type { ProgressTask } from "@/lib/sync/launch-summary";
 export const CEREMONY_PROGRESS_MS = 15_000;
 export const CEREMONY_HOLD_MS = 5_000;
 
+export type CeremonyTranslate = (
+  key: string,
+  params?: Record<string, string | number>
+) => string;
+
 export interface CeremonyStats {
   productsTotal: number;
   productsInCeremony: number;
@@ -30,6 +35,7 @@ export function displayStat(
 }
 
 export function buildCeremonyTasks(
+  t: CeremonyTranslate,
   stats: CeremonyStats,
   percent: number,
   showFull: boolean
@@ -54,8 +60,15 @@ export function buildCeremonyTasks(
   const logisticsDetail =
     p.logisticsTotal > 0
       ? p.logisticsQuoted > 0
-        ? `已报价 ${shownQuoted} · 已确认 ${shownConfirmed} / ${p.logisticsTotal}`
-        : `已确认 ${shownConfirmed} / ${p.logisticsTotal}`
+        ? t("syncCeremony.taskLogisticsQuoted", {
+            quoted: shownQuoted,
+            confirmed: shownConfirmed,
+            total: p.logisticsTotal,
+          })
+        : t("syncCeremony.taskLogisticsConfirmed", {
+            confirmed: shownConfirmed,
+            total: p.logisticsTotal,
+          })
       : undefined;
 
   const logisticsStatus =
@@ -70,21 +83,32 @@ export function buildCeremonyTasks(
   return [
     {
       id: "products",
-      label: "扫描店铺商品",
-      detail: `${shownProducts} / ${p.productsTotal} 件`,
+      label: t("syncCeremony.taskScanProducts"),
+      detail: t("syncCeremony.taskProductsDetail", {
+        shown: shownProducts,
+        total: p.productsTotal,
+      }),
       status: showFull || pct >= 25 ? "done" : pct > 0 ? "running" : "pending",
     },
     {
       id: "source-links",
-      label: "汇总货源关联",
-      detail: `${shownSources} / ${p.sourceLinksTotal} 商品`,
+      label: t("syncCeremony.taskSourceLinks"),
+      detail: t("syncCeremony.taskSourceDetail", {
+        shown: shownSources,
+        total: p.sourceLinksTotal,
+      }),
       status: showFull || pct >= 50 ? "done" : pct >= 20 ? "running" : "pending",
     },
     {
       id: "sku-map",
-      label: "核对 SKU 履约映射",
+      label: t("syncCeremony.taskSkuMap"),
       detail:
-        p.skuTotal > 0 ? `${shownSku} / ${p.skuTotal} 变体` : "暂无 SKU 数据",
+        p.skuTotal > 0
+          ? t("syncCeremony.taskSkuDetail", {
+              shown: shownSku,
+              total: p.skuTotal,
+            })
+          : t("syncCeremony.taskSkuEmpty"),
       status:
         showFull || pct >= 75
           ? "done"
@@ -96,14 +120,19 @@ export function buildCeremonyTasks(
     },
     {
       id: "logistics",
-      label: "归档物流方案",
+      label: t("syncCeremony.taskLogistics"),
       detail: logisticsDetail,
       status: logisticsStatus,
     },
     {
       id: "report",
-      label: "生成开店准备报告",
-      detail: showFull || pct >= 100 ? "完成" : pct >= 90 ? "生成中" : undefined,
+      label: t("syncCeremony.taskReport"),
+      detail:
+        showFull || pct >= 100
+          ? t("syncCeremony.taskReportDone")
+          : pct >= 90
+            ? t("syncCeremony.taskReportGenerating")
+            : undefined,
       status: showFull || pct >= 100 ? "done" : pct >= 90 ? "running" : "pending",
     },
   ];

@@ -1,3 +1,4 @@
+import type { TranslateFn } from "@/i18n/server";
 import type { SkuAlignProductDetail, SkuAlignVariantRow } from "./types";
 
 /** Variants where the engine confirmed the primary offer matrix has no matching option. */
@@ -15,15 +16,16 @@ export function needsSupplementSource(detail: SkuAlignProductDetail): boolean {
 }
 
 /** Human-readable, data-driven hint — concise and friendly. */
-export function buildSupplementSourceHint(detail: SkuAlignProductDetail): string {
+export function buildSupplementSourceHint(
+  t: TranslateFn,
+  detail: SkuAlignProductDetail
+): string {
   const gaps = supplementGapVariants(detail);
   const count = gaps.length || (detail.summary.noSourceVariants ?? 0);
 
-  if (count === 1) {
-    return "1 个规格当前货源未覆盖，可添加补充货源解决。";
-  }
+  if (count === 1) return t("skuBinding.supplementHintOne");
   if (count > 1) {
-    return `${count} 个规格当前货源未覆盖，可添加补充货源解决。`;
+    return t("skuBinding.supplementHintMany", { count });
   }
-  return "部分规格当前货源未覆盖，可添加补充货源解决。";
+  return t("skuBinding.supplementHintPartial");
 }

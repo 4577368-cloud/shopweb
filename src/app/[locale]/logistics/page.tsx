@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import dynamic from "next/dynamic";
+import { Loader2 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -11,19 +12,12 @@ import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { AssistantRail } from "@/components/workbench/assistant-rail";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeleton";
-import { LogisticsAgentPanel } from "@/components/logistics/logistics-agent-panel";
-import { LogisticsTemplateSetupCard } from "@/components/logistics/logistics-template-setup-card";
-import {
-  LogisticsDecisionList,
-  type LogisticsFocusTarget,
-  type MeasureOverride,
-} from "@/components/logistics/logistics-decision-list";
-import { LogisticsPlanStatusCard } from "@/components/logistics/logistics-plan-status-card";
-import { LogisticsSyncConfirmCard } from "@/components/logistics/logistics-sync-confirm-card";
-import { LogisticsTemplateDrawer } from "@/components/logistics/logistics-template-drawer";
+import { FadeSwap } from "@/components/ui/fade-swap";
 import type { LogisticsCommandPlan } from "@/lib/agents/logistics/command-schema";
 import { codesFromSelections } from "@/components/logistics/market-multi-select";
 import { useOnboarding } from "@/context/onboarding-context";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 import { useLogisticsIncrementalPipeline } from "@/hooks/use-logistics-incremental-pipeline";
 import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
 import { api, readableError, type LogisticsAcceptDecisionRequest, type LogisticsEstimateResult } from "@/lib/api";
@@ -32,8 +26,6 @@ import {
   coerceLogisticsFilterMode,
   normalizeLogisticsFilterMode,
 } from "@/lib/logistics/display";
-import { LogisticsWorkflowSteps, deriveLogisticsWorkflowStep, type LogisticsWorkflowStep } from "@/components/logistics/logistics-workflow-steps";
-import { LogisticsClassifyStage } from "@/components/logistics/logistics-classify-stage";
 import {
   buildEstimateParams,
   listTemplateCountryCodes,
@@ -63,6 +55,8 @@ import { GOODS_INGESTING_MESSAGE } from "@/lib/logistics/estimate-goods-block";
 import { enrichVariantsWithEstimateGoodsIds } from "@/lib/logistics/resolve-estimate-goods-id";
 import { quoteStatusForGoodsBlock } from "@/lib/logistics/estimate-goods-block";
 import { countCatalogIngestingProducts } from "@/lib/tangbuy/catalog-ingest-display";
+import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
+import { aggregateDecisionCounts } from "@/lib/logistics/decision-engine";
 import type {
   LogisticsAnalysis,
   LogisticsDecisionStatus,
@@ -71,17 +65,24 @@ import type {
   PricingTemplate,
   VariantLogisticsDecision,
 } from "@/lib/types";
+import type { LogisticsFocusTarget, MeasureOverride } from "@/components/logistics/logistics-decision-list";
+import type { LogisticsWorkflowStep } from "@/components/logistics/logistics-workflow-steps";
 
-const BREADCRUMBS = [
-  { label: "工作台", href: "/" },
-  { label: "SKU 对齐", href: "/sku-align" },
-  { label: "物流选择" },
-];
+const LogisticsAgentPanel = dynamic(() => import("@/components/logistics/logistics-agent-panel").then((m) => ({ default: m.LogisticsAgentPanel })), { ssr: false });
+const LogisticsTemplateSetupCard = dynamic(() => import("@/components/logistics/logistics-template-setup-card").then((m) => ({ default: m.LogisticsTemplateSetupCard })), { ssr: false });
+const LogisticsDecisionList = dynamic(() => import("@/components/logistics/logistics-decision-list").then((m) => ({ default: m.LogisticsDecisionList })), { ssr: false });
+const LogisticsPlanStatusCard = dynamic(() => import("@/components/logistics/logistics-plan-status-card").then((m) => ({ default: m.LogisticsPlanStatusCard })), { ssr: false });
+const LogisticsSyncConfirmCard = dynamic(() => import("@/components/logistics/logistics-sync-confirm-card").then((m) => ({ default: m.LogisticsSyncConfirmCard })), { ssr: false });
+const LogisticsTemplateDrawer = dynamic(() => import("@/components/logistics/logistics-template-drawer").then((m) => ({ default: m.LogisticsTemplateDrawer })), { ssr: false });
+const LogisticsWorkflowSteps = dynamic(() => import("@/components/logistics/logistics-workflow-steps").then((m) => ({ default: m.LogisticsWorkflowSteps })), { ssr: false });
+const LogisticsClassifyStage = dynamic(() => import("@/components/logistics/logistics-classify-stage").then((m) => ({ default: m.LogisticsClassifyStage })), { ssr: false });
 
-const DEFAULT_TEMPLATE = (shopName: string): LogisticsTemplate => ({
+import { deriveLogisticsWorkflowStep } from "@/components/logistics/logistics-workflow-steps";
+
+const DEFAULT_TEMPLATE = (shopName: string, name = "Default template"): LogisticsTemplate => ({
   id: "default",
   shopName,
-  name: "默认模板",
+  name,
   packaging: "MINIMAL",
   speedPreference: "BALANCED",
   markets: [{ marketGroupId: "north_america", countryCodes: ["US"] }],
@@ -94,6 +95,14 @@ function LogisticsContent() {
     useOnboarding();
   const shopName = shop.name?.trim() || shop.domain?.trim() || "";
   const wb = useWorkbenchPage("logistics");
+  const t = useT();
+  const locale = useLocale();
+
+  const breadcrumbs = [
+    { label: t("nav.workbench"), href: localePath(locale, "/") },
+    { label: t("sku.breadcrumb"), href: localePath(locale, "/sku-align") },
+    { label: t("nav.logistics") },
+  ];
 
   const [analysis, setAnalysis] = useState<LogisticsAnalysis | null>(null);
   const [templates, setTemplates] = useState<LogisticsTemplate[]>([]);
@@ -105,7 +114,20 @@ function LogisticsContent() {
   const [error, setError] = useState<string | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [filterMode, setFilterMode] = useState<LogisticsFilterMode>("all");
-  const [workflowStep, setWorkflowStep] = useState<LogisticsWorkflowStep>("setup");
+  const [workflowStep, setWorkflowStep] = useState<LogisticsWorkflowStep>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const step = params.get("step") as LogisticsWorkflowStep;
+      if (step === "setup" || step === "estimate" || step === "confirm") {
+        return step;
+      }
+    }
+    return "setup";
+  });
+
+  useEffect(() => {
+    router.replace(`/logistics?step=${workflowStep}`, { scroll: false });
+  }, [workflowStep, router]);
   const [postalLimitFilter, setPostalLimitFilter] = useState<PostalLimitFilter>("all");
   const [quoteResults, setQuoteResults] = useState<
     Map<string, LogisticsEstimateResult>
@@ -113,6 +135,7 @@ function LogisticsContent() {
   const [quoting, setQuoting] = useState(false);
   const [quotingProductId, setQuotingProductId] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
+  const [batchFailedVariantIds, setBatchFailedVariantIds] = useState<string[]>([]);
   const [focusTarget, setFocusTarget] = useState<LogisticsFocusTarget | null>(
     null
   );
@@ -191,12 +214,46 @@ function LogisticsContent() {
     ].join("|");
   }, [activeTemplate]);
 
+  const prevScopeKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
     setQuoteMarketCode(resolveQuoteMarketCode(activeTemplate, null));
     if (!shopName || !templateScopeKey) {
       setQuoteResults(new Map());
+      prevScopeKeyRef.current = templateScopeKey || null;
       return;
     }
+
+    // 仅当模板维度真正变化（非首次装载）时，把基于旧模板的已确认 SKU
+    // 回退为待确认，避免 completion-gate 被旧确认误导。
+    // 限制：accept 文件按 shop 全局存储，刷新后服务端会重新合并全局确认；
+    // 彻底按模板区分需改造 accept 存储（更大改动），此处覆盖会话内切换场景。
+    if (prevScopeKeyRef.current && prevScopeKeyRef.current !== templateScopeKey) {
+      setAnalysis((prev) => {
+        if (!prev) return prev;
+        const productProfiles = (prev.productProfiles ?? []).map((product) => {
+          const variantDecisions = (product.variantDecisions ?? []).map((v) =>
+            v.decisionConfirmed || v.decisionStatus === "confirmed"
+              ? {
+                  ...v,
+                  decisionStatus: "ready_for_quote" as const,
+                  decisionConfirmed: false,
+                  decisionReason: undefined,
+                }
+              : v
+          );
+          return {
+            ...product,
+            variantDecisions,
+            decisionStatusCounts: aggregateDecisionCounts(variantDecisions),
+          };
+        });
+        return { ...prev, productProfiles };
+      });
+      showToast(t("logistics.templateSwitchResetConfirm"));
+    }
+    prevScopeKeyRef.current = templateScopeKey;
+
     const cached = readQuoteCache(shopName, templateScopeKey);
     setQuoteResults(cached);
     if (cached.size > 0) {
@@ -204,7 +261,16 @@ function LogisticsContent() {
         prev ? mergeQuoteResultsIntoAnalysis(prev, cached) : prev
       );
     }
-  }, [templateScopeKey, shopName, activeTemplate]);
+  }, [templateScopeKey, shopName, activeTemplate, showToast, t]);
+
+  // measureOverrides 持久化：重量/尺寸是物理属性，与模板无关，按 shop 维度存储。
+  useEffect(() => {
+    if (shopName) setMeasureOverrides(readMeasureOverrides(shopName));
+  }, [shopName]);
+
+  useEffect(() => {
+    if (shopName) writeMeasureOverrides(shopName, measureOverrides);
+  }, [shopName, measureOverrides]);
 
   const load = useCallback(
     async (forceClassify: boolean) => {
@@ -225,13 +291,13 @@ function LogisticsContent() {
         if (ts.length > 0) {
           setActiveTemplate(ts[0]);
         } else {
-          setActiveTemplate(DEFAULT_TEMPLATE(shopName));
+          setActiveTemplate(DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName")));
         }
       } catch (err) {
         setError(readableError(err));
         const ts = await api.listLogisticsTemplates(shopName).catch(() => []);
         setTemplates(ts);
-        setActiveTemplate(ts.length > 0 ? ts[0] : DEFAULT_TEMPLATE(shopName));
+        setActiveTemplate(ts.length > 0 ? ts[0] : DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName")));
       } finally {
         setClassifying(false);
         setLoading(false);
@@ -290,7 +356,7 @@ function LogisticsContent() {
           highRiskTypes,
         };
       });
-      showToast("已修正物流类型");
+      showToast(t("logistics.toastTypeCorrected"));
     } catch (err) {
       showToast(readableError(err));
     } finally {
@@ -318,7 +384,7 @@ function LogisticsContent() {
         return [saved, ...prev];
       });
       setActiveTemplate(saved);
-      showToast("物流模板已暂存于本应用");
+      showToast(t("logistics.toastTemplateSaved"));
       setWorkflowStep("estimate");
       return saved;
     } catch (err) {
@@ -336,10 +402,10 @@ function LogisticsContent() {
       if (activeTemplate?.id === id) {
         const remaining = templates.filter((t) => t.id !== id);
         setActiveTemplate(
-          remaining.length > 0 ? remaining[0] : DEFAULT_TEMPLATE(shopName)
+          remaining.length > 0 ? remaining[0] : DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName"))
         );
       }
-      showToast("模板已删除");
+      showToast(t("logistics.toastTemplateDeleted"));
     } catch (err) {
       showToast(readableError(err));
     }
@@ -354,7 +420,7 @@ function LogisticsContent() {
     if (!activeTemplate || saving) return;
     const codes = codesFromSelections(activeTemplate.markets);
     if (codes.length === 0) {
-      showToast("先选销售国家");
+      showToast(t("logistics.toastPickMarket"));
       return;
     }
     setSaving(true);
@@ -373,7 +439,7 @@ function LogisticsContent() {
 
   const handleSaveAndSync = () => {
     if (completionGate.tier === "blocked") {
-      showToast(completionGate.blockers[0] ?? "先处理阻塞项");
+      showToast(completionGate.blockers[0] ?? t("logistics.toastHandleBlocker"));
       return;
     }
     if (completionGate.tier === "confirm") {
@@ -484,14 +550,14 @@ function LogisticsContent() {
 
       const marketCode = resolveQuoteMarketCode(activeTemplate, quoteMarketCode);
       if (!marketCode) {
-        showToast("请先在模板中配置销售市场");
+        showToast(t("logistics.toastConfigMarket"));
         return null;
       }
       const countryId = await resolveTangbuyCountryId(marketCode);
       const params = buildEstimateParams(activeTemplate, quoteMarketCode, countryId);
       if (!params) {
         showToast(
-          `未解析到 ${marketCode} 的 Tangbuy countryId，请在 dropshipping 后台试算并从网络请求复制，写入 TANGBUY_COUNTRY_IDS`
+          t("logistics.toastCountryIdMissing", { market: marketCode })
         );
         return null;
       }
@@ -656,21 +722,25 @@ function LogisticsContent() {
 
   const completionGate = useMemo(
     () =>
-      evaluateLogisticsCompletionGate({
-        hasSavedTemplate,
-        pipelineActive: pipeline.pipelineRunning,
-        analysis,
-        quoteResults,
-        templateMarketsConfigured: Boolean(
-          activeTemplate && codesFromSelections(activeTemplate.markets).length > 0
-        ),
-      }),
+      evaluateLogisticsCompletionGate(
+        {
+          hasSavedTemplate,
+          pipelineActive: pipeline.pipelineRunning,
+          analysis,
+          quoteResults,
+          templateMarketsConfigured: Boolean(
+            activeTemplate && codesFromSelections(activeTemplate.markets).length > 0
+          ),
+        },
+        t
+      ),
     [
       hasSavedTemplate,
       pipeline.pipelineRunning,
       analysis,
       quoteResults,
       activeTemplate,
+      t,
     ]
   );
 
@@ -705,12 +775,15 @@ function LogisticsContent() {
       return;
     }
     publishLogisticsStepSnapshot(
-      deriveLogisticsStepSnapshot({
-        skuReady: skuReadyForNext,
-        pipelineActive: pipeline.pipelineActive,
-        gate: completionGate,
-        logisticsCompleted,
-      })
+      deriveLogisticsStepSnapshot(
+        {
+          skuReady: skuReadyForNext,
+          pipelineActive: pipeline.pipelineActive,
+          gate: completionGate,
+          logisticsCompleted,
+        },
+        t
+      )
     );
   }, [
     isAuthorized,
@@ -719,6 +792,7 @@ function LogisticsContent() {
     completionGate,
     logisticsCompleted,
     publishLogisticsStepSnapshot,
+    t,
   ]);
 
   const handleStartEstimate = useCallback(() => {
@@ -776,7 +850,7 @@ function LogisticsContent() {
       pipeline.pipelineRunning
     );
     if (ids.length === 0) {
-      showToast("本商品没有可运费预估的 SKU");
+      showToast(t("logistics.toastNoEstimableSku"));
       return;
     }
     setQuotingProductId(_productId);
@@ -802,7 +876,7 @@ function LogisticsContent() {
         )
       : collectQuotableVariants(overrideMap);
     if (quoting || targets.length === 0) {
-      if (targets.length === 0) showToast("没有可拉取线路的规格");
+      if (targets.length === 0) showToast(t("logistics.toastNoRoutes"));
       return;
     }
 
@@ -816,11 +890,11 @@ function LogisticsContent() {
       const ingestingCount = results.filter((r) => r.quoteStatus === "INGESTING").length;
       showToast(
         withLine > 0
-          ? `已拉取 ${withLine}/${resultsMap.size} 条线路（${params?.countryCode ?? ""} · 时效${params?.shippingOption ?? ""}）`
+          ? t("logistics.toastRoutesFetched", { withLine, total: resultsMap.size, country: params?.countryCode ?? "", speed: params?.shippingOption ?? "" })
           : ingestingCount > 0
             ? GOODS_INGESTING_MESSAGE
             : results.find((r) => r.errorMessage)?.errorMessage ||
-              `已请求 ${resultsMap.size} 条报价，但 Tangbuy 未返回可用线路（${params?.countryCode ?? ""}）`
+              t("logistics.toastNoRoutesReturned", { total: resultsMap.size, country: params?.countryCode ?? "" })
       );
       setFilterMode("all");
     } catch (err) {
@@ -855,7 +929,7 @@ function LogisticsContent() {
       );
       if (variant.decisionStatus === "ready_for_quote" && !quotePayload?.recommendedLine) {
         setFilterMode("all");
-        showToast("该规格暂无可用线路报价，请先拉取或检查模板市场");
+        showToast(t("logistics.toastNoQuoteAvailable"));
         return;
       }
       const result = await api.acceptLogisticsDecision({
@@ -869,7 +943,7 @@ function LogisticsContent() {
       setAnalysis(result.analysis);
       setFilterMode("all");
       showToast(
-        result.acceptedCount > 0 ? "已接受 AI 决策" : "该规格暂不可接受"
+        result.acceptedCount > 0 ? t("logistics.toastAcceptAiDone") : t("logistics.toastAcceptAiNone")
       );
     } catch (err) {
       showToast(readableError(err));
@@ -881,11 +955,16 @@ function LogisticsContent() {
   const handleAcceptAllReady = async (opts?: {
     onProgress?: (current: number, total: number, success: number, failed: number) => void;
     isCancelled?: () => boolean;
+    onlyVariantIds?: string[];
   }) => {
     if (accepting) return;
-    const targets = collectBatchAcceptableVariants(analysis, quoteResults);
+    const allTargets = collectBatchAcceptableVariants(analysis, quoteResults);
+    const targets =
+      opts?.onlyVariantIds && opts.onlyVariantIds.length > 0
+        ? allTargets.filter((v) => opts.onlyVariantIds!.includes(v.thirdPlatformSkuId))
+        : allTargets;
     if (targets.length === 0) {
-      showToast("没有待确认的报价方案，请先完成运费预估");
+      showToast(t("logistics.toastNoPendingQuote"));
       return;
     }
 
@@ -893,6 +972,7 @@ function LogisticsContent() {
     opts?.onProgress?.(0, total, 0, 0);
 
     setAccepting(true);
+    const failedIds: string[] = [];
     try {
       const CHUNK_SIZE = 10;
       let acceptedTotal = 0;
@@ -900,7 +980,7 @@ function LogisticsContent() {
 
       for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
         if (opts?.isCancelled?.()) {
-          showToast("已取消批量接受");
+          showToast(t("logistics.toastBatchAcceptCancelled"));
           return;
         }
 
@@ -933,9 +1013,11 @@ function LogisticsContent() {
           acceptedTotal += result.acceptedCount;
           if (result.acceptedCount < variantIds.length) {
             failedTotal += variantIds.length - result.acceptedCount;
+            failedIds.push(...variantIds);
           }
         } catch {
           failedTotal += variantIds.length;
+          failedIds.push(...variantIds);
         }
 
         opts?.onProgress?.(
@@ -946,14 +1028,15 @@ function LogisticsContent() {
         );
       }
 
+      setBatchFailedVariantIds(failedIds);
       setFilterMode("all");
       if (opts?.isCancelled?.()) return;
       showToast(
         acceptedTotal > 0
-          ? `已接受 ${acceptedTotal} 条待确认方案`
+          ? t("logistics.toastBatchAccepted", { accepted: acceptedTotal })
           : failedTotal > 0
-            ? `批量接受失败 ${failedTotal} 条`
-            : "没有可接受的待确认方案"
+            ? t("logistics.toastBatchFailed", { failed: failedTotal })
+            : t("logistics.toastNoAcceptable")
       );
     } catch (err) {
       showToast(readableError(err));
@@ -1015,24 +1098,24 @@ function LogisticsContent() {
       accept_all_ready: async (_plan: LogisticsCommandPlan) => {
         const total = workbench.batchAcceptCount;
         if (total === 0) {
-          throw new Error("没有待确认的报价方案");
+          throw new Error(t("logistics.previewNoPending"));
         }
         return {
           sections: [
             {
-              title: `批量接受 · ${total} 个待确认 SKU`,
+              title: t("logistics.previewTitle", { total }),
               rows: [
                 {
-                  label: "物流决策",
-                  before: "待确认",
-                  after: "接受 AI 推荐线路",
+                  label: t("logistics.previewLabel"),
+                  before: t("logistics.previewBefore"),
+                  after: t("logistics.previewAfter"),
                 },
               ],
             },
           ],
           impact: {
-            scope: `${total} 个 SKU 物流方案`,
-            durationHint: `约 ${Math.max(5, total * 2)} 秒`,
+            scope: t("logistics.previewScope", { total }),
+            durationHint: t("sku.confirmDuration", { seconds: Math.max(5, total * 2) }),
             reversible: false,
           },
           payload: { totalCount: total },
@@ -1062,15 +1145,17 @@ function LogisticsContent() {
     return (
       <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
         <WorkbenchPanel
-          title="AI 物流方案"
-          breadcrumbs={BREADCRUMBS}
+          title={t("logistics.pageTitle")}
+          breadcrumbs={breadcrumbs}
           {...wb.panelProps}
         >
           <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
             <Loader2 className="h-4 w-4 animate-spin text-brand" />
-            正在恢复店铺授权…
+            {t("logistics.restoringAuth")}
           </div>
-          <TableSkeleton rows={4} />
+          <FadeSwap loading minHeightClass="min-h-[320px]" skeleton={<TableSkeleton rows={4} />}>
+            <div />
+          </FadeSwap>
         </WorkbenchPanel>
       </WorkbenchShell>
     );
@@ -1084,7 +1169,7 @@ function LogisticsContent() {
           <AssistantRail
             assistantContent={
               <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-xs text-ink-subtle">
-                请先完成店铺授权。
+                {t("logistics.authNeeded")}
               </div>
             }
           />
@@ -1092,17 +1177,17 @@ function LogisticsContent() {
         {...wb.shellProps}
       >
         <WorkbenchPanel
-          title="AI 物流方案"
-          breadcrumbs={BREADCRUMBS}
+          title={t("logistics.pageTitle")}
+          breadcrumbs={breadcrumbs}
           {...wb.panelProps}
         >
           <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-6 text-sm text-ink-muted">
-            请先完成店铺授权。
+            {t("logistics.authNeeded")}
             <Link
-              href="/authorize"
-              className="ml-2 text-brand-strong hover:underline"
+              href={localePath(locale, "/authorize")}
+              className="ml-2 text-link hover:text-link-hover hover:underline"
             >
-              去授权
+              {t("logistics.goAuthorize")}
             </Link>
           </div>
         </WorkbenchPanel>
@@ -1159,38 +1244,80 @@ function LogisticsContent() {
       {...wb.shellProps}
     >
       <WorkbenchPanel
-        title="AI 物流方案"
-        breadcrumbs={BREADCRUMBS}
+        title={t("logistics.pageTitle")}
+        breadcrumbs={breadcrumbs}
         {...wb.panelProps}
         actions={
           hasSavedTemplate && analysis ? (
-            <Button
-              size="sm"
-              onClick={handleStartEstimate}
-              disabled={
-                loading ||
-                pipeline.pipelineRunning ||
-                !workbench.actions.canEstimate
-              }
-              title={
-                planMetrics.pendingQuoteCount > 0
-                  ? `批量获取 ${planMetrics.pendingQuoteCount} 个待报价 SKU 的线路运费`
-                  : "当前没有待报价 SKU"
-              }
-            >
-              {pipeline.pipelineRunning ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : null}
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  void load(true);
+                  showToast(t("logistics.actionReanalyze"));
+                }}
+                disabled={loading || classifying}
+                title={t("logistics.actionReanalyze")}
+              >
+                {classifying ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                {t("logistics.actionReanalyze")}
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleStartEstimate}
+                disabled={
+                  loading ||
+                  pipeline.pipelineRunning ||
+                  !workbench.actions.canEstimate
+                }
+                title={
+                  planMetrics.pendingQuoteCount > 0
+                    ? t("logistics.estimateTitle", { count: planMetrics.pendingQuoteCount })
+                    : t("logistics.estimateNone")
+                }
+              >
+                {pipeline.pipelineRunning ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
               {pipeline.pipelineRunning
-                ? "预估中…"
+                ? t("logistics.estimating")
                 : planMetrics.pendingQuoteCount > 0
-                  ? `运费预估 (${planMetrics.pendingQuoteCount})`
-                  : "运费预估"}
-            </Button>
+                  ? t("logistics.estimateWithCount", { count: planMetrics.pendingQuoteCount })
+                  : t("logistics.actionEstimate")}
+              </Button>
+              {batchFailedVariantIds.length > 0 ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() =>
+                    void handleAcceptAllReady({ onlyVariantIds: batchFailedVariantIds })
+                  }
+                  disabled={accepting}
+                  title={t("logistics.actionRetryFailed", {
+                    count: batchFailedVariantIds.length,
+                  })}
+                >
+                  {accepting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  {t("logistics.actionRetryFailed", {
+                    count: batchFailedVariantIds.length,
+                  })}
+                </Button>
+              ) : null}
+            </>
           ) : null
         }
       >
         <div className="space-y-4">
+          {!isMallGatewayConfigured() ? (
+            <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+              {t("logistics.tokenMissing")}
+            </div>
+          ) : null}
           {!loading || analysis ? (
             <LogisticsWorkflowSteps
               step={workflowStep}
@@ -1221,20 +1348,20 @@ function LogisticsContent() {
 
           {workflowStep === "setup" && hasSavedTemplate && analysis ? (
             <div className="rounded-[var(--radius-card)] border border-hairline bg-surface-muted/20 px-4 py-6 text-center">
-              <p className="text-sm font-medium text-ink">物流策略已配置</p>
+              <p className="text-sm font-medium text-ink">{t("logistics.strategyConfigured")}</p>
               <p className="mt-1 text-xs text-ink-subtle">
-                进入「运费预估」批量获取线路报价，或打开模板继续调整。
+                {t("logistics.strategyConfiguredDesc")}
               </p>
               <div className="mt-3 flex justify-center gap-2">
                 <Button size="sm" onClick={() => handleWorkflowStepChange("estimate")}>
-                  开始运费预估
+                  {t("logistics.actionEstimate")}
                 </Button>
                 <Button
                   size="sm"
                   variant="secondary"
                   onClick={() => setShowDrawer(true)}
                 >
-                  修改策略
+                  {t("logistics.editStrategy")}
                 </Button>
               </div>
             </div>
@@ -1266,41 +1393,72 @@ function LogisticsContent() {
                 className="ml-3"
                 onClick={() => void load(false)}
               >
-                重试
+                {t("logistics.retry")}
               </Button>
             </div>
           ) : hasSavedTemplate && analysis && workflowStep !== "setup" ? (
             <div ref={logisticsListRef} className="scroll-mt-4">
-            <LogisticsDecisionList
-              analysis={analysis}
-              shopName={shopName}
-              filterMode={filterMode}
-              postalLimitFilter={postalLimitFilter}
-              quoteResults={quoteResults}
-              activeTemplate={activeTemplate}
-              correctingId={correctingId}
-              focusTarget={focusTarget}
-              onCorrect={(id, type) => void handleCorrect(id, type)}
-              onAcceptAi={(v, pid) => void handleAcceptAi(v, pid)}
-              onFetchProductQuotes={(productId, variants) =>
-                handleFetchQuotesForProduct(productId, variants)
-              }
-              onMeasureOverride={(variantId, next) => {
-                setMeasureOverrides((prev) => {
-                  const map = new Map(prev);
-                  map.set(variantId, next);
-                  return map;
-                });
-              }}
-              accepting={accepting}
-              quotingProductId={quotingProductId}
-              onClearFocus={() => setFocusTarget(null)}
-              pricing={pricingTemplate}
-              pipelineActive={pipeline.pipelineActive}
-              pipelineProgress={pipeline.progress}
-              selectedLineByVariant={selectedLineByVariant}
-              onSelectLine={handleSelectLine}
-            />
+            {planMetrics.skuUnlinkedCount > 0 ? (
+              <div className="mb-4 rounded-[var(--radius-card)] border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
+                <Link href="/sku-align" className="font-medium text-amber-700 underline">
+                  {t("logistics.pendingSkuWarning", { count: planMetrics.skuUnlinkedCount })}
+                </Link>
+              </div>
+            ) : null}
+            <div className="relative">
+              <LogisticsDecisionList
+                analysis={analysis}
+                shopName={shopName}
+                filterMode={filterMode}
+                postalLimitFilter={postalLimitFilter}
+                quoteResults={quoteResults}
+                activeTemplate={activeTemplate}
+                correctingId={correctingId}
+                focusTarget={focusTarget}
+                onCorrect={(id, type) => void handleCorrect(id, type)}
+                onAcceptAi={(v, pid) => void handleAcceptAi(v, pid)}
+                onFetchProductQuotes={(productId, variants) =>
+                  handleFetchQuotesForProduct(productId, variants)
+                }
+                onMeasureOverride={(variantId, next) => {
+                  setMeasureOverrides((prev) => {
+                    const map = new Map(prev);
+                    map.set(variantId, next);
+                    return map;
+                  });
+                }}
+                accepting={accepting}
+                quotingProductId={quotingProductId}
+                onClearFocus={() => setFocusTarget(null)}
+                pricing={pricingTemplate}
+                pipelineActive={pipeline.pipelineActive}
+                pipelineProgress={pipeline.progress}
+                selectedLineByVariant={selectedLineByVariant}
+                onSelectLine={handleSelectLine}
+              />
+              {pipeline.pipelineRunning && pipeline.progress.productTotal > 0 ? (
+                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center rounded-[var(--radius-card)] bg-surface/60 backdrop-blur-[1px]">
+                  <div className="w-full max-w-xs space-y-3 px-4">
+                    <div className="text-center text-sm font-medium text-ink">
+                      {t("logistics.pipelineRunningTitle")}
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-brand to-emerald-500 transition-all duration-300"
+                        style={{ width: `${Math.round(((pipeline.progress.productIndex + 1) / pipeline.progress.productTotal) * 100)}%` }}
+                      />
+                    </div>
+                    <div className="text-center text-xs text-ink-subtle">
+                      {t("logistics.pipelineRunningProgress", {
+                        current: pipeline.progress.productIndex + 1,
+                        total: pipeline.progress.productTotal,
+                        title: pipeline.progress.currentProductTitle ?? "",
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
             </div>
           ) : null}
         </div>
@@ -1319,6 +1477,40 @@ function LogisticsContent() {
       ) : null}
     </WorkbenchShell>
   );
+}
+
+const MEASURE_OVERRIDES_PREFIX = "logistics-measures:v1:";
+
+function measureOverridesStorageKey(shopName: string): string {
+  return `${MEASURE_OVERRIDES_PREFIX}${shopName}`;
+}
+
+function readMeasureOverrides(shopName: string): Map<string, MeasureOverride> {
+  if (typeof window === "undefined") return new Map();
+  try {
+    const raw = localStorage.getItem(measureOverridesStorageKey(shopName));
+    if (!raw) return new Map();
+    const parsed = JSON.parse(raw) as Array<[string, MeasureOverride]>;
+    if (!Array.isArray(parsed)) return new Map();
+    return new Map(parsed);
+  } catch {
+    return new Map();
+  }
+}
+
+function writeMeasureOverrides(
+  shopName: string,
+  map: Map<string, MeasureOverride>
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(
+      measureOverridesStorageKey(shopName),
+      JSON.stringify([...map.entries()])
+    );
+  } catch {
+    // ignore quota / private mode
+  }
 }
 
 export default function LogisticsPage() {

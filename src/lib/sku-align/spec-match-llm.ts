@@ -14,25 +14,83 @@ import type { SourceSkuRowRanked } from "@/lib/source-sku-matrix";
 export const GRAY_LOW = 0.5;
 export const GRAY_HIGH = 0.85;
 
+/**
+ * 长尾地板：跨脚本（如中文规格 vs 英文改名）且结构化分落在
+ * [LONGTAIL_LOW, GRAY_LOW) 的配对，也送 LLM 复核——这部分结构化匹配
+ * 系统性欠分（翻译表覆盖不到的异名），正是"脚本异构长尾"。
+ */
+export const LONGTAIL_LOW = 0.2;
+
 /** 归一化配对缓存键。 */
 export function pairKey(variantLabel: string, specLabel: string): string {
   const n = (s: string) => s.toLowerCase().replace(/\s+/g, "").trim();
   return `${n(variantLabel)}||${n(specLabel)}`;
 }
 
-/** 从排序结果中挑出需要 LLM 复核的灰区行（默认取前 topN）。 */
+/** 是否含 CJK（中日韩统一表意文字）。 */
+export function hasCJK(s: string): boolean {
+  return /[一-鿿㐀-䶿豈-﫿]/.test(s);
+}
+
+/** 是否含拉丁字母（a-z/A-Z）。 */
+export function hasLatin(s: string): boolean {
+  return /[a-zA-Z]/.test(s);
+}
+
+/**
+ * 跨脚本判定：两侧使用不同书写系统（一侧 CJK、另一侧拉丁）。
+ * 这正是 Tangbuy/1688 中文规格 ↔ 商家英文改名的核心现象，是长尾召回的目标。
+ */
+export function isCrossScript(a: string, b: string): boolean {
+  const aCjk = hasCJK(a);
+  const bCjk = hasCJK(b);
+  if (aCjk === bCjk) return false; // 同侧或无 CJK
+  return aCjk ? hasLatin(b) : hasLatin(a);
+}
+
+/**
+ * 从排序结果中挑出需要 LLM 复核的行。
+ * - 常规灰区：specScore ∈ [GRAY_LOW, GRAY_HIGH)
+ * - 跨脚本长尾：variantLabel 与 specLabel 跨脚本 且 specScore ∈ [LONGTAIL_LOW, GRAY_LOW)
+ * 二者合并后取前 topN。LLM 不可用时代码路径仍安全（调用方 fire-and-forget）。
+ */
 export function grayZoneRows(
+  variantLabel: string,
   ranked: SourceSkuRowRanked[],
-  topN = 3
+  topN = 12
 ): SourceSkuRowRanked[] {
+  const cross = isCrossScript(variantLabel, rankedLabelPreview(ranked));
   return ranked
-    .filter((r) => r.specScore >= GRAY_LOW && r.specScore < GRAY_HIGH)
+    .filter((r) => {
+      if (r.specScore >= GRAY_LOW && r.specScore < GRAY_HIGH) return true;
+      if (
+        cross &&
+        r.specScore >= LONGTAIL_LOW &&
+        r.specScore < GRAY_LOW
+      ) {
+        return true;
+      }
+      return false;
+    })
     .slice(0, topN);
+}
+
+/** 取首个非空 specLabel 作为跨脚本判定的"货源侧"代表（配对级信号）。 */
+function rankedLabelPreview(ranked: SourceSkuRowRanked[]): string {
+  return ranked.find((r) => r.specLabel?.trim())?.specLabel ?? "";
 }
 
 /** 结构规格分与 LLM 置信度（0-1）混合：LLM 主导，保留结构信息。 */
 export function blendSpecWithLlm(specScore: number, llmConf: number): number {
   return Math.max(0, Math.min(1, specScore * 0.4 + llmConf * 0.6));
+}
+
+/** LLM 置信度达到此阈值即视为"语义召回"（SEMANTIC），用于回写标记。 */
+export const SEMANTIC_THRESHOLD = 0.6;
+
+/** 该配对是否被 LLM 以高置信度确认为等价（用于回写 matchSource=SEMANTIC）。 */
+export function isSemanticLlmBoost(conf: number | undefined): boolean {
+  return conf != null && conf >= SEMANTIC_THRESHOLD;
 }
 
 /**

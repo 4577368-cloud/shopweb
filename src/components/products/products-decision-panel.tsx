@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, Crosshair } from "lucide-react";
+import { ArrowRight, Crosshair } from "@/lib/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
 
 export interface DecisionTodoItem {
@@ -13,8 +14,7 @@ export interface DecisionTodoItem {
   productName: string;
   issueType: string;
   suggestion: string;
-  /** 行内轻量动作 */
-  actionLabel: "定位" | "查看候选" | "查看详情";
+  actionLabel: string;
   actionKey: "locate" | "search" | "view";
 }
 
@@ -53,15 +53,17 @@ export function ProductsDecisionPanel({
   onNextAction,
   onShowRule,
 }: ProductsDecisionPanelProps) {
+  const t = useT();
   const [ruleOpen, setRuleOpen] = useState<"match" | "judge" | null>(null);
 
   return (
     <aside className="flex w-[300px] shrink-0 flex-col border-l border-slate-200 bg-slate-50/80">
       <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-3">
-        {/* 1. 当前结论 */}
         <section className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] font-medium text-slate-400">当前结论</p>
+            <p className="text-[11px] font-medium text-slate-400">
+              {t("productsDecision.currentConclusion")}
+            </p>
             <Badge variant={statusVariant[statusTone]}>{statusLabel}</Badge>
           </div>
           <p className="mt-1.5 text-sm font-medium leading-5 text-slate-900">
@@ -69,14 +71,17 @@ export function ProductsDecisionPanel({
           </p>
         </section>
 
-        {/* 2. 待处理事项 */}
         <section className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-[11px] font-medium text-slate-400">待处理事项</p>
-            <span className="text-[11px] text-slate-400">{todos.length} 项</span>
+            <p className="text-[11px] font-medium text-slate-400">
+              {t("productsDecision.todosTitle")}
+            </p>
+            <span className="text-[11px] text-slate-400">
+              {t("productsDecision.todoCount", { count: todos.length })}
+            </span>
           </div>
           {todos.length === 0 ? (
-            <p className="text-xs text-slate-500">暂无异常项，可继续下一步。</p>
+            <p className="text-xs text-slate-500">{t("productsDecision.noTodos")}</p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {todos.map((item) => (
@@ -99,12 +104,16 @@ export function ProductsDecisionPanel({
                     <button
                       type="button"
                       onClick={() =>
-                        onTodoAction({ ...item, actionKey: "locate", actionLabel: "定位" })
+                        onTodoAction({
+                          ...item,
+                          actionKey: "locate",
+                          actionLabel: t("productsDecision.actionLocate"),
+                        })
                       }
                       className="inline-flex h-6 items-center gap-0.5 rounded border border-slate-200 bg-white px-1.5 text-[11px] text-slate-600 hover:bg-slate-50"
                     >
                       <Crosshair className="h-3 w-3" />
-                      定位
+                      {t("productsDecision.locate")}
                     </button>
                     <button
                       type="button"
@@ -120,9 +129,10 @@ export function ProductsDecisionPanel({
           )}
         </section>
 
-        {/* 3. 下一步动作 */}
         <section className="rounded-lg border border-teal-200 bg-white px-3 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-          <p className="text-[11px] font-medium text-slate-400">下一步</p>
+          <p className="text-[11px] font-medium text-slate-400">
+            {t("productsDecision.nextStep")}
+          </p>
           <p className="mt-1 text-sm font-semibold text-slate-900">{nextLabel}</p>
           <div className="mt-2.5">
             {nextHref && !nextDisabled ? (
@@ -145,7 +155,6 @@ export function ProductsDecisionPanel({
           </div>
         </section>
 
-        {/* 轻量规则入口 */}
         <div className="mt-auto space-y-1 px-0.5 pt-1">
           <button
             type="button"
@@ -155,7 +164,7 @@ export function ProductsDecisionPanel({
             }}
             className="block text-[11px] text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
           >
-            查看匹配规则
+            {t("productsDecision.viewMatchRules")}
           </button>
           <button
             type="button"
@@ -165,16 +174,16 @@ export function ProductsDecisionPanel({
             }}
             className="block text-[11px] text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
           >
-            查看判定说明
+            {t("productsDecision.viewJudgeRules")}
           </button>
           {ruleOpen === "match" ? (
             <p className="rounded border border-slate-100 bg-white px-2 py-1.5 text-[11px] leading-4 text-slate-500">
-              ≥85% 可批量采用；70–84% 建议先看详情；&lt;70% 勿直接采用。
+              {t("productsDecision.matchRuleHint")}
             </p>
           ) : null}
           {ruleOpen === "judge" ? (
             <p className="rounded border border-slate-100 bg-white px-2 py-1.5 text-[11px] leading-4 text-slate-500">
-              进入 SKU 对齐需至少采用半数高匹配商品。价格与库存以中间列表为准。
+              {t("productsDecision.judgeRuleHint")}
             </p>
           ) : null}
         </div>

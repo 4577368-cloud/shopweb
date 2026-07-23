@@ -11,6 +11,7 @@ import {
   resolveEnrichedAgentResponse,
   type EnrichedAgentResponse,
 } from "@/lib/agents/runtime";
+import { createTranslator } from "@/i18n/server";
 
 export type { EnrichedAgentResponse };
 export type { AgentCopySource } from "@/lib/agents/runtime";
@@ -20,15 +21,21 @@ export type { AgentCopySource } from "@/lib/agents/runtime";
  */
 export async function resolveProductsAgentResponse(
   intent: ProductsIntentId,
-  context: ProductsPageContext
+  context: ProductsPageContext,
+  opts?: { userText?: string; locale?: string | null }
 ): Promise<EnrichedAgentResponse> {
+  const t = createTranslator(opts?.locale);
   return resolveEnrichedAgentResponse({
     pageKey: "products",
     intent,
     context,
-    route: routeProductsIntent,
+    route: (id, ctx) => routeProductsIntent(id, ctx, t),
     fingerprint: productsContextFingerprint,
-    buildSystemPrompt: (base) => buildProductsCopySystemPrompt(base.agentId),
+    buildSystemPrompt: (base) =>
+      buildProductsCopySystemPrompt(base.agentId, {
+        userText: opts?.userText,
+        fallbackLocale: opts?.locale,
+      }),
     buildUserPrompt: (intentId, ctx, base, fallback) =>
       buildProductsCopyUserPrompt({
         intent: intentId,

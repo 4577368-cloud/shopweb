@@ -2,10 +2,11 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, Bot, Lightbulb, Send } from "lucide-react";
+import { AlertTriangle, Bot, Lightbulb, Send } from "@/lib/ui/icons";
 import type { AiPanelContent } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { useBackendHealth } from "@/hooks/use-backend-health";
+import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
 
 /** A guided question + its fixed, state-derived answer (Phase A: no free-text LLM). */
@@ -125,7 +126,7 @@ interface CopilotCardProps {
  */
 export function CopilotCard({
   content,
-  heading = "AI 助手",
+  heading,
   variant = "default",
   onAlertClick,
   onNextAction,
@@ -134,6 +135,8 @@ export function CopilotCard({
   suggestionsKey,
   className,
 }: CopilotCardProps) {
+  const t = useT();
+  const resolvedHeading = heading ?? t("assistant.defaultHeading");
   const next = content.nextAction;
   const backendHealth = useBackendHealth();
   const backendOk = backendHealth === "ok";
@@ -150,15 +153,15 @@ export function CopilotCard({
     >
       <div className="flex shrink-0 items-center justify-between border-b border-hairline px-3.5 py-2.5">
         <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand-strong">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
             <Bot className="h-4 w-4" />
           </span>
-          <span className="text-sm font-semibold text-ink">{heading}</span>
+          <span className="text-sm font-semibold text-ink">{resolvedHeading}</span>
         </div>
         <span
           className="flex items-center"
           title={backendOk ? "plugin:ok" : "plugin:down"}
-          aria-label={backendOk ? "Backend reachable" : "Backend unreachable"}
+          aria-label={backendOk ? t("assistant.backendOk") : t("assistant.backendDown")}
         >
           <span
             className={cn(
@@ -215,7 +218,7 @@ export function CopilotCard({
           <div>
             <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-ink-subtle">
               <Lightbulb className="h-3 w-3" />
-              关键说明
+              {t("assistant.keyPoints")}
             </div>
             <ul className="space-y-1.5">
               {content.bullets.map((item) => (
@@ -232,7 +235,7 @@ export function CopilotCard({
           <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-2.5 py-2">
             <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-amber-800">
               <AlertTriangle className="h-3 w-3" />
-              需注意
+              {t("assistant.needsAttention")}
             </div>
             <ul className="space-y-1.5">
               {content.alerts.map((alert) => {
@@ -249,7 +252,7 @@ export function CopilotCard({
                             "bg-amber-100 ring-1 ring-amber-300"
                         )}
                       >
-                        <span className="font-medium text-amber-800">定位 → </span>
+                        <span className="font-medium text-amber-800">{t("assistant.locate")} </span>
                         {alert.text}
                       </button>
                     ) : (
@@ -272,12 +275,12 @@ export function CopilotCard({
             )}
           >
             <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
-              下一步
+              {t("assistant.nextStep")}
             </p>
             <p className="mt-1 text-xs leading-5 text-ink">
               {next.disabled && next.disabledReason
                 ? next.disabledReason
-                : next.description ?? `前往「${next.label}」继续。`}
+                : next.description ?? t("assistant.nextStepDesc", { label: next.label })}
             </p>
             <div className="mt-2">
               {next.href && !next.disabled ? (
@@ -320,7 +323,7 @@ export function CopilotCard({
           <div className="flex items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-2.5 py-1.5">
             <input
               disabled
-              placeholder="输入你的问题…"
+              placeholder={t("assistant.inputPlaceholder")}
               className="min-w-0 flex-1 bg-transparent text-xs text-ink placeholder:text-ink-subtle focus:outline-none"
             />
             <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand/40 text-white">
@@ -344,6 +347,7 @@ function GuidedComposer({
   suggestions: AssistantSuggestion[];
   variant?: "default" | "onboarding";
 }) {
+  const t = useT();
   const [active, setActive] = useState<AssistantSuggestion | null>(null);
   const onboarding = variant === "onboarding";
 
@@ -354,7 +358,7 @@ function GuidedComposer({
         onboarding ? "space-y-2 p-3" : "space-y-2 p-2.5"
       )}
     >
-      <p className="text-[10px] font-medium text-ink-subtle">常见问题</p>
+      <p className="text-[10px] font-medium text-ink-subtle">{t("assistant.faq")}</p>
 
       <div className={cn("flex gap-1.5", onboarding ? "flex-col" : "flex-wrap")}>
         {suggestions.map((s) => (
@@ -378,7 +382,7 @@ function GuidedComposer({
       </div>
 
       {active ? (
-        <div className="flex gap-2 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft/60 px-2.5 py-2">
+        <div className="flex gap-2 rounded-[var(--radius-control)] border border-brand-accent/20 bg-brand-soft/60 px-2.5 py-2">
           <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-strong" />
           <p className="text-xs leading-5 text-ink-muted">{active.a}</p>
         </div>
@@ -387,7 +391,7 @@ function GuidedComposer({
       <div className="flex items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-2.5 py-1.5">
         <input
           disabled
-          placeholder="点选上方问题查看解答"
+          placeholder={t("assistant.guidedPlaceholder")}
           className="min-w-0 flex-1 bg-transparent text-[11px] text-ink placeholder:text-ink-subtle focus:outline-none"
         />
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand text-white">

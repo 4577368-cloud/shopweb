@@ -16,12 +16,19 @@ export async function fetchPageAgentCopy<TIntent extends string, TContext>(opts:
   intent: TIntent;
   context: TContext;
   fallback: (intent: TIntent, context: TContext) => AgentResponse;
+  userText?: string;
+  locale?: string | null;
 }): Promise<ClientAgentResponse> {
   try {
     const res = await fetch(opts.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: opts.intent, context: opts.context }),
+      body: JSON.stringify({
+        intent: opts.intent,
+        context: opts.context,
+        userText: opts.userText ?? null,
+        locale: opts.locale ?? null,
+      }),
     });
     if (!res.ok) {
       return { ...opts.fallback(opts.intent, opts.context), copySource: "template" };
@@ -49,6 +56,7 @@ export async function classifyPageShortInput<TIntent extends string>(opts: {
   maxLength: number;
   classifyLocal: (text: string) => IntentClassifyResult<TIntent>;
   classifyEndpoint: string;
+  locale?: string | null;
 }): Promise<IntentClassifyResult<TIntent>> {
   const clipped = opts.text.trim().slice(0, opts.maxLength);
   const local = opts.classifyLocal(clipped);
@@ -58,7 +66,7 @@ export async function classifyPageShortInput<TIntent extends string>(opts: {
     const res = await fetch(opts.classifyEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: clipped }),
+      body: JSON.stringify({ text: clipped, locale: opts.locale ?? null }),
     });
     if (!res.ok) return local;
     const data = (await res.json()) as IntentClassifyResult<TIntent>;

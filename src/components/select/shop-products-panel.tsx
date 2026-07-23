@@ -13,10 +13,11 @@ import {
   MoveRight,
   RefreshCw,
   Search,
-} from "lucide-react";
+} from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { FadeSwap } from "@/components/ui/fade-swap";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { ShopProductDetailDrawer } from "@/components/select/shop-product-detail-drawer";
@@ -49,6 +50,10 @@ import type {
   ShopMirrorProduct,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
+import { useT } from "@/i18n/LocaleProvider";
+
+type ShopProductsT = ReturnType<typeof useT>;
 import {
   buildShopProductMinis,
   type ShopProductMini,
@@ -90,9 +95,10 @@ import {
 } from "@/lib/batch-link/auto-ack-binding";
 import { classifyMatchConfidence } from "@/lib/batch-link/confidence";
 import {
-  CONFIDENCE_TIER_LABELS,
+  confidenceTierLabel,
   formatBatchCardQueueLine,
 } from "@/lib/batch-link/confidence-display";
+import type { MatchConfidenceTier } from "@/lib/batch-link/confidence";
 import {
   allowPoolIngestOnConfirm,
   requiresSupplierConfirmBeforePool,
@@ -179,38 +185,55 @@ function resolveCandidateImageScore(
 }
 
 function middleMatchHeadline(
+  t: ShopProductsT,
   cardState: "matched" | "pending" | "unbound",
   hasCurrent: boolean,
   titleScore: number | null,
   imageScore: number | null
 ): string {
-  if (cardState === "unbound" && !hasCurrent) return "未找到可靠匹配";
+  if (cardState === "unbound" && !hasCurrent) return t("shopProducts.noReliableMatch");
   if (cardState === "pending") {
     if (titleScore != null && imageScore != null) {
-      return `待确认 · 标题 ${titleScore}% · 图像 ${imageScore}%`;
+      return t("shopProducts.pendingTitleImage", {
+        title: titleScore,
+        image: imageScore,
+      });
     }
-    if (titleScore != null) return `待确认 · 标题 ${titleScore}%`;
-    return "待确认";
+    if (titleScore != null) {
+      return t("shopProducts.pendingTitleOnly", { title: titleScore });
+    }
+    return t("shopProducts.pending");
   }
   if (titleScore != null && imageScore != null) {
-    return `标题 ${titleScore}% · 图像 ${imageScore}%`;
+    return t("shopProducts.scoresTitleImage", {
+      title: titleScore,
+      image: imageScore,
+    });
   }
-  if (titleScore != null) return `标题 ${titleScore}%`;
-  return "已自动匹配";
+  if (titleScore != null) {
+    return t("shopProducts.scoresTitleOnly", { title: titleScore });
+  }
+  return t("shopProducts.autoMatched");
 }
 
 function publishLinkHeadline(
+  t: ShopProductsT,
   state: BatchLinkCardDrive["state"],
   titleScore: number | null,
   imageScore: number | null
 ): string {
-  if (state === "searching") return "正在识别同款货源…";
-  if (state === "binding" || state === "auto_selecting") return "正在建立关联…";
+  if (state === "searching") return t("shopProducts.searchingSource");
+  if (state === "binding" || state === "auto_selecting") return t("shopProducts.linking");
   if (titleScore != null && imageScore != null) {
-    return `标题 ${titleScore}% · 图像 ${imageScore}%`;
+    return t("shopProducts.scoresTitleImage", {
+      title: titleScore,
+      image: imageScore,
+    });
   }
-  if (titleScore != null) return `标题 ${titleScore}%`;
-  return "匹配完成";
+  if (titleScore != null) {
+    return t("shopProducts.scoresTitleOnly", { title: titleScore });
+  }
+  return t("shopProducts.matchComplete");
 }
 
 /**
@@ -231,20 +254,23 @@ function formatSimilarity(score?: number | null): string | null {
   return `${Math.round(Math.min(score, 100))}%`;
 }
 
-/** 月销 label (official imageQuery signal replacing similarity); null when absent/zero. */
-function formatSold(n?: number | null): string | null {
+function formatSold(t: ShopProductsT, n?: number | null): string | null {
   if (n == null || Number.isNaN(n) || n <= 0) return null;
-  if (n >= 10000) return `月销 ${(n / 10000).toFixed(1)}万`;
-  return `月销 ${n}`;
+  if (n >= 10000) {
+    return t("shopProducts.monthlySalesWan", {
+      count: (n / 10000).toFixed(1),
+    });
+  }
+  return t("shopProducts.monthlySales", { count: n });
 }
 
-/** Short confidence signals for a candidate: 月销 + 复购率 (A3-3b replacement for similarity). */
-function candidateSignals(c: ImageSearchProduct): string[] {
+/** Short confidence signals for a candidate: monthly sales + repurchase rate. */
+function candidateSignals(t: ShopProductsT, c: ImageSearchProduct): string[] {
   const out: string[] = [];
-  const sold = formatSold(c.soldCount);
+  const sold = formatSold(t, c.soldCount);
   if (sold) out.push(sold);
   const rate = (c.repurchaseRate ?? "").trim();
-  if (rate) out.push(`复购 ${rate}`);
+  if (rate) out.push(t("shopProducts.repurchase", { rate }));
   return out;
 }
 
@@ -293,6 +319,7 @@ function parsePrice(raw?: string | null): number | null {
 }
 
 function formatPurchaseCostLabel(
+  t: ShopProductsT,
   costCny: number | null,
   shopCurrency: string | null | undefined,
   fallbackRaw?: string | null,
@@ -301,11 +328,17 @@ function formatPurchaseCostLabel(
   const ctx = resolvePurchaseCostDisplayContext(shopCurrency, pricingTemplate);
   const inTarget = costInPurchaseDisplayCurrency(costCny, ctx);
   if (inTarget != null) {
-    return `采购价 ${formatPurchaseCostMoney(inTarget, ctx.currency)}`;
+    return t("shopProducts.purchaseCost", {
+      price: formatPurchaseCostMoney(inTarget, ctx.currency),
+    });
   }
-  if (fallbackRaw) return `采购价 ${formatCny(fallbackRaw)}`;
-  if (costCny != null) return `采购价 ¥${costCny}`;
-  return "采购价待取";
+  if (fallbackRaw) {
+    return t("shopProducts.purchaseCost", { price: formatCny(fallbackRaw) });
+  }
+  if (costCny != null) {
+    return t("shopProducts.purchaseCost", { price: `¥${costCny}` });
+  }
+  return t("shopProducts.purchaseCostPending");
 }
 
 function fmtMoney(n: number, currency?: string): string {
@@ -313,30 +346,41 @@ function fmtMoney(n: number, currency?: string): string {
   return currency ? `${v} ${currency}` : v;
 }
 
-/** Translate the technical match provenance into operator-friendly reasons (≤4 short items). */
-function matchReasons(opts: {
+function matchReasons(
+  t: ShopProductsT,
+  opts: {
   imageSource?: string | null;
   querySource?: string | null;
   appliedQuery?: string | null;
   matchScore?: number | null;
   signals?: string[];
-}): string[] {
+}
+): string[] {
   const out: string[] = [];
-  if (opts.imageSource === "ORIGINAL") out.push("按货源原图发起图搜");
-  else if (opts.imageSource === "SHOPIFY") out.push("已用店铺主图图搜");
-  else out.push("图搜命中");
+  if (opts.imageSource === "ORIGINAL") out.push(t("shopProducts.reasonOriginalImage"));
+  else if (opts.imageSource === "SHOPIFY") out.push(t("shopProducts.reasonShopImage"));
+  else out.push(t("shopProducts.reasonImageHit"));
   const q = (opts.appliedQuery ?? "").trim();
-  if (opts.querySource === "TITLE" && q) out.push(`标题校准「${q}」`);
-  else if (opts.querySource === "LLM" && q) out.push(`AI 识图校准「${q}」`);
+  if (opts.querySource === "TITLE" && q) {
+    out.push(t("shopProducts.reasonTitleCal", { query: q }));
+  } else if (opts.querySource === "LLM" && q) {
+    out.push(t("shopProducts.reasonAiCal", { query: q }));
+  }
   if (opts.matchScore != null && opts.matchScore > 0) {
-    out.push(`标题综合分 ${formatSimilarity(opts.matchScore)}`);
+    out.push(
+      t("shopProducts.reasonComposite", {
+        score: formatSimilarity(opts.matchScore) ?? "",
+      })
+    );
   }
   for (const s of opts.signals ?? []) out.push(s);
   return out.slice(0, 4);
 }
 
 /** Short evidence pills for the Match column — real fields only. */
-function evidenceTags(opts: {
+function evidenceTags(
+  t: ShopProductsT,
+  opts: {
   unbound?: boolean;
   pending?: boolean;
   imageSource?: string | null;
@@ -344,24 +388,25 @@ function evidenceTags(opts: {
   matchScore?: number | null;
   signals?: string[];
   marginPct?: number | null;
-}): { label: string; tone: "ok" | "warn" | "neutral" }[] {
+}
+): { label: string; tone: "ok" | "warn" | "neutral" }[] {
   if (opts.unbound) {
     return [
-      { label: "建议图搜", tone: "neutral" },
-      { label: "可放宽条件", tone: "neutral" },
+      { label: t("shopProducts.tagSuggestSearch"), tone: "neutral" },
+      { label: t("shopProducts.tagRelaxFilters"), tone: "neutral" },
     ];
   }
   const tags: { label: string; tone: "ok" | "warn" | "neutral" }[] = [];
   if (opts.imageSource === "ORIGINAL" || opts.imageSource === "SHOPIFY") {
-    tags.push({ label: "已用店铺图搜", tone: "ok" });
+    tags.push({ label: t("shopProducts.tagShopImageSearch"), tone: "ok" });
   } else if (!opts.unbound) {
-    tags.push({ label: "图搜命中", tone: "ok" });
+    tags.push({ label: t("shopProducts.tagImageHit"), tone: "ok" });
   }
   if (opts.querySource === "TITLE" || opts.querySource === "LLM") {
-    tags.push({ label: "标题/识图校准", tone: "ok" });
+    tags.push({ label: t("shopProducts.tagCalibrated"), tone: "ok" });
   }
   if (opts.marginPct != null && opts.marginPct >= 15) {
-    tags.push({ label: "成本更优", tone: "ok" });
+    tags.push({ label: t("shopProducts.tagBetterCost"), tone: "ok" });
   }
   for (const s of (opts.signals ?? []).slice(0, 1)) {
     tags.push({ label: s, tone: "neutral" });
@@ -460,6 +505,7 @@ export function ShopProductsPanel({
   pricingTemplate?: PricingTemplate | null;
 }) {
   const { shop, showToast } = useOnboarding();
+  const t = useT();
   const shopName = shop.name;
 
   const [loading, setLoading] = useState(true);
@@ -653,7 +699,7 @@ export function ShopProductsPanel({
       );
 
       if (eligibleScope.length === 0) {
-        if (source !== "auto") showToast("当前页暂无可关联商品");
+        if (source !== "auto") showToast(t("productsPage.toastNoLinkable"));
         onBatchLinkFinished?.({ ...INITIAL_BATCH_LINK_PROGRESS, source, done: true });
         return;
       }
@@ -676,8 +722,8 @@ export function ShopProductsPanel({
         }
         showToast(
           preflight.deferredIds.length > 0
-            ? "主图尚未就绪，请稍后再试"
-            : "暂无可关联商品"
+            ? t("shopProducts.toastImageNotReady")
+            : t("shopProducts.toastNoLinkableProducts")
         );
         onBatchLinkFinished?.({
           ...INITIAL_BATCH_LINK_PROGRESS,
@@ -690,7 +736,11 @@ export function ShopProductsPanel({
 
       setFilter("all");
       if (source === "manual") {
-        showToast(`开始为当前页 ${preflight.readyProducts.length} 个商品逐个图搜关联…`);
+        showToast(
+          t("shopProducts.toastBatchLinkStart", {
+            count: preflight.readyProducts.length,
+          })
+        );
       }
 
       void startBatchLink(preflight.readyProducts, {
@@ -707,6 +757,7 @@ export function ShopProductsPanel({
       shopName,
       showToast,
       startBatchLink,
+      t,
     ]
   );
 
@@ -824,7 +875,7 @@ export function ShopProductsPanel({
       .filter((p) => stateOf(p) === "pending")
       .map((p) => p.thirdPlatformItemId);
     if (pendingIds.length === 0) {
-      showToast("暂无待确认商品");
+      showToast(t("shopProducts.toastNoPending"));
       return;
     }
     setBatchAcking(true);
@@ -842,8 +893,11 @@ export function ShopProductsPanel({
       onActivity?.();
       showToast(
         result.failed.length > 0
-          ? `已确认 ${result.ok} 个，失败 ${result.failed.length} 个`
-          : `已批量确认 ${result.ok} 个待关联`
+          ? t("shopProducts.toastBatchAckPartial", {
+              ok: result.ok,
+              failed: result.failed.length,
+            })
+          : t("shopProducts.toastBatchAckDone", { ok: result.ok })
       );
     } catch (err) {
       showToast(readableError(err));
@@ -995,10 +1049,10 @@ export function ShopProductsPanel({
         <SegmentedTabs
           variant="chip"
           tabs={[
-            { id: "all", label: "全部", count: counts.all },
-            { id: "pending", label: "待确认", count: counts.pending },
-            { id: "confirmed", label: "已确认", count: counts.confirmed },
-            { id: "unbound", label: "未关联", count: counts.unbound },
+            { id: "all", label: t("shopProducts.filterAll"), count: counts.all },
+            { id: "pending", label: t("shopProducts.filterPending"), count: counts.pending },
+            { id: "confirmed", label: t("shopProducts.filterConfirmed"), count: counts.confirmed },
+            { id: "unbound", label: t("shopProducts.filterUnbound"), count: counts.unbound },
           ]}
           value={filter}
           onValueChange={(id) => {
@@ -1017,7 +1071,7 @@ export function ShopProductsPanel({
               {batchAcking ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : null}
-              {batchAcking ? "确认中…" : `批量确认 (${manualAckPendingCount})`}
+              {batchAcking ? t("shopProducts.batchAcking") : t("shopProducts.batchAck", { count: manualAckPendingCount })}
             </Button>
           ) : null}
         </div>
@@ -1026,73 +1080,83 @@ export function ShopProductsPanel({
       {error ? (
         <Card className="mb-3 border-red-200">
           <CardContent className="flex items-center justify-between gap-3 py-3 text-sm text-red-700">
-            <span>加载失败：{error}</span>
+            <span>{t("shopProducts.loadFailed")}{error}</span>
             <Button size="sm" variant="secondary" onClick={() => void load()}>
-              重试
+              {t("shopProducts.retry")}
             </Button>
           </CardContent>
         </Card>
       ) : null}
 
-      {loading || newArrivalsAwaitingList ? (
-        <Card>
-          <TableSkeleton rows={newArrivalsAwaitingList ? 3 : 5} />
-        </Card>
-      ) : products.length === 0 ? (
-        <EmptyState
-          title="暂无在售商品"
-          description="尚未同步到店铺商品，或店铺当前无商品。点击上方刷新图标从 Shopify 拉取并分析。"
-        />
-      ) : displayProducts.length === 0 ? (
-        <EmptyState
-          title={filter === "new_arrivals" ? "暂无新入库商品" : "该筛选下暂无商品"}
-          description={
-            filter === "new_arrivals"
-              ? "新商品同步后会出现于此；也可点击上方刷新图标重新拉取。"
-              : "切换到「全部」查看所有在售商品。"
-          }
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-3">
-          {paginatedProducts.map((p) => (
-            <ShopProductCard
-              key={p.id}
-              item={p}
-              shopName={shopName}
-              binding={bindings[p.thirdPlatformItemId] ?? null}
-              pricingTemplate={pricingTemplate}
-              isNewArrival={pendingNewAnalysisIds?.has(p.thirdPlatformItemId) ?? false}
-              listingPriceEdit={
-                aiFieldEdits?.[
-                  aiFieldEditKey(p.thirdPlatformItemId, "listingPrice")
-                ] ?? null
-              }
-              titleEdit={
-                aiFieldEdits?.[aiFieldEditKey(p.thirdPlatformItemId, "title")] ??
-                null
-              }
-              onListingPriceEditConsumed={() =>
-                onAiFieldEditConsumed?.(p.thirdPlatformItemId, "listingPrice")
-              }
-              onTitleEditConsumed={() =>
-                onAiFieldEditConsumed?.(p.thirdPlatformItemId, "title")
-              }
-              onBound={handleBound}
-              onOpenDetail={() => setDetailItemId(p.thirdPlatformItemId)}
-              focused={focusProductId === p.thirdPlatformItemId}
-              searchModeRequested={searchModeProductId === p.thirdPlatformItemId}
-              onSearchModeConsumed={onSearchModeConsumed}
-              onFocus={() => onProductFocus?.(p.thirdPlatformItemId)}
-              onCandidateContextChange={onCandidateContextChange}
-              batchLinkDrive={
-                batchLinkProgress.cardStates[p.thirdPlatformItemId] ??
-                publishRevealStates[p.thirdPlatformItemId]
-              }
-              linkingLocked={linkingLocked}
-            />
-          ))}
-        </div>
-      )}
+      <FadeSwap
+        loading={loading || newArrivalsAwaitingList}
+        minHeightClass="min-h-[420px]"
+        skeleton={
+          <Card>
+            <TableSkeleton rows={newArrivalsAwaitingList ? 3 : 5} />
+          </Card>
+        }
+      >
+        {products.length === 0 ? (
+          <EmptyState
+            title={t("shopProducts.emptyNoProducts")}
+            description={t("shopProducts.emptyNoProductsDesc")}
+          />
+        ) : displayProducts.length === 0 ? (
+          <EmptyState
+            title={
+              filter === "new_arrivals"
+                ? t("shopProducts.emptyNoNewArrivals")
+                : t("shopProducts.emptyFilterTitle")
+            }
+            description={
+              filter === "new_arrivals"
+                ? t("shopProducts.emptyNewArrivalsDesc")
+                : t("shopProducts.emptyFilterDesc")
+            }
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-3">
+            {paginatedProducts.map((p) => (
+              <ShopProductCard
+                key={p.id}
+                item={p}
+                shopName={shopName}
+                binding={bindings[p.thirdPlatformItemId] ?? null}
+                pricingTemplate={pricingTemplate}
+                isNewArrival={pendingNewAnalysisIds?.has(p.thirdPlatformItemId) ?? false}
+                listingPriceEdit={
+                  aiFieldEdits?.[
+                    aiFieldEditKey(p.thirdPlatformItemId, "listingPrice")
+                  ] ?? null
+                }
+                titleEdit={
+                  aiFieldEdits?.[aiFieldEditKey(p.thirdPlatformItemId, "title")] ??
+                  null
+                }
+                onListingPriceEditConsumed={() =>
+                  onAiFieldEditConsumed?.(p.thirdPlatformItemId, "listingPrice")
+                }
+                onTitleEditConsumed={() =>
+                  onAiFieldEditConsumed?.(p.thirdPlatformItemId, "title")
+                }
+                onBound={handleBound}
+                onOpenDetail={() => setDetailItemId(p.thirdPlatformItemId)}
+                focused={focusProductId === p.thirdPlatformItemId}
+                searchModeRequested={searchModeProductId === p.thirdPlatformItemId}
+                onSearchModeConsumed={onSearchModeConsumed}
+                onFocus={() => onProductFocus?.(p.thirdPlatformItemId)}
+                onCandidateContextChange={onCandidateContextChange}
+                batchLinkDrive={
+                  batchLinkProgress.cardStates[p.thirdPlatformItemId] ??
+                  publishRevealStates[p.thirdPlatformItemId]
+                }
+                linkingLocked={linkingLocked}
+              />
+            ))}
+          </div>
+        )}
+      </FadeSwap>
 
       {!loading &&
       !newArrivalsAwaitingList &&
@@ -1104,13 +1168,13 @@ export function ShopProductsPanel({
             className="h-8"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1 || linkingLocked}
-            title="上一页"
-            aria-label="上一页"
+            title={t("shopProducts.prevPage")}
+            aria-label={t("shopProducts.prevPage")}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <span className="min-w-[5.5rem] text-center text-xs text-ink-subtle tabular-nums">
-            第 {page} / {totalPages} 页
+            {t("shopProducts.pageOf", { page, total: totalPages })}
           </span>
           <Button
             variant="secondary"
@@ -1118,8 +1182,8 @@ export function ShopProductsPanel({
             className="h-8"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages || linkingLocked}
-            title="下一页"
-            aria-label="下一页"
+            title={t("shopProducts.nextPage")}
+            aria-label={t("shopProducts.nextPage")}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -1183,10 +1247,11 @@ function ShopProductCard({
   pricingTemplate?: PricingTemplate | null;
 }) {
   const { showToast } = useOnboarding();
+  const t = useT();
   const listingPriceEditPhases = useAiFieldEditPhases(listingPriceEdit);
   const titleEditPhases = useAiFieldEditPhases(titleEdit, onTitleEditConsumed);
   const listingPriceLabel = resolveListingPriceDisplay(item, listingPriceEdit);
-  const displayTitle = titleEdit?.nextDisplay ?? item.title ?? "(无标题)";
+  const displayTitle = titleEdit?.nextDisplay ?? item.title ?? t("shopProducts.noTitle");
   const hasImage = Boolean(item.primaryImageUrl);
 
   useEffect(() => {
@@ -1475,13 +1540,17 @@ function ShopProductCard({
   const runSearchWithPhases = async () => {
     if (searching) return;
     if (fromPublish) {
-      setSearchError("该商品来自 Tangbuy 上架，已对应货源，无需图搜");
+      setSearchError(t("shopProducts.publishSourcedNoSearch"));
       return;
     }
     setSearching(true);
     setSearchError(null);
     setTrayOpen(true);
-    const phases = ["正在分析图片…", "正在匹配类目与规格…", "正在比对成本与销复购…"];
+    const phases = [
+      t("shopProducts.phaseAnalyze"),
+      t("shopProducts.phaseMatch"),
+      t("shopProducts.phaseCompare"),
+    ];
     let i = 0;
     setSearchPhase(phases[0]!);
     const timer = window.setInterval(() => {
@@ -1499,7 +1568,10 @@ function ShopProductCard({
         setResult(null);
         setMatchScores({});
         setImageScores({});
-        setSearchError(pipeline.error ?? imageSearchError(new Error("图搜失败")));
+        setSearchError(
+          pipeline.error ??
+            imageSearchError(new Error(t("shopProducts.imageSearchFailed")))
+        );
         return;
       }
       setMatchScores(pipeline.matchScores);
@@ -1542,7 +1614,7 @@ function ShopProductCard({
     const wasRebind = Boolean(boundOfferId);
     setConfirmingId(candidate.productId);
     setConfirmError(null);
-    showToast(wasRebind ? "正在改绑货源…" : "正在绑定货源…");
+    showToast(wasRebind ? t("shopProducts.toastRebinding") : t("shopProducts.toastBinding"));
     try {
       const confidence = resolveCandidateConfidence(
         candidate,
@@ -1568,7 +1640,7 @@ function ShopProductCard({
       }
       setSupplierConfirm(null);
       setTrayOpen(false);
-      showToast(wasRebind ? "已改绑货源" : "已绑定货源");
+      showToast(wasRebind ? t("shopProducts.toastRebound") : t("shopProducts.toastBound"));
     } catch (err) {
       const msg = imageMatchError(err);
       setConfirmError(msg);
@@ -1604,7 +1676,7 @@ function ShopProductCard({
     try {
       await api.ackImageBinding(shopName, item.thirdPlatformItemId);
       onBound(item.thirdPlatformItemId, { ...binding, bindStatus: "ACTIVE" });
-      showToast("已确认关联");
+      showToast(t("shopProducts.toastConfirmed"));
     } catch (err) {
       setConfirmError(imageMatchError(err));
     } finally {
@@ -1615,7 +1687,7 @@ function ShopProductCard({
   // "取消关联": soft-unbind; the card returns to the unmatched state (can re-search).
   const unbindBinding = async () => {
     if (unbinding || !binding?.bound) return;
-    const ok = window.confirm("取消该商品的货源关联？取消后可重新查找货源。");
+    const ok = window.confirm(t("shopProducts.confirmUnbind"));
     if (!ok) return;
     setUnbinding(true);
     setConfirmError(null);
@@ -1624,7 +1696,7 @@ function ShopProductCard({
       onBound(item.thirdPlatformItemId, { bound: false });
       setResult(null);
       setCurrentIdx(0);
-      showToast("已取消关联");
+      showToast(t("shopProducts.toastUnbound"));
     } catch (err) {
       setConfirmError(imageMatchError(err));
     } finally {
@@ -1635,7 +1707,7 @@ function ShopProductCard({
   // "驳回": unbind the AI suggestion and enqueue a single-item rematch.
   const rejectBinding = async () => {
     if (rejecting || !binding?.bound || !bindPending) return;
-    const ok = window.confirm("驳回后将解除当前推荐并重新图搜匹配，确定？");
+    const ok = window.confirm(t("shopProducts.confirmReject"));
     if (!ok) return;
     setRejecting(true);
     setConfirmError(null);
@@ -1645,7 +1717,7 @@ function ShopProductCard({
       setResult(null);
       setCurrentIdx(0);
       await api.startMatchQueue(shopName, item.thirdPlatformItemId);
-      showToast("已驳回，正在重新匹配");
+      showToast(t("shopProducts.toastRejected"));
     } catch (err) {
       setConfirmError(imageMatchError(err));
     } finally {
@@ -1719,7 +1791,7 @@ function ShopProductCard({
       currentCandidateId: current?.productId ?? null,
       boundOfferId,
       bindPending,
-    });
+    }, t);
   }, [
     candidateSummaries,
     effectiveShopPrice,
@@ -1729,6 +1801,7 @@ function ShopProductCard({
     current?.productId,
     boundOfferId,
     bindPending,
+    t,
   ]);
 
   useEffect(() => {
@@ -1780,7 +1853,7 @@ function ShopProductCard({
     parseGatewayPrice((offerPriceText(offer) ?? "").replace(/¥/g, ""));
 
   const formatOfferCost = (cny: number | null, fallbackRaw?: string | null) =>
-    formatPurchaseCostLabel(cny, shopCurrency, fallbackRaw, pricingTemplate);
+    formatPurchaseCostLabel(t, cny, shopCurrency, fallbackRaw, pricingTemplate);
 
   const reco =
     rightMode === "candidate" && current
@@ -1859,35 +1932,35 @@ function ShopProductCard({
 
   const headerBadge = useMemo(() => {
     if (batchQueued) {
-      return { label: "排队中", variant: "linking" as const };
+      return { label: t("shopProducts.statusQueued"), variant: "linking" as const };
     }
     if (batchLinking) {
-      return { label: "关联中", variant: "linking" as const };
+      return { label: t("shopProducts.statusLinking"), variant: "linking" as const };
     }
     if (batchLinkDrive?.state === "needs_review") {
-      return { label: "待确认货源", variant: "pending" as const };
+      return { label: t("shopProducts.statusPendingSource"), variant: "pending" as const };
     }
     if (batchLinkDrive?.state === "failed") {
-      return { label: "关联失败", variant: "unbound" as const };
+      return { label: t("shopProducts.statusFailed"), variant: "unbound" as const };
     }
     if (needsManualAck) {
-      return { label: "待确认", variant: "pending" as const };
+      return { label: t("shopProducts.pending"), variant: "pending" as const };
     }
     if (boundOfferId) {
       return {
         label: fromPublish
-          ? "商城上架关联"
+          ? t("shopProducts.statusPublishLink")
           : fromManual
-            ? "人工匹配"
-            : "已自动匹配",
+            ? t("shopProducts.statusManual")
+            : t("shopProducts.autoMatched"),
         variant: "matched" as const,
       };
     }
     if (current) {
-      return { label: "已选货源", variant: "selected" as const };
+      return { label: t("shopProducts.statusSelected"), variant: "selected" as const };
     }
-    return { label: "未匹配", variant: "unbound" as const };
-  }, [batchLinkDrive?.state, batchLinking, batchQueued, needsManualAck, boundOfferId, fromPublish, fromManual, current]);
+    return { label: t("shopProducts.statusUnmatched"), variant: "unbound" as const };
+  }, [batchLinkDrive?.state, batchLinking, batchQueued, needsManualAck, boundOfferId, fromPublish, fromManual, current, t]);
 
   const displayTitleScore =
     batchLinkDrive?.titleScore ??
@@ -1902,25 +1975,27 @@ function ShopProductCard({
     );
   const batchQueueLine =
     batchLinkDrive && batchLinkDrive.state !== "idle"
-      ? formatBatchCardQueueLine(batchLinkDrive)
+      ? formatBatchCardQueueLine(t, batchLinkDrive)
       : null;
 
   const matchHeadline = linkAnimating
     ? publishLinkHeadline(
+        t,
         batchLinkDrive!.state,
         displayTitleScore,
         displayImageScore
       )
     : middleMatchHeadline(
+        t,
         cardState,
         Boolean(current),
         displayTitleScore,
         displayImageScore
       );
 
-  const confidenceTierLabel = useMemo(() => {
+  const displayConfidenceTier = useMemo((): MatchConfidenceTier | null => {
     if (batchLinkDrive?.confidenceTier) {
-      return CONFIDENCE_TIER_LABELS[batchLinkDrive.confidenceTier];
+      return batchLinkDrive.confidenceTier;
     }
     if (current) {
       const tier = resolveCandidateConfidence(
@@ -1928,13 +2003,13 @@ function ShopProductCard({
         matchScores,
         imageScores
       ).tier;
-      if (tier !== "none") return CONFIDENCE_TIER_LABELS[tier];
+      if (tier !== "none") return tier;
     }
     if (binding?.matchScore != null) {
       const tier = classifyMatchConfidence(
         normalizeMatchScore(binding.matchScore)
       );
-      if (tier !== "none") return CONFIDENCE_TIER_LABELS[tier];
+      if (tier !== "none") return tier;
     }
     return null;
   }, [
@@ -1944,7 +2019,11 @@ function ShopProductCard({
     imageScores,
     matchScores,
   ]);
-  const tags = evidenceTags({
+  const confidenceTierText =
+    displayConfidenceTier != null
+      ? confidenceTierLabel(displayConfidenceTier, t)
+      : null;
+  const tags = evidenceTags(t, {
     unbound: cardState === "unbound" && !current,
     pending: cardState === "pending",
     imageSource:
@@ -1954,7 +2033,7 @@ function ShopProductCard({
     matchScore: displayTitleScore,
     signals:
       rightMode === "candidate" && current
-        ? candidateSignals(current)
+        ? candidateSignals(t, current)
         : undefined,
     marginPct: null,
   });
@@ -1968,13 +2047,13 @@ function ShopProductCard({
 
   const primaryLabel =
     cardState === "unbound" && !current
-      ? "查找候选"
+      ? t("shopProducts.findCandidates")
       : current && !isBoundHere
         ? isRebind
-          ? "改绑"
-          : "确认"
+          ? t("shopProducts.rebind")
+          : t("shopProducts.confirm")
         : cardState === "pending"
-          ? "确认"
+          ? t("shopProducts.confirm")
           : null;
 
   const onPrimary = () => {
@@ -2009,23 +2088,27 @@ function ShopProductCard({
         onFocus?.();
       }}
       className={cn(
-        "relative flex flex-col rounded-xl border bg-white p-4 shadow-sm transition-shadow",
+        "relative flex flex-col p-4",
         batchLinking
-          ? "border-sky-400 shadow-md ring-2 ring-sky-200/70"
+          ? "rounded-[var(--radius-card)] border border-info bg-info-soft/30 shadow-md ring-2 ring-info/25"
           : batchQueued
-            ? "border-slate-300 ring-1 ring-slate-200"
+            ? "rounded-[var(--radius-card)] border border-surface-border bg-surface shadow-card ring-1 ring-ring/20"
             : focused
-              ? "border-emerald-400 shadow-md ring-2 ring-emerald-200/60"
+              ? selectableCardClassName({
+                  selected: true,
+                  interactive: false,
+                  className: "shadow-md",
+                })
               : listingPriceEditPhases.cardRing
-                ? "ai-card-edit-highlight border-sky-200"
-                : "border-slate-200",
+                ? "rounded-[var(--radius-card)] border border-info/30 bg-surface shadow-card ai-card-edit-highlight"
+                : selectableCardClassName({ interactive: true }),
         batchLinkDrive?.doneFlash ? "batch-link-done-flash" : null,
         trayOpen &&
           !focused &&
           !listingPriceEditPhases.cardRing &&
           !batchLinking &&
           !batchQueued
-          ? "ring-1 ring-slate-300"
+          ? "ring-1 ring-ring/25"
           : null
       )}
     >
@@ -2034,11 +2117,11 @@ function ShopProductCard({
         {/* A. Shopify */}
         <div className="min-w-0 md:pr-4">
           <div className="mb-1 flex w-full items-center justify-between gap-2">
-            <p className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-              Shopify 商品
+            <p className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {t("shopProducts.shopifyProduct")}
             </p>
             <span
-              className="shrink-0 text-[10px] tabular-nums text-slate-400"
+              className="shrink-0 text-[10px] tabular-nums text-muted-foreground"
               title={item.thirdPlatformItemId}
             >
               ID {shortProductId(item.thirdPlatformItemId)}
@@ -2048,12 +2131,18 @@ function ShopProductCard({
             <button
               type="button"
               className={cn(
-                "relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:h-[4.5rem] sm:w-[4.5rem]",
+                "relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-surface-border bg-muted sm:h-[4.5rem] sm:w-[4.5rem]",
                 hasImage && "cursor-zoom-in"
               )}
               disabled={!hasImage}
-              aria-label={hasImage ? "放大商品主图" : undefined}
-              onClick={(e) => openImageZoom(e, item.primaryImageUrl, item.title ?? "Shopify 商品")}
+              aria-label={hasImage ? t("shopProducts.zoomProductImage") : undefined}
+              onClick={(e) =>
+                openImageZoom(
+                  e,
+                  item.primaryImageUrl,
+                  item.title ?? t("shopProducts.shopifyProduct")
+                )
+              }
             >
               {hasImage ? (
                 <ThumbImage
@@ -2066,7 +2155,7 @@ function ShopProductCard({
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
-                  无图
+                  {t("shopProducts.noImage")}
                 </div>
               )}
             </button>
@@ -2092,17 +2181,17 @@ function ShopProductCard({
         </div>
 
         {/* B. AI Match */}
-        <div className="flex w-full min-w-0 flex-col items-center justify-center border-y border-slate-100 py-2 md:border-x md:border-y-0 md:px-3 md:py-0">
+        <div className="flex w-full min-w-0 flex-col items-center justify-center rounded-lg bg-brand-soft/40 border-y border-brand-accent/10 py-2 md:border-x md:border-y-0 md:px-3 md:py-0">
           {cardState === "unbound" && !current ? (
             <>
               <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                AI Match
+                {t("shopProducts.aiMatch")}
               </p>
               <p className="mt-1 text-center text-xs font-semibold text-slate-600">
-                未找到可靠匹配
+                {t("shopProducts.noReliableMatch")}
               </p>
               <p className="mt-1 max-w-[9rem] text-center text-[10px] leading-4 text-slate-400">
-                建议使用图搜，或稍后重试
+                {t("shopProducts.suggestImageSearch")}
               </p>
             </>
           ) : (
@@ -2110,10 +2199,10 @@ function ShopProductCard({
               <p
                 className={cn(
                   "text-[10px] font-medium uppercase tracking-wide",
-                  linkAnimating ? "text-sky-600/80" : "text-emerald-600/80"
+                  linkAnimating ? "text-sky-600/80" : cardState === "matched" ? "text-emerald-700/90" : cardState === "pending" ? "text-amber-700/90" : "text-slate-500"
                 )}
               >
-                AI Match
+                {t("shopProducts.aiMatch")}
               </p>
               <MoveRight
                 className={cn(
@@ -2122,7 +2211,11 @@ function ShopProductCard({
                     ? "text-sky-500"
                     : cardState === "pending"
                       ? "text-amber-500"
-                      : "text-emerald-500"
+                      : cardState === "matched"
+                        ? "text-emerald-600"
+                        : current
+                          ? "text-sky-600"
+                          : "text-slate-400"
                 )}
               />
               <p
@@ -2132,25 +2225,29 @@ function ShopProductCard({
                     ? "text-sky-700"
                     : cardState === "pending"
                       ? "text-amber-700"
-                      : "text-emerald-700"
+                      : cardState === "matched"
+                        ? "text-emerald-800"
+                        : current
+                          ? "text-sky-700"
+                          : "text-slate-700"
                 )}
               >
                 {matchHeadline}
               </p>
               <div className="mt-1.5 flex w-full flex-wrap justify-center gap-1">
-                {tags.map((t) => (
+                {tags.map((tag) => (
                   <span
-                    key={t.label}
+                    key={tag.label}
                     className={cn(
                       "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                      t.tone === "ok"
+                      tag.tone === "ok"
                         ? "bg-emerald-50 text-emerald-700"
-                        : t.tone === "warn"
+                        : tag.tone === "warn"
                           ? "bg-amber-50 text-amber-700"
                           : "bg-slate-100 text-slate-600"
                     )}
                   >
-                    {t.label}
+                    {tag.label}
                   </span>
                 ))}
               </div>
@@ -2163,30 +2260,36 @@ function ShopProductCard({
           {boundLoading ? (
             <>
               <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                推荐货源
+                {t("shopProducts.recommendedSource")}
               </p>
               <div className="flex min-w-0 gap-3">
                 <div className="flex flex-1 items-center gap-2 text-[11px] text-slate-500">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  载入货源…
+                  {t("shopProducts.loadingSource")}
                 </div>
               </div>
             </>
           ) : reco ? (
             <>
               <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                推荐货源
+                {t("shopProducts.recommendedSource")}
               </p>
               <div className="flex min-w-0 gap-3">
                 <button
                   type="button"
                   className={cn(
-                    "relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:h-[4.5rem] sm:w-[4.5rem]",
+                    "relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-surface-border bg-muted sm:h-[4.5rem] sm:w-[4.5rem]",
                     reco.image && "cursor-zoom-in"
                   )}
                   disabled={!reco.image}
-                  aria-label={reco.image ? "放大货源主图" : undefined}
-                  onClick={(e) => openImageZoom(e, reco.image, reco.title ?? "推荐货源")}
+                  aria-label={reco.image ? t("shopProducts.zoomSourceImage") : undefined}
+                  onClick={(e) =>
+                    openImageZoom(
+                      e,
+                      reco.image,
+                      reco.title ?? t("shopProducts.recommendedSource")
+                    )
+                  }
                 >
                   {reco.image ? (
                     <ThumbImage
@@ -2200,7 +2303,7 @@ function ShopProductCard({
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
-                      无图
+                      {t("shopProducts.noImage")}
                     </div>
                   )}
                 </button>
@@ -2208,21 +2311,21 @@ function ShopProductCard({
                   <p className="line-clamp-2 text-sm font-semibold leading-snug text-slate-900">
                     {reco.title && !/^货源\s/.test(reco.title)
                       ? reco.title
-                      : reco.title ?? "货源标题待取"}
+                      : reco.title ?? t("shopProducts.sourceTitlePending")}
                   </p>
                   <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-sm font-semibold text-slate-800">
                     <span>{reco.priceText}</span>
                     {profit ? (
                       <EditedProfitLine
                         inline
-                        label="每单获利 "
+                        label={t("shopProducts.profitPerOrder")}
                         previous={previousProfit}
                         next={profit}
                         phases={listingPriceEditPhases}
                       />
                     ) : recoInventory ? (
                       <span className="text-[11px] font-normal text-slate-500">
-                        库存 {recoInventory}
+                        {t("shopProducts.stock", { count: recoInventory })}
                       </span>
                     ) : null}
                   </div>
@@ -2233,7 +2336,7 @@ function ShopProductCard({
             <div className="batch-link-searching flex flex-1 flex-col justify-center rounded-lg border border-dashed border-sky-200 bg-sky-50/50 px-3 py-3">
               <div className="flex items-center gap-2 text-[11px] font-medium text-sky-800">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                AI 图搜中
+                {t("shopProducts.aiImageSearching")}
               </div>
               <div className="batch-link-shimmer mt-2 h-1 w-full rounded-full bg-sky-100" />
             </div>
@@ -2242,34 +2345,32 @@ function ShopProductCard({
               batchLinkDrive?.state === "auto_selecting") ? (
             <div className="flex flex-1 items-center gap-2 rounded-lg border border-dashed border-sky-200 bg-sky-50/50 px-3 py-2 text-[11px] text-sky-800">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              正在建立货源关联…
+              {t("shopProducts.establishingLink")}
             </div>
           ) : fromPublish ? (
-            <div className="flex flex-1 items-center rounded-lg border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-2 text-[11px] leading-relaxed text-emerald-800">
-              发现新品上架商品，Tangbuy 即为货源，无需图搜关联。绑定记录同步中…
+            <div className="flex flex-1 items-center rounded-lg border border-dashed border-brand-accent/25 bg-brand-soft/50 px-3 py-2 text-[11px] leading-relaxed text-brand-accent">
+              {t("shopProducts.publishNoSearchHint")}
             </div>
           ) : (
-            <div className="flex flex-1 items-center rounded-lg border border-dashed border-slate-200 px-3 py-2 text-[11px] text-slate-500">
+            <div className="flex flex-1 items-center rounded-lg border border-dashed border-surface-border px-3 py-2 text-[11px] text-muted-foreground">
               {batchLinkDrive?.state === "failed" && batchLinkDrive.errorMessage
                 ? batchLinkDrive.errorMessage
                 : hasImage
-                  ? "尚未关联货源 · 点击「查找候选」开始图搜"
-                  : "该商品无主图，无法图搜"}
+                  ? t("shopProducts.clickFindCandidates")
+                  : t("shopProducts.noImageNoSearch")}
             </div>
           )}
         </div>
       </div>
 
       {/* Footer actions — secondary links + primary on the right */}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2 border-t border-slate-100 pt-3">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2 border-t border-surface-border pt-3">
         <div className="flex flex-wrap items-center gap-x-1.5">
           <span
             className={cn(
               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
               headerBadge.variant === "matched"
-                ? headerBadge.label === "人工匹配"
-                  ? "bg-violet-50 text-violet-700"
-                  : "bg-emerald-50 text-emerald-700"
+                ? "bg-emerald-50 text-emerald-700"
                 : headerBadge.variant === "pending"
                   ? "bg-amber-50 text-amber-700"
                   : headerBadge.variant === "linking"
@@ -2291,51 +2392,51 @@ function ShopProductCard({
           {catalogIngesting && (boundOfferId || bindPending) ? (
             <CatalogIngestingBadge />
           ) : null}
-          {confidenceTierLabel &&
+          {confidenceTierText &&
           (cardState === "unbound" ||
             cardState === "pending" ||
             batchLinkDrive?.state === "needs_review") ? (
             <span
               className={cn(
                 "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                confidenceTierLabel === "高匹配"
+                displayConfidenceTier === "high"
                   ? "bg-emerald-50 text-emerald-700"
-                  : confidenceTierLabel === "中匹配"
+                  : displayConfidenceTier === "medium"
                     ? "bg-amber-50 text-amber-800"
                     : "bg-slate-100 text-slate-600"
               )}
             >
-              {confidenceTierLabel}
+              {confidenceTierText}
             </span>
           ) : null}
           {isNewArrival && cardState === "unbound" && !fromPublish ? (
             <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
-              新入库
+              {t("shopProducts.newArrival")}
             </span>
           ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[12px]">
           <button
             type="button"
-            className="font-medium text-slate-500 hover:text-slate-800"
+            className="font-medium text-muted-foreground hover:text-foreground"
             onClick={(e) => {
               e.stopPropagation();
               onOpenDetail();
             }}
           >
-            编辑商品
+            {t("shopProducts.editProduct")}
           </button>
           {detailUrl ? (
             <>
-              <span className="text-slate-300">|</span>
+              <span className="text-surface-border">|</span>
               <a
                 href={detailUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 font-medium text-slate-500 hover:text-slate-800"
+                className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
                 onClick={(e) => e.stopPropagation()}
               >
-                货源详情
+                {t("shopProducts.sourceDetail")}
                 <ExternalLink className="h-3 w-3" />
               </a>
             </>
@@ -2343,63 +2444,63 @@ function ShopProductCard({
           {cardState !== "unbound" || current ? (
             !fromPublish ? (
             <>
-              <span className="text-slate-300">|</span>
+              <span className="text-surface-border">|</span>
               <button
                 type="button"
                 className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
                 disabled={searching || !hasImage}
                 title={
                   !hasImage
-                    ? "该商品无主图，无法图搜"
+                    ? t("shopProducts.noImageNoSearch")
                     : result && result.items.length > 0
-                      ? "展开上一轮图搜结果"
-                      : "图搜匹配货源"
+                      ? t("shopProducts.expandLastSearch")
+                      : t("shopProducts.imageSearchMatch")
                 }
                 onClick={(e) => {
                   e.stopPropagation();
                   void openOrRunSearch(false);
                 }}
               >
-                {searching ? "匹配中…" : "重新匹配"}
+                {searching ? t("shopProducts.searching") : t("shopProducts.rematch")}
               </button>
-              <span className="text-slate-300">|</span>
+              <span className="text-surface-border">|</span>
               <button
                 type="button"
                 className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
                 disabled={cardActionsLocked || !isMallGatewayConfigured()}
                 title={
                   !isMallGatewayConfigured()
-                    ? "商城货源暂不可用"
-                    : "粘贴发现新品链接手动关联货源"
+                    ? t("shopProducts.mallUnavailable")
+                    : t("shopProducts.manualMatchHint")
                 }
                 onClick={(e) => {
                   e.stopPropagation();
                   setManualDrawerOpen(true);
                 }}
               >
-                手动匹配
+                {t("shopProducts.manualMatch")}
               </button>
             </>
             ) : null
           ) : (
             !fromPublish ? (
             <>
-              <span className="text-slate-300">|</span>
+              <span className="text-surface-border">|</span>
               <button
                 type="button"
                 className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
                 disabled={cardActionsLocked || !isMallGatewayConfigured()}
                 title={
                   !isMallGatewayConfigured()
-                    ? "商城货源暂不可用"
-                    : "粘贴发现新品链接手动关联货源"
+                    ? t("shopProducts.mallUnavailable")
+                    : t("shopProducts.manualMatchHint")
                 }
                 onClick={(e) => {
                   e.stopPropagation();
                   setManualDrawerOpen(true);
                 }}
               >
-                手动匹配
+                {t("shopProducts.manualMatch")}
               </button>
             </>
             ) : null
@@ -2408,32 +2509,32 @@ function ShopProductCard({
             <>
               {cardState === "pending" ? (
                 <>
-                  <span className="text-slate-300">|</span>
+                  <span className="text-surface-border">|</span>
                   <button
                     type="button"
-                    className="font-medium text-slate-500 hover:text-red-600 disabled:opacity-50"
+                    className="font-medium text-muted-foreground hover:text-destructive disabled:opacity-50"
                     disabled={rejecting || acking}
                     onClick={(e) => {
                       e.stopPropagation();
                       void rejectBinding();
                     }}
                   >
-                    {rejecting ? "驳回中…" : "驳回"}
+                    {rejecting ? t("shopProducts.rejecting") : t("shopProducts.reject")}
                   </button>
                 </>
               ) : (
                 <>
-                  <span className="text-slate-300">|</span>
+                  <span className="text-surface-border">|</span>
                   <button
                     type="button"
-                    className="font-medium text-slate-500 hover:text-red-600 disabled:opacity-50"
+                    className="font-medium text-muted-foreground hover:text-destructive disabled:opacity-50"
                     disabled={unbinding || acking}
                     onClick={(e) => {
                       e.stopPropagation();
                       void unbindBinding();
                     }}
                   >
-                    取消关联
+                    {t("shopProducts.cancelLink")}
                   </button>
                 </>
               )}
@@ -2461,7 +2562,7 @@ function ShopProductCard({
             {(confirmingId || acking || searching) && (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             )}
-            {confirmingId ? "处理中…" : primaryLabel}
+            {confirmingId ? t("shopProducts.processing") : primaryLabel}
           </Button>
         ) : null}
       </div>
@@ -2483,7 +2584,7 @@ function ShopProductCard({
                 void runSearch();
               }}
             >
-              重试
+              {t("shopProducts.retry")}
             </button>
           ) : null}
         </div>
@@ -2519,7 +2620,7 @@ function ShopProductCard({
 
       {/* Candidate tray */}
       {trayOpen || searching ? (
-        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+        <div className="mt-3 rounded-lg border border-surface-border bg-muted/80 p-3">
           <div className="flex items-center justify-between gap-2">
             <span
               className="inline-block h-7 w-7 shrink-0"
@@ -2527,21 +2628,21 @@ function ShopProductCard({
             />
             <p className="min-w-0 flex-1 text-center text-[12px] font-semibold text-slate-800">
               {searching
-                ? searchPhase ?? "正在搜索…"
+                ? searchPhase ?? t("shopProducts.searching")
                 : candidates && candidates.length > 0
-                  ? `${candidates.length} 个候选`
+                  ? t("shopProducts.candidateCount", { count: candidates.length })
                   : result
-                    ? "未召回候选"
-                    : "图搜候选"}
+                    ? t("shopProducts.noCandidates")
+                    : t("shopProducts.imageSearchCandidates")}
             </p>
             {trayOpen && !searching ? (
               <div className="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-surface-border bg-surface text-muted-foreground hover:bg-surface-hover disabled:opacity-50"
                   disabled={!hasImage}
-                  title="刷新图搜"
-                  aria-label="刷新图搜"
+                  title={t("shopProducts.refreshImageSearch")}
+                  aria-label={t("shopProducts.refreshImageSearch")}
                   onClick={(e) => {
                     e.stopPropagation();
                     void runSearch();
@@ -2551,9 +2652,9 @@ function ShopProductCard({
                 </button>
                 <button
                   type="button"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  title="收起候选"
-                  aria-label="收起候选"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-surface-border bg-surface text-muted-foreground hover:bg-surface-hover"
+                  title={t("shopProducts.collapseCandidates")}
+                  aria-label={t("shopProducts.collapseCandidates")}
                   onClick={(e) => {
                     e.stopPropagation();
                     setTrayOpen(false);
@@ -2569,7 +2670,7 @@ function ShopProductCard({
 
           {!searching && searchRecoveryHints.length > 0 ? (
             <div className="mt-2.5 rounded-md border border-amber-200/80 bg-amber-50/60 px-2.5 py-2">
-              <p className="text-[11px] font-medium text-amber-950">图搜建议</p>
+              <p className="text-[11px] font-medium text-amber-950">{t("shopProducts.imageSearchHints")}</p>
               <ul className="mt-1 space-y-0.5 text-[10px] leading-relaxed text-amber-900/85">
                 {searchRecoveryHints.map((hint) => (
                   <li key={hint}>· {hint}</li>
@@ -2581,10 +2682,10 @@ function ShopProductCard({
           {candidates && candidates.length > 0 ? (
             <div className="mt-2.5 flex items-stretch gap-2 overflow-x-auto pb-1">
               {candidates.map((c, idx) => {
-                const signals = candidateSignals(c);
+                const signals = candidateSignals(t, c);
                 const titleScore = resolveCandidateTitleScore(c, matchScores);
                 const imageScore = resolveCandidateImageScore(c, imageScores);
-                const imageBlockedHint = imageGateBlockedHint(imageScore);
+                const imageBlockedHint = imageGateBlockedHint(t, imageScore);
                 const isCurrent = idx === currentIdx;
                 const isTop =
                   idx === recommendedIdx && passesImageRecommendGate(imageScore);
@@ -2598,8 +2699,10 @@ function ShopProductCard({
                 const costTarget = costInPurchaseDisplayCurrency(costCny, purchaseCtx);
                 const costLabel =
                   costTarget != null
-                    ? `采购价 ${formatPurchaseCostMoney(costTarget, purchaseCtx.currency)}`
-                    : `采购价 ${formatCny(c.price)}`;
+                    ? t("shopProducts.purchaseCost", {
+                        price: formatPurchaseCostMoney(costTarget, purchaseCtx.currency),
+                      })
+                    : t("shopProducts.purchaseCost", { price: formatCny(c.price) });
                 const inlineReason = trayInlineReasons[c.productId];
                 const isBatchSelectTarget =
                   isTop &&
@@ -2609,17 +2712,16 @@ function ShopProductCard({
                   <div
                     key={`${c.productId}-${idx}`}
                     ref={isTop ? topCandidateRef : undefined}
-                    role="button"
-                    tabIndex={0}
+                    aria-selected={isCurrent}
                     className={cn(
-                      "relative flex w-[11rem] shrink-0 cursor-pointer flex-col rounded-lg border-2 bg-white p-2 transition-colors",
-                      isCurrent
-                        ? "border-sky-400 bg-sky-50/30"
-                        : isBoundCand
-                          ? "border-amber-300"
-                          : isTop
-                            ? "border-emerald-300"
-                            : "border-slate-200",
+                      "relative flex w-[11rem] shrink-0 cursor-pointer flex-col p-2 transition-colors",
+                      selectableCardClassName({
+                        selected: isCurrent,
+                        className: cn(
+                          isBoundCand && !isCurrent && "border-warning/40 bg-warning-soft/20",
+                          isTop && !isCurrent && !isBoundCand && "border-brand-accent/40"
+                        ),
+                      }),
                       batchLinkDrive?.highlightTopCandidate &&
                         isTop &&
                         ["candidates_ready", "auto_selecting", "binding", "needs_review"].includes(
@@ -2632,22 +2734,15 @@ function ShopProductCard({
                       e.stopPropagation();
                       setCurrentIdx(idx);
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setCurrentIdx(idx);
-                      }
-                    }}
                   >
                     <button
                       type="button"
                       className={cn(
-                        "relative h-[4.5rem] w-full shrink-0 overflow-hidden rounded-md border border-slate-100 bg-slate-50",
+                        "relative h-[4.5rem] w-full shrink-0 overflow-hidden rounded-md border border-surface-border bg-muted",
                         c.imageUrl && "cursor-zoom-in"
                       )}
                       disabled={!c.imageUrl}
-                      aria-label={c.imageUrl ? "放大候选货源图" : undefined}
+                      aria-label={c.imageUrl ? t("shopProducts.zoomSourceImage") : undefined}
                       onClick={(e) =>
                         openImageZoom(e, c.imageUrl, c.title || c.productId)
                       }
@@ -2666,52 +2761,52 @@ function ShopProductCard({
                       <div className="absolute left-1 top-1 flex max-w-[calc(100%-0.5rem)] flex-col gap-0.5">
                         {isBoundCand ? (
                           <span className="w-fit rounded bg-amber-600 px-1.5 py-0.5 text-[9px] font-semibold text-white">
-                            {bindPending ? "待确认" : "已关联"}
+                            {bindPending ? t("shopProducts.boundPending") : t("shopProducts.boundLinked")}
                           </span>
                         ) : isTop ? (
-                          <span className="w-fit rounded bg-emerald-600 px-1.5 py-0.5 text-[9px] font-semibold text-white">
-                            首推
+                          <span className="w-fit rounded bg-brand-accent px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                            {t("shopProducts.topPick")}
                           </span>
                         ) : null}
                       </div>
                     </button>
-                    <p className="mt-1.5 line-clamp-2 min-h-[2rem] text-[11px] leading-4 text-slate-700">
-                      {c.title || "(无标题)"}
+                    <p className="mt-1.5 line-clamp-2 min-h-[2rem] text-[11px] leading-4 text-foreground">
+                      {c.title || t("shopProducts.noTitle")}
                     </p>
-                    <p className="mt-1 shrink-0 text-[11px] font-semibold text-slate-900">
+                    <p className="mt-1 shrink-0 text-[11px] font-semibold text-foreground">
                       {costLabel}
                     </p>
                     {inlineReason ? (
-                      <p className="mt-1 line-clamp-2 text-[10px] leading-3.5 text-slate-500">
+                      <p className="mt-1 line-clamp-2 text-[10px] leading-3.5 text-muted-foreground">
                         {inlineReason}
                       </p>
                     ) : null}
                     <div className="mt-1 flex min-h-[1.25rem] flex-wrap content-start gap-1">
-                      {formatTitleMatchLabel(titleScore) ? (
-                        <span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-800">
-                          {formatTitleMatchLabel(titleScore)}
+                      {formatTitleMatchLabel(t, titleScore) ? (
+                        <span className="rounded-full bg-info-soft px-1.5 py-0.5 text-[10px] text-info">
+                          {formatTitleMatchLabel(t, titleScore)}
                         </span>
                       ) : null}
-                      {formatImageMatchLabel(imageScore) ? (
+                      {formatImageMatchLabel(t, imageScore) ? (
                         <span
                           className={cn(
                             "rounded-full px-1.5 py-0.5 text-[10px]",
                             imageBlockedHint
-                              ? "bg-amber-50 text-amber-800"
-                              : "bg-emerald-50 text-emerald-700"
+                              ? "bg-warning-soft text-warning"
+                              : "bg-success-soft text-success"
                           )}
                         >
-                          {formatImageMatchLabel(imageScore)}
+                          {formatImageMatchLabel(t, imageScore)}
                         </span>
                       ) : imageBlockedHint ? (
-                        <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-800">
+                        <span className="rounded-full bg-warning-soft px-1.5 py-0.5 text-[10px] text-warning">
                           {imageBlockedHint}
                         </span>
                       ) : null}
                       {signals.slice(0, 1).map((s) => (
                         <span
                           key={s}
-                          className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"
+                          className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
                         >
                           {s}
                         </span>
@@ -2724,7 +2819,7 @@ function ShopProductCard({
                           className="h-6 min-w-[3rem] px-2.5 text-[10px] shadow-sm"
                           disabled
                         >
-                          已选用
+                          {t("shopProducts.selected")}
                         </Button>
                       ) : (
                         <Button
@@ -2755,7 +2850,7 @@ function ShopProductCard({
                             batchLinkDrive?.selectButtonPhase === "loading" ? (
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
-                            "选用"
+                            t("shopProducts.choose")
                           )}
                         </Button>
                       )}

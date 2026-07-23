@@ -13,6 +13,7 @@ export async function classifyCommandInput<
     rulesClassify: (clipped: string) => TResult;
     apiPath: string;
     context?: unknown;
+    locale?: string | null;
   }
 ): Promise<TResult> {
   const clipped = text.trim().slice(0, opts.maxLength ?? 200);
@@ -23,7 +24,11 @@ export async function classifyCommandInput<
     const res = await fetch(opts.apiPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: clipped, context: opts.context ?? null }),
+      body: JSON.stringify({
+        text: clipped,
+        context: opts.context ?? null,
+        locale: opts.locale ?? null,
+      }),
     });
     if (!res.ok) return local;
     const data = (await res.json()) as TResult;

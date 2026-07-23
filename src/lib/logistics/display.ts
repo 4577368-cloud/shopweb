@@ -13,9 +13,9 @@ import type {
 } from "@/lib/types";
 import type { LogisticsEstimateResult } from "@/lib/api";
 import { codesFromSelections, singleCountryCodeFromMarkets } from "@/components/logistics/market-multi-select";
-import { countryLabel } from "@/lib/logistics/markets";
+import type { Locale } from "@/i18n/config";
+import { localizedCountryLabel } from "@/lib/logistics/markets";
 import { getPostalLimitLabel, POSTAL_LIMIT_LABELS } from "@/lib/logistics/decision-engine";
-import { shippingOptionLabel, speedPreferenceToShippingOption } from "@/lib/logistics/template-params";
 
 export type LogisticsFilterMode =
   | "all"
@@ -52,23 +52,46 @@ export function normalizeLogisticsFilterMode(
 
 export type PostalLimitFilter = string | "all";
 
-export function formatPostalLimitBadge(variant: VariantLogisticsDecision): {
+export type LogisticsTranslate = (
+  key: string,
+  params?: Record<string, string | number>
+) => string;
+
+export function localizedPostalLimitLabel(
+  t: LogisticsTranslate,
+  code: string | null | undefined
+): string {
+  if (!code?.trim()) return t("logisticsDisplay.postalLimit.unknown");
+  const key = `logisticsDisplay.postalLimit.${code.trim()}`;
+  const translated = t(key);
+  if (translated !== key) return translated;
+  return getPostalLimitLabel(code) ?? code.trim();
+}
+
+export function formatPostalLimitBadge(
+  t: LogisticsTranslate,
+  variant: VariantLogisticsDecision
+): {
   label: string;
   title: string;
   className: string;
 } {
   const code = variant.postalLimitClass?.trim() || "";
-  const label =
-    variant.postalLimitLabel?.trim() ||
-    getPostalLimitLabel(code) ||
-    (code ? code : "邮限未知");
+  const label = code
+    ? localizedPostalLimitLabel(t, code)
+    : variant.postalLimitLabel?.trim() ||
+      t("logisticsDisplay.postalLimit.unknown");
   const confidence =
     variant.postalLimitConfidence != null
-      ? `置信度 ${Math.round(variant.postalLimitConfidence * 100)}%`
+      ? t("logisticsDisplay.postalLimit.confidence", {
+          percent: Math.round(variant.postalLimitConfidence * 100),
+        })
       : null;
   return {
     label,
-    title: [code ? `邮限代码 ${code}` : null, confidence].filter(Boolean).join(" · "),
+    title: [code ? t("logisticsDisplay.postalLimit.code", { code }) : null, confidence]
+      .filter(Boolean)
+      .join(" · "),
     className: code
       ? "bg-violet-50 text-violet-800 ring-1 ring-violet-200"
       : "bg-surface-muted text-ink-subtle ring-1 ring-hairline",
@@ -76,6 +99,7 @@ export function formatPostalLimitBadge(variant: VariantLogisticsDecision): {
 }
 
 export function collectPostalLimitFilterOptions(
+  t: LogisticsTranslate,
   analysis: LogisticsAnalysis | null | undefined
 ): Array<{ value: string; label: string; count: number }> {
   const counts = new Map<string, number>();
@@ -90,8 +114,8 @@ export function collectPostalLimitFilterOptions(
       value,
       label:
         value === "UNKNOWN"
-          ? "邮限未知"
-          : getPostalLimitLabel(value) ?? POSTAL_LIMIT_LABELS[value] ?? value,
+          ? t("logisticsDisplay.postalLimit.unknown")
+          : localizedPostalLimitLabel(t, value),
       count,
     }))
     .sort((a, b) => b.count - a.count);
@@ -166,18 +190,30 @@ export function computeActiveHighRiskAlerts(
   return [...buckets.values()].filter((bucket) => bucket.openSkuCount > 0);
 }
 
-export function formatActiveHighRiskAlert(alert: ActiveHighRiskAlert): string {
+export function formatActiveHighRiskAlert(
+  t: LogisticsTranslate,
+  alert: ActiveHighRiskAlert
+): string {
   const name = alert.label || alert.type;
   if (alert.exceptionCount > 0) {
-    return `${name}类还有 ${alert.exceptionCount} 个 SKU 邮限/品类待核对`;
+    return t("logisticsDisplay.highRisk.exceptions", {
+      name,
+      count: alert.exceptionCount,
+    });
   }
   if (alert.pendingConfirmCount > 0) {
-    return `${name}类还有 ${alert.pendingConfirmCount} 个 SKU 已有报价，待确认线路`;
+    return t("logisticsDisplay.highRisk.pendingConfirm", {
+      name,
+      count: alert.pendingConfirmCount,
+    });
   }
   if (alert.pendingQuoteCount > 0) {
-    return `${name}类还有 ${alert.pendingQuoteCount} 个 SKU 待运费预估`;
+    return t("logisticsDisplay.highRisk.pendingQuote", {
+      name,
+      count: alert.pendingQuoteCount,
+    });
   }
-  return `${name}类商品需完成物流确认`;
+  return t("logisticsDisplay.highRisk.default", { name });
 }
 
 export interface LogisticsPlanMetrics {
@@ -209,20 +245,34 @@ export function needsAttentionCount(metrics: LogisticsPlanMetrics): number {
   return metrics.exceptionCount + metrics.skuUnlinkedCount;
 }
 
+export function availableLogisticsFilterModes(
+  metrics: LogisticsPlanMetrics
+): LogisticsFilterMode[] {
+  const modes: LogisticsFilterMode[] = ["all"];
+  if (pendingWorkCount(metrics) > 0) modes.push("pending");
+  if (needsAttentionCount(metrics) > 0) modes.push("needs_attention");
+  return modes;
+}
+
 /** Visible filter tabs — omit empty buckets (always keep「全部」). */
 export function buildLogisticsFilterTabs(
+  t: LogisticsTranslate,
   metrics: LogisticsPlanMetrics
 ): { id: LogisticsFilterMode; label: string; count?: number }[] {
   const tabs: { id: LogisticsFilterMode; label: string; count?: number }[] = [
-    { id: "all", label: "全部", count: metrics.variantCount },
+    { id: "all", label: t("logisticsUi.filterAll"), count: metrics.variantCount },
   ];
   const pending = pendingWorkCount(metrics);
   if (pending > 0) {
-    tabs.push({ id: "pending", label: "待处理", count: pending });
+    tabs.push({ id: "pending", label: t("logisticsUi.filterPending"), count: pending });
   }
   const attention = needsAttentionCount(metrics);
   if (attention > 0) {
-    tabs.push({ id: "needs_attention", label: "需关注", count: attention });
+    tabs.push({
+      id: "needs_attention",
+      label: t("logisticsUi.filterNeedsAttention"),
+      count: attention,
+    });
   }
   return tabs;
 }
@@ -233,7 +283,7 @@ export function coerceLogisticsFilterMode(
   metrics: LogisticsPlanMetrics
 ): LogisticsFilterMode {
   const resolved = normalizeLogisticsFilterMode(mode);
-  const available = new Set(buildLogisticsFilterTabs(metrics).map((t) => t.id));
+  const available = new Set(availableLogisticsFilterModes(metrics));
   if (available.has(resolved)) return resolved;
   return "all";
 }
@@ -250,11 +300,7 @@ export function logisticsFilterExpandsProducts(mode: LogisticsFilterMode): boole
 
 export type VariantCardTone = "auto" | "review" | "unidentified";
 
-const PACKAGING_SUGGESTION: Record<PackagingType, string> = {
-  MINIMAL: "极简包装",
-  CARTON: "纸箱加固",
-};
-
+/** @deprecated Use decisionStatusLabel(t, status) in UI. */
 export const DECISION_LABELS: Record<LogisticsDecisionStatus, string> = {
   pending_sku: "待SKU",
   pending_postal_meta: "待补充",
@@ -264,6 +310,7 @@ export const DECISION_LABELS: Record<LogisticsDecisionStatus, string> = {
   needs_review: "需审核",
 };
 
+/** @deprecated Use buildTypeOptions(t) in UI. */
 export const TYPE_OPTIONS = [
   { value: "GENERAL", label: "普货" },
   { value: "APPAREL", label: "服装" },
@@ -273,16 +320,64 @@ export const TYPE_OPTIONS = [
   { value: "OTHER", label: "其他特殊品类" },
 ] as const;
 
+/** @deprecated Use packagingLabel(t, packaging) in UI. */
 const PACKAGING_LABELS: Record<PackagingType, string> = {
   MINIMAL: "极简",
   CARTON: "纸箱",
 };
 
+/** @deprecated Use speedLabel(t, speed) in UI. */
 const SPEED_LABELS: Record<LogisticsSpeedPreference, string> = {
   ECONOMY: "经济",
   FAST: "快速",
   BALANCED: "均衡",
 };
+
+export function decisionStatusLabel(
+  t: LogisticsTranslate,
+  status: LogisticsDecisionStatus
+): string {
+  return t(`logisticsDisplay.decisionStatus.${status}`);
+}
+
+export function packagingLabel(
+  t: LogisticsTranslate,
+  packaging: PackagingType
+): string {
+  return t(`logisticsDisplay.packaging.${packaging.toLowerCase()}`);
+}
+
+export function packagingSuggestionLabel(
+  t: LogisticsTranslate,
+  packaging: PackagingType
+): string {
+  return t(`logisticsDisplay.packagingSuggestion.${packaging.toLowerCase()}`);
+}
+
+export function speedLabel(
+  t: LogisticsTranslate,
+  speed: LogisticsSpeedPreference
+): string {
+  return t(`logisticsDisplay.speed.${speed.toLowerCase()}`);
+}
+
+export function buildTypeOptions(t: LogisticsTranslate) {
+  return [
+    { value: "GENERAL", label: t("logisticsDisplay.type.general") },
+    { value: "APPAREL", label: t("logisticsDisplay.type.apparel") },
+    { value: "FOOD", label: t("logisticsDisplay.type.food") },
+    { value: "BATTERY_MAGNETIC", label: t("logisticsDisplay.type.batteryMagnetic") },
+    { value: "BLADE", label: t("logisticsDisplay.type.blade") },
+    { value: "OTHER", label: t("logisticsDisplay.type.other") },
+  ] as const;
+}
+
+export function quoteStatusLabel(
+  t: LogisticsTranslate,
+  status: QuoteStatus
+): string {
+  return t(`logisticsDisplay.quoteStatus.${status.toLowerCase()}`);
+}
 
 export function countReady(profile: ProductLogisticsProfile): number {
   const c = profile.decisionStatusCounts;
@@ -452,19 +547,33 @@ export function shouldDefaultExpand(
   return true;
 }
 
-export function formatTemplateMeta(template: LogisticsTemplate | null): string {
-  if (!template) return "未选择模板";
-  const packaging = PACKAGING_LABELS[template.packaging] ?? template.packaging;
-  const speed = SPEED_LABELS[template.speedPreference] ?? template.speedPreference;
-  const ship = shippingOptionLabel(speedPreferenceToShippingOption(template.speedPreference));
+export function formatTemplateMeta(
+  t: LogisticsTranslate,
+  template: LogisticsTemplate | null,
+  locale?: Locale
+): string {
+  if (!template) return t("logisticsDisplay.templateMeta.noTemplate");
+  const packaging = packagingLabel(t, template.packaging);
+  const speed = speedLabel(t, template.speedPreference);
+  const ship = speedLabel(t, template.speedPreference);
   const code = singleCountryCodeFromMarkets(template.markets);
-  const markets = code ? countryLabel(code) : "未选市场";
-  return `包装: ${packaging} · 时效: ${speed}(${ship}) · 市场: ${markets}`;
+  const markets = code
+    ? localizedCountryLabel(code, locale ?? "zh")
+    : t("logisticsDisplay.templateMeta.noMarket");
+  return t("logisticsDisplay.templateMeta.summary", {
+    packaging,
+    speed,
+    ship,
+    markets,
+  });
 }
 
-export function variantStatusLabel(decision: VariantLogisticsDecision): string {
-  if (decision.decisionConfirmed) return "已确认";
-  return DECISION_LABELS[decision.decisionStatus];
+export function variantStatusLabel(
+  t: LogisticsTranslate,
+  decision: VariantLogisticsDecision
+): string {
+  if (decision.decisionConfirmed) return t("logisticsDisplay.decisionStatus.confirmed");
+  return decisionStatusLabel(t, decision.decisionStatus);
 }
 
 export function variantStatusBadgeClass(decision: VariantLogisticsDecision): string {
@@ -544,6 +653,7 @@ export function collectProductQuotableVariantIds(
 }
 
 export function productQuoteActionLabel(
+  t: LogisticsTranslate,
   variants: VariantLogisticsDecision[],
   quoteResults: Map<string, LogisticsEstimateResult>,
   pipelineActive?: boolean
@@ -564,9 +674,9 @@ export function productQuoteActionLabel(
   const anyQuoted = decisions.some((v) =>
     variantHasQuoteLine(v, quoteResults.get(v.thirdPlatformSkuId))
   );
-  if (anyFailed) return "重试报价";
-  if (!anyQuoted) return "运费预估";
-  return "重新预估";
+  if (anyFailed) return t("logisticsDisplay.quoteAction.retry");
+  if (!anyQuoted) return t("logisticsDisplay.quoteAction.estimate");
+  return t("logisticsDisplay.quoteAction.reestimate");
 }
 
 export function isVariantQuoteFailed(
@@ -616,20 +726,26 @@ export function canFetchLogisticsQuote(decision: VariantLogisticsDecision): bool
 }
 
 export function quoteActionLabel(
+  t: LogisticsTranslate,
   decision: VariantLogisticsDecision,
   quoteResult?: LogisticsEstimateResult
 ): string {
-  if (isVariantQuoteFailed(decision, quoteResult)) return "重试报价";
-  if (!variantHasQuoteLine(decision, quoteResult)) return "运费预估";
-  return "重新预估";
+  if (isVariantQuoteFailed(decision, quoteResult)) {
+    return t("logisticsDisplay.quoteAction.retry");
+  }
+  if (!variantHasQuoteLine(decision, quoteResult)) {
+    return t("logisticsDisplay.quoteAction.estimate");
+  }
+  return t("logisticsDisplay.quoteAction.reestimate");
 }
 
-/** @deprecated use quoteActionLabel */
+/** @deprecated use quoteActionLabel(t, ...) */
 export function fetchQuoteActionLabel(
+  t: LogisticsTranslate,
   decision: VariantLogisticsDecision,
   quoteResult?: LogisticsEstimateResult
 ): string {
-  return quoteActionLabel(decision, quoteResult);
+  return quoteActionLabel(t, decision, quoteResult);
 }
 
 export function statusBadgeClass(status: LogisticsDecisionStatus): string {
@@ -697,14 +813,19 @@ export function computeOvertimeCompensationDays(
   return null;
 }
 
-export function formatTransitLabel(line?: LogisticsLine | null): string | null {
+export function formatTransitLabel(
+  t: LogisticsTranslate,
+  line?: LogisticsLine | null
+): string | null {
   if (!line) return null;
   if (line.transitTimeLabel?.trim()) {
     const label = line.transitTimeLabel.trim();
-    return label.includes("天") ? label : `${label} 天`;
+    return label.includes("天") || /day/i.test(label)
+      ? label
+      : t("logisticsDisplay.transit.days", { days: label });
   }
   if (line.estimatedDays != null && line.estimatedDays > 0) {
-    return `${line.estimatedDays} 天`;
+    return t("logisticsDisplay.transit.days", { days: line.estimatedDays });
   }
   return null;
 }
@@ -732,6 +853,7 @@ function convertCurrency(fee: number, line: LogisticsLine, pricing: PricingTempl
   return fee;
 }
 
+/** @deprecated Use quoteStatusLabel(t, status) in UI. */
 export const QUOTE_STATUS_LABELS: Record<QuoteStatus, string> = {
   NOT_REQUESTED: "未拉取",
   PENDING: "报价中",
@@ -755,11 +877,12 @@ export function effectiveQuoteStatus(
 }
 
 export function formatQuoteStatusLabel(
+  t: LogisticsTranslate,
   decision: Pick<VariantLogisticsDecision, "recommendedLine" | "quoteStatus">
 ): string | null {
   const status = effectiveQuoteStatus(decision);
   if (!status) return null;
-  return QUOTE_STATUS_LABELS[status] ?? status;
+  return quoteStatusLabel(t, status);
 }
 
 export function formatMeasureLine(
@@ -795,6 +918,7 @@ export interface MeasureFieldView {
 }
 
 export function formatMeasureFields(
+  t: LogisticsTranslate,
   decision: Pick<
     VariantLogisticsDecision,
     | "estimatedWeightG"
@@ -804,7 +928,10 @@ export function formatMeasureFields(
   >,
   tone: VariantCardTone
 ): MeasureFieldView {
-  const uncertain = tone !== "auto" ? "不确定" : "待补";
+  const uncertain =
+    tone !== "auto"
+      ? t("logisticsDisplay.measure.uncertain")
+      : t("logisticsDisplay.measure.pending");
   const weight =
     decision.estimatedWeightG != null
       ? `${decision.estimatedWeightG}g`
@@ -853,6 +980,7 @@ function formatMoney(amount: number, currency: string, decimals = 2): string {
 }
 
 export function formatProfitColumn(
+  t: LogisticsTranslate,
   line: LogisticsLine | null | undefined,
   decision: Pick<
     VariantLogisticsDecision,
@@ -886,14 +1014,20 @@ export function formatProfitColumn(
   return {
     salePrice:
       salePrice != null && salePrice > 0
-        ? `售价 ${formatMoney(salePrice, currency, decimals)}`
+        ? t("logisticsDisplay.profit.salePrice", {
+            amount: formatMoney(salePrice, currency, decimals),
+          })
         : null,
     logisticsCost:
       logisticsAmount != null
-        ? `物流 ${formatMoney(logisticsAmount, currency, decimals)}`
+        ? t("logisticsDisplay.profit.logisticsCost", {
+            amount: formatMoney(logisticsAmount, currency, decimals),
+          })
         : null,
     marginLabel:
-      marginPercent != null ? `毛利率 ${marginPercent}%` : "毛利率 —",
+      marginPercent != null
+        ? t("logisticsDisplay.profit.margin", { percent: marginPercent })
+        : t("logisticsDisplay.profit.marginEmpty"),
   };
 }
 
@@ -952,12 +1086,44 @@ export function buildAcceptQuotePayload(
 }
 
 export function formatRouteFee(
+  t: LogisticsTranslate,
   line: LogisticsLine,
   pricing?: PricingTemplate | null
 ): string {
   const fee = formatFee(line, pricing);
-  const transit = formatTransitLabel(line);
-  return [fee, transit].filter(Boolean).join(" · ") || "—";
+  const transit = formatTransitLabel(t, line);
+  return [fee, transit].filter(Boolean).join(" · ") || t("logisticsDisplay.common.dash");
+}
+
+function formatQuoteAlternativeTertiary(
+  t: LogisticsTranslate,
+  alt: LogisticsLine,
+  altCount: number,
+  fee: string | null
+): string {
+  const altFee = fee ? ` ${fee}` : "";
+  const extra =
+    altCount > 1
+      ? t("logisticsDisplay.quoteColumn.altMore", { count: altCount - 1 })
+      : "";
+  return t("logisticsDisplay.quoteColumn.altLine", {
+    name: alt.lineName,
+    fee: altFee,
+    extra,
+  });
+}
+
+function formatQuoteAlternativesTertiary(
+  t: LogisticsTranslate,
+  alt: LogisticsLine | undefined,
+  altCount: number,
+  fee: string | null
+): string | undefined {
+  if (alt) return formatQuoteAlternativeTertiary(t, alt, altCount, fee);
+  if (altCount > 0) {
+    return t("logisticsDisplay.quoteColumn.altCount", { count: altCount });
+  }
+  return undefined;
 }
 
 function resolveLines(
@@ -989,6 +1155,7 @@ export interface QuoteColumnView {
 }
 
 export function buildQuoteColumn(
+  t: LogisticsTranslate,
   decision: VariantLogisticsDecision,
   quoteResult?: LogisticsEstimateResult,
   pricing?: PricingTemplate | null
@@ -1000,69 +1167,70 @@ export function buildQuoteColumn(
 
   switch (decision.decisionStatus) {
     case "pending_sku":
-      return { primary: "—" };
+      return { primary: t("logisticsDisplay.common.dash") };
     case "pending_postal_meta":
-      return { primary: "缺数据，无法报价" };
+      return { primary: t("logisticsDisplay.quoteColumn.missingData") };
     case "confirmed": {
       if (!recommended) {
         const status = effectiveQuoteStatus(decision);
         return {
-          primary: "决策已确认",
+          primary: t("logisticsDisplay.quoteColumn.decisionConfirmed"),
           secondary:
             status === "FAILED"
-              ? "线路报价失败 · 请重新拉取"
-              : "尚未拉取线路报价",
+              ? t("logisticsDisplay.quoteColumn.quoteFailedRetry")
+              : t("logisticsDisplay.quoteColumn.quoteNotFetched"),
         };
       }
       const fee = formatFee(recommended, pricing);
-      const transit = formatTransitLabel(recommended);
+      const transit = formatTransitLabel(t, recommended);
       const alt = alternatives[0];
       const altCount = alternatives.length;
       return {
         primary: recommended.lineName,
         secondary: [fee, transit].filter(Boolean).join(" · ") || undefined,
-        tertiary: alt
-          ? `备选: ${alt.lineName}${formatFee(alt, pricing) ? ` ${formatFee(alt, pricing)}` : ""}${
-              altCount > 1 ? ` · +${altCount - 1}条` : ""
-            }`
-          : altCount > 0
-            ? `+${altCount}条备选`
-            : undefined,
+        tertiary: formatQuoteAlternativesTertiary(
+          t,
+          alt,
+          altCount,
+          formatFee(alt, pricing)
+        ),
       };
     }
     case "ready_for_quote": {
       if (quoteStatus === "PENDING") {
-        return { primary: "报价中…" };
+        return { primary: t("logisticsDisplay.quoteColumn.quoting") };
       }
       if (quoteStatus === "INGESTING") {
         return {
-          primary: "商品入库中",
-          secondary: "同步完成后可重试运费预估",
+          primary: t("logisticsDisplay.quoteColumn.ingesting"),
+          secondary: t("logisticsDisplay.quoteColumn.ingestingHint"),
         };
       }
       if (quoteStatus === "FAILED") {
         return {
-          primary: "报价失败",
+          primary: t("logisticsDisplay.quoteColumn.quoteFailed"),
           secondary: quoteResult?.errorMessage?.trim() || undefined,
         };
       }
       if (!recommended) {
-        return { primary: "可报价", secondary: "待拉取线路" };
+        return {
+          primary: t("logisticsDisplay.quoteColumn.ready"),
+          secondary: t("logisticsDisplay.quoteColumn.awaitingFetch"),
+        };
       }
       const fee = formatFee(recommended, pricing);
-      const transit = formatTransitLabel(recommended);
+      const transit = formatTransitLabel(t, recommended);
       const alt = alternatives[0];
       const altCount = alternatives.length;
       return {
         primary: recommended.lineName,
         secondary: [fee, transit].filter(Boolean).join(" · ") || undefined,
-        tertiary: alt
-          ? `备选: ${alt.lineName}${formatFee(alt, pricing) ? ` ${formatFee(alt, pricing)}` : ""}${
-              altCount > 1 ? ` · +${altCount - 1}条` : ""
-            }`
-          : altCount > 0
-            ? `+${altCount}条备选`
-            : undefined,
+        tertiary: formatQuoteAlternativesTertiary(
+          t,
+          alt,
+          altCount,
+          formatFee(alt, pricing)
+        ),
       };
     }
     case "needs_review":
@@ -1071,16 +1239,22 @@ export function buildQuoteColumn(
         const fee = formatFee(recommended, pricing);
         return {
           primary: `${recommended.lineName}${fee ? ` · ${fee}` : ""}`,
-          secondary: "线路待确认",
+          secondary: t("logisticsDisplay.quoteColumn.awaitingConfirm"),
         };
       }
       if (decision.decisionStatus === "restricted") {
-        return { primary: "邮限受限", secondary: "请确认品类后重试报价" };
+        return {
+          primary: t("logisticsDisplay.quoteColumn.restricted"),
+          secondary: t("logisticsDisplay.quoteColumn.restrictedHint"),
+        };
       }
-      return { primary: "待拉取线路", secondary: decision.decisionReason?.trim() };
+      return {
+        primary: t("logisticsDisplay.quoteColumn.awaitingFetchLine"),
+        secondary: decision.decisionReason?.trim(),
+      };
     }
     default:
-      return { primary: decision.decisionStatus };
+      return { primary: decisionStatusLabel(t, decision.decisionStatus) };
   }
 }
 
@@ -1122,21 +1296,36 @@ export function variantCardTone(decision: VariantLogisticsDecision): VariantCard
   return "auto";
 }
 
-export function variantCardBadge(decision: VariantLogisticsDecision): {
+export function variantCardBadge(
+  t: LogisticsTranslate,
+  decision: VariantLogisticsDecision
+): {
   label: string;
   className: string;
 } {
   const tone = variantCardTone(decision);
   if (decision.decisionConfirmed) {
-    return { label: "已确认", className: "bg-slate-100 text-slate-600" };
+    return {
+      label: t("logisticsDisplay.variantBadge.confirmed"),
+      className: "bg-slate-100 text-slate-600",
+    };
   }
   switch (tone) {
     case "review":
-      return { label: "待确认", className: "bg-amber-100 text-amber-800" };
+      return {
+        label: t("logisticsDisplay.variantBadge.pendingReview"),
+        className: "bg-amber-100 text-amber-800",
+      };
     case "unidentified":
-      return { label: "SKU未关联", className: "bg-surface-muted text-ink-subtle" };
+      return {
+        label: t("logisticsDisplay.variantBadge.unlinked"),
+        className: "bg-surface-muted text-ink-subtle",
+      };
     default:
-      return { label: "待报价", className: "bg-brand-soft text-brand-strong" };
+      return {
+        label: t("logisticsDisplay.variantBadge.pendingQuote"),
+        className: "bg-brand-soft text-brand-strong",
+      };
   }
 }
 
@@ -1209,22 +1398,25 @@ export function computeLogisticsPlanMetrics(
 }
 
 export function formatPackagingSuggestion(
+  t: LogisticsTranslate,
   template: LogisticsTemplate | null | undefined
 ): string {
-  if (!template) return "未配置";
-  return PACKAGING_SUGGESTION[template.packaging] ?? template.packaging;
+  if (!template) return t("logisticsDisplay.packagingSuggestion.notConfigured");
+  return packagingSuggestionLabel(t, template.packaging);
 }
 
 export function formatProfitImpact(
+  t: LogisticsTranslate,
   line: LogisticsLine | null | undefined,
   pricing?: PricingTemplate | null
 ): string | null {
   const fee = formatFee(line, pricing);
   if (!fee) return null;
-  return `-${fee} 履约成本`;
+  return t("logisticsDisplay.profit.fulfillmentCost", { fee });
 }
 
 export function summarizeProductPlan(
+  t: LogisticsTranslate,
   profile: ProductLogisticsProfile,
   quoteResults: Map<string, LogisticsEstimateResult>,
   pricing?: PricingTemplate | null
@@ -1232,10 +1424,11 @@ export function summarizeProductPlan(
   const variants = profile.variantDecisions ?? [];
   const ready = variants.filter(isVariantAiPlanned).length;
   const line = variants
-    .map((v) => {
-      const quote = buildQuoteColumn(v, quoteResults.get(v.thirdPlatformSkuId), pricing);
-      return quote.primary;
-    })
-    .find((p) => p && p !== "—" && p !== "可报价" && !p.startsWith("缺"));
-  return `${ready}/${variants.length} SKU 已规划${line ? ` · ${line}` : ""}`;
+    .map((v) => collectQuoteLines(v, quoteResults.get(v.thirdPlatformSkuId))[0]?.lineName?.trim())
+    .find(Boolean);
+  return t("logisticsDisplay.summarizeProductPlan", {
+    ready,
+    total: variants.length,
+    lineSuffix: line ? ` · ${line}` : "",
+  });
 }

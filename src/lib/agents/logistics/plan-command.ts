@@ -1,24 +1,10 @@
+import type { TranslateFn } from "@/i18n/server";
 import type {
   LogisticsCommandDraft,
   LogisticsCommandExecution,
   LogisticsCommandPlan,
-  LogisticsFilterMode,
   LogisticsDecisionStatus,
 } from "./command-schema";
-
-const FILTER_LABELS: Record<LogisticsFilterMode, string> = {
-  all: "全部商品",
-  issues: "待处理项",
-};
-
-const STATUS_LABELS: Record<LogisticsDecisionStatus, string> = {
-  pending_sku: "等待SKU",
-  pending_postal_meta: "等待邮限",
-  ready_for_quote: "可报价",
-  confirmed: "已确认",
-  restricted: "受限",
-  needs_review: "需审核",
-};
 
 export interface LogisticsPageContext {
   focusProductTitle: string | null;
@@ -31,17 +17,37 @@ export interface LogisticsPageContext {
   readyVariantIds: string[];
 }
 
-function needsFocusProduct(intent: LogisticsCommandDraft["intent"]): boolean {
-  return intent === "explain_quote";
+function statusLabel(t: TranslateFn, status: LogisticsDecisionStatus): string {
+  const keys: Record<LogisticsDecisionStatus, string> = {
+    pending_sku: "agentLogistics.statusPendingSku",
+    pending_postal_meta: "agentLogistics.statusPendingPostalMeta",
+    ready_for_quote: "agentLogistics.statusReadyForQuote",
+    confirmed: "agentLogistics.statusConfirmed",
+    restricted: "agentLogistics.statusRestricted",
+    needs_review: "agentLogistics.statusNeedsReview",
+  };
+  return t(keys[status]);
+}
+
+function focusTitle(
+  t: TranslateFn,
+  ctx: LogisticsPageContext
+): string {
+  if (ctx.focusProductTitle) return ctx.focusProductTitle;
+  if (ctx.focusProductId) {
+    return t("agentLogistics.productFallback", {
+      id: ctx.focusProductId.slice(-8),
+    });
+  }
+  return t("agentLogistics.noProductSelected");
 }
 
 export function planLogisticsCommand(
+  t: TranslateFn,
   draft: LogisticsCommandDraft,
   ctx: LogisticsPageContext
 ): LogisticsCommandPlan {
-  const focusTitle =
-    ctx.focusProductTitle ??
-    (ctx.focusProductId ? `商品 ${ctx.focusProductId.slice(-8)}` : "未选中商品");
+  const title = focusTitle(t, ctx);
 
   switch (draft.intent) {
     case "accept_all_ready": {
@@ -49,11 +55,11 @@ export function planLogisticsCommand(
       if (totalCount === 0) {
         return {
           draft,
-          operation: "批量接受方案",
-          targetLabel: "待确认方案",
+          operation: t("agentLogistics.opAcceptAllReady"),
+          targetLabel: t("agentLogistics.targetPendingPlans"),
           detailLines: [],
           executable: false,
-          clarify: "当前没有待确认的报价方案，请先完成运费预估。",
+          clarify: t("agentLogistics.clarifyNoReadyPlans"),
         };
       }
       return {
@@ -65,11 +71,13 @@ export function planLogisticsCommand(
             ...draft.params,
           },
         },
-        operation: "批量接受方案",
-        targetLabel: `待确认方案 · ${totalCount} 个`,
+        operation: t("agentLogistics.opAcceptAllReady"),
+        targetLabel: t("agentLogistics.targetPendingPlansCount", {
+          count: totalCount,
+        }),
         detailLines: [
-          `将接受 ${totalCount} 个已有线路报价的 SKU 方案`,
-          "采用 AI 推荐线路，标记为已确认",
+          t("agentLogistics.detailAcceptCount", { count: totalCount }),
+          t("agentLogistics.detailAcceptRecommend"),
         ],
         executable: true,
       };
@@ -80,11 +88,11 @@ export function planLogisticsCommand(
           ...draft,
           targetScope: "all",
         },
-        operation: "运费预估",
-        targetLabel: "全部可报价项",
+        operation: t("agentLogistics.opFetchQuotes"),
+        targetLabel: t("agentLogistics.targetFetchAll"),
         detailLines: [
-          "将从 Tangbuy 获取各规格的线路运费",
-          "更新推荐线路与运费估算",
+          t("agentLogistics.detailFetchLine1"),
+          t("agentLogistics.detailFetchLine2"),
         ],
         executable: true,
       };
@@ -95,11 +103,11 @@ export function planLogisticsCommand(
           ...draft,
           targetScope: "none",
         },
-        operation: "打开物流模板",
-        targetLabel: "物流模板配置",
+        operation: t("agentLogistics.opOpenTemplate"),
+        targetLabel: t("agentLogistics.targetTemplateConfig"),
         detailLines: [
-          "将打开物流模板配置抽屉",
-          "可调整包装方式、时效偏好、销售市场等",
+          t("agentLogistics.detailOpenTemplateLine1"),
+          t("agentLogistics.detailOpenTemplateLine2"),
         ],
         executable: true,
       };
@@ -108,11 +116,11 @@ export function planLogisticsCommand(
       if (ctx.pendingCount === 0) {
         return {
           draft,
-          operation: "查看问题项",
-          targetLabel: "待处理项",
+          operation: t("agentLogistics.opFocusIssues"),
+          targetLabel: t("agentLogistics.targetIssues"),
           detailLines: [],
           executable: false,
-          clarify: "当前没有需要人工确认的问题项。",
+          clarify: t("agentLogistics.clarifyNoIssues"),
         };
       }
       return {
@@ -124,14 +132,23 @@ export function planLogisticsCommand(
             filterMode: "issues",
           },
         },
-        operation: "查看问题项",
-        targetLabel: `待处理项 · ${ctx.pendingCount} 个`,
-        detailLines: [`将筛选出 ${ctx.pendingCount} 个需要人工确认的异常项`],
+        operation: t("agentLogistics.opFocusIssues"),
+        targetLabel: t("agentLogistics.targetIssuesCount", {
+          count: ctx.pendingCount,
+        }),
+        detailLines: [
+          t("agentLogistics.detailFocusIssues", { count: ctx.pendingCount }),
+        ],
         executable: true,
       };
     }
     case "focus_status": {
       const status = draft.params.status ?? "needs_review";
+      const label = statusLabel(t, status);
+      const extraFilters: string[] = [];
+      if (draft.params.exceptionType) extraFilters.push(draft.params.exceptionType);
+      if (draft.params.needsMeasure) extraFilters.push(t("agentLogistics.filterNeedsMeasure"));
+      if (draft.params.quoteStatus) extraFilters.push(draft.params.quoteStatus === "quoted" ? t("agentLogistics.filterQuoted") : t("agentLogistics.filterUnquoted"));
       return {
         draft: {
           ...draft,
@@ -141,29 +158,12 @@ export function planLogisticsCommand(
             status,
           },
         },
-        operation: "聚焦状态",
-        targetLabel: STATUS_LABELS[status],
-        detailLines: [`将筛选出状态为「${STATUS_LABELS[status]}」的商品`],
-        executable: true,
-      };
-    }
-    case "explain_quote": {
-      if (!ctx.focusProductId) {
-        return {
-          draft,
-          operation: "解释报价",
-          targetLabel: focusTitle,
-          detailLines: [],
-          executable: false,
-          clarify:
-            "请先在列表中点选商品，或在命令里写出商品名（如：解释「拖鞋」的报价）。",
-        };
-      }
-      return {
-        draft: { ...draft, productId: ctx.focusProductId },
-        operation: "解释报价",
-        targetLabel: focusTitle,
-        detailLines: [`将说明「${focusTitle}」的物流报价详情和推荐依据`],
+        operation: t("agentLogistics.opFocusStatus"),
+        targetLabel: extraFilters.length > 0 ? `${label} · ${extraFilters.join(" / ")}` : label,
+        detailLines: [
+          t("agentLogistics.detailFocusStatus", { status: label }),
+          ...(extraFilters.length > 0 ? [t("agentLogistics.detailExtraFilters", { filters: extraFilters.join(" / ") })] : []),
+        ],
         executable: true,
       };
     }
@@ -173,20 +173,20 @@ export function planLogisticsCommand(
           ...draft,
           targetScope: "all",
         },
-        operation: "应用物流模板",
-        targetLabel: "当前模板",
-        detailLines: ["将应用当前选中的物流模板配置"],
+        operation: t("agentLogistics.opApplyTemplate"),
+        targetLabel: t("agentLogistics.targetCurrentTemplate"),
+        detailLines: [t("agentLogistics.detailApplyTemplate")],
         executable: true,
       };
     }
     default:
       return {
         draft,
-        operation: "执行命令",
-        targetLabel: focusTitle,
+        operation: t("agentLogistics.opExecute"),
+        targetLabel: title,
         detailLines: [],
         executable: false,
-        clarify: "该命令暂未实现",
+        clarify: t("agentLogistics.clarifyNotImplemented"),
       };
   }
 }
@@ -198,36 +198,38 @@ export function commandRequiresConfirmation(plan: LogisticsCommandPlan): boolean
   );
 }
 
-export function commandOperationLabel(intent: LogisticsCommandDraft["intent"]): string {
+export function commandOperationLabel(
+  t: TranslateFn,
+  intent: LogisticsCommandDraft["intent"]
+): string {
   switch (intent) {
     case "accept_all_ready":
-      return "批量接受方案";
+      return t("agentLogistics.opAcceptAllReady");
     case "fetch_quotes":
-      return "运费预估";
+      return t("agentLogistics.opFetchQuotes");
     case "open_template":
-      return "打开物流模板";
+      return t("agentLogistics.opOpenTemplate");
     case "focus_issues":
-      return "查看问题项";
+      return t("agentLogistics.opFocusIssues");
     case "focus_status":
-      return "聚焦状态";
-    case "explain_quote":
-      return "解释报价";
+      return t("agentLogistics.opFocusStatus");
     case "apply_template":
-      return "应用物流模板";
+      return t("agentLogistics.opApplyTemplate");
     default:
-      return "执行命令";
+      return t("agentLogistics.opExecute");
   }
 }
 
 export function resolveLogisticsCommandExecution(
-  plan: LogisticsCommandPlan
+  plan: LogisticsCommandPlan,
+  ctx: LogisticsPageContext
 ): LogisticsCommandExecution | null {
   switch (plan.draft.intent) {
     case "accept_all_ready": {
       return {
         type: "accept_all_ready",
-        variantIds: [],
-        totalCount: plan.draft.params.status ? 0 : plan.draft.params.status ? 0 : 0,
+        variantIds: ctx.readyVariantIds,
+        totalCount: ctx.readyAcceptCount,
       };
     }
     case "fetch_quotes": {

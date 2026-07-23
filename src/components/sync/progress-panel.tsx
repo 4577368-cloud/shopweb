@@ -1,10 +1,11 @@
 "use client";
 
-import { Check, Circle, Loader2 } from "lucide-react";
+import { Check, Circle, Loader2 } from "@/lib/ui/icons";
 import { motion } from "framer-motion";
 import type { CeremonyStats } from "@/lib/sync/ceremony-progress";
 import { displayStat } from "@/lib/sync/ceremony-progress";
 import type { ProgressTask } from "@/lib/sync/launch-summary";
+import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
 
 function TaskIcon({ status }: { status: ProgressTask["status"] }) {
@@ -64,6 +65,7 @@ export function ProgressPanel({
   layout?: "vertical" | "horizontal";
   className?: string;
 }) {
+  const t = useT();
   const productsShown = displayStat(
     stats.productsInCeremony || stats.productsTotal,
     percent,
@@ -91,7 +93,7 @@ export function ProgressPanel({
         )}
       >
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-          <p className="text-xs font-medium text-ink-muted">开店准备进度</p>
+          <p className="text-xs font-medium text-ink-muted">{t("syncCeremony.progressTitle")}</p>
           <p className="text-lg font-semibold tabular-nums text-ink">{displayPercent}%</p>
         </div>
 
@@ -105,24 +107,30 @@ export function ProgressPanel({
 
         <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <StatCell
-            label="商品"
+            label={t("syncCeremony.statProducts")}
             value={productsShown}
             total={stats.productsTotal}
             compact
           />
           <StatCell
-            label="货源关联"
+            label={t("syncCeremony.statSources")}
             value={sourcesShown}
             total={stats.sourceLinksTotal}
-            sub={`已确认 ${stats.sourceLinksConfirmed}`}
+            sub={t("syncCeremony.statSourcesConfirmed", {
+              count: stats.sourceLinksConfirmed,
+            })}
             compact
           />
-          <StatCell label="SKU 映射" value={skuShown} total={stats.skuTotal} compact />
+          <StatCell label={t("syncCeremony.statSku")} value={skuShown} total={stats.skuTotal} compact />
           <StatCell
-            label="物流"
+            label={t("syncCeremony.statLogistics")}
             value={confirmedShown}
             total={stats.logisticsTotal}
-            sub={stats.logisticsQuoted > 0 ? `已报价 ${quotedShown}` : undefined}
+            sub={
+              stats.logisticsQuoted > 0
+                ? t("syncCeremony.statQuoted", { count: quotedShown })
+                : undefined
+            }
             compact
           />
         </div>
@@ -163,7 +171,7 @@ export function ProgressPanel({
       className="rounded-[var(--radius-card)] border border-hairline bg-surface p-4 shadow-card"
     >
       <div className="flex items-end justify-between gap-2">
-        <p className="text-xs font-medium text-ink-muted">开店准备进度</p>
+        <p className="text-xs font-medium text-ink-muted">{t("syncCeremony.progressTitle")}</p>
         <p className="text-2xl font-semibold tabular-nums text-ink">{displayPercent}%</p>
       </div>
 
@@ -176,19 +184,25 @@ export function ProgressPanel({
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <StatCell label="商品" value={productsShown} total={stats.productsTotal} />
+        <StatCell label={t("syncCeremony.statProducts")} value={productsShown} total={stats.productsTotal} />
         <StatCell
-          label="货源关联"
+          label={t("syncCeremony.statSources")}
           value={sourcesShown}
           total={stats.sourceLinksTotal}
-          sub={`已确认 ${stats.sourceLinksConfirmed}`}
+          sub={t("syncCeremony.statSourcesConfirmed", {
+            count: stats.sourceLinksConfirmed,
+          })}
         />
-        <StatCell label="SKU 映射" value={skuShown} total={stats.skuTotal} />
+        <StatCell label={t("syncCeremony.statSku")} value={skuShown} total={stats.skuTotal} />
         <StatCell
-          label="物流"
+          label={t("syncCeremony.statLogistics")}
           value={confirmedShown}
           total={stats.logisticsTotal}
-          sub={stats.logisticsQuoted > 0 ? `已报价 ${quotedShown}` : undefined}
+          sub={
+            stats.logisticsQuoted > 0
+              ? t("syncCeremony.statQuoted", { count: quotedShown })
+              : undefined
+          }
         />
       </div>
 

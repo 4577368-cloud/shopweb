@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { useT } from "@/i18n/LocaleProvider";
+import type { TranslateFn } from "@/i18n/server";
 import { api, readableError } from "@/lib/api";
 import {
   fetchSourceSkuMatrixResult,
@@ -14,12 +16,23 @@ const RECENT_MAX = 6;
 
 const TASK_IDS = { overview: "overview", align: "align", prewarm: "prewarm" } as const;
 
-function initialTasks(): ScanTaskView[] {
+function initialTasks(t: TranslateFn): ScanTaskView[] {
   return [
-    { id: TASK_IDS.overview, label: "加载已关联商品", status: "pending" },
-    { id: TASK_IDS.align, label: "自动匹配店铺规格", status: "pending" },
-    { id: TASK_IDS.prewarm, label: "加载货源规格与价格", status: "pending" },
+    { id: TASK_IDS.overview, label: t("sku.scanTaskOverview"), status: "pending" },
+    { id: TASK_IDS.align, label: t("sku.scanTaskAlign"), status: "pending" },
+    { id: TASK_IDS.prewarm, label: t("sku.scanTaskPrewarm"), status: "pending" },
   ];
+}
+
+function alignSummaryText(
+  t: TranslateFn,
+  run: { suggestedCount: number; unmappedCount: number; noSourceCount: number }
+): string {
+  return t("sku.scanResultAlignSummary", {
+    pending: run.suggestedCount,
+    unbound: run.unmappedCount,
+    noSource: run.noSourceCount,
+  });
 }
 
 /**
@@ -31,7 +44,8 @@ function initialTasks(): ScanTaskView[] {
  * No backend/job — progress is tracked from the real calls themselves.
  */
 export function useSkuAlignScan(shopName: string) {
-  const [tasks, setTasks] = useState<ScanTaskView[]>(initialTasks);
+  const t = useT();
+  const [tasks, setTasks] = useState<ScanTaskView[]>(() => initialTasks(t));
   const [recent, setRecent] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
@@ -42,10 +56,10 @@ export function useSkuAlignScan(shopName: string) {
     setRunning(true);
     setDone(false);
     setRecent([]);
-    setTasks(initialTasks());
+    setTasks(initialTasks(t));
 
     const patch = (id: string, p: Partial<ScanTaskView>) =>
-      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...p } : t)));
+      setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, ...p } : task)));
     const finalize = () => {
       setRunning(false);
       setDone(true);
@@ -59,7 +73,10 @@ export function useSkuAlignScan(shopName: string) {
       const variants = overview.reduce((a, p) => a + p.variants.length, 0);
       patch(TASK_IDS.overview, {
         status: "done",
-        resultText: `已找到 ${overview.length} 个商品 · ${variants} 个规格`,
+        resultText: t("sku.scanResultOverview", {
+          products: overview.length,
+          variants,
+        }),
       });
       // Repair snapshots in the background — must not block step 2 (can take minutes for large shops).
       void api.backfillBindingSnapshots(shopName).catch(() => null);
@@ -75,7 +92,10 @@ export function useSkuAlignScan(shopName: string) {
       return;
     }
     if (overview.length === 0) {
-      patch(TASK_IDS.align, { status: "skipped", resultText: "暂无已关联商品" });
+      patch(TASK_IDS.align, {
+        status: "skipped",
+        resultText: t("sku.scanResultNoProducts"),
+      });
       patch(TASK_IDS.prewarm, { status: "skipped" });
       finalize();
       return;
@@ -97,17 +117,23 @@ export function useSkuAlignScan(shopName: string) {
       if (!run) {
         patch(TASK_IDS.align, {
           status: "skipped",
-          resultText: "自动匹配未启动",
+          resultText: t("sku.scanResultAlignSkipped"),
         });
       } else {
-        const summary = `待确认 ${run.suggestedCount} · 未匹配 ${run.unmappedCount} · 缺货源 ${run.noSourceCount}`;
+        const summary = alignSummaryText(t, run);
         setRecent((prev) =>
-          [`匹配完成：${summary}`, ...prev].slice(0, RECENT_MAX)
+          [t("sku.scanRecentAlignDone", { summary }), ...prev].slice(0, RECENT_MAX)
         );
         patch(TASK_IDS.align, {
           status: cancelRef.current ? "skipped" : run.runStatus === "FAILED" ? "failed" : "done",
-          resultText: `已匹配 ${run.matchedCount} 个规格 · ${summary}`,
-          error: run.runStatus === "FAILED" ? run.errorSummary ?? "自动匹配失败" : undefined,
+          resultText: t("sku.scanResultAlignDone", {
+            matched: run.matchedCount,
+            summary,
+          }),
+          error:
+            run.runStatus === "FAILED"
+              ? run.errorSummary ?? t("sku.scanResultAlignFailed")
+              : undefined,
         });
       }
     } catch (err) {
@@ -134,13 +160,13 @@ export function useSkuAlignScan(shopName: string) {
       );
       patch(TASK_IDS.prewarm, {
         status: "done",
-        resultText: `已加载 ${detailUrls.length} 个货源的规格与价格`,
+        resultText: t("sku.scanResultPrewarmDone", { count: detailUrls.length }),
       });
     } catch (err) {
       patch(TASK_IDS.prewarm, { status: "failed", error: readableError(err) });
     }
     finalize();
-  }, [shopName]);
+  }, [shopName, t]);
 
   const cancel = useCallback(() => {
     cancelRef.current = true;

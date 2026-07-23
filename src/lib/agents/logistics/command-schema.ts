@@ -4,7 +4,6 @@ export type LogisticsCommandId =
   | "open_template"
   | "focus_issues"
   | "focus_status"
-  | "explain_quote"
   | "apply_template";
 
 export type LogisticsCommandTargetScope = "current" | "explicit" | "none" | "all";
@@ -25,6 +24,9 @@ export interface LogisticsCommandParams {
   productId?: string;
   skuId?: string;
   templateId?: string;
+  exceptionType?: string;
+  needsMeasure?: boolean;
+  quoteStatus?: "quoted" | "unquoted";
 }
 
 export interface LogisticsCommandDraft {
@@ -87,7 +89,6 @@ export const LOGISTICS_COMMAND_IDS: LogisticsCommandId[] = [
   "open_template",
   "focus_issues",
   "focus_status",
-  "explain_quote",
   "apply_template",
 ];
 
@@ -138,16 +139,9 @@ export const LOGISTICS_COMMAND_DEFS: {
     sensitivity: "low",
   },
   {
-    id: "explain_quote",
-    label: "解释报价",
-    description: "解释某个规格的物流报价详情",
-    defaultConfirmation: false,
-    sensitivity: "low",
-  },
-  {
     id: "apply_template",
-    label: "应用模板",
-    description: "应用指定的物流模板",
+    label: "打开模板",
+    description: "打开物流模板配置抽屉（不自动套用）",
     defaultConfirmation: false,
     sensitivity: "low",
   },

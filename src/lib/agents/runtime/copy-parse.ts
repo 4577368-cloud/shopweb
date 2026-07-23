@@ -1,3 +1,4 @@
+import { buildCopyResponseLanguageRule } from "@/lib/agents/runtime/response-language";
 import type { AgentCopyFields } from "@/lib/agents/runtime/types";
 
 export type { AgentCopyFields } from "@/lib/agents/runtime/types";
@@ -48,17 +49,29 @@ export function buildCopyEnrichUserPayload(opts: {
   );
 }
 
-export const COPY_ENRICH_CONSTRAINTS = `硬性约束（必须遵守）：
-1. 只能使用用户消息里提供的 PageContext 中的事实与数字；不得编造不存在的数据。
-2. 不得输出或改写任何执行动作字段（suggestedAction / targetTab / openDrawer / highlightArea）。
-3. 不得声称已完成配置或假装执行了任何操作。
-4. 信息不足时用保守表述，不要猜测。
-5. 语气简洁、可执行、中文。
-6. 只输出一个 JSON 对象，字段仅限：
-   - summary: string（一句话标题，≤40字）
-   - explanation: string[]（2～5 条解释）
-   - nextSteps: string[]（1～3 条下一步文案，只描述建议，不假装已执行）
-7. 不要输出 markdown、代码块或其它键。`;
+export function buildCopyEnrichConstraints(opts?: {
+  userText?: string;
+  fallbackLocale?: string | null;
+}): string {
+  const languageRule =
+    opts?.userText != null
+      ? buildCopyResponseLanguageRule(opts.userText, opts.fallbackLocale)
+      : "Write summary, explanation, and nextSteps in the same language as the user's message.";
+  return `Hard constraints (must follow):
+1. Only use facts and numbers from PageContext in the user message; do not invent data.
+2. Do not output or rewrite action fields (suggestedAction / targetTab / openDrawer / highlightArea).
+3. Do not claim configuration is done or pretend any action was executed.
+4. When information is insufficient, use conservative wording; do not guess.
+5. ${languageRule} Keep tone concise and actionable.
+6. Output a single JSON object with only these fields:
+   - summary: string (one-line headline, ≤80 chars)
+   - explanation: string[] (2–5 bullets)
+   - nextSteps: string[] (1–3 suggested next steps; do not pretend executed)
+7. No markdown, code fences, or extra keys.`;
+}
+
+/** @deprecated use buildCopyEnrichConstraints */
+export const COPY_ENRICH_CONSTRAINTS = buildCopyEnrichConstraints();
 
 function stripCodeFence(s: string): string {
   const t = s.trim();

@@ -13,7 +13,7 @@ import {
   Sparkles,
   Store,
   X,
-} from "lucide-react";
+} from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -44,7 +44,12 @@ import { loadSupplementManualProduct } from "@/lib/sku-align/supplement-manual-a
 import { filterAvailableSupplementCandidates } from "@/lib/sku-align/supplement-candidate-availability";
 import { manualBindWithFallback } from "@/lib/sku-align-v1/compat";
 import { recordBinding } from "@/lib/sku-align/learned-aliases";
-import { fetchSpecMatchLlm, grayZoneRows } from "@/lib/sku-align/spec-match-llm";
+import {
+  fetchSpecMatchLlm,
+  grayZoneRows,
+  isSemanticLlmBoost,
+  pairKey,
+} from "@/lib/sku-align/spec-match-llm";
 import { enqueueSkuAlignRun, pollSkuAlignRun } from "@/lib/sku-align-v1";
 import type { SkuAlignProductDetail } from "@/lib/sku-align-v1/types";
 import {
@@ -56,9 +61,10 @@ import {
 import {
   countUnbound,
   deriveVariantDisplayState,
-  DISPLAY_STATE_LABELS,
+  displayStateLabel,
   type SkuVariantDisplayState,
 } from "@/lib/sku-align/display";
+import { useT } from "@/i18n/LocaleProvider";
 import {
   formatShopListingPrice,
   formatSourceCostInShopCurrency,
@@ -125,10 +131,14 @@ function formatOptionPrice(
   );
 }
 
-function truncateMerchant(title?: string | null, max = 22): string {
-  const t = (title ?? "").trim();
-  if (!t) return "未知货源";
-  return t.length > max ? `${t.slice(0, max)}…` : t;
+function truncateMerchant(
+  title: string | null | undefined,
+  unknownLabel: string,
+  max = 22
+): string {
+  const trimmed = (title ?? "").trim();
+  if (!trimmed) return unknownLabel;
+  return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
 }
 
 /* ------------------------------------------------------------------ */
@@ -188,6 +198,7 @@ export function SkuProductWorkbench({
   onBack,
   showToast,
 }: SkuProductWorkbenchProps) {
+  const t = useT();
   /* ---------- state ---------- */
   const [sourceOverride, setSourceOverride] = useState<PrimarySourceOverride | null>(null);
   const [sourceRevision, setSourceRevision] = useState(0);
@@ -261,7 +272,7 @@ export function SkuProductWorkbench({
     sourceOverride?.title?.trim() ||
     v1Detail?.primaryOffer?.title?.trim() ||
     product.title?.trim() ||
-    "当前货源";
+    t("skuWorkbench.currentSource");
   const currentMerchantImage =
     sourceOverride?.imageUrl?.trim() ||
     v1Detail?.primaryOffer?.imageUrl?.trim() ||
@@ -308,7 +319,7 @@ export function SkuProductWorkbench({
           variantPrice: variant.price,
           variantImageUrl: variant.imageUrl,
         });
-        for (const r of grayZoneRows(ranked)) {
+        for (const r of grayZoneRows(variant.optionLabel, ranked)) {
           pairs.push({ variantLabel: variant.optionLabel, specLabel: r.specLabel });
         }
         if (pairs.length >= 12) break;
@@ -326,7 +337,7 @@ export function SkuProductWorkbench({
     async (urlOverride?: string | null): Promise<SourceSkuRow[]> => {
       const url = (urlOverride ?? effectiveDetailUrl)?.trim();
       if (!url) {
-        setLoadError("缺少货源详情链接，无法加载规格表");
+        setLoadError(t("skuWorkbench.errMissingDetailUrl"));
         setMatrix([]);
         return [];
       }
@@ -336,7 +347,7 @@ export function SkuProductWorkbench({
         const { rows, error } = await fetchSourceSkuMatrixResult(url);
         setMatrix(rows);
         if (error) setLoadError(error);
-        else if (!rows.length) setLoadError("该货源未返回可用规格");
+        else if (!rows.length) setLoadError(t("skuWorkbench.errNoSpecs"));
         else void refineGrayZone(rows);
         return rows;
       } catch (err) {
@@ -347,7 +358,7 @@ export function SkuProductWorkbench({
         setLoading(false);
       }
     },
-    [effectiveDetailUrl, refineGrayZone]
+    [effectiveDetailUrl, refineGrayZone, t]
   );
 
 
@@ -389,7 +400,7 @@ export function SkuProductWorkbench({
         boundTangbuyProductIds: boundOfferIds,
       });
       if (!filtered.length) {
-        setSearchError("未找到除当前货源外的同款候选，请稍后重试");
+        setSearchError(t("skuWorkbench.errNoAlternateCandidates"));
         return;
       }
 
@@ -398,8 +409,8 @@ export function SkuProductWorkbench({
       if (!accepted.length) {
         setSearchError(
           rejectedCount > 0
-            ? "图搜命中的货源均已下架或无效，请手动添加其他 Tangbuy 商品"
-            : "未找到除当前货源外的同款候选，请稍后重试"
+            ? t("skuWorkbench.errAllCandidatesInvalid")
+            : t("skuWorkbench.errNoAlternateCandidates")
         );
         return;
       }
@@ -429,7 +440,7 @@ export function SkuProductWorkbench({
       }
 
       if (rejectedCount > 0) {
-        showToast(`已过滤 ${rejectedCount} 个下架或无效货源`);
+        showToast(t("skuWorkbench.toastFilteredInvalid", { count: rejectedCount }));
       }
     } catch (err) {
       setSearchError(readableError(err));
@@ -437,7 +448,7 @@ export function SkuProductWorkbench({
       setSearchLoading(false);
       setMatrixLoading(false);
     }
-  }, [shopName, product, supplementGaps, tangbuyProductId, detailUrl, v1Detail, showToast]);
+  }, [shopName, product, supplementGaps, tangbuyProductId, detailUrl, v1Detail, showToast, t]);
 
   const clearSupplementWorkspace = useCallback(() => {
     setCandidates([]);
@@ -470,7 +481,7 @@ export function SkuProductWorkbench({
   const runManualSupplementAdd = useCallback(async () => {
     const raw = manualAddInput.trim();
     if (!raw) {
-      showToast("请输入 Tangbuy 商品链接或商品 ID");
+      showToast(t("skuWorkbench.toastEnterLinkOrId"));
       return;
     }
     setManualAddLoading(true);
@@ -479,14 +490,14 @@ export function SkuProductWorkbench({
       const { candidate, matrixRows } = await loadSupplementManualProduct(raw);
       const filtered = filterSupplementCandidates([candidate], supplementExcludeCtx);
       if (!filtered.length) {
-        setManualAddError("该货源已是主货源或不可重复添加，请换其他 Tangbuy 商品");
+        setManualAddError(t("skuWorkbench.errDuplicatePrimary"));
         return;
       }
       const accepted = filtered[0]!;
       const acceptedKey = candidateKeyOf(accepted);
 
       if (candidates.some((c) => candidateKeyOf(c.candidate) === acceptedKey)) {
-        showToast("该货源已在候选列表中");
+        showToast(t("skuWorkbench.toastAlreadyInList"));
         return;
       }
 
@@ -521,8 +532,8 @@ export function SkuProductWorkbench({
       setManualAddInput("");
       showToast(
         autoCount > 0
-          ? `已添加货源，${autoCount} 个规格已自动匹配，其余请手动选择`
-          : "已添加货源，请在下方为各规格手动选择商家与 SKU"
+          ? t("skuWorkbench.toastAddedWithAuto", { count: autoCount })
+          : t("skuWorkbench.toastAddedManual")
       );
     } catch (err) {
       setManualAddError(readableError(err));
@@ -535,6 +546,7 @@ export function SkuProductWorkbench({
     supplementGaps,
     candidates,
     showToast,
+    t,
   ]);
 
   const runReplacePrimarySearch = useCallback(async () => {
@@ -556,7 +568,7 @@ export function SkuProductWorkbench({
         return;
       }
       if (!pipeline.rankedItems.length) {
-        setReplaceSearchError("未找到可替换的同款候选");
+        setReplaceSearchError(t("skuWorkbench.errNoReplaceCandidates"));
         return;
       }
       setReplaceCandidates(pipeline.rankedItems.slice(0, 6));
@@ -565,7 +577,7 @@ export function SkuProductWorkbench({
     } finally {
       setReplaceSearchLoading(false);
     }
-  }, [shopName, product]);
+  }, [shopName, product, t]);
 
   const applyReplacePrimary = async (candidate: ImageSearchProduct) => {
     if (replacingPrimary) return;
@@ -580,7 +592,7 @@ export function SkuProductWorkbench({
         offerProductId
       );
       if (!confirmDetailUrl?.trim()) {
-        throw new Error("无法解析新货源详情链接");
+        throw new Error(t("skuWorkbench.errCannotParseDetailUrl"));
       }
       await api.confirmImageMatch({
         shopName,
@@ -601,7 +613,7 @@ export function SkuProductWorkbench({
       setSourceOverride({
         detailUrl: confirmDetailUrl.trim(),
         tangbuyProductId: offerProductId,
-        title: candidate.title?.trim() || "新主货源",
+        title: candidate.title?.trim() || t("skuWorkbench.newPrimarySource"),
         imageUrl: candidate.imageUrl ?? null,
       });
       setSourceRevision((n) => n + 1);
@@ -624,11 +636,11 @@ export function SkuProductWorkbench({
       const matched = status?.matchedCount ?? 0;
       showToast(
         status
-          ? `已替换主货源，${matched} 个变体已自动对齐，请在下方核对 SKU 映射`
-          : "已替换主货源，请在下方核对 SKU 映射"
+          ? t("skuWorkbench.toastReplacedWithAlign", { count: matched })
+          : t("skuWorkbench.toastReplacedReview")
       );
     } catch (err) {
-      setSaveError(mapImageMatchConfirmError(err) || mapSkuAlignError(err));
+      setSaveError(mapImageMatchConfirmError(err) || mapSkuAlignError(err, t));
     } finally {
       setReplacingPrimary(false);
     }
@@ -773,11 +785,14 @@ export function SkuProductWorkbench({
           reason: row.specLabel,
           detailUrl: effectiveDetailUrl ?? undefined,
           sourceRole: "PRIMARY",
+          matchSource: isSemanticLlmBoost(llmScores[pairKey(variant.optionLabel, row.specLabel)])
+            ? "SEMANTIC"
+            : undefined,
         },
         { detailUrl: effectiveDetailUrl ?? undefined }
       );
-      recordBinding(variant.optionLabel, row.specLabel);
-      showToast(`已绑定 · ${row.specLabel}（立即生效）`);
+      recordBinding(variant.optionLabel, row.specLabel, { shopName });
+      showToast(t("skuWorkbench.toastBound", { spec: row.specLabel }));
       await onSaved();
     } catch (err) {
       showToast(readableError(err));
@@ -793,11 +808,11 @@ export function SkuProductWorkbench({
   const applyAllSuggestions = () => {
     const count = Object.keys(autoSuggestions).length;
     if (count === 0) {
-      showToast("暂无高置信建议可应用");
+      showToast(t("skuWorkbench.toastNoSuggestions"));
       return;
     }
     setSelections((prev) => ({ ...prev, ...autoSuggestions }));
-    showToast(`已应用 ${count} 条建议`);
+    showToast(t("skuWorkbench.toastAppliedSuggestions", { count }));
   };
 
   const setGapMerchant = useCallback(
@@ -869,7 +884,7 @@ export function SkuProductWorkbench({
         onPhaseChange("supplement");
         return;
       }
-      showToast("没有需要保存的变更");
+      showToast(t("skuWorkbench.toastNothingToSave"));
       onBack();
       return;
     }
@@ -887,13 +902,16 @@ export function SkuProductWorkbench({
             reason: specLabel,
             detailUrl: effectiveDetailUrl ?? undefined,
             sourceRole: "PRIMARY",
+            matchSource: isSemanticLlmBoost(llmScores[pairKey(variant.optionLabel, specLabel)])
+              ? "SEMANTIC"
+              : undefined,
           },
           { detailUrl: effectiveDetailUrl ?? undefined }
         );
         // 反馈沉淀：从人工确认的绑定学习别名（如 深燕麦≈燕麦色）
-        recordBinding(variant.optionLabel, specLabel);
+        recordBinding(variant.optionLabel, specLabel, { shopName });
       }
-      showToast(`已保存 ${pendingChanges.length} 个 SKU 映射`);
+      showToast(t("skuWorkbench.toastSavedMappings", { count: pendingChanges.length }));
       await onSaved();
       if (supplementGaps.length > 0) {
         onPhaseChange("supplement");
@@ -901,7 +919,7 @@ export function SkuProductWorkbench({
         onBack();
       }
     } catch (err) {
-      setSaveError(mapSkuAlignError(err));
+      setSaveError(mapSkuAlignError(err, t));
     } finally {
       setSaving(false);
     }
@@ -913,7 +931,7 @@ export function SkuProductWorkbench({
       ([, a]) => a?.candidateKey?.trim() && a?.skuId?.trim()
     );
     if (!entries.length) {
-      showToast("请至少为一个缺口规格选择货源");
+      showToast(t("skuWorkbench.toastPickSupplement"));
       return;
     }
     setRegistering(true);
@@ -925,8 +943,8 @@ export function SkuProductWorkbench({
         if (!cand) continue;
         const probe = await filterAvailableSupplementCandidates([cand.candidate]);
         if (!probe.accepted.length) {
-          const title = cand.candidate.title?.trim() || "所选货源";
-          throw new Error(`${title} 已下架或无效，请移除后重新选择`);
+          const title = cand.candidate.title?.trim() || t("skuWorkbench.selectedSourceFallback");
+          throw new Error(t("skuWorkbench.errSourceInvalid", { title }));
         }
       }
 
@@ -954,6 +972,9 @@ export function SkuProductWorkbench({
         const offerId = resolveCandidateOfferId(cand.candidate);
         const detail = cand.candidate.detailUrl ?? undefined;
         const row = findSourceSkuRow(candidateMatrices.get(a.candidateKey) ?? [], a.skuId);
+        const variantLabel = product.variants.find(
+          (v) => v.thirdPlatformSkuId === variantId
+        )?.optionLabel;
         await manualBindWithFallback(
           variantId,
           {
@@ -964,20 +985,24 @@ export function SkuProductWorkbench({
             reason: row?.specLabel ?? undefined,
             detailUrl: detail,
             sourceRole: "SUPPLEMENT",
+            matchSource:
+              variantLabel && row?.specLabel
+                ? isSemanticLlmBoost(llmScores[pairKey(variantLabel, row.specLabel)])
+                  ? "SEMANTIC"
+                  : undefined
+                : undefined,
           },
           { detailUrl: detail }
         );
         // 反馈沉淀：补充货源绑定同样学习别名
-        const variantLabel = product.variants.find(
-          (v) => v.thirdPlatformSkuId === variantId
-        )?.optionLabel;
-        if (variantLabel && row?.specLabel) recordBinding(variantLabel, row.specLabel);
+        if (variantLabel && row?.specLabel)
+          recordBinding(variantLabel, row.specLabel, { shopName });
       }
-      showToast(`已保存 ${entries.length} 个补充货源映射`);
+      showToast(t("skuWorkbench.toastSavedSupplement", { count: entries.length }));
       onBack();
       await onSaved();
     } catch (err) {
-      setSaveError(mapSkuAlignError(err));
+      setSaveError(mapSkuAlignError(err, t));
     } finally {
       setRegistering(false);
     }
@@ -996,20 +1021,23 @@ export function SkuProductWorkbench({
 
   const workbenchTabs = useMemo(
     () => [
-      { id: "primary", label: `SKU 对照 (${product.variants.length})` },
+      {
+        id: "primary",
+        label: t("skuWorkbench.tabPrimary", { count: product.variants.length }),
+      },
       {
         id: "replace",
-        label: "替换主货源",
+        label: t("skuWorkbench.tabReplace"),
       },
       {
         id: "supplement",
         label:
           supplementGaps.length > 0
-            ? `补充货源 (${supplementGaps.length})`
-            : "补充货源",
+            ? t("skuWorkbench.tabSupplementCount", { count: supplementGaps.length })
+            : t("skuWorkbench.tabSupplement"),
       },
     ],
-    [product.variants.length, supplementGaps.length]
+    [product.variants.length, supplementGaps.length, t]
   );
 
   /* ---------- render ---------- */
@@ -1018,17 +1046,6 @@ export function SkuProductWorkbench({
       <header className="shrink-0 border-b border-hairline px-6 py-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 flex-1 items-start gap-4">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-8 w-8 shrink-0 px-0"
-              onClick={onBack}
-              disabled={saving || registering}
-              title="返回商品列表"
-              aria-label="返回商品列表"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
             <VariantThumb
               src={product.imageUrl}
               alt={product.title ?? ""}
@@ -1036,36 +1053,54 @@ export function SkuProductWorkbench({
             />
             <div className="min-w-0 flex-1">
               <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
-                店铺商品 · SKU 映射工作台
+                {t("skuWorkbench.headerEyebrow")}
               </p>
               <h2 className="text-base font-semibold leading-6 text-ink">
                 {product.title ?? product.thirdPlatformItemId}
               </h2>
               <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
                 <span className="text-emerald-700">
-                  已对齐 {alignedCount}/{product.variants.length}
+                  {t("skuWorkbench.aligned", {
+                    aligned: alignedCount,
+                    total: product.variants.length,
+                  })}
                 </span>
                 <span>·</span>
-                <span>未映射 {unboundCount}</span>
+                <span>{t("skuWorkbench.unmapped", { count: unboundCount })}</span>
                 {supplementGaps.length > 0 ? (
                   <>
                     <span>·</span>
-                    <span className="text-amber-700">货源缺口 {supplementGaps.length}</span>
+                    <span className="text-amber-700">
+                      {t("skuWorkbench.sourceGaps", { count: supplementGaps.length })}
+                    </span>
                   </>
                 ) : null}
               </div>
             </div>
           </div>
-          <div className="w-full min-w-[min(100%,520px)] sm:w-auto">
-            <SegmentedTabs
-              variant="chip"
-              tabs={workbenchTabs}
-              value={phase}
-              onValueChange={(id) => {
-                if ((id === "replace" || id === "supplement") && !canPick) return;
-                onPhaseChange(id as DrawerPhase);
-              }}
-            />
+          <div className="flex items-start gap-3">
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 w-8 shrink-0 px-0"
+              onClick={onBack}
+              disabled={saving || registering}
+              title={t("skuWorkbench.backToListTitle")}
+              aria-label={t("skuWorkbench.backToListAria")}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="w-full min-w-[min(100%,520px)] sm:w-auto">
+              <SegmentedTabs
+                variant="chip"
+                tabs={workbenchTabs}
+                value={phase}
+                onValueChange={(id) => {
+                  if ((id === "replace" || id === "supplement") && !canPick) return;
+                  onPhaseChange(id as DrawerPhase);
+                }}
+              />
+            </div>
           </div>
         </div>
       </header>
@@ -1082,6 +1117,7 @@ export function SkuProductWorkbench({
             bindingVariantId={bindingVariantId}
             merchantTitle={currentMerchantTitle}
             merchantImage={currentMerchantImage}
+            currentSourceLabel={t("skuWorkbench.currentSource")}
             suggestCount={suggestCount}
             supplementGaps={supplementGaps}
             focusVariantId={focusVariantId ?? null}
@@ -1144,13 +1180,16 @@ export function SkuProductWorkbench({
           <p className="text-xs text-ink-subtle">
             {phase === "primary"
               ? pendingChanges.length > 0
-                ? `${pendingChanges.length} 项待保存`
-                : "对照当前主货源，逐行映射店铺变体"
+                ? t("skuWorkbench.footerPendingSave", { count: pendingChanges.length })
+                : t("skuWorkbench.footerPrimaryHint")
               : phase === "replace"
-                ? "整款换绑：替换后回到 SKU 对照核对映射"
+                ? t("skuWorkbench.footerReplaceHint")
                 : supplementGaps.length > 0
-                  ? `已为 ${assignedGapCount}/${supplementGaps.length} 个缺口选好补充货源`
-                  : "无缺口规格，无需补充货源"}
+                  ? t("skuWorkbench.footerSupplementProgress", {
+                      assigned: assignedGapCount,
+                      total: supplementGaps.length,
+                    })
+                  : t("skuWorkbench.footerNoSupplementNeeded")}
           </p>
           <div className="flex items-center gap-2">
             {phase === "primary" ? (
@@ -1160,7 +1199,7 @@ export function SkuProductWorkbench({
                 disabled={saving || !canPick || loading}
               >
                 {saving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-                保存映射
+                {t("skuWorkbench.saveMappings")}
               </Button>
             ) : phase === "replace" ? (
               <Button
@@ -1169,7 +1208,7 @@ export function SkuProductWorkbench({
                 onClick={() => onPhaseChange("primary")}
                 disabled={replacingPrimary}
               >
-                返回对照
+                {t("skuWorkbench.backToCompare")}
               </Button>
             ) : (
               <>
@@ -1179,7 +1218,7 @@ export function SkuProductWorkbench({
                   onClick={() => onPhaseChange("primary")}
                   disabled={registering}
                 >
-                  返回对照
+                  {t("skuWorkbench.backToCompare")}
                 </Button>
                 <Button
                   size="sm"
@@ -1187,7 +1226,7 @@ export function SkuProductWorkbench({
                   disabled={registering || assignedGapCount === 0 || supplementGaps.length === 0}
                 >
                   {registering ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-                  保存补充
+                  {t("skuWorkbench.saveSupplement")}
                 </Button>
               </>
             )}
@@ -1212,6 +1251,7 @@ function PrimaryComparePanel({
   bindingVariantId,
   merchantTitle,
   merchantImage,
+  currentSourceLabel,
   suggestCount,
   supplementGaps,
   focusVariantId,
@@ -1232,6 +1272,7 @@ function PrimaryComparePanel({
   bindingVariantId: string | null;
   merchantTitle: string;
   merchantImage: string | null;
+  currentSourceLabel: string;
   suggestCount: number;
   supplementGaps: SkuVariant[];
   focusVariantId: string | null;
@@ -1243,6 +1284,7 @@ function PrimaryComparePanel({
   onApplySuggestions: () => void;
   onGoSupplement: () => void;
 }) {
+  const t = useT();
   const gapIds = useMemo(
     () => new Set(supplementGaps.map((v) => v.thirdPlatformSkuId)),
     [supplementGaps]
@@ -1257,7 +1299,9 @@ function PrimaryComparePanel({
             <Store className="h-3.5 w-3.5 shrink-0 text-ink-subtle" />
             <VariantThumb src={merchantImage} alt={merchantTitle} className="h-7 w-7" />
             <div className="min-w-0">
-              <p className="text-[10px] uppercase tracking-wide text-ink-subtle">当前货源</p>
+              <p className="text-[10px] uppercase tracking-wide text-ink-subtle">
+                {currentSourceLabel}
+              </p>
               <p className="line-clamp-1 text-xs font-medium text-ink">{merchantTitle}</p>
             </div>
           </div>
@@ -1267,10 +1311,12 @@ function PrimaryComparePanel({
             className="h-8 shrink-0 gap-1 text-[11px]"
             onClick={onApplySuggestions}
             disabled={suggestCount === 0}
-            title="重新应用高置信建议"
+            title={t("skuWorkbench.applySuggestionsTitle")}
           >
             <Sparkles className="h-3.5 w-3.5" />
-            {suggestCount > 0 ? `应用建议（${suggestCount}）` : "建议已填入"}
+            {suggestCount > 0
+              ? t("skuWorkbench.applySuggestions", { count: suggestCount })
+              : t("skuWorkbench.suggestionsApplied")}
           </Button>
         </div>
       </div>
@@ -1278,9 +1324,16 @@ function PrimaryComparePanel({
       {/* 列表头 */}
       <div className="shrink-0 border-b border-hairline bg-canvas/40 px-5 py-1.5">
         <div className="grid grid-cols-[minmax(0,1fr)_40px_minmax(0,1.25fr)] items-center gap-4 text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
-          <span>店铺变体</span>
+          <span>{t("skuWorkbench.colShopVariant")}</span>
           <span />
-          <span>货源映射（{merchantTitle === "当前货源" ? "当前货源" : "同一货源"}）</span>
+          <span>
+            {t("skuWorkbench.colSourceMapping", {
+              scope:
+                merchantTitle === currentSourceLabel
+                  ? currentSourceLabel
+                  : t("skuWorkbench.sameSource"),
+            })}
+          </span>
         </div>
       </div>
 
@@ -1289,11 +1342,11 @@ function PrimaryComparePanel({
         {loading ? (
           <div className="flex items-center gap-2 py-8 text-xs text-ink-muted">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            正在加载货源规格表…
+            {t("skuWorkbench.loadingSpecTable")}
           </div>
         ) : !canPick ? (
           <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            该商品缺少货源链接，无法加载规格表。请先在「智能选品」确认匹配。
+            {t("skuWorkbench.errNoSourceLink")}
           </div>
         ) : loadError ? (
           <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2">
@@ -1306,7 +1359,7 @@ function PrimaryComparePanel({
               onClick={onRetryMatrix}
             >
               <RefreshCw className="mr-1 h-3.5 w-3.5" />
-              重试
+              {t("skuWorkbench.retry")}
             </Button>
           </div>
         ) : (
@@ -1378,6 +1431,7 @@ function PrimaryCompareRow({
   onSelect: (skuId: string) => void;
   onGoSupplement: () => void;
 }) {
+  const t = useT();
   const displayState = deriveVariantDisplayState(variant);
   const ranked = useMemo(
     () =>
@@ -1420,14 +1474,15 @@ function PrimaryCompareRow({
                 variantDisplayStateClass(displayState)
               )}
             >
-              {DISPLAY_STATE_LABELS[displayState]}
+              {displayStateLabel(t, displayState)}
             </span>
             {binding ? (
-              <Loader2 className="h-3 w-3 shrink-0 animate-spin text-ink-subtle" aria-label="保存中" />
+              <Loader2 className="h-3 w-3 shrink-0 animate-spin text-ink-subtle" aria-label={t("skuWorkbench.savingAria")} />
             ) : null}
           </div>
           <p className="mt-0.5 text-[11px] text-ink-muted">
-            售价 {formatShopListingPrice(variant.price, shopCurrency)}
+            {t("skuWorkbench.listingPrice")}{" "}
+            {formatShopListingPrice(variant.price, shopCurrency)}
           </p>
         </div>
       </div>
@@ -1442,8 +1497,8 @@ function PrimaryCompareRow({
         {matrix.length === 0 ? (
           <p className="text-[11px] text-ink-muted">
             {effectiveSkuId
-              ? `已绑定 skuId ${effectiveSkuId}，规格表加载后可调整`
-              : "规格表暂无数据"}
+              ? t("skuWorkbench.boundSkuAdjust", { id: effectiveSkuId })
+              : t("skuWorkbench.specTableEmpty")}
           </p>
         ) : (
           <div className="space-y-2">
@@ -1454,7 +1509,9 @@ function PrimaryCompareRow({
               className={COMPARE_SELECT_CLASS}
             >
               <option value="">
-                {ranked.length === 0 ? "当前货源暂无规格" : "选择货源规格…"}
+                {ranked.length === 0
+                  ? t("skuWorkbench.noSpecsInSource")
+                  : t("skuWorkbench.pickSpec")}
               </option>
               {ranked.map((r) => (
                 <option key={r.skuId} value={r.skuId}>
@@ -1465,8 +1522,10 @@ function PrimaryCompareRow({
             </Select>
             {matched && row ? (
               <p className="truncate text-[10px] text-ink-subtle">
-                当前：{row.specLabel} · 采购价{" "}
-                {formatOptionPrice(row.procurementPrice, shopCurrency, pricingTemplate)}
+                {t("skuWorkbench.currentSpec", {
+                  spec: row.specLabel,
+                  price: formatOptionPrice(row.procurementPrice, shopCurrency, pricingTemplate),
+                })}
               </p>
             ) : null}
             {(isGap || bestScore < COVERAGE_MATCH_THRESHOLD) && !effectiveSkuId ? (
@@ -1476,7 +1535,7 @@ function PrimaryCompareRow({
                 className="inline-flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-amber-300/80 bg-amber-50/60 px-2 py-1.5 text-[11px] font-medium text-amber-800 hover:bg-amber-50"
               >
                 <Plus className="h-3 w-3" />
-                当前货源无此规格，去补充货源
+                {t("skuWorkbench.goSupplement")}
               </button>
             ) : null}
           </div>
@@ -1509,14 +1568,16 @@ function ReplacePrimaryPanel({
   onSearch: () => void;
   onApply: (candidate: ImageSearchProduct) => void;
 }) {
+  const t = useT();
+  const unknownSource = t("skuWorkbench.unknownSource");
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="shrink-0 border-b border-hairline px-5 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-ink">替换主货源</p>
+            <p className="text-xs font-semibold text-ink">{t("skuWorkbench.replaceTitle")}</p>
             <p className="mt-0.5 text-[11px] text-ink-muted">
-              整款绑错了时用：图搜同款并替换当前主货源，系统会重新对齐全部 SKU。
+              {t("skuWorkbench.replaceDesc")}
             </p>
           </div>
           <Button
@@ -1531,16 +1592,18 @@ function ReplacePrimaryPanel({
             ) : (
               <Sparkles className="h-3.5 w-3.5" />
             )}
-            AI 图搜
+            {t("skuWorkbench.aiImageSearch")}
           </Button>
         </div>
         <div className="mt-3 flex items-center gap-2.5 rounded-[var(--radius-control)] border border-hairline/80 bg-surface-muted/40 px-3 py-2">
           <VariantThumb src={currentImage} alt={currentTitle} className="h-10 w-10" />
           <div className="min-w-0">
             <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
-              当前主货源
+              {t("skuWorkbench.currentPrimary")}
             </p>
-            <p className="truncate text-xs text-ink">{truncateMerchant(currentTitle, 36)}</p>
+            <p className="truncate text-xs text-ink">
+              {truncateMerchant(currentTitle, unknownSource, 36)}
+            </p>
           </div>
         </div>
       </div>
@@ -1549,19 +1612,19 @@ function ReplacePrimaryPanel({
         {loading ? (
           <div className="flex items-center gap-2 py-6 text-xs text-ink-muted">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            正在搜索可替换的同款货源…
+            {t("skuWorkbench.searchingReplace")}
           </div>
         ) : error ? (
           <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2">
             <p className="text-[11px] text-amber-800">{error}</p>
             <Button size="sm" variant="secondary" className="mt-2" onClick={onSearch}>
               <RefreshCw className="mr-1 h-3.5 w-3.5" />
-              重新搜索
+              {t("skuWorkbench.searchAgain")}
             </Button>
           </div>
         ) : candidates.length === 0 ? (
           <p className="py-6 text-center text-xs text-ink-muted">
-            点击右上「AI 图搜」查找可替换的主货源。
+            {t("skuWorkbench.replaceEmptyHint")}
           </p>
         ) : (
           <div className="space-y-2">
@@ -1579,11 +1642,13 @@ function ReplacePrimaryPanel({
                   />
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 text-xs font-medium text-ink">
-                      {candidate.title?.trim() || "未命名货源"}
+                      {candidate.title?.trim() || t("skuWorkbench.unnamedSource")}
                     </p>
                     <p className="mt-0.5 text-[11px] text-ink-muted">
-                      {candidate.price ? `¥${candidate.price}` : "价格未知"}
-                      {candidate.soldCount != null ? ` · 月销 ${candidate.soldCount}` : ""}
+                      {candidate.price ? `¥${candidate.price}` : t("skuWorkbench.priceUnknown")}
+                      {candidate.soldCount != null
+                        ? t("skuWorkbench.monthlySales", { count: candidate.soldCount })
+                        : ""}
                     </p>
                   </div>
                   <Button
@@ -1595,7 +1660,7 @@ function ReplacePrimaryPanel({
                     {replacing ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      "替换"
+                      t("skuWorkbench.replace")
                     )}
                   </Button>
                 </div>
@@ -1661,6 +1726,7 @@ function SupplementPanel({
   matrixFetchingKey?: string | null;
   className?: string;
 }) {
+  const t = useT();
   const busy = searchLoading || manualAddLoading;
   const canClearWorkspace =
     candidates.length > 0 ||
@@ -1673,7 +1739,7 @@ function SupplementPanel({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <p className="text-xs font-semibold text-ink">补充货源</p>
+              <p className="text-xs font-semibold text-ink">{t("skuWorkbench.supplementTitle")}</p>
               {canClearWorkspace ? (
                 <Button
                   size="sm"
@@ -1681,16 +1747,18 @@ function SupplementPanel({
                   className="h-7 w-7 shrink-0 px-0"
                   onClick={onClearWorkspace}
                   disabled={busy}
-                  title="清空已添加的货源与映射"
-                  aria-label="清空已添加的货源与映射"
+                  title={t("skuWorkbench.clearWorkspaceTitle")}
+                  aria-label={t("skuWorkbench.clearWorkspaceAria")}
                 >
                   <X className="h-3.5 w-3.5" />
                 </Button>
               ) : null}
             </div>
             <p className="mt-0.5 text-[11px] text-ink-muted">
-              为当前主货源无法覆盖的规格追加第二货源；不同缺口可来自不同商家，主货源不变。仅推荐在售且可读取 SKU 的货源。
-              {merchantCount > 0 ? ` 已找到 ${merchantCount} 个候选货源。` : ""}
+              {t("skuWorkbench.supplementDesc")}
+              {merchantCount > 0
+                ? t("skuWorkbench.merchantsFound", { count: merchantCount })
+                : ""}
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -1701,7 +1769,7 @@ function SupplementPanel({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !busy) onManualAdd();
                 }}
-                placeholder="Tangbuy 链接或商品 ID"
+                placeholder={t("skuWorkbench.linkOrIdPlaceholder")}
                 className="h-8 w-44 pr-8 text-[11px]"
                 disabled={busy}
               />
@@ -1712,8 +1780,8 @@ function SupplementPanel({
                   className="absolute right-0.5 top-1/2 h-7 w-7 -translate-y-1/2 px-0"
                   onClick={onClearManualInput}
                   disabled={busy}
-                  title="清空输入"
-                  aria-label="清空输入"
+                  title={t("skuWorkbench.clearInput")}
+                  aria-label={t("skuWorkbench.clearInputAria")}
                 >
                   <X className="h-3.5 w-3.5" />
                 </Button>
@@ -1731,7 +1799,7 @@ function SupplementPanel({
               ) : (
                 <Plus className="h-3.5 w-3.5" />
               )}
-              手动添加
+              {t("skuWorkbench.manualAdd")}
             </Button>
             <Button
               size="sm"
@@ -1745,7 +1813,7 @@ function SupplementPanel({
               ) : (
                 <Sparkles className="h-3.5 w-3.5" />
               )}
-              AI 图搜
+              {t("skuWorkbench.aiImageSearch")}
             </Button>
           </div>
         </div>
@@ -1759,23 +1827,23 @@ function SupplementPanel({
         {searchLoading ? (
           <div className="flex items-center gap-2 py-8 text-xs text-ink-muted">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            正在图搜同款货源…
+            {t("skuWorkbench.searchingSupplement")}
           </div>
         ) : searchError ? (
           <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2">
             <p className="text-[11px] text-amber-800">{searchError}</p>
             <Button size="sm" variant="secondary" className="mt-2" onClick={onSearch}>
               <RefreshCw className="mr-1 h-3.5 w-3.5" />
-              重新搜索
+              {t("skuWorkbench.searchAgain")}
             </Button>
           </div>
         ) : supplementGaps.length === 0 ? (
           <p className="py-8 text-center text-xs text-ink-muted">
-            当前没有需要补充货源的缺口变体。
+            {t("skuWorkbench.noGapVariants")}
           </p>
         ) : candidates.length === 0 ? (
           <p className="py-8 text-center text-xs text-ink-muted">
-            粘贴 Tangbuy 商品链接或 ID 手动添加，或点击「AI 图搜」搜索同款货源。
+            {t("skuWorkbench.supplementEmptyHint")}
           </p>
         ) : (
           <div className="space-y-3">
@@ -1822,6 +1890,8 @@ function SupplementGapRow({
   onSetMerchant: (candidateKey: string) => void;
   onSetSku: (skuId: string) => void;
 }) {
+  const t = useT();
+  const unknownSource = t("skuWorkbench.unknownSource");
   const candidateKey = assignment?.candidateKey ?? "";
   const skuId = assignment?.skuId ?? "";
 
@@ -1858,7 +1928,8 @@ function SupplementGapRow({
         <div className="min-w-0">
           <p className="truncate text-xs font-medium text-ink">{variant.optionLabel}</p>
           <p className="mt-0.5 text-[11px] text-ink-muted">
-            售价 {formatShopListingPrice(variant.price, shopCurrency)}
+            {t("skuWorkbench.listingPrice")}{" "}
+            {formatShopListingPrice(variant.price, shopCurrency)}
           </p>
         </div>
       </div>
@@ -1872,22 +1943,25 @@ function SupplementGapRow({
       <div className={cn(COMPARE_MAP_PANEL_CLASS, "space-y-2.5")}>
         <div className="space-y-1">
           <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
-            商家
+            {t("skuWorkbench.merchant")}
           </p>
           <Select
             value={candidateKey}
             onChange={(e) => onSetMerchant(e.target.value)}
             className={COMPARE_SELECT_CLASS}
           >
-            <option value="">选择商家…</option>
+            <option value="">{t("skuWorkbench.pickMerchant")}</option>
             {candidates.map((c) => {
               const key = candidateKeyOf(c.candidate);
               const matrixLoaded = candidateMatrices.has(key);
               return (
                 <option key={key} value={key}>
-                  {truncateMerchant(c.candidate.title, 28)}
+                  {truncateMerchant(c.candidate.title, unknownSource, 28)}
                   {matrixLoaded && c.total > 0
-                    ? ` · 可覆盖 ${c.coverage}/${c.total}`
+                    ? t("skuWorkbench.coverage", {
+                        coverage: c.coverage,
+                        total: c.total,
+                      })
                     : ""}
                 </option>
               );
@@ -1896,7 +1970,7 @@ function SupplementGapRow({
         </div>
         <div className="space-y-1">
           <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
-            货源规格
+            {t("skuWorkbench.sourceSpec")}
           </p>
           <Select
             value={skuId}
@@ -1906,12 +1980,12 @@ function SupplementGapRow({
           >
           <option value="">
             {fetchingSpecs
-              ? "正在读取规格…"
+              ? t("skuWorkbench.loadingSpecs")
               : !candidateKey
-              ? "先选择商家"
+              ? t("skuWorkbench.pickMerchantFirst")
               : skuOptions.length === 0
-                ? "该货源无规格"
-                : "选择货源规格…"}
+                ? t("skuWorkbench.sourceNoSpecs")
+                : t("skuWorkbench.pickSpec")}
           </option>
           {skuOptions.map((r) => (
             <option key={r.skuId} value={r.skuId}>
@@ -1932,7 +2006,10 @@ function SupplementGapRow({
               <span className="text-emerald-700">
                 <Check className="mr-0.5 inline h-3 w-3" />
               </span>
-              由 {truncateMerchant(chosenCandidate?.candidate.title)} 提供 · {chosenRow?.specLabel}
+              {t("skuWorkbench.providedBy", {
+                merchant: truncateMerchant(chosenCandidate?.candidate.title, unknownSource),
+                spec: chosenRow?.specLabel ?? "",
+              })}
             </span>
             <span className="shrink-0 text-[10px] font-medium text-ink-subtle">
               {formatOptionPrice(chosenRow?.procurementPrice, shopCurrency, pricingTemplate)}
@@ -1940,7 +2017,7 @@ function SupplementGapRow({
           </div>
         ) : (
           <Badge variant="warning" className="px-1.5 py-0 text-[9px]">
-            待选择货源
+            {t("skuWorkbench.pendingSource")}
           </Badge>
         )}
       </div>

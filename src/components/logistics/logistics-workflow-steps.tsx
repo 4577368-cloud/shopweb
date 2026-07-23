@@ -3,6 +3,7 @@
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import type { LogisticsPlanMetrics } from "@/lib/logistics/display";
 import { needsAttentionCount, pendingWorkCount } from "@/lib/logistics/display";
+import { useT } from "@/i18n/LocaleProvider";
 
 export type LogisticsWorkflowStep = "setup" | "estimate" | "confirm";
 
@@ -26,14 +27,15 @@ export function LogisticsWorkflowSteps({
   hasSavedTemplate: boolean;
   metrics: LogisticsPlanMetrics;
 }) {
+  const t = useT();
   const pending = pendingWorkCount(metrics);
   const attention = needsAttentionCount(metrics);
 
   const tabs = [
-    { id: "setup" as const, label: "1 配置策略" },
+    { id: "setup" as const, label: t("logisticsWorkflow.stepSetup") },
     {
       id: "estimate" as const,
-      label: "2 运费预估",
+      label: t("logisticsWorkflow.stepEstimate"),
       count:
         hasSavedTemplate && metrics.pendingQuoteCount > 0
           ? metrics.pendingQuoteCount
@@ -41,7 +43,7 @@ export function LogisticsWorkflowSteps({
     },
     {
       id: "confirm" as const,
-      label: "3 确认方案",
+      label: t("logisticsWorkflow.stepConfirm"),
       count:
         hasSavedTemplate && pending + attention > 0
           ? pending + attention
@@ -51,9 +53,7 @@ export function LogisticsWorkflowSteps({
 
   return (
     <div className="rounded-[var(--radius-card)] border border-hairline bg-surface px-3 py-2.5 shadow-card">
-      <p className="mb-2 text-[11px] text-ink-subtle">
-        按步骤完成：先配置模板 → 批量预估普货运费 → 确认或处理异常项
-      </p>
+      <p className="mb-2 text-[11px] text-ink-subtle">{t("logisticsWorkflow.hint")}</p>
       <SegmentedTabs
         variant="chip"
         tabs={tabs}

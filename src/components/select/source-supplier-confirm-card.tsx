@@ -1,14 +1,15 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { ThumbImage } from "@/components/ui/thumb-image";
 import {
-  CONFIDENCE_TIER_LABELS,
+  confidenceTierLabel,
   formatConfidenceScores,
 } from "@/lib/batch-link/confidence-display";
 import type { CandidateConfidence } from "@/lib/batch-link/candidate-confidence";
 import type { ImageSearchProduct } from "@/lib/types";
+import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
 
 export function SourceSupplierConfirmCard({
@@ -26,8 +27,9 @@ export function SourceSupplierConfirmCard({
   onConfirm: () => void;
   className?: string;
 }) {
-  const tierLabel = CONFIDENCE_TIER_LABELS[confidence.tier];
-  const scoreLine = formatConfidenceScores({
+  const t = useT();
+  const tierLabel = confidenceTierLabel(confidence.tier, t);
+  const scoreLine = formatConfidenceScores(t, {
     titleScore: confidence.titleScore,
     imageScore: confidence.imageScore,
     tier: confidence.tier,
@@ -40,9 +42,11 @@ export function SourceSupplierConfirmCard({
         className
       )}
     >
-      <p className="text-[11px] font-semibold text-amber-950">确认货源真实性</p>
+      <p className="text-[11px] font-semibold text-amber-950">
+        {t("supplierConfirm.title")}
+      </p>
       <p className="mt-1 text-[11px] leading-relaxed text-amber-900/85">
-        {tierLabel}候选需人工核对供货信息。确认后将登记 Tangbuy 商品库并建立关联；误匹配可能导致采购风险。
+        {t("supplierConfirm.body", { tier: tierLabel })}
       </p>
 
       <div className="mt-2.5 flex gap-2.5">
@@ -50,7 +54,7 @@ export function SourceSupplierConfirmCard({
           {candidate.imageUrl ? (
             <ThumbImage
               src={candidate.imageUrl}
-              alt={candidate.title ?? "货源"}
+              alt={candidate.title ?? t("supplierConfirm.sourceTitle")}
               fill
               sizes="56px"
               pixelWidth={112}
@@ -59,13 +63,13 @@ export function SourceSupplierConfirmCard({
             />
           ) : (
             <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
-              无图
+              {t("supplierConfirm.noImage")}
             </div>
           )}
         </div>
         <div className="min-w-0 flex-1">
           <p className="line-clamp-2 text-xs font-medium leading-snug text-amber-950">
-            {candidate.title?.trim() || "货源标题"}
+            {candidate.title?.trim() || t("supplierConfirm.sourceTitle")}
           </p>
           {candidate.price?.trim() ? (
             <p className="mt-0.5 text-xs font-semibold text-amber-900">
@@ -85,7 +89,7 @@ export function SourceSupplierConfirmCard({
           onClick={onCancel}
           disabled={confirming}
         >
-          取消
+          {t("supplierConfirm.cancel")}
         </Button>
         <Button
           type="button"
@@ -97,10 +101,10 @@ export function SourceSupplierConfirmCard({
           {confirming ? (
             <>
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              确认中…
+              {t("supplierConfirm.confirming")}
             </>
           ) : (
-            "确认货源并关联"
+            t("supplierConfirm.confirm")
           )}
         </Button>
       </div>

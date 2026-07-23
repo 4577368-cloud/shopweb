@@ -41,10 +41,15 @@ function interpolate(
   params?: Record<string, string | number>
 ): string {
   if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (match, name: string) => {
-    const val = params[name];
-    return val === undefined ? match : String(val);
-  });
+  return template
+    .replace(/\{\{(\w+)\}\}/g, (_match, name: string) => {
+      const val = params[name];
+      return val === undefined ? `{{${name}}}` : String(val);
+    })
+    .replace(/\{(\w+)\}/g, (match, name: string) => {
+      const val = params[name];
+      return val === undefined ? match : String(val);
+    });
 }
 
 export function LocaleProvider({
@@ -63,6 +68,9 @@ export function LocaleProvider({
       // Fallback to English source so the UI never shows raw keys.
       const fallback = resolve(en, key);
       if (fallback !== undefined) return interpolate(fallback, params);
+      if (process.env.NODE_ENV === "development") {
+        console.warn(`[i18n] Missing translation key: ${key}`);
+      }
       return key;
     };
     return { locale, t };

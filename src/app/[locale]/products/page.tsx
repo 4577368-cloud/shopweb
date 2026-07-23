@@ -3,7 +3,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Loader2, Search, X } from "lucide-react";
+import dynamic from "next/dynamic";
+import { ArrowRight, Loader2, Search, X } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -38,19 +39,17 @@ import { mergeProductBaseline } from "@/lib/shop-product-mirror-baseline";
 import { formatBatchLinkSummary } from "@/lib/batch-link/types";
 import type { BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
 import { buildNewArrivalResultFromBatch } from "@/lib/batch-link/build-new-arrival-result";
-import { SmartSourcingSummaryBar } from "@/components/select/smart-sourcing-summary-bar";
-import { PricingTemplateDrawer } from "@/components/select/pricing-template-drawer";
-import { ProductsAgentPanel } from "@/components/select/products-agent-panel";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { FadeSwap } from "@/components/ui/fade-swap";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import { mergeListingPriceRow, writeShopListingPrice } from "@/lib/shop-product-write";
 import {
   formatStatusTransition,
-  LISTING_STATUS_LABELS,
+  listingStatusLabel,
   normalizeShopStatus,
   writeShopProductStatus,
   type ShopifyListingStatusTarget,
@@ -60,7 +59,6 @@ import {
   type ShopFilter,
   type AgentIntentRequest,
 } from "@/components/select/shop-products-panel";
-import { CatalogPublishPanel } from "@/components/select/catalog-publish-panel";
 import { buildProductsPageContext } from "@/lib/agents/products/page-context";
 import {
   buildProductFocusSnapshot,
@@ -79,6 +77,11 @@ import type { ScanHandoffPayload } from "@/lib/scan/handoff";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 
+const SmartSourcingSummaryBar = dynamic(() => import("@/components/select/smart-sourcing-summary-bar").then((m) => ({ default: m.SmartSourcingSummaryBar })), { ssr: false });
+const PricingTemplateDrawer = dynamic(() => import("@/components/select/pricing-template-drawer").then((m) => ({ default: m.PricingTemplateDrawer })), { ssr: false });
+const ProductsAgentPanel = dynamic(() => import("@/components/select/products-agent-panel").then((m) => ({ default: m.ProductsAgentPanel })), { ssr: false });
+const CatalogPublishPanel = dynamic(() => import("@/components/select/catalog-publish-panel").then((m) => ({ default: m.CatalogPublishPanel })), { ssr: false });
+
 type Tab = "shop" | "catalog";
 
 function resolveTitleCopyStyle(
@@ -88,8 +91,6 @@ function resolveTitleCopyStyle(
   if (copyStyle === "amazon" || copyStyle === "literal") return copyStyle;
   return copyAction === "translate" ? "amazon" : "literal";
 }
-
-const BREADCRUMBS = [{ label: "工作台", href: "/" }, { label: "智能选品" }];
 
 interface ProductsSummary {
   shopProducts: number;
@@ -110,6 +111,48 @@ function SelectContent() {
     { label: t("nav.workbench"), href: localePath(locale, "/") },
     { label: t("products.title") },
   ];
+
+  const copyActionLabel = useCallback(
+    (action: "translate" | "rewrite" | "optimize", targetLang?: string) => {
+      if (action === "translate") {
+        return t("productsPage.copyTranslate", {
+          lang: targetLang?.toUpperCase() ?? "EN",
+        });
+      }
+      if (action === "rewrite") return t("productsPage.copyRewrite");
+      return t("productsPage.copyOptimize");
+    },
+    [t]
+  );
+
+  const previewFieldLabel = useCallback(
+    (copyField: "title" | "description" | "all") => {
+      if (copyField === "title") return t("productsPreview.fieldTitle");
+      if (copyField === "description") return t("productsPreview.fieldDescription");
+      return t("productsPreview.fieldAll");
+    },
+    [t]
+  );
+
+  const previewModeNote = useCallback(
+    (style: "literal" | "amazon", short = false) =>
+      style === "literal"
+        ? short
+          ? t("productsPreview.modeLiteralShort")
+          : t("productsPreview.modeLiteral")
+        : t("productsPreview.modeAmazon"),
+    [t]
+  );
+
+  const previewDurationHint = useCallback(
+    (estimatedSeconds: number) =>
+      estimatedSeconds < 60
+        ? t("productsPreview.durationSeconds", { seconds: estimatedSeconds })
+        : t("productsPreview.durationMinutes", {
+            minutes: Math.ceil(estimatedSeconds / 60),
+          }),
+    [t]
+  );
 
   const urlTab: Tab = searchParams.get("tab") === "catalog" ? "catalog" : "shop";
   const [tab, setTabLocal] = useState<Tab>(urlTab);
@@ -342,7 +385,7 @@ function SelectContent() {
     (source: BatchLinkRequest["source"]) => {
       if (batchLinkActive) return;
       if (pageLinkableScope.ids.length === 0) {
-        showToast("当前页暂无可关联商品（需有主图）");
+        showToast(t("productsPage.toastNoLinkable"));
         return;
       }
       setTab("shop");
@@ -355,6 +398,7 @@ function SelectContent() {
       pageLinkableScope.ids,
       setTab,
       showToast,
+      t,
     ]
   );
 
@@ -420,12 +464,12 @@ function SelectContent() {
 
   const openPricingDrawer = useCallback(() => {
     if (!isAuthorized) {
-      showToast("请先授权店铺，授权后即可配置并保存定价策略");
+      showToast(t("productsPage.toastPricingAuth"));
       return;
     }
     setTemplateError(null);
     setPricingOpen(true);
-  }, [isAuthorized, showToast]);
+  }, [isAuthorized, showToast, t]);
 
   const productCatalog = useMemo(
     () =>
@@ -468,6 +512,7 @@ function SelectContent() {
         productCatalog,
         scanHandoff,
         shopCurrencyHint,
+        t,
       }),
     [
       phase,
@@ -490,6 +535,7 @@ function SelectContent() {
       productCatalog,
       scanHandoff,
       shopCurrencyHint,
+      t,
     ]
   );
 
@@ -720,10 +766,14 @@ function SelectContent() {
       );
       bumpMirrorRefresh();
       showToast(
-        `已将「${detail.title ?? "商品"}」售价更新为 ${currency} ${req.price.toFixed(2)}`
+        t("productsPage.toastTitleUpdated", {
+          title: detail.title ?? t("productsPage.productFallback"),
+          currency,
+          price: req.price.toFixed(2),
+        })
       );
     },
-    [bumpMirrorRefresh, loadSummary, shopName, showToast]
+    [bumpMirrorRefresh, loadSummary, shopName, showToast, t]
   );
 
   const executeProductCopyUpdate = useCallback(
@@ -753,7 +803,7 @@ function SelectContent() {
             ).translatedText ||
             "";
           if (!translated) {
-            throw new Error("标题生成失败");
+            throw new Error(t("productsPreview.errTitleGenFailed"));
           }
           const result = await api.updateShopProduct(shopName, {
             itemId: req.productId,
@@ -782,20 +832,17 @@ function SelectContent() {
           );
           bumpMirrorRefresh();
           await loadSummary();
-          const actionLabel =
-            req.copyAction === "translate"
-              ? `翻译为 ${req.targetLang?.toUpperCase() ?? "EN"}`
-              : req.copyAction === "rewrite"
-                ? "改写"
-                : "优化";
-          showToast(`已将商品标题${actionLabel}并更新到 Shopify`);
+          const actionLabel = copyActionLabel(req.copyAction, req.targetLang);
+          showToast(
+            t("productsPage.toastTitleCopyUpdated", { action: actionLabel })
+          );
         } catch (err) {
-          showToast(readableError(err) || "更新商品标题失败");
+          showToast(readableError(err) || t("productsPage.toastTitleCopyFailed"));
           throw err;
         }
       }
     },
-    [bumpMirrorRefresh, loadSummary, shopName, showToast]
+    [bumpMirrorRefresh, loadSummary, shopName, showToast, t, copyActionLabel]
   );
 
   const executeBatchProductCopyUpdate = useCallback(
@@ -831,10 +878,10 @@ function SelectContent() {
             if (result.success && result.translatedText) {
               newText = result.translatedText;
             } else {
-              throw new Error(result.error ?? "标题本土化失败");
+              throw new Error(result.error ?? t("productsPreview.errTitleLocalizeFailed"));
             }
           } else {
-            throw new Error("该文案操作暂未实现");
+            throw new Error(t("productsPreview.errCopyNotImplemented"));
           }
 
           if (copyField === "title" || copyField === "all") {
@@ -876,15 +923,16 @@ function SelectContent() {
       bumpMirrorRefresh();
       await loadSummary();
 
-      const actionLabel =
-        copyAction === "translate"
-          ? `翻译为 ${targetLang?.toUpperCase() ?? "EN"}`
-          : copyAction === "rewrite"
-            ? "改写"
-            : "优化";
-      showToast(`批量${actionLabel}完成：成功 ${success} 个，失败 ${failed} 个`);
+      const actionLabel = copyActionLabel(copyAction, targetLang);
+      showToast(
+        t("productsPage.toastBatchCopyDone", {
+          action: actionLabel,
+          success,
+          failed,
+        })
+      );
     },
-    [bumpMirrorRefresh, loadSummary, shopName, showToast]
+    [bumpMirrorRefresh, loadSummary, shopName, showToast, t, copyActionLabel]
   );
 
   const executeBatchListingPriceUpdate = useCallback(
@@ -910,7 +958,7 @@ function SelectContent() {
           } else if (batchPriceMultiplier && detail.minPrice != null) {
             targetPrice = detail.minPrice * batchPriceMultiplier;
           } else {
-            throw new Error("无法计算目标价格");
+            throw new Error(t("productsPreview.errCannotCalcPrice"));
           }
 
           const target = { scope: "all" } as const;
@@ -926,10 +974,20 @@ function SelectContent() {
       bumpMirrorRefresh();
       await loadSummary();
 
-      const modeLabel = batchPriceFixed ? `固定价格 ${batchPriceFixed}` : `当前价格 × ${batchPriceMultiplier}`;
-      showToast(`批量改价完成（${modeLabel}）：成功 ${success} 个，失败 ${failed} 个`);
+      const modeLabel = batchPriceFixed
+        ? t("productsPage.priceModeFixed", { price: batchPriceFixed })
+        : t("productsPage.priceModeMultiplier", {
+            multiplier: batchPriceMultiplier ?? 1,
+          });
+      showToast(
+        t("productsPage.toastBatchPriceDone", {
+          mode: modeLabel,
+          success,
+          failed,
+        })
+      );
     },
-    [bumpMirrorRefresh, loadSummary, shopName, showToast]
+    [bumpMirrorRefresh, loadSummary, shopName, showToast, t]
   );
 
   const applyLocalProductStatus = useCallback(
@@ -958,10 +1016,13 @@ function SelectContent() {
       bumpMirrorRefresh();
       await loadSummary();
       showToast(
-        `已将「${detail.title ?? req.productTitle}」设为 ${LISTING_STATUS_LABELS[req.targetStatus]}`
+        t("productsPage.toastListingUpdated", {
+          title: detail.title ?? req.productTitle,
+          status: listingStatusLabel(t, req.targetStatus),
+        })
       );
     },
-    [applyLocalProductStatus, bumpMirrorRefresh, loadSummary, shopName, showToast]
+    [applyLocalProductStatus, bumpMirrorRefresh, loadSummary, shopName, showToast, t]
   );
 
   const executeBatchProductStatusUpdate = useCallback(
@@ -996,10 +1057,14 @@ function SelectContent() {
       bumpMirrorRefresh();
       await loadSummary();
       showToast(
-        `批量${LISTING_STATUS_LABELS[targetStatus]}完成：成功 ${success} 个，失败 ${failed} 个`
+        t("productsPage.toastBatchListingDone", {
+          status: listingStatusLabel(t, targetStatus),
+          success,
+          failed,
+        })
       );
     },
-    [applyLocalProductStatus, bumpMirrorRefresh, loadSummary, shopName, showToast]
+    [applyLocalProductStatus, bumpMirrorRefresh, loadSummary, shopName, showToast, t]
   );
 
   const previewGenerators = useMemo(
@@ -1024,19 +1089,15 @@ function SelectContent() {
             style
           );
           if (!result.success || !result.translatedText) {
-            throw new Error(result.error ?? "标题生成失败");
+            throw new Error(result.error ?? t("productsPreview.errTitleGenFailed"));
           }
           translatedText = result.translatedText;
         } else {
-          throw new Error("该文案操作暂未实现");
+          throw new Error(t("productsPreview.errCopyNotImplemented"));
         }
 
-        const fieldLabel =
-          copyField === "title" ? "标题" : copyField === "description" ? "描述" : "全部文案";
-        const modeNote =
-          style === "literal"
-            ? "直译模式"
-            : "去噪 + Amazon 结构重组";
+        const fieldLabel = previewFieldLabel(copyField);
+        const modeNote = previewModeNote(style);
 
         return {
           sections: [
@@ -1050,10 +1111,10 @@ function SelectContent() {
               ],
             },
           ],
-          extraNote: `${modeNote} · ${copyField === "all" ? "将更新标题与描述" : ""}`.trim(),
+          extraNote: `${modeNote}${copyField === "all" ? ` · ${t("productsPreview.updateTitleAndDesc")}` : ""}`.trim(),
           impact: {
-            scope: `修改 1 个商品（${fieldLabel}）`,
-            durationHint: "约 2 秒",
+            scope: t("productsPreview.scopeOneProduct", { field: fieldLabel }),
+            durationHint: t("productsPreview.durationTwoSec"),
             reversible: true,
             riskNote: undefined,
           },
@@ -1077,7 +1138,7 @@ function SelectContent() {
         const totalCount = productIds.length;
 
         if (totalCount === 0) {
-          throw new Error("没有可处理的商品");
+          throw new Error(t("productsPreview.errNoProducts"));
         }
 
         const sampleCount = Math.min(3, totalCount);
@@ -1100,61 +1161,65 @@ function SelectContent() {
               if (result.success && result.translatedText) {
                 translatedText = result.translatedText;
               } else {
-                translatedText = result.error ?? "（生成失败）";
+                translatedText = result.error ?? t("productsPreview.genFailed");
               }
             } else {
-              translatedText = "（该操作暂未实现）";
+              translatedText = t("productsPreview.opNotImplemented");
             }
 
             sampleRows.push({
-              label: `商品 ${i + 1}`,
+              label: t("productsPreview.productN", { n: i + 1 }),
               before: originalTitle,
               after: translatedText,
             });
           } catch {
             sampleRows.push({
-              label: `商品 ${i + 1}`,
-              before: "（读取失败）",
-              after: "（读取失败）",
+              label: t("productsPreview.productN", { n: i + 1 }),
+              before: t("productsPreview.readFailed"),
+              after: t("productsPreview.readFailed"),
             });
           }
         }
 
-        const fieldLabel =
-          copyField === "title" ? "标题" : copyField === "description" ? "描述" : "全部文案";
+        const fieldLabel = previewFieldLabel(copyField);
         const actionLabel =
           copyAction === "translate"
-            ? `本土化为 ${targetLang.toUpperCase()}`
-            : copyAction === "rewrite"
-              ? "改写"
-              : "优化";
-        const modeNote =
-          style === "literal" ? "直译" : "去噪 + Amazon 结构重组";
+            ? t("productsPreview.localizeTo", { lang: targetLang.toUpperCase() })
+            : copyActionLabel(copyAction, targetLang);
+        const modeNote = previewModeNote(style, true);
 
         const extraNote =
           (sampleCount < totalCount
-            ? `以上为前 ${sampleCount} 个商品预览，剩余 ${totalCount - sampleCount} 个将按相同规则处理`
-            : `以上为全部 ${totalCount} 个商品`) + ` · ${modeNote}`;
+            ? t("productsPreview.previewPartial", {
+                sample: sampleCount,
+                rest: totalCount - sampleCount,
+              })
+            : t("productsPreview.previewAll", { count: totalCount })) +
+          ` · ${modeNote}`;
 
         const estimatedSeconds = Math.max(3, totalCount * 2);
-        const durationHint =
-          estimatedSeconds < 60
-            ? `约 ${estimatedSeconds} 秒`
-            : `约 ${Math.ceil(estimatedSeconds / 60)} 分钟`;
+        const durationHint = previewDurationHint(estimatedSeconds);
 
         return {
           sections: [
             {
-              title: `批量${actionLabel} · 共 ${totalCount} 个商品`,
+              title: t("productsPreview.batchCopyTitle", {
+                action: actionLabel,
+                count: totalCount,
+              }),
               rows: sampleRows,
             },
           ],
           extraNote,
           impact: {
-            scope: `修改 ${totalCount} 个商品（${fieldLabel}）`,
+            scope: t("productsPreview.scopeBatchCopy", {
+              count: totalCount,
+              field: fieldLabel,
+            }),
             durationHint,
             reversible: true,
-            riskNote: totalCount > 10 ? "批量修改较多，建议先确认翻译质量" : undefined,
+            riskNote:
+              totalCount > 10 ? t("productsPreview.riskBatchCopy") : undefined,
           },
           payload: {
             productIds,
@@ -1173,7 +1238,7 @@ function SelectContent() {
         const totalCount = productIds.length;
 
         if (totalCount === 0) {
-          throw new Error("没有可处理的商品");
+          throw new Error(t("productsPreview.errNoProducts"));
         }
 
         const sampleCount = Math.min(3, totalCount);
@@ -1183,7 +1248,7 @@ function SelectContent() {
           const productId = productIds[i];
           try {
             const detail = await api.getShopProductDetail(shopName, productId);
-            const title = detail.title ?? "未知商品";
+            const title = detail.title ?? t("productsPreview.unknownProduct");
             const currentPrice = detail.minPrice ?? 0;
             let newPrice = 0;
 
@@ -1197,44 +1262,56 @@ function SelectContent() {
 
             sampleRows.push({
               label: title,
-              before: currentPrice > 0 ? `${currentPrice.toFixed(2)}` : "（暂无售价）",
-              after: newPrice > 0 ? `${newPrice.toFixed(2)}` : "（无法计算）",
+              before:
+                currentPrice > 0
+                  ? `${currentPrice.toFixed(2)}`
+                  : t("productsPreview.noPrice"),
+              after:
+                newPrice > 0
+                  ? `${newPrice.toFixed(2)}`
+                  : t("productsPreview.cannotCalc"),
             });
           } catch {
             sampleRows.push({
-              label: `商品 ${i + 1}`,
-              before: "（读取失败）",
-              after: "（读取失败）",
+              label: t("productsPreview.productN", { n: i + 1 }),
+              before: t("productsPreview.readFailed"),
+              after: t("productsPreview.readFailed"),
             });
           }
         }
 
-        const modeLabel = fixedPrice ? `固定价格 ${fixedPrice}` : `采购价 × ${multiplier}`;
+        const modeLabel = fixedPrice
+          ? t("productsPreview.priceModeFixed", { price: fixedPrice })
+          : t("productsPreview.priceModeMultiplier", { multiplier });
 
         const extraNote =
           sampleCount < totalCount
-            ? `以上为前 ${sampleCount} 个商品预览，剩余 ${totalCount - sampleCount} 个商品将按相同规则处理`
-            : `以上为全部 ${totalCount} 个商品`;
+            ? t("productsPreview.previewPartial", {
+                sample: sampleCount,
+                rest: totalCount - sampleCount,
+              })
+            : t("productsPreview.previewAll", { count: totalCount });
 
         const estimatedSeconds = Math.max(3, totalCount * 2);
-        const durationHint =
-          estimatedSeconds < 60
-            ? `约 ${estimatedSeconds} 秒`
-            : `约 ${Math.ceil(estimatedSeconds / 60)} 分钟`;
+        const durationHint = previewDurationHint(estimatedSeconds);
 
         return {
           sections: [
             {
-              title: `批量改价 · ${modeLabel} · 共 ${totalCount} 个商品`,
+              title: t("productsPreview.batchPriceTitle", {
+                mode: modeLabel,
+                count: totalCount,
+              }),
               rows: sampleRows,
             },
           ],
           extraNote,
           impact: {
-            scope: `修改 ${totalCount} 个商品售价`,
+            scope: t("productsPreview.scopeBatchPrice", { count: totalCount }),
             durationHint,
             reversible: true,
-            riskNote: totalCount > 10 ? "批量修改较多，建议先确认预览价格" : undefined,
+            riskNote:
+              totalCount > 10 ? t("productsPreview.riskBatchPrice") : undefined,
           },
           payload: {
             productIds,
@@ -1247,7 +1324,8 @@ function SelectContent() {
       draft_product: async (plan: any, shopName: string) => {
         const productId = plan.draft.productId ?? plan.draft.params.productId;
         const detail = await api.getShopProductDetail(shopName, productId);
-        const title = detail.title ?? plan.targetLabel ?? "商品";
+        const title =
+          detail.title ?? plan.targetLabel ?? t("productsPreview.productFallback");
         const targetStatus: ShopifyListingStatusTarget = "DRAFT";
         return {
           sections: [
@@ -1261,12 +1339,12 @@ function SelectContent() {
               ],
             },
           ],
-          extraNote: formatStatusTransition(detail.status, targetStatus),
+          extraNote: formatStatusTransition(detail.status, targetStatus, t),
           impact: {
-            scope: `修改 1 个商品状态`,
-            durationHint: "约 2 秒",
+            scope: t("productsPreview.scopeOneStatus"),
+            durationHint: t("productsPreview.durationTwoSec"),
             reversible: true,
-            riskNote: "草稿商品前台不可见，可在 Shopify 后台或本系统改回 ACTIVE",
+            riskNote: t("productsPreview.riskDraft"),
           },
           payload: {
             productId,
@@ -1278,7 +1356,8 @@ function SelectContent() {
       archive_product: async (plan: any, shopName: string) => {
         const productId = plan.draft.productId ?? plan.draft.params.productId;
         const detail = await api.getShopProductDetail(shopName, productId);
-        const title = detail.title ?? plan.targetLabel ?? "商品";
+        const title =
+          detail.title ?? plan.targetLabel ?? t("productsPreview.productFallback");
         const targetStatus: ShopifyListingStatusTarget = "ARCHIVED";
         return {
           sections: [
@@ -1292,12 +1371,12 @@ function SelectContent() {
               ],
             },
           ],
-          extraNote: formatStatusTransition(detail.status, targetStatus),
+          extraNote: formatStatusTransition(detail.status, targetStatus, t),
           impact: {
-            scope: `修改 1 个商品状态`,
-            durationHint: "约 2 秒",
+            scope: t("productsPreview.scopeOneStatus"),
+            durationHint: t("productsPreview.durationTwoSec"),
             reversible: true,
-            riskNote: "归档后商品将从在售列表移除，需到 Shopify 后台恢复",
+            riskNote: t("productsPreview.riskArchive"),
           },
           payload: {
             productId,
@@ -1310,7 +1389,7 @@ function SelectContent() {
         const productIds = plan.draft.params.batchProductIds ?? [];
         const targetStatus: ShopifyListingStatusTarget = "DRAFT";
         const totalCount = productIds.length;
-        if (totalCount === 0) throw new Error("没有可处理的商品");
+        if (totalCount === 0) throw new Error(t("productsPreview.errNoProducts"));
 
         const sampleCount = Math.min(3, totalCount);
         const sampleRows: Array<{ label: string; before: string; after: string }> = [];
@@ -1319,14 +1398,15 @@ function SelectContent() {
           try {
             const detail = await api.getShopProductDetail(shopName, productId);
             sampleRows.push({
-              label: detail.title ?? `商品 ${i + 1}`,
+              label:
+                detail.title ?? t("productsPreview.productN", { n: i + 1 }),
               before: normalizeShopStatus(detail.status),
               after: targetStatus,
             });
           } catch {
             sampleRows.push({
-              label: `商品 ${i + 1}`,
-              before: "（读取失败）",
+              label: t("productsPreview.productN", { n: i + 1 }),
+              before: t("productsPreview.readFailed"),
               after: targetStatus,
             });
           }
@@ -1335,22 +1415,23 @@ function SelectContent() {
         return {
           sections: [
             {
-              title: `批量放到草稿 · 共 ${totalCount} 个商品`,
+              title: t("productsPreview.batchDraftTitle", { count: totalCount }),
               rows: sampleRows,
             },
           ],
           extraNote:
             sampleCount < totalCount
-              ? `以上为前 ${sampleCount} 个商品预览，剩余 ${totalCount - sampleCount} 个将改为 DRAFT`
-              : `将全部 ${totalCount} 个 ACTIVE 商品改为 DRAFT`,
+              ? t("productsPreview.previewPartialDraft", {
+                  sample: sampleCount,
+                  rest: totalCount - sampleCount,
+                })
+              : t("productsPreview.previewAllDraft", { count: totalCount }),
           impact: {
-            scope: `修改 ${totalCount} 个商品状态`,
-            durationHint:
-              totalCount < 60
-                ? `约 ${Math.max(3, totalCount * 2)} 秒`
-                : `约 ${Math.ceil((totalCount * 2) / 60)} 分钟`,
+            scope: t("productsPreview.scopeBatchStatus", { count: totalCount }),
+            durationHint: previewDurationHint(Math.max(3, totalCount * 2)),
             reversible: true,
-            riskNote: totalCount > 10 ? "批量下架较多，请确认范围无误" : undefined,
+            riskNote:
+              totalCount > 10 ? t("productsPreview.riskBatchArchive") : undefined,
           },
           payload: {
             productIds,
@@ -1363,7 +1444,7 @@ function SelectContent() {
         const productIds = plan.draft.params.batchProductIds ?? [];
         const targetStatus: ShopifyListingStatusTarget = "ARCHIVED";
         const totalCount = productIds.length;
-        if (totalCount === 0) throw new Error("没有可处理的商品");
+        if (totalCount === 0) throw new Error(t("productsPreview.errNoProducts"));
 
         const sampleCount = Math.min(3, totalCount);
         const sampleRows: Array<{ label: string; before: string; after: string }> = [];
@@ -1372,14 +1453,15 @@ function SelectContent() {
           try {
             const detail = await api.getShopProductDetail(shopName, productId);
             sampleRows.push({
-              label: detail.title ?? `商品 ${i + 1}`,
+              label:
+                detail.title ?? t("productsPreview.productN", { n: i + 1 }),
               before: normalizeShopStatus(detail.status),
               after: targetStatus,
             });
           } catch {
             sampleRows.push({
-              label: `商品 ${i + 1}`,
-              before: "（读取失败）",
+              label: t("productsPreview.productN", { n: i + 1 }),
+              before: t("productsPreview.readFailed"),
               after: targetStatus,
             });
           }
@@ -1388,22 +1470,23 @@ function SelectContent() {
         return {
           sections: [
             {
-              title: `批量下架归档 · 共 ${totalCount} 个商品`,
+              title: t("productsPreview.batchArchiveTitle", { count: totalCount }),
               rows: sampleRows,
             },
           ],
           extraNote:
             sampleCount < totalCount
-              ? `以上为前 ${sampleCount} 个商品预览，剩余 ${totalCount - sampleCount} 个将归档下架`
-              : `将全部 ${totalCount} 个 ACTIVE 商品归档下架`,
+              ? t("productsPreview.previewPartialArchive", {
+                  sample: sampleCount,
+                  rest: totalCount - sampleCount,
+                })
+              : t("productsPreview.previewAllArchive", { count: totalCount }),
           impact: {
-            scope: `修改 ${totalCount} 个商品状态`,
-            durationHint:
-              totalCount < 60
-                ? `约 ${Math.max(3, totalCount * 2)} 秒`
-                : `约 ${Math.ceil((totalCount * 2) / 60)} 分钟`,
+            scope: t("productsPreview.scopeBatchStatus", { count: totalCount }),
+            durationHint: previewDurationHint(Math.max(3, totalCount * 2)),
             reversible: true,
-            riskNote: totalCount > 10 ? "批量下架较多，请确认范围无误" : undefined,
+            riskNote:
+              totalCount > 10 ? t("productsPreview.riskBatchArchive") : undefined,
           },
           payload: {
             productIds,
@@ -1413,7 +1496,7 @@ function SelectContent() {
         };
       },
     }),
-    []
+    [t, copyActionLabel, previewFieldLabel, previewModeNote, previewDurationHint]
   );
 
   const commandExecutors = useMemo(
@@ -1553,7 +1636,7 @@ function SelectContent() {
       try {
         const tpl = await api.clearPricingTemplate(shopName);
         setTemplate(tpl);
-        showToast("已恢复未配置状态，可体验首次定价引导");
+        showToast(t("productsPage.toastPricingDemoReset"));
       } catch (err) {
         showToast(readableError(err));
       } finally {
@@ -1568,6 +1651,7 @@ function SelectContent() {
     shopName,
     showToast,
     router,
+    t,
   ]);
 
   const handleSaveTemplate = useCallback(
@@ -1586,7 +1670,7 @@ function SelectContent() {
         const saved = await api.upsertPricingTemplate({ shopName, ...payload });
         setTemplate(saved);
         setPricingOpen(false);
-        showToast("定价策略已保存");
+        showToast(t("productsPage.toastPricingSaved"));
         if (previewPricingGuide) {
           startTransition(() => {
             router.replace("/products", { scroll: false });
@@ -1594,17 +1678,17 @@ function SelectContent() {
         }
       } catch (err) {
         setTemplateError(readableError(err));
-        showToast("定价策略保存失败");
+        showToast(t("productsPage.toastPricingSaveFailed"));
       } finally {
         setSavingTemplate(false);
       }
     },
-    [shopName, showToast, previewPricingGuide, router]
+    [shopName, showToast, previewPricingGuide, router, t]
   );
 
   const handleClearTemplate = useCallback(async () => {
     if (clearingTemplate) return;
-    if (!window.confirm("恢复系统默认后，右侧将重新出现首次定价引导。确定？")) {
+    if (!window.confirm(t("productsPage.clearTemplateConfirm"))) {
       return;
     }
     setClearingTemplate(true);
@@ -1613,14 +1697,14 @@ function SelectContent() {
       const tpl = await api.clearPricingTemplate(shopName);
       setTemplate(tpl);
       setPricingOpen(false);
-      showToast("已恢复系统默认，可重新体验首次配置");
+      showToast(t("productsPage.toastPricingDefaultReset"));
     } catch (err) {
       setTemplateError(readableError(err));
       showToast(readableError(err));
     } finally {
       setClearingTemplate(false);
     }
-  }, [clearingTemplate, shopName, showToast]);
+  }, [clearingTemplate, shopName, showToast, t]);
 
   const pricingDrawer = (
     <PricingTemplateDrawer
@@ -1650,27 +1734,30 @@ function SelectContent() {
   } =
     batchLinkActive
       ? {
-          label: "一键关联中…",
+          label: t("productsPage.batchLinkRunning"),
           loading: true,
           disabled: true,
           queueAction: true,
         }
       : pageLinkableCount > 0
         ? {
-            label: "一键关联",
+            label: t("productsPage.batchLink"),
             onClick: () => void enqueueUnboundMatch(),
             queueAction: true,
           }
-        : { label: "SKU 绑定", href: "/sku-align" };
+        : {
+            label: t("productsPage.skuBindingCta"),
+            href: localePath(locale, "/sku-align"),
+          };
 
   const scanCopilot: AiPanelContent = {
-    title: scanDone ? "首轮分析已完成" : "AI 正在分析",
+    title: scanDone ? t("productsPage.scanDoneTitle") : t("productsPage.scanRunningTitle"),
     summary: scanDone
       ? scanBriefingLine(scanStats)
-      : "同步商品、匹配货源并读取订单",
+      : t("productsPage.scanRunningSummary"),
     bullets: [],
     nextAction: scanDone
-      ? { label: "查看 AI 推荐结果", action: "view" }
+      ? { label: t("productsPage.scanViewResults"), action: "view" }
       : undefined,
   };
 
@@ -1718,7 +1805,9 @@ function SelectContent() {
             <Loader2 className="h-4 w-4 animate-spin text-brand" />
             {t("products.restoringAuth")}
           </div>
-          <TableSkeleton rows={4} />
+          <FadeSwap loading minHeightClass="min-h-[320px]" skeleton={<TableSkeleton rows={4} />}>
+            <div />
+          </FadeSwap>
         </WorkbenchPanel>
         {pricingDrawer}
       </WorkbenchShell>
@@ -1804,7 +1893,7 @@ function SelectContent() {
       {...wb.shellProps}
     >
       <WorkbenchPanel
-        title="智能选品"
+        title={t("products.title")}
         breadcrumbs={breadcrumbs}
         {...wb.panelProps}
         actions={
@@ -1957,14 +2046,19 @@ function SelectContent() {
   );
 }
 
+function ProductsPageFallback() {
+  const t = useT();
+  return (
+    <WorkbenchShell sidebar={<StepSidebar />}>
+      <WorkbenchPanel title={t("products.title")}>{null}</WorkbenchPanel>
+    </WorkbenchShell>
+  );
+}
+
 export default function ProductsPage() {
   return (
     <Suspense
-      fallback={
-        <WorkbenchShell sidebar={<StepSidebar />}>
-          <WorkbenchPanel title="智能选品">{null}</WorkbenchPanel>
-        </WorkbenchShell>
-      }
+      fallback={<ProductsPageFallback />}
     >
       <SelectContent />
     </Suspense>

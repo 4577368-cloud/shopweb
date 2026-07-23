@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { notFound } from "next/navigation";
-import { Providers } from "@/components/providers";
+import { OnboardingProvider } from "@/context/onboarding-context";
+import { ToastHost } from "@/components/layout/toast-host";
 import { LocaleProvider } from "@/i18n/LocaleProvider";
 import { messages } from "@/i18n/messages";
 import { isLocale, localeHtmlLang, type Locale } from "@/i18n/config";
@@ -33,13 +34,18 @@ export default async function LocaleLayout({
   const typed = locale as Locale;
 
   return (
-    <html lang={localeHtmlLang[typed]} className={`${displayFont.variable} h-full antialiased`}>
-      <body className="min-h-full bg-slate-100 font-sans text-slate-900">
-        <Providers>
-          <LocaleProvider locale={typed} messages={messages[typed]}>
+    <html
+      lang={localeHtmlLang[typed]}
+      translate="no"
+      className={`${displayFont.variable} h-full antialiased`}
+    >
+      <body className="min-h-full bg-app-shell font-sans text-foreground" translate="no">
+        <LocaleProvider locale={typed} messages={messages[typed]}>
+          <OnboardingProvider>
             {children}
-          </LocaleProvider>
-        </Providers>
+            <ToastHost />
+          </OnboardingProvider>
+        </LocaleProvider>
       </body>
     </html>
   );

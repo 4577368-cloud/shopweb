@@ -2,7 +2,7 @@
 
 import { ThumbImage } from "@/components/ui/thumb-image";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ImageOff, Loader2, X } from "lucide-react";
+import { ImageOff, Loader2, X } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { api, readableError } from "@/lib/api";
@@ -16,6 +16,7 @@ import type { ImageBindingView } from "@/lib/types";
 import type { ItemGetProduct } from "@/lib/tangbuy-mall-gateway";
 import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 
 function formatCny(price?: number | null): string {
   if (price == null || !Number.isFinite(price)) return "—";
@@ -39,6 +40,7 @@ export function ManualMatchDrawer({
   onBound: (view: ImageBindingView) => void;
   showToast: (message: string) => void;
 }) {
+  const t = useT();
   const [linkInput, setLinkInput] = useState("");
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [detail, setDetail] = useState<ItemGetProduct | null>(null);
@@ -82,7 +84,7 @@ export function ManualMatchDrawer({
   const title =
     detail?.itemNameTrans?.trim() ||
     detail?.itemName?.trim() ||
-    "货源商品";
+    t("manualMatch.sourceProductFallback");
 
   const hero =
     selectedSku?.imageUrl?.trim() ||
@@ -151,7 +153,7 @@ export function ManualMatchDrawer({
       onBound(
         await finalizeManualMatchBinding(shopName, thirdPlatformItemId, view, req)
       );
-      showToast("已人工匹配货源");
+      showToast(t("manualMatch.toastSaved"));
       onClose();
     } catch (err) {
       setSaveError(mapImageMatchConfirmError(err));
@@ -168,7 +170,7 @@ export function ManualMatchDrawer({
     <div className="fixed inset-0 z-50 flex justify-end">
       <button
         type="button"
-        aria-label="关闭"
+        aria-label={t("manualMatch.close")}
         className="absolute inset-0 bg-ink/30"
         onClick={() => {
           if (!saving) onClose();
@@ -178,13 +180,13 @@ export function ManualMatchDrawer({
         <header className="flex items-start justify-between gap-3 border-b border-hairline px-4 py-3">
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-wide text-ink-subtle">
-              手动匹配货源
+              {t("manualMatch.title")}
             </p>
             <h2 className="mt-0.5 truncate text-base font-semibold text-ink">
-              {detail ? title : "粘贴发现新品链接"}
+              {detail ? title : t("manualMatch.pasteLink")}
             </h2>
             <p className="mt-1 text-[11px] text-ink-muted">
-              使用 Tangbuy 发现新品中的商品链接，确认后替换当前推荐货源
+              {t("manualMatch.subtitle")}
             </p>
           </div>
           <Button
@@ -193,7 +195,7 @@ export function ManualMatchDrawer({
             className="h-8 w-8 shrink-0 px-0"
             onClick={onClose}
             disabled={saving}
-            aria-label="关闭手动匹配"
+            aria-label={t("manualMatch.closeAria")}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -202,18 +204,18 @@ export function ManualMatchDrawer({
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {!gatewayReady ? (
             <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              商城货源暂不可用，无法手动匹配。请稍后重试或联系管理员。
+              {t("manualMatch.mallUnavailable")}
             </div>
           ) : (
             <div className="space-y-5">
               <section className="space-y-2">
-                <Field label="商品链接">
+                <Field label={t("manualMatch.fieldLink")}>
                   <div className="flex gap-2">
                     <Input
                       value={linkInput}
                       onChange={(e) => setLinkInput(e.target.value)}
                       disabled={loading || saving}
-                      placeholder="https://www.tangbuy.cc/product?dataSource=…&id=…"
+                      placeholder={t("manualMatch.urlPlaceholder")}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
@@ -231,13 +233,13 @@ export function ManualMatchDrawer({
                       {loading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        "解析"
+                        t("manualMatch.parse")
                       )}
                     </Button>
                   </div>
                 </Field>
                 <p className="text-[11px] text-ink-subtle">
-                  请粘贴「发现新品」中的 Tangbuy 商品详情链接
+                  {t("manualMatch.linkHint")}
                 </p>
                 {loadError ? (
                   <div className="rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -249,7 +251,7 @@ export function ManualMatchDrawer({
               {loading ? (
                 <div className="flex items-center gap-2 text-sm text-ink-muted">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  读取货源详情…
+                  {t("manualMatch.loadingDetail")}
                 </div>
               ) : detail ? (
                 <div className="space-y-5">
@@ -276,7 +278,7 @@ export function ManualMatchDrawer({
                         {title}
                       </p>
                       <p className="font-medium text-ink">
-                        采购价 {priceRange ?? "—"}
+                        {t("manualMatch.purchaseCost", { price: priceRange ?? "—" })}
                       </p>
                       {resolvedUrl ? (
                         <p className="break-all text-[11px] text-ink-subtle">
@@ -289,7 +291,7 @@ export function ManualMatchDrawer({
                   {gallery.length > 1 ? (
                     <section>
                       <h3 className="text-xs font-semibold text-ink">
-                        图片（{gallery.length}）
+                        {t("manualMatch.images", { count: gallery.length })}
                       </h3>
                       <div className="mt-1.5 grid grid-cols-4 gap-2">
                         {gallery.map((url) => (
@@ -314,19 +316,19 @@ export function ManualMatchDrawer({
 
                   <section>
                     <h3 className="text-xs font-semibold text-ink">
-                      SKU 规格（{skuRows.length}）
+                      {t("manualMatch.skuTitle", { count: skuRows.length })}
                     </h3>
                     <p className="mt-1 text-[11px] text-ink-subtle">
-                      选择默认关联规格；保存后将替换右侧推荐货源
+                      {t("manualMatch.skuHint")}
                     </p>
                     <div className="mt-1.5 overflow-x-auto rounded-[var(--radius-control)] border border-hairline">
                       <table className="w-full min-w-[20rem] text-left text-[11px]">
                         <thead className="bg-surface-muted text-ink-muted">
                           <tr>
-                            <th className="px-2.5 py-1.5 font-medium">选用</th>
-                            <th className="px-2.5 py-1.5 font-medium">规格</th>
-                            <th className="px-2.5 py-1.5 font-medium">SKU</th>
-                            <th className="px-2.5 py-1.5 font-medium">采购价</th>
+                            <th className="px-2.5 py-1.5 font-medium">{t("manualMatch.colSelect")}</th>
+                            <th className="px-2.5 py-1.5 font-medium">{t("manualMatch.colSpec")}</th>
+                            <th className="px-2.5 py-1.5 font-medium">{t("manualMatch.colSku")}</th>
+                            <th className="px-2.5 py-1.5 font-medium">{t("manualMatch.colCost")}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -404,7 +406,7 @@ export function ManualMatchDrawer({
             disabled={saving}
             onClick={onClose}
           >
-            取消
+            {t("manualMatch.cancel")}
           </Button>
           <Button
             size="sm"
@@ -412,7 +414,7 @@ export function ManualMatchDrawer({
             onClick={() => void handleSave()}
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {saving ? "保存中…" : "保存并关联"}
+            {saving ? t("manualMatch.saving") : t("manualMatch.saveLink")}
           </Button>
         </footer>
       </aside>

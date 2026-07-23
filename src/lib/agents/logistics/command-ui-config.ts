@@ -40,13 +40,6 @@ export const LOGISTICS_COMMAND_UI_CONFIG: Record<
     renderMode: "generic",
     direct: true,
   },
-  explain_quote: {
-    id: "explain_quote",
-    sensitivity: "low",
-    requiresPreview: false,
-    renderMode: "generic",
-    direct: true,
-  },
   apply_template: {
     id: "apply_template",
     sensitivity: "high",

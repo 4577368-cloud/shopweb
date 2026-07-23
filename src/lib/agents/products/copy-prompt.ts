@@ -2,26 +2,29 @@ import type { AgentId, AgentResponse } from "@/lib/agents/types";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
 import {
+  buildCopyEnrichConstraints,
   buildCopyEnrichUserPayload,
-  COPY_ENRICH_CONSTRAINTS,
   type AgentCopyFields,
 } from "@/lib/agents/runtime";
 
 export type { AgentCopyFields };
 
-export function buildProductsCopySystemPrompt(agentId: AgentId): string {
+export function buildProductsCopySystemPrompt(
+  agentId: AgentId,
+  opts?: { userText?: string; fallbackLocale?: string | null }
+): string {
   const role =
     agentId === "pricing_strategist"
-      ? "你是 Tangbuy 智能选品页的 Pricing Strategist，只解释定价模板状态并给出文案建议。"
-      : "你是 Tangbuy 智能选品页的 Sourcing Advisor，只基于页面状态解释选品进度并给出文案建议。";
+      ? "You are the Pricing Strategist on the product linking page. Explain pricing template status and suggest next steps — copy only, no calculations."
+      : "You are the Sourcing Advisor on the product linking page. Explain linking progress from page context — copy only.";
 
   return `${role}
 
-${COPY_ENRICH_CONSTRAINTS}
-另外：
-- 不得做定价计算（不要自行换算售价）；只解释上下文里已有的数字。
-- 严格区分两层：purchaseDisplay = 我的 Shopify 采购成本展示（无倍率加价；已配定价时与 pricing 共用汇率）；pricing = 发现新品上架建议售价（含倍率加价）。
-- 单商品 intent 必须围绕 focusProduct 字段，无 focus 时不要编造商品级解释。`;
+${buildCopyEnrichConstraints(opts)}
+Also:
+- Do not perform pricing math; only explain numbers already in context.
+- Distinguish purchaseDisplay (Shopify cost, no markup) from pricing (catalog suggested price with multiplier).
+- Product-specific intents must use focusProduct; do not invent product-level facts without focus.`;
 }
 
 export function buildProductsCopyUserPrompt(opts: {

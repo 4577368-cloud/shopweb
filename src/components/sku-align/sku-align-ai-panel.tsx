@@ -1,7 +1,8 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/LocaleProvider";
 
 export function SkuAlignAiPanel({
   needsReviewOnPage,
@@ -12,9 +13,10 @@ export function SkuAlignAiPanel({
   confirming: boolean;
   onConfirmPage: () => void;
 }) {
+  const t = useT();
   return (
     <section className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-sm">
-      <h3 className="text-xs font-semibold text-ink">批量确认</h3>
+      <h3 className="text-xs font-semibold text-ink">{t("skuAlignAi.batchConfirmTitle")}</h3>
       <Button
         size="sm"
         variant="secondary"
@@ -25,7 +27,7 @@ export function SkuAlignAiPanel({
         {confirming ? (
           <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
         ) : null}
-        接受本页全部待确认 ({needsReviewOnPage})
+        {t("skuAlignAi.acceptPagePending", { count: needsReviewOnPage })}
       </Button>
     </section>
   );

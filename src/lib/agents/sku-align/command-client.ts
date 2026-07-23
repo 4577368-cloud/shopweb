@@ -7,11 +7,13 @@ import type { SkuCommandClassifyResult } from "@/lib/agents/sku-align/command-sc
 
 export async function classifySkuCommandInput(
   text: string,
-  ctx?: SkuCommandClassifyContext | null
+  ctx?: SkuCommandClassifyContext | null,
+  locale?: string | null
 ): Promise<SkuCommandClassifyResult> {
   return classifyCommandInput(text, {
     rulesClassify: classifySkuCommandByRules,
     apiPath: "/api/agents/sku-align/command",
     context: ctx ?? null,
+    locale,
   });
 }

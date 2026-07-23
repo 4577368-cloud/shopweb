@@ -11,6 +11,7 @@ import {
   type SourceSkuRowRanked,
 } from "@/lib/source-sku-matrix";
 import { applyLlmToRanked } from "@/lib/sku-align/spec-match-llm";
+import type { TranslateFn } from "@/i18n/server";
 import type { ImageSearchProduct, SkuVariant } from "@/lib/types";
 
 export const AUTO_SUGGEST_THRESHOLD = 0.8;
@@ -279,12 +280,15 @@ export function rankCandidatesByCoverage(
 }
 
 export function buildGapSummaryText(
+  t: TranslateFn,
   unmapped: number,
   supplementGaps: number
 ): string | null {
   if (unmapped <= 0 && supplementGaps <= 0) return null;
   const parts: string[] = [];
-  if (unmapped > 0) parts.push(`${unmapped} 个变体未映射`);
-  if (supplementGaps > 0) parts.push(`${supplementGaps} 个可能需补充货源`);
+  if (unmapped > 0) parts.push(t("skuBinding.gapUnmapped", { count: unmapped }));
+  if (supplementGaps > 0) {
+    parts.push(t("skuBinding.gapSupplementNeeded", { count: supplementGaps }));
+  }
   return parts.join(" · ");
 }

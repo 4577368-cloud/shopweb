@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   AlertTriangle,
   ArrowRight,
@@ -13,7 +14,7 @@ import {
   RefreshCw,
   Search,
   X,
-} from "lucide-react";
+} from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -23,7 +24,7 @@ import {
   CopilotCard,
 } from "@/components/workbench/assistant-rail";
 import { InfoCard } from "@/components/workbench/info-card";
-import { ScanStage, type ScanTaskStatus } from "@/components/workbench/scan-stage";
+import { ScanStage, SCAN_STAGE_PROGRESS_ANIMATION_MS, type ScanTaskStatus } from "@/components/workbench/scan-stage";
 import { useSkuAlignScan } from "@/hooks/use-sku-align-scan";
 import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
 import {
@@ -34,16 +35,14 @@ import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { FadeSwap } from "@/components/ui/fade-swap";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import {
-  SkuProductCard,
   filterProducts,
   matchesSkuProductSearch,
   sortProductsForWorkbench,
   type SkuFilterMode,
 } from "@/components/sku-align/sku-binding-panel";
-import { SkuLogisticsEntryGate } from "@/components/sku-align/sku-logistics-entry-gate";
-import { SkuAgentPanel } from "@/components/sku-align/sku-agent-panel";
 import {
   computeSkuAlignMetrics,
   countNeedsReviewInProducts,
@@ -71,22 +70,16 @@ import {
 } from "@/lib/sku-align/deep-link";
 import { stashSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
 import type { AiPanelContent, PricingTemplate, SkuProductOverview } from "@/lib/types";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 
-const BREADCRUMBS = [
-  { label: "工作台", href: "/" },
-  { label: "智能选品", href: "/products" },
-  { label: "SKU 绑定" },
-];
+const SkuProductCard = dynamic(() => import("@/components/sku-align/sku-binding-panel").then((m) => ({ default: m.SkuProductCard })), { ssr: false });
+const SkuLogisticsEntryGate = dynamic(() => import("@/components/sku-align/sku-logistics-entry-gate").then((m) => ({ default: m.SkuLogisticsEntryGate })), { ssr: false });
+const SkuAgentPanel = dynamic(() => import("@/components/sku-align/sku-agent-panel").then((m) => ({ default: m.SkuAgentPanel })), { ssr: false });
 
-// Hold the completed progress bar briefly so users can see the finished state before the result view.
-const SCAN_DWELL_MS = 400;
-
-const matchRules = [
-  "商品标题与关键词",
-  "规格（颜色 / 尺寸 / 材质等）",
-  "图片相似度",
-  "类目与属性",
-];
+// After scan completes, wait for the progress bar to reach 100% visually before switching views.
+const SCAN_COMPLETION_DWELL_MS = 450;
+const SCAN_FINISH_DELAY_MS = SCAN_STAGE_PROGRESS_ANIMATION_MS + SCAN_COMPLETION_DWELL_MS;
 
 type FilterId = SkuFilterMode;
 
@@ -97,6 +90,18 @@ function SkuAlignContent() {
     useOnboarding();
   const shopName = shop.name;
   const wb = useWorkbenchPage("sku-align");
+  const t = useT();
+  const locale = useLocale();
+
+  const breadcrumbs = [
+    { label: t("nav.workbench"), href: localePath(locale, "/") },
+    { label: t("products.title"), href: localePath(locale, "/products") },
+    { label: t("sku.breadcrumb") },
+  ];
+  const notAuthBreadcrumbs = [
+    { label: t("nav.authorize"), href: localePath(locale, "/authorize") },
+    { label: t("sku.breadcrumb") },
+  ];
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -111,6 +116,8 @@ function SkuAlignContent() {
   const autoAlignStartedRef = useRef<string | null>(null);
   /** Scan already ran V1 align — skip duplicate PAGE_ENTER align on first result load. */
   const skipNextAutoAlignRef = useRef(false);
+  const scanFinishScheduledRef = useRef(false);
+  const scanFinishedRef = useRef(false);
 
   useEffect(() => {
     autoAlignStartedRef.current = null;
@@ -156,6 +163,8 @@ function SkuAlignContent() {
   // Move to the result view once (guarded), pulling the freshly-aligned overview. Non-blocking:
   // callable while the scan is still running ("直接查看当前结果") — cancels remaining work first.
   const finishToResult = useCallback(() => {
+    if (scanFinishedRef.current) return;
+    scanFinishedRef.current = true;
     cancelScan();
     markScanned("sku-align", shopName);
     skipNextAutoAlignRef.current = true;
@@ -198,12 +207,21 @@ function SkuAlignContent() {
       setPhase("result");
       void load();
     } else {
+      scanFinishScheduledRef.current = false;
+      scanFinishedRef.current = false;
       setPhase("scan");
-      void startScan().then(() => {
-        window.setTimeout(() => void finishToResult(), SCAN_DWELL_MS);
-      });
+      void startScan();
     }
-  }, [isAuthorized, shopName, load, startScan, finishToResult, searchParams, router]);
+  }, [isAuthorized, shopName, load, startScan, searchParams, router]);
+
+  useEffect(() => {
+    if (phase !== "scan" || !scanDone || scanFinishScheduledRef.current) return;
+    scanFinishScheduledRef.current = true;
+    const timer = window.setTimeout(() => {
+      void finishToResult();
+    }, SCAN_FINISH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [phase, scanDone, finishToResult]);
 
   useEffect(() => {
     const deepFilter = parseSkuAlignFilterParam(
@@ -262,11 +280,11 @@ function SkuAlignContent() {
   const restartScan = useCallback(() => {
     autoAlignStartedRef.current = null;
     clearScanned("sku-align", shopName);
+    scanFinishScheduledRef.current = false;
+    scanFinishedRef.current = false;
     setPhase("scan");
-    void startScan().then(() => {
-      window.setTimeout(() => void finishToResult(), SCAN_DWELL_MS);
-    });
-  }, [shopName, startScan, finishToResult]);
+    void startScan();
+  }, [shopName, startScan]);
 
   const metricsSnapshot = useMemo(
     () => computeSkuAlignMetrics(products),
@@ -305,10 +323,10 @@ function SkuAlignContent() {
       const result = await confirmPageNeedsReview(shopName, filtered);
       const confirmed = result.confirmedCount ?? 0;
       if (confirmed <= 0) {
-        showToast("本页没有可确认的待确认建议");
+        showToast(t("sku.toastNoConfirmable"));
         return;
       }
-      showToast(`已接受本页 ${confirmed} 个 AI 建议`);
+      showToast(t("sku.toastAccepted", { count: confirmed }));
       await load();
     } catch (err) {
       showToast(readableError(err));
@@ -340,58 +358,68 @@ function SkuAlignContent() {
 
   const metrics: MetricSummaryItem[] = [
     {
-      label: "全部关联",
+      label: t("sku.metricFullyLinked"),
       value: stats.fullyLinkedProducts,
-      hint: "全部 SKU 已映射匹配",
+      hint: t("sku.metricFullyLinkedHint"),
       icon: <CheckCircle2 className="h-4 w-4" />,
       tone: "brand",
     },
     {
-      label: "部分关联",
+      label: t("sku.metricPartiallyLinked"),
       value: stats.partiallyLinkedProducts,
-      hint: `${stats.needsReviewVariants} 待确认 · ${stats.unboundVariants} 未匹配`,
+      hint: t("sku.metricPartiallyLinkedHint", {
+        review: stats.needsReviewVariants,
+        unbound: stats.unboundVariants,
+      }),
       icon: <AlertTriangle className="h-4 w-4" />,
       tone: stats.partiallyLinkedProducts > 0 ? "warning" : "neutral",
     },
     {
-      label: "待确认变体",
+      label: t("sku.metricNeedsReview"),
       value: stats.needsReviewVariants,
-      hint: stats.needsReviewVariants > 0 ? "中等置信度，需人工确认" : "暂无待确认",
+      hint: stats.needsReviewVariants > 0 ? t("sku.metricNeedsReviewHintYes") : t("sku.metricNeedsReviewHintNo"),
       icon: <CircleDashed className="h-4 w-4" />,
       tone: stats.needsReviewVariants > 0 ? "warning" : "neutral",
     },
     {
-      label: "变体总数",
+      label: t("sku.metricTotalVariants"),
       value: stats.totalVariants,
-      hint: `已处理 ${stats.resolvedVariants}/${stats.totalVariants}`,
+      hint: t("sku.metricTotalVariantsHint", {
+        resolved: stats.resolvedVariants,
+        total: stats.totalVariants,
+      }),
       icon: <Layers className="h-4 w-4" />,
       tone: "default",
     },
   ];
 
   const filterTabs = [
-    { id: "all", label: "全部", count: products.length },
-    { id: "fully_linked", label: "全部关联", count: stats.fullyLinkedProducts },
+    { id: "all", label: t("sku.filterAll"), count: products.length },
+    { id: "fully_linked", label: t("sku.filterFullyLinked"), count: stats.fullyLinkedProducts },
     {
       id: "partially_linked",
-      label: "部分关联",
+      label: t("sku.filterPartiallyLinked"),
       count: stats.partiallyLinkedProducts,
     },
   ];
 
   const copilot: AiPanelContent = {
-    title: "SKU 绑定助手",
+    title: t("sku.assistantTitle"),
     summary:
       products.length === 0
-        ? "确认匹配后的商品会在这里按变体展开，我会帮你把每个变体对齐到 Tangbuy 货源 SKU。"
+        ? t("sku.copilotEmpty")
         : stats.partiallyLinkedProducts > 0
-          ? `还有 ${stats.partiallyLinkedProducts} 个商品部分关联（${stats.needsReviewVariants} 待确认 · ${stats.unboundVariants} 未匹配）。`
-          : `全部 ${stats.fullyLinkedProducts} 个商品已全部关联，可直接进入物流确认。`,
+          ? t("sku.copilotPartial", {
+              products: stats.partiallyLinkedProducts,
+              review: stats.needsReviewVariants,
+              unbound: stats.unboundVariants,
+            })
+          : t("sku.copilotAll", { products: stats.fullyLinkedProducts }),
     bullets: [
-      `全部关联：${stats.fullyLinkedProducts} 个商品`,
-      `部分关联：${stats.partiallyLinkedProducts} 个商品`,
-      "可用上方搜索框按标题或 ID 定位商品",
-      "下一步：用页面上方「进入物流确认」继续",
+      t("sku.copilotBulletAll", { products: stats.fullyLinkedProducts }),
+      t("sku.copilotBulletPartial", { products: stats.partiallyLinkedProducts }),
+      t("sku.copilotBulletSearch"),
+      t("sku.copilotBulletNext"),
     ],
   };
 
@@ -407,7 +435,7 @@ function SkuAlignContent() {
         const totalCount = productIds.length;
 
         if (totalCount === 0) {
-          throw new Error("没有可处理的商品");
+          throw new Error(t("sku.confirmNoProducts"));
         }
 
         const sampleCount = Math.min(3, totalCount);
@@ -419,29 +447,29 @@ function SkuAlignContent() {
           if (product) {
             const needsReview = product.variants.filter((v) => v.bound?.bindStatus === "PENDING").length;
             sampleRows.push({
-              label: product.title ?? "未知商品",
-              before: `${needsReview} 个待确认变体`,
-              after: "确认后自动绑定",
+              label: product.title ?? t("sku.confirmUnknownProduct"),
+              before: t("sku.confirmBefore", { count: needsReview }),
+              after: t("sku.confirmAfter"),
             });
           }
         }
 
         const extraNote =
           sampleCount < totalCount
-            ? `以上为前 ${sampleCount} 个商品预览，剩余 ${totalCount - sampleCount} 个商品将按相同规则处理`
-            : `以上为全部 ${totalCount} 个商品`;
+            ? t("sku.confirmPreviewNote", { count: sampleCount, rest: totalCount - sampleCount })
+            : t("sku.confirmPreviewAll", { count: totalCount });
 
         return {
           sections: [
             {
-              title: `批量确认待匹配 · 共 ${totalCount} 个商品`,
+              title: t("sku.confirmTitle", { count: totalCount }),
               rows: sampleRows,
             },
           ],
           extraNote,
           impact: {
-            scope: `确认 ${totalCount} 个商品的待匹配变体`,
-            durationHint: `约 ${Math.max(3, totalCount * 2)} 秒`,
+            scope: t("sku.confirmScope", { count: totalCount }),
+            durationHint: t("sku.confirmDuration", { seconds: Math.max(3, totalCount * 2) }),
             reversible: true,
           },
           payload: {
@@ -451,7 +479,7 @@ function SkuAlignContent() {
         };
       },
     }),
-    [products]
+    [products, t]
   );
 
   const commandExecutors = useMemo(
@@ -486,7 +514,7 @@ function SkuAlignContent() {
         }
 
         await load();
-        showToast(`批量确认完成：成功 ${success} 个，失败 ${failed} 个`);
+        showToast(t("sku.confirmDone", { success, failed }));
       },
     }),
     [products, shopName, load, showToast]
@@ -519,34 +547,37 @@ function SkuAlignContent() {
   );
 
   const scanStatusLabel = (s: ScanTaskStatus, resultText?: string | null) => {
-    if (s === "running") return "进行中…";
-    if (s === "done") return resultText ?? "完成";
-    if (s === "failed") return "失败";
-    if (s === "skipped") return resultText ?? "跳过";
-    return "待处理";
+    if (s === "running") return t("sku.scanStatusRunning");
+    if (s === "done") return resultText ?? t("sku.scanStatusDone");
+    if (s === "failed") return t("sku.scanStatusFailed");
+    if (s === "skipped") return resultText ?? t("sku.scanStatusSkipped");
+    return t("sku.scanStatusPending");
   };
   const scanCopilot: AiPanelContent = {
-    title: "正在自动整理",
-    summary: scanDone
-      ? "自动匹配已完成，可以开始逐款核对规格绑定。"
-      : "正在把店铺每个规格和 Tangbuy 货源规格做自动匹配，并提前加载对照所需的价格信息。",
-    bullets: scanTasks.map((t) => `${t.label}：${scanStatusLabel(t.status, t.resultText)}`),
-    nextAction: { label: scanDone ? "查看结果" : "先查看当前进度", action: "view" },
+    title: t("sku.scanCopilotTitle"),
+    summary: scanDone ? t("sku.scanCopilotDone") : t("sku.scanCopilotRunning"),
+    bullets: scanTasks.map((task) => `${task.label}：${scanStatusLabel(task.status, task.resultText)}`),
+    nextAction: {
+      label: scanDone ? t("sku.scanCopilotNextDone") : t("sku.scanCopilotNextRunning"),
+      action: "view",
+    },
   };
 
   if (!authSessionReady) {
     return (
       <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
         <WorkbenchPanel
-          title="SKU 绑定"
-          breadcrumbs={[{ label: "授权店铺", href: "/authorize" }, { label: "SKU 绑定" }]}
+          title={t("sku.title")}
+          breadcrumbs={notAuthBreadcrumbs}
           {...wb.panelProps}
         >
           <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
             <Loader2 className="h-4 w-4 animate-spin text-brand" />
-            正在恢复店铺授权…
+            {t("sku.restoringAuth")}
           </div>
-          <TableSkeleton rows={4} />
+          <FadeSwap loading minHeightClass="min-h-[320px]" skeleton={<TableSkeleton rows={4} />}>
+            <div />
+          </FadeSwap>
         </WorkbenchPanel>
       </WorkbenchShell>
     );
@@ -564,17 +595,17 @@ function SkuAlignContent() {
         {...wb.shellProps}
       >
         <WorkbenchPanel
-          title="SKU 绑定"
-          breadcrumbs={[{ label: "授权店铺", href: "/authorize" }, { label: "SKU 绑定" }]}
+          title={t("sku.title")}
+          breadcrumbs={notAuthBreadcrumbs}
           {...wb.panelProps}
         >
           <EmptyState
-            title="尚未连接店铺"
-            description="完成授权后即可在这里按变体查看与对齐货源绑定。"
+            title={t("sku.notConnectedTitle")}
+            description={t("sku.notConnectedDesc")}
             action={
-              <Link href="/authorize">
+              <Link href={localePath(locale, "/authorize")}>
                 <Button size="sm" className="mt-1">
-                  去授权店铺
+                  {t("sku.goAuthorize")}
                 </Button>
               </Link>
             }
@@ -598,11 +629,11 @@ function SkuAlignContent() {
                     if (a === "view") void finishToResult();
                   }}
                 />
-                <InfoCard title="这一步在做什么">
+                <InfoCard title={t("sku.scanInfoTitle")}>
                   <ul className="space-y-1.5">
-                    <li>读取你已关联货源的商品与规格</li>
-                    <li>按货源规格表自动匹配，高置信结果可直接采用</li>
-                    <li>提前加载规格与采购价，进入对照页即可查看</li>
+                    <li>{t("sku.scanInfo1")}</li>
+                    <li>{t("sku.scanInfo2")}</li>
+                    <li>{t("sku.scanInfo3")}</li>
                   </ul>
                 </InfoCard>
               </>
@@ -612,17 +643,18 @@ function SkuAlignContent() {
         {...wb.shellProps}
       >
         <WorkbenchPanel
-          title="SKU 绑定"
-          breadcrumbs={BREADCRUMBS}
+          title={t("sku.title")}
+          breadcrumbs={breadcrumbs}
           {...wb.panelProps}
         >
           <ScanStage
-            heading="正在自动整理 SKU"
-            description="系统正在匹配店铺规格与货源规格，可随时先查看当前结果。"
+            heading={t("sku.scanStageHeading")}
+            description={t("sku.scanStageDesc")}
             tasks={scanTasks}
             recent={scanRecent}
             done={scanDone}
             onViewResult={() => void finishToResult()}
+            className="pt-14 sm:pt-20"
           />
         </WorkbenchPanel>
       </WorkbenchShell>
@@ -632,8 +664,8 @@ function SkuAlignContent() {
   return (
     <WorkbenchShell sidebar={<StepSidebar />} rail={rail} {...wb.shellProps}>
       <WorkbenchPanel
-        title="SKU 绑定"
-        breadcrumbs={BREADCRUMBS}
+        title={t("sku.title")}
+        breadcrumbs={breadcrumbs}
         {...wb.panelProps}
         actions={
           <div className="flex items-center gap-2">
@@ -643,12 +675,12 @@ function SkuAlignContent() {
                 variant="secondary"
                 onClick={() => void handleConfirmPageNeedsReview()}
                 disabled={confirmingPage || loading || refreshing}
-                title="接受当前筛选下全部待确认的 AI 建议"
+                title={t("sku.acceptPageTitle")}
               >
                 {confirmingPage ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : null}
-                接受本页（{needsReviewOnPage}）
+                {t("sku.acceptPage", { count: needsReviewOnPage })}
               </Button>
             ) : null}
             <SkuLogisticsEntryGate />
@@ -657,8 +689,8 @@ function SkuAlignContent() {
               variant="secondary"
               onClick={restartScan}
               className="h-7 w-7 px-0"
-              title="重新整理（重新自动匹配并加载货源规格）"
-              aria-label="重新整理"
+              title={t("sku.rescanTitle")}
+              aria-label={t("sku.rescanAria")}
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
@@ -682,7 +714,7 @@ function SkuAlignContent() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="搜索标题 / 商品 ID / SKU…"
+                  placeholder={t("sku.searchPlaceholder")}
                   className="h-8 w-full rounded-[var(--radius-control)] border border-hairline bg-surface pl-8 pr-8 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft"
                 />
                 {searchQuery ? (
@@ -690,7 +722,7 @@ function SkuAlignContent() {
                     type="button"
                     onClick={() => setSearchQuery("")}
                     className="absolute right-1.5 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
-                    aria-label="清除搜索"
+                    aria-label={t("sku.clearSearchAria")}
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -702,8 +734,8 @@ function SkuAlignContent() {
                 className="h-7 w-7 shrink-0 px-0"
                 onClick={() => void load()}
                 disabled={loading || refreshing}
-                title="刷新列表"
-                aria-label="刷新列表"
+                title={t("sku.refreshListAria")}
+                aria-label={t("sku.refreshListAria")}
               >
                 {loading || refreshing ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -718,64 +750,70 @@ function SkuAlignContent() {
             <Card className="border-red-200">
               <CardContent className="flex items-center justify-between gap-3 py-3 text-sm text-red-700">
                 <span>
-                  加载失败：{error}
+                  {t("sku.loadFailed", { error })}
                   {error.includes("502") ? (
                     <span className="mt-1 block text-xs text-red-600/90">
-                      智能选品侧的匹配数据仍在，但 SKU 概览接口未响应。请确认后端服务可用后重试。
+                      {t("sku.loadFailedHint")}
                     </span>
                   ) : null}
                 </span>
                 <Button size="sm" variant="secondary" onClick={() => void load()}>
-                  重试
+                  {t("sku.retry")}
                 </Button>
               </CardContent>
             </Card>
           ) : null}
 
-          {loading ? (
-            <Card>
-              <TableSkeleton rows={5} />
-            </Card>
-          ) : error ? null : products.length === 0 ? (
-            <EmptyState
-              title="还没有已绑定的商品"
-              description="请先到「智能选品」查找货源并确认匹配。绑定成功的商品会在这里按变体展开。"
-              action={
-                <Link href="/products">
-                  <Button size="sm" className="mt-1">
-                    去智能选品确认匹配
-                  </Button>
-                </Link>
-              }
-            />
-          ) : filtered.length === 0 ? (
-            <EmptyState
-              title={searchQuery.trim() ? "未找到匹配商品" : "该筛选下暂无商品"}
-              description={
-                searchQuery.trim()
-                  ? "试试更短的关键词，或切换到「全部」查看完整列表。"
-                  : filter === "fully_linked"
-                    ? "还没有全部 SKU 都映射完成的商品。切换到「部分关联」或「全部」查看待处理项。"
-                    : filter === "partially_linked"
-                      ? "暂无部分关联的商品。切换到「全部关联」查看已完成项。"
-                      : "当前列表为空。"
-              }
-            />
-          ) : (
-            <div className="space-y-2.5">
-              {filtered.map((p) => (
-                <SkuProductCard
-                  key={p.thirdPlatformItemId}
-                  product={p}
-                  shopName={shopName}
-                  onAligned={load}
-                  showToast={showToast}
-                  filterMode={filter}
-                  pricingTemplate={pricingTemplate}
-                />
-              ))}
-            </div>
-          )}
+          <FadeSwap
+            loading={loading}
+            minHeightClass="min-h-[420px]"
+            skeleton={
+              <Card>
+                <TableSkeleton rows={5} />
+              </Card>
+            }
+          >
+            {error ? null : products.length === 0 ? (
+              <EmptyState
+                title={t("sku.emptyBoundTitle")}
+                description={t("sku.emptyBoundDesc")}
+                action={
+                  <Link href={localePath(locale, "/products")}>
+                    <Button size="sm" className="mt-1">
+                      {t("sku.goSourcing")}
+                    </Button>
+                  </Link>
+                }
+              />
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                title={searchQuery.trim() ? t("sku.emptySearchTitle") : t("sku.emptyFilterTitle")}
+                description={
+                  searchQuery.trim()
+                    ? t("sku.emptySearchDesc")
+                    : filter === "fully_linked"
+                      ? t("sku.emptyAllLinkedDesc")
+                      : filter === "partially_linked"
+                        ? t("sku.emptyPartialDesc")
+                        : t("sku.emptyDefaultDesc")
+                }
+              />
+            ) : (
+              <div className="space-y-2.5">
+                {filtered.map((p) => (
+                  <SkuProductCard
+                    key={p.thirdPlatformItemId}
+                    product={p}
+                    shopName={shopName}
+                    onAligned={load}
+                    showToast={showToast}
+                    filterMode={filter}
+                    pricingTemplate={pricingTemplate}
+                  />
+                ))}
+              </div>
+            )}
+          </FadeSwap>
         </div>
       </WorkbenchPanel>
     </WorkbenchShell>
@@ -783,11 +821,12 @@ function SkuAlignContent() {
 }
 
 export default function SkuAlignPage() {
+  const t = useT();
   return (
     <Suspense
       fallback={
         <WorkbenchShell sidebar={<StepSidebar />}>
-          <WorkbenchPanel title="SKU 绑定">
+          <WorkbenchPanel title={t("sku.title")}>
             <TableSkeleton rows={5} />
           </WorkbenchPanel>
         </WorkbenchShell>

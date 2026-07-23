@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Loader2, RefreshCw, Search } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2, RefreshCw, Search } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -14,6 +14,7 @@ import {
   type SavedCatalogSearch,
 } from "@/lib/catalog-sourcing-types";
 import { summarizeFilters } from "@/lib/catalog-saved-searches";
+import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
 
 export interface SmartSourcingFiltersProps {
@@ -29,7 +30,6 @@ export interface SmartSourcingFiltersProps {
   onSaveSearch: (name: string) => void;
   onSelectSaved: (search: SavedCatalogSearch) => void;
   onRemoveSaved: (id: string) => void;
-  /** Icon-only refresh, shown on the same row when filters are collapsed. */
   onRefresh?: () => void;
   refreshDisabled?: boolean;
   refreshing?: boolean;
@@ -40,10 +40,12 @@ function FilterRefreshButton({
   onRefresh,
   disabled,
   refreshing,
+  refreshLabel,
 }: {
   onRefresh?: () => void;
   disabled?: boolean;
   refreshing?: boolean;
+  refreshLabel: string;
 }) {
   if (!onRefresh) return null;
   return (
@@ -53,8 +55,8 @@ function FilterRefreshButton({
       onClick={onRefresh}
       disabled={disabled || refreshing}
       className="h-7 w-7 shrink-0 px-0"
-      title="刷新列表"
-      aria-label="刷新列表"
+      title={refreshLabel}
+      aria-label={refreshLabel}
     >
       {refreshing ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -65,7 +67,6 @@ function FilterRefreshButton({
   );
 }
 
-/** Compact discover-tab filter strip: categories → controls → right-aligned actions. */
 export function SmartSourcingFilters({
   filters,
   collapsed,
@@ -84,6 +85,7 @@ export function SmartSourcingFilters({
   refreshing,
   className,
 }: SmartSourcingFiltersProps) {
+  const t = useT();
   const [saveName, setSaveName] = useState("");
   const [showSave, setShowSave] = useState(false);
 
@@ -106,22 +108,21 @@ export function SmartSourcingFilters({
   };
 
   const handleSave = () => {
-    onSaveSearch(saveName.trim() || chips.slice(0, 2).join(" · ") || "当前搜索");
+    onSaveSearch(
+      saveName.trim() || chips.slice(0, 2).join(" · ") || t("sourcing.currentSearch")
+    );
     setSaveName("");
     setShowSave(false);
   };
 
   if (collapsed) {
-    const summaryParts = [
-      ...(activeSaved ? [activeSaved.name] : []),
-      ...chips,
-    ];
+    const summaryParts = [...(activeSaved ? [activeSaved.name] : []), ...chips];
     const summaryText = summaryParts.length
       ? summaryParts.join(" · ")
-      : "无筛选条件 · 浏览全部商品";
+      : t("sourcing.noFilters");
     const savedHint =
       !activeSaved && savedSearches.length > 0
-        ? ` · ${savedSearches.length} 个已保存`
+        ? t("sourcing.savedCount", { count: savedSearches.length })
         : "";
 
     return (
@@ -136,22 +137,21 @@ export function SmartSourcingFilters({
           title={summaryText + savedHint}
         >
           <span className="text-ink">{summaryText}</span>
-          {savedHint ? (
-            <span className="text-ink-subtle">{savedHint}</span>
-          ) : null}
+          {savedHint ? <span className="text-ink-subtle">{savedHint}</span> : null}
         </p>
         <button
           type="button"
           onClick={onToggleCollapsed}
-          className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-brand-strong hover:underline"
+          className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-link hover:text-link-hover hover:underline"
         >
-          展开筛选
+          {t("sourcing.expandFilters")}
           <ChevronDown className="h-3.5 w-3.5" />
         </button>
         <FilterRefreshButton
           onRefresh={onRefresh}
           disabled={refreshDisabled}
           refreshing={refreshing}
+          refreshLabel={t("sourcing.filterRefresh")}
         />
       </section>
     );
@@ -170,16 +170,16 @@ export function SmartSourcingFilters({
           onClick={onToggleCollapsed}
           className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-muted hover:text-ink"
         >
-          收起 <ChevronUp className="h-3.5 w-3.5" />
+          {t("sourcing.collapseFilters")} <ChevronUp className="h-3.5 w-3.5" />
         </button>
         <FilterRefreshButton
           onRefresh={onRefresh}
           disabled={refreshDisabled}
           refreshing={refreshing}
+          refreshLabel={t("sourcing.filterRefresh")}
         />
       </div>
 
-      {/* Layer 1: recommended categories first */}
       <RecommendedCategoryChips
         categories={recommendedCategories}
         selectedIds={filters.categoryIds}
@@ -187,15 +187,16 @@ export function SmartSourcingFilters({
         onClear={() => patch({ categoryIds: [] })}
       />
 
-      {/* Layer 2: compact controls — fixed widths, actions flush right */}
       <div className="mt-2 flex flex-wrap items-end gap-2">
         <div className="w-[200px] max-w-full">
-          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">关键词</label>
+          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">
+            {t("sourcing.keyword")}
+          </label>
           <div className="relative">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
             <Input
               className="h-8 pl-7 text-xs"
-              placeholder="标题 / 关键词"
+              placeholder={t("sourcing.keywordPlaceholder")}
               value={filters.keywords}
               onChange={(e) => patch({ keywords: e.target.value })}
               onKeyDown={(e) => {
@@ -206,7 +207,9 @@ export function SmartSourcingFilters({
         </div>
 
         <div className="w-[84px]">
-          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">最低价</label>
+          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">
+            {t("sourcing.priceMin")}
+          </label>
           <Input
             className="h-8 text-xs"
             type="number"
@@ -217,7 +220,9 @@ export function SmartSourcingFilters({
           />
         </div>
         <div className="w-[84px]">
-          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">最高价</label>
+          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">
+            {t("sourcing.priceMax")}
+          </label>
           <Input
             className="h-8 text-xs"
             type="number"
@@ -229,7 +234,9 @@ export function SmartSourcingFilters({
         </div>
 
         <div className="w-[112px]">
-          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">排序</label>
+          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">
+            {t("sourcing.sort")}
+          </label>
           <Select
             className="h-8 text-xs"
             value={filters.sort}
@@ -250,7 +257,7 @@ export function SmartSourcingFilters({
             <>
               <Input
                 className="h-8 w-32 text-xs"
-                placeholder="如：家居低价款"
+                placeholder={t("sourcing.saveSearchPlaceholder")}
                 value={saveName}
                 onChange={(e) => setSaveName(e.target.value)}
                 onKeyDown={(e) => {
@@ -258,22 +265,22 @@ export function SmartSourcingFilters({
                 }}
               />
               <Button size="sm" variant="secondary" onClick={handleSave}>
-                确认
+                {t("common.confirm")}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setShowSave(false)}>
-                取消
+                {t("common.cancel")}
               </Button>
             </>
           ) : (
             <>
               <Button size="sm" variant="primary" onClick={onApply}>
-                应用
+                {t("sourcing.apply")}
               </Button>
               <Button size="sm" variant="secondary" onClick={() => setShowSave(true)}>
-                保存
+                {t("sourcing.save")}
               </Button>
               <Button size="sm" variant="ghost" onClick={onClear}>
-                清空
+                {t("sourcing.clear")}
               </Button>
             </>
           )}

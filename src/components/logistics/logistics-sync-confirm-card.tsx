@@ -1,7 +1,8 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/LocaleProvider";
 import type { CompletionGateResult } from "@/lib/logistics/completion-gate";
 
 export function LogisticsSyncConfirmCard({
@@ -15,12 +16,16 @@ export function LogisticsSyncConfirmCard({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const t = useT();
+
   return (
     <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50/90 px-4 py-3 shadow-sm">
       <div className="flex items-start gap-2.5">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-amber-950">带例外进入同步？</p>
+          <p className="text-sm font-semibold text-amber-950">
+            {t("logisticsSync.title")}
+          </p>
           <ul className="mt-2 space-y-1 text-xs text-amber-950">
             {gate.warnings.map((line) => (
               <li key={line} className="flex gap-1.5">
@@ -36,7 +41,7 @@ export function LogisticsSyncConfirmCard({
               disabled={saving}
               onClick={onConfirm}
             >
-              {saving ? "保存中…" : "继续进入同步"}
+              {saving ? t("logisticsSync.saving") : t("logisticsSync.confirm")}
             </Button>
             <Button
               size="sm"
@@ -45,7 +50,7 @@ export function LogisticsSyncConfirmCard({
               disabled={saving}
               onClick={onCancel}
             >
-              返回处理
+              {t("logisticsSync.cancel")}
             </Button>
           </div>
         </div>

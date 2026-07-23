@@ -1,4 +1,5 @@
 import type { AgentResponse } from "@/lib/agents/types";
+import type { TranslateFn } from "@/i18n/server";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
 import { purchaseDisplayAlignedWithPricing } from "@/lib/agents/products/page-context";
@@ -11,7 +12,8 @@ import { handleProductFocusIntent } from "@/lib/agents/products/product-focus-ha
  */
 export function handleSourcingAdvisor(
   intent: ProductsIntentId,
-  ctx: ProductsPageContext
+  ctx: ProductsPageContext,
+  t: TranslateFn
 ): AgentResponse {
   if (!ctx.authorized) {
     return {
@@ -32,23 +34,23 @@ export function handleSourcingAdvisor(
 
   switch (intent) {
     case "summarize_shop_status":
-      return summarizeStatus(ctx);
+      return summarizeStatus(ctx, t);
     case "suggest_filters":
-      return suggestFilters(ctx);
+      return suggestFilters(ctx, t);
     case "go_pending":
-      return goPending(ctx);
+      return goPending(ctx, t);
     case "go_unbound":
-      return goUnbound(ctx);
+      return goUnbound(ctx, t);
     case "go_discover":
-      return goDiscover(ctx);
+      return goDiscover(ctx, t);
     case "propose_candidate_search":
       return proposeCandidateSearch(ctx);
     default:
-      return summarizeStatus(ctx);
+      return summarizeStatus(ctx, t);
   }
 }
 
-function summarizeStatus(ctx: ProductsPageContext): AgentResponse {
+function summarizeStatus(ctx: ProductsPageContext, t: TranslateFn): AgentResponse {
   const explanation: string[] = [];
   if (ctx.scanHandoff) {
     const h = ctx.scanHandoff;
@@ -113,7 +115,7 @@ function summarizeStatus(ctx: ProductsPageContext): AgentResponse {
     suggestedAction = {
       kind: "set_tab",
       tab: "catalog",
-      label: "去发现新品",
+      label: t("productsSourcing.discoverAction"),
     };
     targetTab = "catalog";
   }
@@ -131,7 +133,7 @@ function summarizeStatus(ctx: ProductsPageContext): AgentResponse {
   };
 }
 
-function suggestFilters(ctx: ProductsPageContext): AgentResponse {
+function suggestFilters(ctx: ProductsPageContext, t: TranslateFn): AgentResponse {
   const explanation: string[] = [];
   if (ctx.recommendedCategoryNames.length > 0) {
     explanation.push(
@@ -178,7 +180,7 @@ function suggestFilters(ctx: ProductsPageContext): AgentResponse {
         : {
             kind: "set_tab",
             tab: "catalog",
-            label: "去发现新品",
+            label: t("productsSourcing.discoverAction"),
           },
     targetTab: "catalog",
     highlightArea: "filters",
@@ -186,7 +188,7 @@ function suggestFilters(ctx: ProductsPageContext): AgentResponse {
   };
 }
 
-function goPending(ctx: ProductsPageContext): AgentResponse {
+function goPending(ctx: ProductsPageContext, t: TranslateFn): AgentResponse {
   if (ctx.pendingCount <= 0) {
     return {
       agentId: "sourcing_advisor",
@@ -196,7 +198,7 @@ function goPending(ctx: ProductsPageContext): AgentResponse {
       nextSteps:
         ctx.unboundCount > 0
           ? [`查看 ${ctx.unboundCount} 个未匹配商品`]
-          : ["去发现新品补充货源"],
+          : [t("productsSourcing.discoverSummary")],
       suggestedAction:
         ctx.unboundCount > 0
           ? {
@@ -205,7 +207,11 @@ function goPending(ctx: ProductsPageContext): AgentResponse {
               tab: "shop",
               label: "看未匹配",
             }
-          : { kind: "set_tab", tab: "catalog", label: "去发现新品" },
+          : {
+              kind: "set_tab",
+              tab: "catalog",
+              label: t("productsSourcing.discoverAction"),
+            },
       targetTab: ctx.unboundCount > 0 ? "shop" : "catalog",
       highlightArea: "shop_list",
       openDrawer: null,
@@ -232,18 +238,18 @@ function goPending(ctx: ProductsPageContext): AgentResponse {
   };
 }
 
-function goUnbound(ctx: ProductsPageContext): AgentResponse {
+function goUnbound(ctx: ProductsPageContext, t: TranslateFn): AgentResponse {
   if (ctx.unboundCount <= 0) {
     return {
       agentId: "sourcing_advisor",
       intent: "go_unbound",
       summary: "暂无未匹配商品",
       explanation: ["在售商品均已有关联或待确认；可去发现新品扩品。"],
-      nextSteps: ["去发现新品"],
+      nextSteps: [t("productsSourcing.discoverSummary")],
       suggestedAction: {
         kind: "set_tab",
         tab: "catalog",
-        label: "去发现新品",
+        label: t("productsSourcing.discoverAction"),
       },
       targetTab: "catalog",
       highlightArea: "catalog_grid",
@@ -273,26 +279,31 @@ function goUnbound(ctx: ProductsPageContext): AgentResponse {
   };
 }
 
-function goDiscover(ctx: ProductsPageContext): AgentResponse {
-  const explanation = [
-    "「发现新品」从 Tangbuy 商城拉取可上架货源，按你的定价模板生成建议售价。",
-  ];
+function goDiscover(ctx: ProductsPageContext, t: TranslateFn): AgentResponse {
+  const explanation = [t("productsSourcing.discoverExplainMain")];
   if (!ctx.pricing.configured) {
-    explanation.push("定价尚未有效配置时，建议售价可能不准——可先配定价再筛品。");
+    explanation.push(t("productsSourcing.discoverExplainPricing"));
   }
   if (ctx.recommendedCategoryNames.length > 0) {
-    explanation.push(`可从推荐类目入手：${ctx.recommendedCategoryNames.join("、")}`);
+    explanation.push(
+      t("productsSourcing.discoverExplainCategories", {
+        categories: ctx.recommendedCategoryNames.join(", "),
+      })
+    );
   }
   return {
     agentId: "sourcing_advisor",
     intent: "go_discover",
-    summary: "去发现新品",
+    summary: t("productsSourcing.discoverSummary"),
     explanation,
-    nextSteps: ["打开「发现新品」Tab", "用类目或价格带缩小范围后选品上架"],
+    nextSteps: [
+      t("productsSourcing.discoverNextOpenTab"),
+      t("productsSourcing.discoverNextFilter"),
+    ],
     suggestedAction: {
       kind: "set_tab",
       tab: "catalog",
-      label: "打开发现新品",
+      label: t("productsSourcing.discoverAction"),
     },
     targetTab: "catalog",
     highlightArea: "catalog_grid",

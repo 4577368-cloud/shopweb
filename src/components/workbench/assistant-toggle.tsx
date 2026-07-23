@@ -1,6 +1,6 @@
 "use client";
 
-import { PanelRight, PanelRightClose } from "lucide-react";
+import { PanelRight, PanelRightClose } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -26,15 +26,15 @@ export function AssistantToggle({
       variant="secondary"
       size="sm"
       onClick={onToggle}
-      className={cn("h-9 w-9 px-0", className)}
+      className={cn("h-7 w-7 px-0", className)}
       title={label}
       aria-label={label}
       aria-pressed={open}
     >
       {open ? (
-        <PanelRightClose className="h-4 w-4" />
+        <PanelRightClose className="h-3.5 w-3.5" />
       ) : (
-        <PanelRight className="h-4 w-4" />
+        <PanelRight className="h-3.5 w-3.5" />
       )}
     </Button>
   );

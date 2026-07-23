@@ -5,6 +5,7 @@ import {
   formatRouteFee,
   isVariantException,
   isVariantUnidentified,
+  type LogisticsTranslate,
   variantHasQuoteLine,
 } from "@/lib/logistics/display";
 import type { LogisticsPipelineProgress } from "@/lib/logistics/incremental-pipeline";
@@ -84,6 +85,7 @@ export function computeSkuRowStatus(
   return "ready";
 }
 
+/** @deprecated Use skuRowStatusLabel(t, status) in UI. */
 export const SKU_ROW_STATUS_LABELS: Record<SkuRowStatus, string> = {
   processing: "正在获取运费预估",
   confirmed: "已确认",
@@ -94,19 +96,29 @@ export const SKU_ROW_STATUS_LABELS: Record<SkuRowStatus, string> = {
   ready: "待报价",
 };
 
+export function skuRowStatusLabel(
+  t: LogisticsTranslate,
+  status: SkuRowStatus
+): string {
+  return t(`logisticsDisplay.skuRowStatus.${status}`);
+}
+
 export function formatVariantIssueHint(
+  t: LogisticsTranslate,
   variant: VariantLogisticsDecision,
   quoteResult?: LogisticsEstimateResult
 ): string | null {
   if (isVariantUnidentified(variant)) {
-    return "需先完成 SKU 对齐";
+    return t("logisticsDisplay.issueHint.skuAlignRequired");
   }
   if (quoteResult?.errorMessage?.trim()) {
     const quoteStatus = effectiveQuoteStatus({
       recommendedLine: quoteResult.recommendedLine ?? variant.recommendedLine,
       quoteStatus: quoteResult.quoteStatus ?? variant.quoteStatus,
     });
-    if (quoteStatus === "INGESTING") return "商品入库中";
+    if (quoteStatus === "INGESTING") {
+      return t("logisticsDisplay.issueHint.ingesting");
+    }
     const msg = quoteResult.errorMessage.trim();
     return msg.length > 48 ? `${msg.slice(0, 48)}…` : msg;
   }
@@ -115,12 +127,16 @@ export function formatVariantIssueHint(
     quoteStatus: quoteResult?.quoteStatus ?? variant.quoteStatus,
   });
   if (status === "INGESTING") return null;
-  if (status === "FAILED") return "线路报价失败";
+  if (status === "FAILED") return t("logisticsDisplay.issueHint.quoteFailed");
   if (variant.decisionReason?.includes("重量") || variant.decisionReason?.includes("尺寸")) {
-    return "缺重量或尺寸，请补充后重算";
+    return t("logisticsDisplay.issueHint.missingMeasures");
   }
-  if (variant.decisionStatus === "restricted") return "邮限受限，请确认线路";
-  if (variant.decisionStatus === "needs_review") return "报价后请人工确认线路";
+  if (variant.decisionStatus === "restricted") {
+    return t("logisticsDisplay.issueHint.restricted");
+  }
+  if (variant.decisionStatus === "needs_review") {
+    return t("logisticsDisplay.issueHint.needsReview");
+  }
   if (variant.decisionStatus === "ready_for_quote") return null;
   if (
     variant.decisionConfirmed ||
@@ -137,6 +153,7 @@ export function formatVariantIssueHint(
 }
 
 export function computeProductShellMeta(
+  t: LogisticsTranslate,
   profile: ProductLogisticsProfile,
   quoteResults: Map<string, LogisticsEstimateResult>,
   pricing: PricingTemplate | null | undefined,
@@ -173,7 +190,7 @@ export function computeProductShellMeta(
     if (variantHasQuoteLine(variant, quote)) quotedCount += 1;
 
     if (rowStatus === "failed" || rowStatus === "pending_review" || rowStatus === "pending_sku") {
-      const hint = formatVariantIssueHint(variant, quote);
+      const hint = formatVariantIssueHint(t, variant, quote);
       if (hint && !issueHints.includes(hint)) issueHints.push(hint);
     }
 
@@ -181,7 +198,7 @@ export function computeProductShellMeta(
     if (line?.estimatedFee != null) {
       if (minFee == null || line.estimatedFee < minFee) {
         minFee = line.estimatedFee;
-        minFeeLabel = formatRouteFee(line, pricing) ?? null;
+        minFeeLabel = formatRouteFee(t, line, pricing) ?? null;
       }
     }
   }
@@ -212,14 +229,46 @@ export function computeProductShellMeta(
   else if (confirmedCount > 0) status = "partial";
 
   const summaryParts: string[] = [];
-  if (confirmedCount > 0) summaryParts.push(`已确认 ${confirmedCount}/${skuTotal}`);
-  else if (quotedCount > 0 && reviewCount === 0)
-    summaryParts.push(`已报价 ${quotedCount}/${skuTotal}`);
-  if (readyCount > 0) summaryParts.push(`待报价 ${readyCount}`);
-  if (reviewCount > 0) summaryParts.push(`待确认 ${reviewCount}`);
-  if (unidentifiedCount > 0) summaryParts.push(`SKU未关联 ${unidentifiedCount}`);
-  if (failedCount > 0) summaryParts.push(`失败 ${failedCount}`);
-  if (minFeeLabel) summaryParts.push(`最低 ${minFeeLabel}`);
+  if (confirmedCount > 0) {
+    summaryParts.push(
+      t("logisticsDisplay.productShell.summaryConfirmed", {
+        confirmed: confirmedCount,
+        total: skuTotal,
+      })
+    );
+  } else if (quotedCount > 0 && reviewCount === 0) {
+    summaryParts.push(
+      t("logisticsDisplay.productShell.summaryQuoted", {
+        quoted: quotedCount,
+        total: skuTotal,
+      })
+    );
+  }
+  if (readyCount > 0) {
+    summaryParts.push(
+      t("logisticsDisplay.productShell.summaryReady", { count: readyCount })
+    );
+  }
+  if (reviewCount > 0) {
+    summaryParts.push(
+      t("logisticsDisplay.productShell.summaryReview", { count: reviewCount })
+    );
+  }
+  if (unidentifiedCount > 0) {
+    summaryParts.push(
+      t("logisticsDisplay.productShell.summaryUnlinked", { count: unidentifiedCount })
+    );
+  }
+  if (failedCount > 0) {
+    summaryParts.push(
+      t("logisticsDisplay.productShell.summaryFailed", { count: failedCount })
+    );
+  }
+  if (minFeeLabel) {
+    summaryParts.push(
+      t("logisticsDisplay.productShell.summaryMinFee", { fee: minFeeLabel })
+    );
+  }
 
   return {
     status,
@@ -227,12 +276,15 @@ export function computeProductShellMeta(
     confirmedCount,
     pendingCount: readyCount + reviewCount + unidentifiedCount,
     failedCount,
-    summaryLine: summaryParts.join(" · ") || `${skuTotal} 个 SKU`,
+    summaryLine:
+      summaryParts.join(" · ") ||
+      t("logisticsDisplay.productShell.summarySkuTotal", { total: skuTotal }),
     issueLine: issueHints.length > 0 ? issueHints.slice(0, 2).join("；") : null,
     defaultExpanded: isProcessing,
   };
 }
 
+/** @deprecated Use productShellStatusLabel(t, status) in UI. */
 export const PRODUCT_SHELL_STATUS_LABELS: Record<ProductShellStatus, string> = {
   processing: "处理中",
   done: "已确认",
@@ -243,6 +295,13 @@ export const PRODUCT_SHELL_STATUS_LABELS: Record<ProductShellStatus, string> = {
   failed: "失败",
   partial: "进行中",
 };
+
+export function productShellStatusLabel(
+  t: LogisticsTranslate,
+  status: ProductShellStatus
+): string {
+  return t(`logisticsDisplay.productShellStatus.${status}`);
+}
 
 export function productShellStatusClass(status: ProductShellStatus): string {
   switch (status) {

@@ -6,6 +6,10 @@ import {
 import { parseGatewayPrice } from "@/lib/agents/products/match-rank";
 import { formatSourceCostInShopCurrency } from "@/lib/purchase-cost-display";
 import { scoreSpecMatch } from "@/lib/sku-align/spec-match";
+import {
+  canonicalizeSpecValue,
+  canonicalizeDimensionName,
+} from "@/lib/sku-align/spec-canon";
 import type { OfferDetail, PricingTemplate } from "@/lib/types";
 
 export type SkuDisplayStatus = "LOADING" | "READY" | "ERROR";
@@ -115,8 +119,8 @@ function mapOptionParts(
   const out: Array<{ name: string; value: string }> = [];
   const seen = new Set<string>();
   for (const a of attrs ?? []) {
-    const name = (a.attrNameTrans ?? a.attrName ?? "规格").trim();
-    const value = (a.attrValueTrans ?? a.attrValue ?? "").trim();
+    const name = canonicalizeDimensionName(a.attrNameTrans ?? a.attrName);
+    const value = canonicalizeSpecValue(a.attrValue, a.attrValueTrans);
     if (!name || !value) continue;
     const key = `${name}:${value}`;
     if (seen.has(key)) continue;
@@ -137,7 +141,7 @@ function specLabelFromAttributes(
   const parts: string[] = [];
   const seen = new Set<string>();
   for (const a of attrs ?? []) {
-    const value = (a.attrValueTrans ?? a.attrValue ?? "").trim();
+    const value = canonicalizeSpecValue(a.attrValue, a.attrValueTrans);
     if (!value) continue;
     if (seen.has(value)) continue;
     seen.add(value);
@@ -351,7 +355,7 @@ export function resolveBoundSkuDisplay(input: {
   const offer = input.offerSku;
   if (offer) {
     const parts = offer.skuAttributes
-      ?.map((a) => a.valueTrans || a.value)
+      ?.map((a) => canonicalizeSpecValue(a.value, a.valueTrans))
       .filter((v): v is string => Boolean(v?.trim()));
     const rawPrice = offer.price?.trim() || offer.consignPrice?.trim() || null;
     const ok = Boolean(parts?.length || rawPrice);

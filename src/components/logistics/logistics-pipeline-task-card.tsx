@@ -1,17 +1,10 @@
 "use client";
 
-import { Check, Loader2, RefreshCw, X } from "lucide-react";
+import { Check, Loader2, RefreshCw, X } from "@/lib/ui/icons";
 import type { LogisticsPipelineProgress } from "@/lib/logistics/incremental-pipeline";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
-
-const STEP_LABEL: Record<
-  NonNullable<LogisticsPipelineProgress["currentSkuStep"]>,
-  string
-> = {
-  quote: "运费预估",
-  accept: "自动确认（普货）",
-};
 
 export function LogisticsPipelineTaskCard({
   progress,
@@ -24,6 +17,8 @@ export function LogisticsPipelineTaskCard({
   onRetry?: () => void;
   onCancel?: () => void;
 }) {
+  const t = useT();
+
   if (progress.phase === "idle") return null;
 
   const isDone = progress.phase === "done";
@@ -40,10 +35,15 @@ export function LogisticsPipelineTaskCard({
 
   const title =
     progress.currentProductTitle?.trim() ||
-    (isDone ? "全部商品" : "准备中…");
+    (isDone ? t("logisticsPipeline.allProducts") : t("logisticsPipeline.preparing"));
 
   const pendingReview =
     pendingReviewCount ?? progress.stats.pendingReview;
+
+  const stepLabel = (step: NonNullable<LogisticsPipelineProgress["currentSkuStep"]>) =>
+    step === "quote"
+      ? t("logisticsPipeline.stepQuote")
+      : t("logisticsPipeline.stepAccept");
 
   return (
     <div
@@ -67,7 +67,7 @@ export function LogisticsPipelineTaskCard({
           <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600" />
         )}
         <span className="text-[10px] font-medium uppercase tracking-wide text-slate-600">
-          物流自动匹配
+          {t("logisticsPipeline.title")}
         </span>
         <span className="text-[10px] text-slate-400">·</span>
         <span
@@ -77,12 +77,12 @@ export function LogisticsPipelineTaskCard({
           )}
         >
           {progress.phase === "waiting"
-            ? "待开始"
+            ? t("logisticsPipeline.statusWaiting")
             : isDone
-              ? "完成"
+              ? t("logisticsPipeline.statusDone")
               : isError
-                ? "失败"
-                : "预估中"}
+                ? t("logisticsPipeline.statusFailed")
+                : t("logisticsPipeline.statusRunning")}
         </span>
         {(isError && onRetry) || (progress.phase === "running" && onCancel) ? (
           <Button
@@ -91,8 +91,16 @@ export function LogisticsPipelineTaskCard({
             variant="secondary"
             className="relative z-10 ml-auto h-7 w-7 px-0"
             onClick={isError ? onRetry : onCancel}
-            title={isError ? "重新匹配" : "取消"}
-            aria-label={isError ? "重新匹配" : "取消"}
+            title={
+              isError
+                ? t("logisticsPipeline.retryAria")
+                : t("logisticsPipeline.cancelAria")
+            }
+            aria-label={
+              isError
+                ? t("logisticsPipeline.retryAria")
+                : t("logisticsPipeline.cancelAria")
+            }
           >
             {isError ? (
               <RefreshCw className="h-3.5 w-3.5" />
@@ -105,15 +113,24 @@ export function LogisticsPipelineTaskCard({
 
       <p className="mt-0.5 text-[10px] text-slate-500">
         {isDone
-          ? `匹配完成 · 自动确认 ${progress.stats.autoAccepted} · 待你确认 ${pendingReview}`
+          ? t("logisticsPipeline.doneSummary", {
+              autoAccepted: progress.stats.autoAccepted,
+              pendingReview,
+            })
           : progress.phase === "waiting"
-            ? "点击右上角「运费预估」开始"
-            : `商品 ${progress.productIndex}/${progress.productTotal} · ${title}`}
+            ? t("logisticsPipeline.clickEstimate")
+            : t("logisticsPipeline.productProgress", {
+                index: progress.productIndex,
+                total: progress.productTotal,
+                title,
+              })}
       </p>
 
       {progress.currentSkuStep && progress.phase === "running" ? (
         <p className="mt-0.5 text-[10px] text-sky-700">
-          当前：{STEP_LABEL[progress.currentSkuStep]}
+          {t("logisticsPipeline.currentStep", {
+            step: stepLabel(progress.currentSkuStep),
+          })}
         </p>
       ) : null}
 
@@ -133,10 +150,14 @@ export function LogisticsPipelineTaskCard({
             {progress.productIndex} / {progress.productTotal}
           </span>
           <span className="text-emerald-600">
-            已确认 {progress.stats.autoAccepted}
+            {t("logisticsPipeline.confirmed", {
+              count: progress.stats.autoAccepted,
+            })}
           </span>
           {progress.stats.failed > 0 ? (
-            <span className="text-red-500">失败 {progress.stats.failed}</span>
+            <span className="text-red-500">
+              {t("logisticsPipeline.failed", { count: progress.stats.failed })}
+            </span>
           ) : null}
         </div>
       ) : null}

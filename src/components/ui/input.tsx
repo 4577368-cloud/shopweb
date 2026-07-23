@@ -1,19 +1,18 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { controlClassName } from "@/lib/ui/control-styles";
 
 export interface InputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {}
 
-/** 统一高度 h-9，与 Select / 勾选容器对齐 */
+/** Unified h-9 control — focus border #333, error uses destructive (spec §2.4.4) */
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => (
+  ({ className, type, "aria-invalid": ariaInvalid, ...props }, ref) => (
     <input
       type={type}
-      className={cn(
-        "flex h-9 w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-3 text-sm text-ink placeholder:text-ink-subtle shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/25 focus-visible:border-brand disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-60",
-        className
-      )}
       ref={ref}
+      aria-invalid={ariaInvalid}
+      className={cn(controlClassName, className)}
       {...props}
     />
   )
@@ -32,7 +31,7 @@ export function FieldLabel({
   return (
     <label
       htmlFor={htmlFor}
-      className={cn("mb-1.5 block text-xs font-medium text-slate-600", className)}
+      className={cn("mb-1.5 block text-xs font-medium text-muted-foreground", className)}
     >
       {children}
     </label>
@@ -47,7 +46,7 @@ export function FieldHint({
   className?: string;
 }) {
   return (
-    <p className={cn("mt-1.5 text-[11px] leading-4 text-slate-400", className)}>
+    <p className={cn("mt-1.5 text-[11px] leading-4 text-ink-subtle", className)}>
       {children}
     </p>
   );
@@ -61,7 +60,7 @@ export function FieldError({
   className?: string;
 }) {
   return (
-    <p className={cn("mt-1.5 text-[11px] leading-4 text-red-600", className)}>
+    <p className={cn("mt-1.5 text-[11px] leading-4 text-destructive", className)}>
       {children}
     </p>
   );
@@ -104,13 +103,13 @@ export function CheckboxRow({
   return (
     <label
       className={cn(
-        "flex h-9 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700",
+        "flex h-9 cursor-pointer items-center gap-2 rounded-[var(--radius-control)] border border-input bg-surface px-3 text-sm text-foreground",
         className
       )}
     >
       <input
         type="checkbox"
-        className="h-3.5 w-3.5 shrink-0 accent-teal-700"
+        className="h-3.5 w-3.5 shrink-0 accent-[var(--brand)]"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
       />

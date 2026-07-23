@@ -1,3 +1,5 @@
+import type { Locale } from "@/i18n/config";
+
 /** Static market groups (Shopify Markets–inspired). Phase 1 dictionary — not live Markets API. */
 
 export interface MarketCountry {
@@ -91,14 +93,35 @@ export function findGroupForCountry(code: string): MarketGroup | undefined {
   return MARKET_GROUPS.find((g) => g.countries.some((c) => c.code === upper));
 }
 
-export function countryLabel(code: string): string {
-  const c = findCountry(code);
-  return c ? `${c.nameZh} (${c.code})` : code;
+export function marketGroupLabel(group: MarketGroup, locale: Locale): string {
+  return locale === "zh" ? group.labelZh : group.label;
 }
 
-export function countryMarketLabel(code: string): string {
+export function countryDisplayName(country: MarketCountry, locale: Locale): string {
+  return locale === "zh" ? country.nameZh : country.name;
+}
+
+export function localizedCountryLabel(code: string, locale: Locale): string {
   const c = findCountry(code);
-  return c ? `${c.nameZh}市场` : `${code} 市场`;
+  return c ? `${countryDisplayName(c, locale)} (${c.code})` : code;
+}
+
+export function localizedCountryMarketLabel(code: string, locale: Locale): string {
+  const c = findCountry(code);
+  if (!c) return locale === "zh" ? `${code} 市场` : `${code} market`;
+  return locale === "zh"
+    ? `${c.nameZh}市场`
+    : `${c.name} market`;
+}
+
+/** @deprecated Use localizedCountryLabel with an explicit locale. */
+export function countryLabel(code: string): string {
+  return localizedCountryLabel(code, "zh");
+}
+
+/** @deprecated Use localizedCountryMarketLabel with an explicit locale. */
+export function countryMarketLabel(code: string): string {
+  return localizedCountryMarketLabel(code, "zh");
 }
 
 /** ISO2 → regional indicator flag emoji. */

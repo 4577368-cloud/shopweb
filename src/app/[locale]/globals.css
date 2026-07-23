@@ -1,88 +1,157 @@
 @import "tailwindcss";
 
 /*
- * Tangbuy workbench design tokens (Step 3).
- * Brand is intentionally an emerald-teal (偏绿的 teal): greener than the legacy teal-700
- * but still in the teal family, so Tangbuy keeps its identity while matching the prototypes.
- * teal/green is reserved for primary actions, active state, status and key emphasis only;
- * everything else is neutral slate. No purple/blue "AI" hues, no big gradients/shadows.
+ * Tangbuy visual tokens — aligned with docs/Tangbuy-AI-Sourcing-Shopify-Visual-Spec.md v1.1
+ *
+ * Semantic layer (§2.4.2) is canonical. Legacy aliases (--ink, --hairline, --canvas, --danger)
+ * remain for gradual migration in business components.
  */
 :root {
-  /* Surfaces */
-  --canvas: #f6f7f9; /* page background */
-  --surface: #ffffff; /* card background */
-  --surface-muted: #f8fafc; /* inset / subtle fill inside cards */
+  /* §2.4.2 — Semantic surfaces */
+  --app-shell: #f3f3f4;
+  --page-canvas: #fbfbfb;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-border: #e0e1e4;
+  --surface-hover: #f1f2f4;
+  --surface-selected: #e6e8eb;
 
-  /* Borders (hairline-thin) */
-  --hairline: #e5e7eb;
-  --hairline-strong: #d7dbe0;
+  /* §2.4.2 — Text */
+  --foreground: #141821;
+  --muted-foreground: #676c75;
 
-  /* Text: 3 levels */
-  --ink: #0f172a; /* primary text */
-  --ink-muted: #64748b; /* secondary text / descriptions */
-  --ink-subtle: #94a3b8; /* weak text / hints / meta */
+  /* §2.4.2 — Borders & inputs */
+  --border: #e0e1e4;
+  --input: #d2d4d8;
+  --ring: #868991;
 
-  /* Brand (emerald-teal) — primary buttons, active, key emphasis */
-  --brand: #059669; /* emerald-600 */
-  --brand-strong: #047857; /* emerald-700 (hover/pressed) */
-  --brand-soft: #ecfdf5; /* emerald-50 (active tint / soft fill) */
-  --brand-ring: rgba(5, 150, 105, 0.28);
+  /* §2.4.2 — Muted fills */
+  --muted: #f1f2f4;
+  --muted-strong: #e6e8eb;
+  --secondary: #edeef1;
 
-  /* Status */
-  --success: #059669;
-  --success-soft: #ecfdf5;
-  --warning: #d97706;
-  --warning-soft: #fffbeb;
-  --danger: #dc2626;
-  --danger-soft: #fef2f2;
-  --neutral-soft: #f1f5f9;
+  /* Primary actions — §3.2.2 (Tangbuy button appearance) */
+  --primary: #333333;
+  --primary-foreground: #ffffff;
+  --brand: #333333;
+  --brand-hover: #262626;
+  --brand-foreground: #ffffff;
+  --brand-ring: rgba(51, 51, 51, 0.22);
+
+  /* Brand illustration — §3.2.1 */
+  --brand-accent: #325be6;
+  --brand-accent-hover: #2648c4;
+  --brand-strong: var(--brand-accent);
+  --brand-soft: #eef2ff;
+  --brand-ink: #0a1e4a;
+
+  /* Links — §3.2.2 */
+  --link: #3a40ff;
+  --link-hover: #2d33cc;
+
+  /* §2.4.2 — Semantic status */
+  --success: #008849;
+  --success-soft: #e6f7ea;
+  --warning: #ff8000;
+  --warning-soft: #fff7e6;
+  --destructive: #e3262d;
+  --destructive-soft: #ffece9;
+  --info: #0072d5;
+  --info-soft: #ebf7ff;
+
+  /* Icons & steps — §3.5 */
+  --icon-muted: #666666;
+  --step-border: #999999;
+
+  /* Legacy aliases (prefer semantic tokens in new code) */
+  --canvas: var(--page-canvas);
+  --background: var(--page-canvas);
+  --surface-muted: var(--muted);
+  --hairline: var(--border);
+  --hairline-strong: #d2d4d8;
+  --ink: var(--foreground);
+  --ink-muted: var(--muted-foreground);
+  --ink-subtle: #94a3b8;
+  --danger: var(--destructive);
+  --danger-soft: var(--destructive-soft);
+  --neutral-soft: var(--muted);
+  --accent: var(--brand-accent);
+  --accent-soft: var(--brand-soft);
 
   /* Radius */
   --radius-card: 12px;
   --radius-control: 8px;
 
-  /* Elevation — deliberately faint */
+  /* Elevation — §2.4.4 selectable card hover */
   --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05);
   --shadow-raised: 0 6px 20px rgba(15, 23, 42, 0.08);
+  --shadow-selectable-hover: 4px 4px 12px 0 rgba(0, 0, 0, 0.08);
 
   /* Layout rhythm */
   --wb-sidebar-w: 240px;
   --wb-rail-w: 316px;
   --wb-gutter: 20px;
-
-  /* Legacy aliases (kept so untouched components resolve) */
-  --background: var(--canvas);
-  --foreground: var(--ink);
-  --border: var(--hairline);
-  --muted: var(--ink-muted);
-  --accent: var(--brand);
-  --accent-soft: var(--brand-soft);
 }
 
 @theme inline {
-  --color-background: var(--canvas);
-  --color-foreground: var(--ink);
+  --color-background: var(--page-canvas);
+  --color-foreground: var(--foreground);
 
-  --color-canvas: var(--canvas);
+  --color-app-shell: var(--app-shell);
+  --color-page-canvas: var(--page-canvas);
+  --color-canvas: var(--page-canvas);
   --color-surface: var(--surface);
-  --color-surface-muted: var(--surface-muted);
+  --color-surface-muted: var(--muted);
+  --color-surface-border: var(--surface-border);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-selected: var(--surface-selected);
 
-  --color-hairline: var(--hairline);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-hairline: var(--border);
   --color-hairline-strong: var(--hairline-strong);
 
-  --color-ink: var(--ink);
-  --color-ink-muted: var(--ink-muted);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted-strong: var(--muted-strong);
+  --color-secondary: var(--secondary);
+
+  --color-ink: var(--foreground);
+  --color-ink-muted: var(--muted-foreground);
   --color-ink-subtle: var(--ink-subtle);
 
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
   --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-foreground: var(--brand-foreground);
   --color-brand-strong: var(--brand-strong);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-accent-hover: var(--brand-accent-hover);
   --color-brand-soft: var(--brand-soft);
+  --color-brand-ink: var(--brand-ink);
+  --color-link: var(--link);
+  --color-link-hover: var(--link-hover);
+  --color-icon-muted: var(--icon-muted);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-danger: var(--destructive);
+  --color-danger-soft: var(--destructive-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
 
   --radius-card: var(--radius-card);
   --radius-control: var(--radius-control);
 
   --shadow-card: var(--shadow-card);
   --shadow-raised: var(--shadow-raised);
+  --shadow-selectable-hover: var(--shadow-selectable-hover);
 
   --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue",
     Arial, sans-serif;
@@ -101,8 +170,8 @@ body {
 }
 
 body {
-  background: var(--canvas);
-  color: var(--ink);
+  background: var(--app-shell);
+  color: var(--foreground);
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
@@ -122,8 +191,8 @@ select {
 }
 
 ::selection {
-  background: #d1fae5; /* emerald-100 */
-  color: #065f46; /* emerald-800 */
+  background: #dbeafe;
+  color: #1e3a8a;
 }
 
 @keyframes fadeInUp {
@@ -137,10 +206,10 @@ select {
   }
 }
 
-/* AI field edit feedback — cool sky/teal, workbench subtle */
+/* AI field edit feedback */
 @keyframes ai-field-value-flash {
   0% {
-    background-color: rgb(224 242 254 / 0.95);
+    background-color: rgb(238 242 255 / 0.95);
     transform: scale(1.015);
   }
   100% {
@@ -151,10 +220,10 @@ select {
 
 @keyframes ai-card-edit-ring {
   0% {
-    border-color: rgb(125 211 252 / 0.85);
+    border-color: rgb(50 91 230 / 0.45);
     box-shadow:
-      0 0 0 1px rgb(125 211 252 / 0.35),
-      inset 0 2px 0 0 rgb(56 189 248 / 0.55);
+      0 0 0 1px rgb(50 91 230 / 0.2),
+      inset 0 2px 0 0 rgb(50 91 230 / 0.35);
   }
   100% {
     border-color: rgb(226 232 240);
@@ -220,7 +289,7 @@ select {
   background: linear-gradient(
     90deg,
     transparent,
-    rgb(56 189 248 / 0.35),
+    rgb(50 91 230 / 0.22),
     transparent
   );
   animation: batch-link-shimmer 1.4s ease-in-out infinite;
@@ -238,10 +307,10 @@ select {
 @keyframes batch-link-done-flash {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgb(16 185 129 / 0);
+    box-shadow: 0 0 0 0 rgb(0 136 73 / 0);
   }
   50% {
-    box-shadow: 0 0 0 3px rgb(16 185 129 / 0.35);
+    box-shadow: 0 0 0 3px rgb(0 136 73 / 0.28);
   }
 }
 
@@ -252,10 +321,10 @@ select {
 @keyframes batch-link-candidate-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgb(16 185 129 / 0.35);
+    box-shadow: 0 0 0 0 rgb(50 91 230 / 0.28);
   }
   50% {
-    box-shadow: 0 0 0 4px rgb(16 185 129 / 0.12);
+    box-shadow: 0 0 0 4px rgb(50 91 230 / 0.1);
   }
 }
 
@@ -269,11 +338,12 @@ select {
 }
 
 @keyframes pipeline-done-flash {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgb(16 185 129 / 0);
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(0 136 73 / 0);
   }
   30% {
-    box-shadow: 0 0 0 4px rgb(16 185 129 / 0.3);
+    box-shadow: 0 0 0 4px rgb(0 136 73 / 0.24);
   }
 }
 

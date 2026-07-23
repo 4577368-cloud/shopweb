@@ -16,6 +16,8 @@
  * 已知维度冲突（颜色不同 / 尺码无重叠 / 型号不同）直接否决为 0。
  */
 
+import { canonicalizeLabel } from "@/lib/sku-align/spec-canon";
+
 export type SizeSystem =
   | "letter"
   | "free"
@@ -495,5 +497,5 @@ export function scoreParsedSpec(a: ParsedSpec, b: ParsedSpec): number {
 
 /** 便捷入口：两个标签字符串 → 0–1 规格匹配分。 */
 export function scoreSpecMatch(labelA: string, labelB: string): number {
-  return scoreParsedSpec(parseSpec(labelA), parseSpec(labelB));
+  return scoreParsedSpec(parseSpec(canonicalizeLabel(labelA)), parseSpec(canonicalizeLabel(labelB)));
 }

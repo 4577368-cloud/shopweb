@@ -1,46 +1,71 @@
 import type { MatchConfidenceTier } from "@/lib/batch-link/confidence";
 import type { BatchLinkCardDrive, BatchLinkCardState } from "@/lib/batch-link/types";
 
-export const CONFIDENCE_TIER_LABELS: Record<MatchConfidenceTier, string> = {
-  high: "高匹配",
-  medium: "中匹配",
-  low: "低匹配",
-  none: "未达门槛",
+export type BatchLinkTranslate = (
+  key: string,
+  params?: Record<string, string | number>
+) => string;
+
+const CONFIDENCE_TIER_KEYS: Record<MatchConfidenceTier, string> = {
+  high: "batchLink.confidenceHigh",
+  medium: "batchLink.confidenceMedium",
+  low: "batchLink.confidenceLow",
+  none: "batchLink.confidenceNone",
 };
 
-export const BATCH_CARD_STATE_LABELS: Record<BatchLinkCardState, string> = {
-  idle: "待处理",
-  queued: "排队中",
-  searching: "图搜中",
-  candidates_ready: "候选就绪",
-  auto_selecting: "自动选用",
-  binding: "关联中",
-  done: "已关联",
-  failed: "失败",
-  needs_review: "待确认",
+const BATCH_STATE_KEYS: Record<BatchLinkCardState, string> = {
+  idle: "batchLink.stateIdle",
+  queued: "batchLink.stateQueued",
+  searching: "batchLink.stateSearching",
+  candidates_ready: "batchLink.stateCandidatesReady",
+  auto_selecting: "batchLink.stateAutoSelecting",
+  binding: "batchLink.stateBinding",
+  done: "batchLink.stateDone",
+  failed: "batchLink.stateFailed",
+  needs_review: "batchLink.stateNeedsReview",
 };
 
-export function formatConfidenceScores(input: {
-  titleScore?: number | null;
-  imageScore?: number | null;
-  tier?: MatchConfidenceTier | null;
-}): string {
+export function confidenceTierLabel(
+  tier: MatchConfidenceTier,
+  t: BatchLinkTranslate
+): string {
+  return t(CONFIDENCE_TIER_KEYS[tier]);
+}
+
+export function batchCardStateLabel(
+  state: BatchLinkCardState,
+  t: BatchLinkTranslate
+): string {
+  return t(BATCH_STATE_KEYS[state]);
+}
+
+export function formatConfidenceScores(
+  t: BatchLinkTranslate,
+  input: {
+    titleScore?: number | null;
+    imageScore?: number | null;
+    tier?: MatchConfidenceTier | null;
+  }
+): string {
   const parts: string[] = [];
   if (input.titleScore != null && input.titleScore > 0) {
-    parts.push(`标题 ${Math.round(input.titleScore)}%`);
+    parts.push(t("batchLink.titleScore", { score: Math.round(input.titleScore) }));
   }
   if (input.imageScore != null && input.imageScore > 0) {
-    parts.push(`图像 ${Math.round(input.imageScore)}%`);
+    parts.push(t("batchLink.imageScore", { score: Math.round(input.imageScore) }));
   }
   if (input.tier) {
-    parts.push(CONFIDENCE_TIER_LABELS[input.tier]);
+    parts.push(confidenceTierLabel(input.tier, t));
   }
   return parts.join(" · ") || "—";
 }
 
-export function formatBatchCardQueueLine(drive: BatchLinkCardDrive): string {
-  const stateLabel = BATCH_CARD_STATE_LABELS[drive.state];
-  const scores = formatConfidenceScores({
+export function formatBatchCardQueueLine(
+  t: BatchLinkTranslate,
+  drive: BatchLinkCardDrive
+): string {
+  const stateLabel = batchCardStateLabel(drive.state, t);
+  const scores = formatConfidenceScores(t, {
     titleScore: drive.titleScore,
     imageScore: drive.imageScore,
     tier: drive.confidenceTier,

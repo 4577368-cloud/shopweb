@@ -1,7 +1,8 @@
 "use client";
 
-import { CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/LocaleProvider";
 
 /**
  * Top "AI task status" card for /products. Answers "AI 帮我做了什么、还剩什么".
@@ -28,6 +29,7 @@ export function AiTaskStatus({
   unbound,
   onRefresh,
 }: AiTaskStatusProps) {
+  const t = useT();
   const pct = analyzed > 0 ? Math.round((matched / analyzed) * 100) : 0;
   const allDone = ready && analyzed > 0 && pending === 0 && unbound === 0;
 
@@ -42,8 +44,8 @@ export function AiTaskStatus({
               <Loader2 className="h-4 w-4 animate-spin" />
             )}
           </span>
-          <h2 className="min-w-0 flex-1 text-base font-semibold tracking-tight text-ink">
-            {ready ? "AI 已完成店铺商品分析" : "正在分析店铺商品…"}
+          <h2 className="min-w-0 flex-1 text-base font-semibold tracking-tight text-ink transition-opacity duration-200">
+            {ready ? t("productsAiTask.titleReady") : t("productsAiTask.titleRunning")}
           </h2>
           {onRefresh ? (
             <Button
@@ -51,30 +53,19 @@ export function AiTaskStatus({
               size="sm"
               onClick={onRefresh}
               className="h-8 w-8 shrink-0 px-0"
-              title="重新分析（同步商品并自动关联货源）"
-              aria-label="重新分析"
+              title={t("productsAiTask.refreshTitle")}
+              aria-label={t("productsAiTask.refreshAria")}
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
           ) : null}
         </div>
 
-        <p className="mt-1.5 text-sm text-ink-muted">
+        <p className="mt-1.5 text-sm text-ink-muted transition-opacity duration-200">
           {ready ? (
-            <>
-              已分析 <strong className="font-semibold text-ink">{analyzed}</strong> 个商品 · 自动匹配{" "}
-              <strong className="font-semibold text-ink">{matched}</strong> 个 · 待确认{" "}
-              <strong
-                className={
-                  pending > 0 ? "font-semibold text-amber-600" : "font-semibold text-ink"
-                }
-              >
-                {pending}
-              </strong>{" "}
-              个
-            </>
+            t("productsAiTask.summaryReady", { analyzed, matched, pending })
           ) : (
-            "正在读取店铺商品与货源关联…"
+            t("productsAiTask.summaryRunning")
           )}
         </p>
       </div>
@@ -86,13 +77,19 @@ export function AiTaskStatus({
             style={{ width: `${ready ? pct : 0}%` }}
           />
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-subtle">
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-subtle transition-opacity duration-200">
           <span>
-            {ready ? `${pct}% 已匹配货源` : "读取中…"}
-            {allDone ? " · 货源已就绪" : ""}
+            {ready
+              ? t("productsAiTask.pctMatched", { pct })
+              : t("productsAiTask.reading")}
+            {allDone ? t("productsAiTask.sourcesReady") : ""}
           </span>
-          <span>已确认 {ready ? confirmed : "—"}</span>
-          <span>未匹配 {ready ? unbound : "—"}</span>
+          <span>
+            {t("productsAiTask.confirmed", { count: ready ? confirmed : "—" })}
+          </span>
+          <span>
+            {t("productsAiTask.unbound", { count: ready ? unbound : "—" })}
+          </span>
         </div>
       </div>
     </section>

@@ -13,7 +13,7 @@ export interface MetricSummaryItem {
 
 const iconToneMap: Record<MetricTone, string> = {
   default: "bg-slate-100 text-slate-500",
-  brand: "bg-brand-soft text-brand-strong",
+  brand: "bg-brand-soft text-brand-accent",
   warning: "bg-amber-50 text-amber-600",
   neutral: "bg-slate-100 text-slate-400",
 };

@@ -119,18 +119,32 @@ export function resolveTopAutoBindScore(
   return effectiveAutoBindTitleScore(title, image);
 }
 
-export function formatTitleMatchLabel(score: number | null | undefined): string | null {
+type MatchLabelTranslate = (
+  key: string,
+  params?: Record<string, string | number>
+) => string;
+
+export function formatTitleMatchLabel(
+  t: MatchLabelTranslate,
+  score: number | null | undefined
+): string | null {
   if (score == null || score <= 0) return null;
-  return `标题 ${Math.round(score)}%`;
+  return t("batchLink.titleScore", { score: Math.round(score) });
 }
 
-export function formatImageMatchLabel(score: number | null | undefined): string | null {
+export function formatImageMatchLabel(
+  t: MatchLabelTranslate,
+  score: number | null | undefined
+): string | null {
   if (score == null || score <= 0) return null;
-  return `图像 ${Math.round(score)}%`;
+  return t("batchLink.imageScore", { score: Math.round(score) });
 }
 
-export function imageGateBlockedHint(imageScore: number | null | undefined): string | null {
+export function imageGateBlockedHint(
+  t: MatchLabelTranslate,
+  imageScore: number | null | undefined
+): string | null {
   if (passesImageRecommendGate(imageScore)) return null;
-  if (imageScore == null) return "图像未验证";
-  return `图像 ${Math.round(imageScore)}% · 未达门槛`;
+  if (imageScore == null) return t("batchLink.imageUnverified");
+  return t("batchLink.imageBelowGate", { score: Math.round(imageScore) });
 }

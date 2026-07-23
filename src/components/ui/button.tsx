@@ -3,22 +3,24 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * 按钮规范：
+ * Buttons — spec §3.2.2
  * - md：页面主/次按钮，统一 h-9 / text-sm / font-medium
  * - sm：表格行内，统一 h-7 / text-xs（优先用 RowAction）
  */
 const buttonVariants = cva(
-  "inline-flex cursor-pointer select-none touch-manipulation items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius-control)] font-medium transition-[transform,background-color,border-color,color,box-shadow] duration-100 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100",
+  "inline-flex cursor-pointer select-none touch-manipulation items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius-control)] font-medium transition-[transform,background-color,border-color,color,box-shadow] duration-100 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100",
   {
     variants: {
       variant: {
-        primary: "bg-brand text-white hover:bg-brand-strong active:bg-brand-strong",
+        primary:
+          "bg-brand text-brand-foreground hover:bg-brand-hover active:bg-brand-hover",
         secondary:
-          "bg-surface text-slate-700 border border-hairline hover:bg-slate-50 active:bg-slate-100",
+          "border border-brand bg-surface text-brand hover:bg-surface-hover active:bg-muted-strong",
         ghost:
-          "text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:bg-slate-200",
-        danger: "bg-red-600 text-white hover:bg-red-700 active:bg-red-800",
-        link: "text-brand underline-offset-4 hover:underline h-auto px-0 active:scale-100",
+          "text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-muted-strong",
+        danger:
+          "bg-destructive text-primary-foreground hover:brightness-95 active:brightness-90",
+        link: "h-auto px-0 text-link underline-offset-4 hover:text-link-hover hover:underline active:scale-100",
       },
       size: {
         md: "h-9 px-3.5 text-sm",

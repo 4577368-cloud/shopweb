@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw } from "@/lib/ui/icons";
 import { motion } from "framer-motion";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
@@ -66,7 +66,7 @@ export default function SyncPage() {
     try {
       const data =
         isAuthorized && shopName
-          ? await assembleLaunchSummary(shopName)
+          ? await assembleLaunchSummary(shopName, t)
           : getLaunchSummary();
       if (cancelled()) return;
       setSummary(data);
@@ -137,8 +137,8 @@ export default function SyncPage() {
 
   const ceremonyTasks = useMemo(
     () =>
-      summary ? buildCeremonyTasks(summary.stats, ceremonyPercent, showFull) : [],
-    [summary, ceremonyPercent, showFull]
+      summary ? buildCeremonyTasks(t, summary.stats, ceremonyPercent, showFull) : [],
+    [summary, ceremonyPercent, showFull, t]
   );
 
   const activeProductIndex = summary
@@ -154,8 +154,8 @@ export default function SyncPage() {
     : 0;
 
   const launchReportText = useMemo(
-    () => (summary ? composeLaunchReport(summary) : ""),
-    [summary]
+    () => (summary ? composeLaunchReport(summary, t) : ""),
+    [summary, t]
   );
 
   const handleExportReport = () => {

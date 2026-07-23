@@ -2,7 +2,7 @@
 
 import { ThumbImage } from "@/components/ui/thumb-image";
 import { useMemo } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight } from "@/lib/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MatchStatusBadge } from "@/components/ui/status-badge";
@@ -11,14 +11,9 @@ import {
   MEDIUM_MATCH_THRESHOLD,
 } from "@/data/mock";
 import { isProductResolved } from "@/context/onboarding-context";
+import { useT } from "@/i18n/LocaleProvider";
 import type { MatchSource, ProductMatch, StockLevel } from "@/lib/types";
 import { cn, formatPercent } from "@/lib/utils";
-
-const sourceLabel: Record<MatchSource, string> = {
-  image_search: "图搜",
-  title_match: "标题匹配",
-  manual: "属性匹配",
-};
 
 function tier(score: number): "high" | "medium" | "low" {
   if (score >= HIGH_MATCH_THRESHOLD) return "high";
@@ -32,13 +27,6 @@ function stockTone(level: StockLevel) {
   return "text-red-700";
 }
 
-function stockText(level: StockLevel, count?: number, label?: string) {
-  if (label) return label;
-  if (level === "in_stock") return count != null ? `库存 ${count}` : "现货充足";
-  if (level === "low") return count != null ? `偏低 ${count}` : "库存偏低";
-  return "缺货";
-}
-
 interface MatchCompareRowProps {
   item: ProductMatch;
   focused?: boolean;
@@ -50,14 +38,39 @@ export function MatchCompareRow({
   focused,
   onAction,
 }: MatchCompareRowProps) {
-  const t = tier(item.matchScore);
+  const t = useT();
+  const matchTier = tier(item.matchScore);
   const resolved =
     isProductResolved(item.status) && item.status !== "flagged";
+
+  const sourceLabel = useMemo(
+    (): Record<MatchSource, string> => ({
+      image_search: t("matchCompare.sourceImageSearch"),
+      title_match: t("matchCompare.sourceTitleMatch"),
+      manual: t("matchCompare.sourceManual"),
+    }),
+    [t]
+  );
+
+  const stockText = (level: StockLevel, count?: number, label?: string) => {
+    if (label) return label;
+    if (level === "in_stock") {
+      return count != null
+        ? t("matchCompare.stockCount", { count })
+        : t("matchCompare.stockInStock");
+    }
+    if (level === "low") {
+      return count != null
+        ? t("matchCompare.stockCount", { count })
+        : t("matchCompare.stockLow");
+    }
+    return t("matchCompare.stockOut");
+  };
 
   const statusConfig = useMemo(() => {
     if (item.status === "confirmed") {
       return {
-        label: "已确认",
+        label: t("matchCompare.statusConfirmed"),
         bg: "bg-emerald-500",
         text: "text-white",
         border: "border-emerald-300",
@@ -66,7 +79,7 @@ export function MatchCompareRow({
     }
     if (item.status === "needs_review") {
       return {
-        label: "待确认",
+        label: t("matchCompare.statusNeedsReview"),
         bg: "bg-amber-500",
         text: "text-white",
         border: "border-amber-300",
@@ -75,7 +88,7 @@ export function MatchCompareRow({
     }
     if (item.status === "deferred") {
       return {
-        label: "暂不处理",
+        label: t("matchCompare.statusDeferred"),
         bg: "bg-slate-400",
         text: "text-white",
         border: "border-slate-300",
@@ -84,7 +97,7 @@ export function MatchCompareRow({
     }
     if (item.status === "rejected") {
       return {
-        label: "已排除",
+        label: t("matchCompare.statusRejected"),
         bg: "bg-red-400",
         text: "text-white",
         border: "border-red-300",
@@ -93,7 +106,7 @@ export function MatchCompareRow({
     }
     if (item.status === "flagged") {
       return {
-        label: "已标记",
+        label: t("matchCompare.statusFlagged"),
         bg: "bg-violet-500",
         text: "text-white",
         border: "border-violet-300",
@@ -101,13 +114,13 @@ export function MatchCompareRow({
       };
     }
     return {
-      label: "未关联",
+      label: t("matchCompare.statusUnlinked"),
       bg: "bg-slate-400",
       text: "text-white",
       border: "border-slate-300",
       bgLight: "bg-slate-50/30",
     };
-  }, [item.status]);
+  }, [item.status, t]);
 
   return (
     <article
@@ -125,7 +138,6 @@ export function MatchCompareRow({
         {statusConfig.label}
       </div>
       <div className="grid grid-cols-[1fr_28px_1fr_148px_132px] items-stretch gap-3">
-        {/* 左：店铺商品 */}
         <div className="flex min-w-0 gap-3">
           <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-50">
             <ThumbImage
@@ -139,7 +151,7 @@ export function MatchCompareRow({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              店铺商品
+              {t("matchCompare.shopProduct")}
             </p>
             <h3 className="mt-0.5 line-clamp-2 text-sm font-semibold leading-5 text-slate-900">
               {item.shopProduct.title}
@@ -178,15 +190,13 @@ export function MatchCompareRow({
           </div>
         </div>
 
-        {/* 中：映射关系 */}
         <div className="flex flex-col items-center justify-center text-slate-300">
           <ArrowRight className="h-4 w-4" />
           <span className="mt-1 text-[10px] leading-none text-slate-400">
-            匹配到
+            {t("matchCompare.matchedTo")}
           </span>
         </div>
 
-        {/* 右：推荐货源 */}
         <div className="flex min-w-0 gap-3">
           <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-50">
             <ThumbImage
@@ -200,7 +210,7 @@ export function MatchCompareRow({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-medium uppercase tracking-wide text-teal-700/70">
-              Tangbuy 推荐
+              {t("matchCompare.tangbuyRecommend")}
             </p>
             <h3 className="mt-0.5 line-clamp-2 text-sm font-semibold leading-5 text-slate-900">
               {item.sourceProduct.title}
@@ -213,7 +223,7 @@ export function MatchCompareRow({
                 {item.sourceProduct.costUsdApprox ?? item.sourceProduct.price}
               </span>
               <span className="text-[11px] text-slate-500">
-                成本 {item.sourceProduct.price}
+                {t("matchCompare.cost")} {item.sourceProduct.price}
               </span>
               <span className="text-[11px] text-slate-600">
                 MOQ {item.sourceProduct.moq}
@@ -236,16 +246,15 @@ export function MatchCompareRow({
           </div>
         </div>
 
-        {/* 决策指标 */}
         <div className="flex flex-col justify-center gap-2 border-l border-slate-100 pl-3">
           <div>
-            <p className="text-[11px] text-slate-400">匹配度</p>
+            <p className="text-[11px] text-slate-400">{t("matchCompare.matchScore")}</p>
             <p
               className={cn(
                 "mt-0.5 text-xl font-semibold tracking-tight tabular-nums",
-                t === "high" && "text-emerald-700",
-                t === "medium" && "text-slate-800",
-                t === "low" && "text-amber-700"
+                matchTier === "high" && "text-emerald-700",
+                matchTier === "medium" && "text-slate-800",
+                matchTier === "low" && "text-amber-700"
               )}
             >
               {formatPercent(item.matchScore)}
@@ -253,7 +262,7 @@ export function MatchCompareRow({
           </div>
           <Badge variant="outline">{sourceLabel[item.source]}</Badge>
           <div>
-            <p className="text-[11px] text-slate-400">预估毛利</p>
+            <p className="text-[11px] text-slate-400">{t("matchCompare.marginEstimate")}</p>
             <p className="text-xs font-medium text-slate-800">
               {item.marginEstimate}
             </p>
@@ -264,24 +273,23 @@ export function MatchCompareRow({
           <MatchStatusBadge status={item.status} />
         </div>
 
-        {/* 动作区 */}
         <div className="flex flex-col justify-center gap-1.5 border-l border-slate-100 pl-3">
           {resolved ? (
             <p className="text-xs text-slate-400">
               {item.status === "confirmed"
-                ? "已采用此货源"
+                ? t("matchCompare.adopted")
                 : item.status === "deferred"
-                  ? "已暂不处理"
-                  : "已排除"}
+                  ? t("matchCompare.deferred")
+                  : t("matchCompare.rejected")}
             </p>
-          ) : t === "high" ? (
+          ) : matchTier === "high" ? (
             <>
               <Button
                 size="sm"
                 className="w-full"
                 onClick={() => onAction(item.id, "confirm")}
               >
-                采用此商品
+                {t("matchCompare.adoptProduct")}
               </Button>
               <Button
                 size="sm"
@@ -289,7 +297,7 @@ export function MatchCompareRow({
                 className="w-full"
                 onClick={() => onAction(item.id, "view")}
               >
-                查看详情
+                {t("matchCompare.viewDetails")}
               </Button>
               <Button
                 size="sm"
@@ -297,17 +305,17 @@ export function MatchCompareRow({
                 className="w-full"
                 onClick={() => onAction(item.id, "swap")}
               >
-                更换候选
+                {t("matchCompare.swapCandidate")}
               </Button>
             </>
-          ) : t === "medium" ? (
+          ) : matchTier === "medium" ? (
             <>
               <Button
                 size="sm"
                 className="w-full"
                 onClick={() => onAction(item.id, "view")}
               >
-                查看详情
+                {t("matchCompare.viewDetails")}
               </Button>
               <Button
                 size="sm"
@@ -315,7 +323,7 @@ export function MatchCompareRow({
                 className="w-full"
                 onClick={() => onAction(item.id, "swap")}
               >
-                更换候选
+                {t("matchCompare.swapCandidate")}
               </Button>
             </>
           ) : (
@@ -325,7 +333,7 @@ export function MatchCompareRow({
                 className="w-full"
                 onClick={() => onAction(item.id, "search")}
               >
-                查看候选
+                {t("matchCompare.viewCandidates")}
               </Button>
               <Button
                 size="sm"
@@ -333,7 +341,7 @@ export function MatchCompareRow({
                 className="w-full"
                 onClick={() => onAction(item.id, "defer")}
               >
-                暂不处理
+                {t("matchCompare.defer")}
               </Button>
             </>
           )}

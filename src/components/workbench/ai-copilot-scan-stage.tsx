@@ -12,8 +12,9 @@ import {
   Sparkles,
   Store,
   Truck,
-} from "lucide-react";
+} from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
 import type { ScanSummaryStats } from "@/lib/scan/copilot-workflow";
 import {
@@ -45,11 +46,12 @@ const STEP_ICON_MAP: Record<CopilotWorkflowStepId, ComponentType<{ className?: s
 };
 
 function StepStatusChip({ status }: { status: ScanTaskStatus }) {
+  const t = useT();
   if (status === "running") {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-semibold text-brand-strong">
         <Loader2 className="h-3 w-3 animate-spin" />
-        进行中
+        {t("workbenchScan.statusRunning")}
       </span>
     );
   }
@@ -57,19 +59,19 @@ function StepStatusChip({ status }: { status: ScanTaskStatus }) {
     return (
       <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
         <CheckCircle2 className="h-3 w-3" />
-        已完成
+        {t("workbenchScan.statusDone")}
       </span>
     );
   }
   if (status === "failed") {
     return (
       <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-        部分完成
+        {t("workbenchScan.statusPartial")}
       </span>
     );
   }
   return (
-    <span className="shrink-0 text-[10px] text-ink-subtle">等待中</span>
+    <span className="shrink-0 text-[10px] text-ink-subtle">{t("workbenchScan.statusWaiting")}</span>
   );
 }
 
@@ -218,6 +220,7 @@ export function AiCopilotScanStage({
   done,
   onViewResult,
 }: AiCopilotScanStageProps) {
+  const t = useT();
   const steps = useMemo(
     () => deriveCopilotWorkflow(tasks, stats, done),
     [tasks, stats, done]
@@ -237,7 +240,7 @@ export function AiCopilotScanStage({
       {!done ? (
         <p className="inline-flex items-center gap-1.5 text-xs text-ink-subtle">
           <Clock className="h-3.5 w-3.5" />
-          预计完成时间：10～20 秒
+          {t("workbenchScan.eta")}
         </p>
       ) : null}
 
@@ -271,20 +274,20 @@ export function AiCopilotScanStage({
             {done ? (
               <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-4">
-                  <SummaryStat label="店铺商品" value={stats.productCount} />
+                  <SummaryStat label={t("workbenchScan.statProducts")} value={stats.productCount} />
                   <SummaryStat
-                    label="推荐匹配"
+                    label={t("workbenchScan.statMatched")}
                     value={stats.matchedCount}
                     tone="accent"
                   />
                   <SummaryStat
-                    label="待确认"
+                    label={t("workbenchScan.statPending")}
                     value={stats.pendingCount}
                     tone={stats.pendingCount > 0 ? "warn" : "default"}
                   />
                   {stats.shopContext.orderCount != null ? (
                     <SummaryStat
-                      label="待发货订单"
+                      label={t("workbenchScan.statUnfulfilled")}
                       value={unfulfilled ?? 0}
                       tone={(unfulfilled ?? 0) > 0 ? "warn" : "default"}
                     />
@@ -294,18 +297,20 @@ export function AiCopilotScanStage({
                   className="h-11 w-full shrink-0 px-6 lg:w-auto"
                   onClick={onViewResult}
                 >
-                  查看 AI 推荐结果 →
+                  {t("workbenchScan.viewAiResults")}
                 </Button>
               </div>
             ) : (
               <div className="mt-3 space-y-1.5">
                 <div className="flex items-baseline justify-between text-xs">
-                  <span className="text-ink-muted">总体进度</span>
+                  <span className="text-ink-muted">{t("workbenchScan.overallProgress")}</span>
                   <span className="tabular-nums">
                     <span className="text-sm font-bold text-brand-strong">
                       {completed}
                     </span>
-                    <span className="text-ink-subtle"> / {steps.length} 步</span>
+                    <span className="text-ink-subtle">
+                      {t("workbenchScan.stepCount", { total: steps.length })}
+                    </span>
                     <span className="ml-2 font-semibold text-ink">{overallPct}%</span>
                   </span>
                 </div>
@@ -321,7 +326,7 @@ export function AiCopilotScanStage({
                 </div>
                 {active ? (
                   <p className="text-[11px] text-ink-subtle">
-                    正在执行：<span className="font-medium text-ink-muted">{active.title}</span>
+                    {t("workbenchScan.executingStep")}<span className="font-medium text-ink-muted">{active.title}</span>
                   </p>
                 ) : null}
               </div>
@@ -332,7 +337,7 @@ export function AiCopilotScanStage({
 
       <section className="rounded-2xl border border-hairline bg-white px-4 py-4 shadow-card">
         <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-subtle">
-          AI 工作流进度
+          {t("workbenchScan.workflowTitle")}
         </h3>
         <div className="space-y-0">
           {steps.map((step, idx) => (

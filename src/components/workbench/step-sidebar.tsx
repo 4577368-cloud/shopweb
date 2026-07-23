@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
-import { CheckCircle2, Circle } from "lucide-react";
+import { CheckCircle2 } from "@/lib/ui/icons";
 import { AppLogo } from "@/components/brand/app-logo";
 import { useOnboarding } from "@/context/onboarding-context";
 import { ShopSwitcher } from "@/components/workbench/shop-switcher";
+import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
+import { SidebarAdCarousel } from "@/components/workbench/sidebar-ad-carousel";
+import { SidebarUserMenu } from "@/components/workbench/sidebar-user-menu";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { cn } from "@/lib/utils";
@@ -26,23 +29,15 @@ function StepIndicator({
     <div
       className={cn(
         "relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums",
-        completed && "bg-brand text-white",
-        current && !completed && "bg-brand text-white ring-4 ring-brand-soft",
-        !completed && !current && "border border-hairline bg-surface text-ink-subtle"
+        completed && "bg-brand-accent text-white",
+        current && !completed && "bg-brand-accent text-white",
+        !completed &&
+          !current &&
+          "border border-[var(--step-border)] bg-brand-soft text-brand-accent"
       )}
     >
       {completed ? <CheckCircle2 className="h-4 w-4" /> : order}
     </div>
-  );
-}
-
-function isSnapshotInProgress(snapshot: WorkflowStepSnapshot): boolean {
-  return (
-    snapshot.statusKey === "in_progress" ||
-    snapshot.statusKey === "pending" ||
-    snapshot.statusKey === "loading" ||
-    snapshot.statusKey === "ready" ||
-    snapshot.statusKey === "syncing"
   );
 }
 
@@ -109,7 +104,7 @@ export function StepSidebar() {
 
   return (
     <aside className="flex h-full w-[15.5rem] shrink-0 flex-col border-r border-hairline bg-surface">
-      <div className="px-4 py-4">
+      <div className="shrink-0 px-4 pb-3 pt-4 leading-none">
         <AppLogo
           variant="sidebar"
           href={localePath(locale, isAuthorized ? "/" : "/authorize")}
@@ -138,14 +133,13 @@ export function StepSidebar() {
             const current = pathname === step.href;
             const snapshot = step.snapshot;
             const completed = snapshot.statusKey === "completed";
-            const inProgress = isSnapshotInProgress(snapshot);
 
             return (
               <li key={step.id} className="relative">
                 {index < navItems.length - 1 ? (
                   <span
                     className={cn(
-                      "pointer-events-none absolute left-[1.34rem] top-8 z-0 h-[calc(100%-0.5rem)] w-px",
+                      "pointer-events-none absolute left-[1.34rem] top-7 z-0 h-[calc(100%-0.25rem)] w-px",
                       completed ? "bg-brand/35" : "bg-hairline"
                     )}
                     aria-hidden
@@ -163,32 +157,16 @@ export function StepSidebar() {
                   )}
                 >
                   <StepIndicator order={step.order} completed={completed} current={current} />
-                  <div className="min-w-0 flex-1">
-                    <span
-                      className={cn(
-                        "block text-[13px] font-medium leading-5 transition-colors",
-                        current
-                          ? "text-brand-strong"
-                          : "text-ink group-hover:text-brand-strong"
-                      )}
-                    >
-                      {step.order}. {step.title}
-                    </span>
-                    <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-ink-muted">
-                      {snapshot.description}
-                    </p>
-                    <span
-                      className={cn(
-                        "mt-0.5 inline-flex items-center gap-1 text-[10px] font-medium",
-                        snapshot.statusTone
-                      )}
-                    >
-                      {inProgress && !completed ? (
-                        <Circle className="h-1.5 w-1.5 fill-current" />
-                      ) : null}
-                      {snapshot.statusLabel}
-                    </span>
-                  </div>
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 text-[13px] font-medium leading-5 transition-colors",
+                      current
+                        ? "text-brand-accent"
+                        : "text-ink group-hover:text-brand-accent"
+                    )}
+                  >
+                    {step.order}. {step.title}
+                  </span>
                 </Link>
               </li>
             );
@@ -196,15 +174,11 @@ export function StepSidebar() {
         </ul>
       </nav>
 
-      <div className="border-t border-hairline px-4 py-3">
-        <div className="flex flex-col gap-1 text-[11px] text-ink-subtle">
-          <Link href="#" className="hover:text-ink-muted">
-            {t("common.help")}
-          </Link>
-          <Link href="#" className="hover:text-ink-muted">
-            {t("common.helpDocs")}
-          </Link>
-        </div>
+      <SidebarAdCarousel className="px-4 pb-3" />
+
+      <div className="flex shrink-0 items-center gap-2 border-t border-hairline px-4 py-2.5">
+        <SidebarUserMenu className="min-w-0 flex-1" />
+        <LanguageSwitcher className="shrink-0" />
       </div>
     </aside>
   );

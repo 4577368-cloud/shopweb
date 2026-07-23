@@ -1,3 +1,4 @@
+import type { TranslateFn } from "@/i18n/server";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
 import type { AgentSuggestedAction } from "@/lib/agents/types";
@@ -27,66 +28,78 @@ export function productFocusChips(_ctx: ProductsPageContext): ProductsIntentId[]
 /**
  * Single top-priority task for the rail — short, one CTA.
  */
-export function computeActiveTask(ctx: ProductsPageContext): ActiveTask {
+export function computeActiveTask(
+  ctx: ProductsPageContext,
+  t: TranslateFn
+): ActiveTask {
   if (!ctx.authorized) {
     return {
-      title: "先连接店铺",
-      reason: "授权后才能分析商品与配置定价。",
+      title: t("productsActiveTask.connectShopTitle"),
+      reason: t("productsActiveTask.connectShopReason"),
       intent: "explain_pricing",
-      action: { kind: "none", label: "去授权" },
+      action: { kind: "none", label: t("productsActiveTask.connectShopAction") },
     };
   }
 
   if (!ctx.pricing.configured) {
     return {
-      title: "先配置定价",
-      reason: "未配置时建议售价不准。",
+      title: t("productsActiveTask.configurePricingTitle"),
+      reason: t("productsActiveTask.configurePricingReason"),
       intent: "configure_pricing",
-      action: { kind: "open_pricing_drawer", label: "立即配置" },
+      action: {
+        kind: "open_pricing_drawer",
+        label: t("productsActiveTask.configurePricingAction"),
+      },
     };
   }
 
   if (ctx.pendingCount > 0) {
     return {
-      title: `确认 ${ctx.pendingCount} 个待关联`,
-      reason: "确认或改绑后即可继续。",
+      title: t("productsActiveTask.confirmPendingTitle", { count: ctx.pendingCount }),
+      reason: t("productsActiveTask.confirmPendingReason"),
       intent: "go_pending",
       action: {
         kind: "set_shop_filter",
         tab: "shop",
         shopFilter: "pending",
-        label: "看待确认",
+        label: t("productsActiveTask.confirmPendingAction"),
       },
     };
   }
 
   if (ctx.unboundCount > 0) {
     return {
-      title: `${ctx.unboundCount} 个未匹配`,
-      reason: "可批量启动图搜，为未关联商品自动匹配货源。",
+      title: t("productsActiveTask.unboundTitle", { count: ctx.unboundCount }),
+      reason: t("productsActiveTask.unboundReason"),
       intent: "go_unbound",
       action: {
         kind: "rematch_unbound",
-        label: "批量关联",
+        label: t("productsActiveTask.unboundAction"),
       },
     };
   }
 
   if (ctx.tab !== "catalog") {
     return {
-      title: "去发现新品",
-      reason: "在售关联已就绪，可补充货源。",
+      title: t("productsActiveTask.discoverTitle"),
+      reason: t("productsActiveTask.discoverReason"),
       intent: "go_discover",
-      action: { kind: "set_tab", tab: "catalog", label: "打开发现新品" },
+      action: {
+        kind: "set_tab",
+        tab: "catalog",
+        label: t("productsActiveTask.discoverAction"),
+      },
     };
   }
 
   return {
-    title: "优化筛选",
+    title: t("productsActiveTask.optimizeFiltersTitle"),
     reason:
       ctx.recommendedCategoryNames[0] != null
-        ? `可按「${ctx.recommendedCategoryNames[0]}」缩小范围。`
-        : "用类目或价格带缩小后再上架。",
+        ? t("productsActiveTask.optimizeFiltersReasonCategory", {
+            category: ctx.recommendedCategoryNames[0],
+          })
+        : t("productsActiveTask.optimizeFiltersReasonDefault"),
     intent: "suggest_filters",
     action: {
       kind: "apply_filter_preset",
@@ -97,7 +110,7 @@ export function computeActiveTask(ctx: ProductsPageContext): ActiveTask {
             label: ctx.recommendedCategoryNames[0],
           }
         : undefined,
-      label: "筛选建议",
+      label: t("productsActiveTask.optimizeFiltersAction"),
     },
   };
 }
@@ -148,7 +161,6 @@ export function splitProductChips(
   maxPrimary = 3
 ): { primary: ProductsIntentId[]; more: ProductsIntentId[] } {
   if (ordered.length <= maxPrimary) {
-    // Keep pricing last for stable right-side placement when few chips.
     const pricing = ordered.find(isPricingIntent);
     const rest = ordered.filter((id) => !isPricingIntent(id));
     return {

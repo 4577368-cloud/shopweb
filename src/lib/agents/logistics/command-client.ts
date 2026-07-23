@@ -7,11 +7,13 @@ import type { LogisticsCommandClassifyResult } from "@/lib/agents/logistics/comm
 
 export async function classifyLogisticsCommandInput(
   text: string,
-  ctx?: LogisticsCommandClassifyContext | null
+  ctx?: LogisticsCommandClassifyContext | null,
+  locale?: string | null
 ): Promise<LogisticsCommandClassifyResult> {
   return classifyCommandInput(text, {
     rulesClassify: classifyLogisticsCommandByRules,
     apiPath: "/api/agents/logistics/command",
     context: ctx ?? null,
+    locale,
   });
 }

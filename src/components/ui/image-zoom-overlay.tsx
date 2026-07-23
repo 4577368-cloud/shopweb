@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +15,13 @@ export function ImageZoomOverlay({
   onClose: () => void;
   className?: string;
 }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -24,23 +31,25 @@ export function ImageZoomOverlay({
   }, [onClose]);
 
   useEffect(() => {
+    if (!mounted) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, []);
+  }, [mounted]);
 
-  if (typeof document === "undefined") return null;
+  if (!mounted) return null;
 
   return createPortal(
-    <button
-      type="button"
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="放大预览"
       className={cn(
         "fixed inset-0 z-[100] flex cursor-zoom-out items-center justify-center bg-black/75 p-4",
         className
       )}
-      aria-label="关闭放大预览"
       onClick={onClose}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -48,10 +57,10 @@ export function ImageZoomOverlay({
         src={src}
         alt={alt}
         decoding="async"
-        className="max-h-[90vh] max-w-[min(90vw,720px)] object-contain"
+        className="max-h-[90vh] max-w-[min(90vw,720px)] cursor-default object-contain"
         onClick={(event) => event.stopPropagation()}
       />
-    </button>,
+    </div>,
     document.body
   );
 }

@@ -1,3 +1,4 @@
+import type { TranslateFn } from "@/i18n/server";
 import type {
   SkuCommandDraft,
   SkuCommandExecution,
@@ -6,17 +7,20 @@ import type {
 } from "@/lib/agents/sku-align/command-schema";
 import type { SkuProductOverview } from "@/lib/types";
 
-const FILTER_LABELS: Record<SkuFilterMode, string> = {
-  all: "全部商品",
-  fully_linked: "全部关联",
-  partially_linked: "部分关联",
-};
-
 export interface SkuPageContext {
   productCatalog: SkuProductOverview[];
   focusProductId?: string | null;
   focusProduct?: SkuProductOverview | null;
   currentFilter?: string | null;
+}
+
+function filterLabel(t: TranslateFn, filter: SkuFilterMode): string {
+  const keys: Record<SkuFilterMode, string> = {
+    all: "agentSku.filterAll",
+    fully_linked: "agentSku.filterFullyLinked",
+    partially_linked: "agentSku.filterPartiallyLinked",
+  };
+  return t(keys[filter]);
 }
 
 function needsFocusProduct(intent: SkuCommandDraft["intent"]): boolean {
@@ -28,6 +32,7 @@ function needsFocusProduct(intent: SkuCommandDraft["intent"]): boolean {
 }
 
 function resolveProductId(
+  t: TranslateFn,
   draft: SkuCommandDraft,
   ctx: SkuPageContext
 ): { productId: string | null; title: string | null; clarify?: string } {
@@ -58,16 +63,18 @@ function resolveProductId(
       return {
         productId: null,
         title: null,
-        clarify: `找到多个名称相近的商品，请点选其中一个后再试：${matches
-          .slice(0, 5)
-          .map((m) => `「${m.title}」`)
-          .join("、")}`,
+        clarify: t("agentSku.clarifyAmbiguous", {
+          matches: matches
+            .slice(0, 5)
+            .map((m) => `「${m.title}」`)
+            .join("、"),
+        }),
       };
     }
     return {
       productId: null,
       title: null,
-      clarify: `未找到名称包含「${hint}」的商品，请先在列表中点选商品，或换个更完整的标题。`,
+      clarify: t("agentSku.clarifyNotFound", { hint }),
     };
   }
 
@@ -93,6 +100,7 @@ function isPartiallyLinked(product: SkuProductOverview): boolean {
 }
 
 function resolveBatchProductIds(
+  t: TranslateFn,
   draft: SkuCommandDraft,
   ctx: SkuPageContext
 ): { ids: string[]; label: string } {
@@ -112,29 +120,42 @@ function resolveBatchProductIds(
   const ids = filtered.map((p) => p.thirdPlatformItemId);
 
   const filterLabels: Record<string, string> = {
-    all: "全部商品",
-    partially_linked: "部分关联商品",
+    all: t("agentSku.filterAll"),
+    partially_linked: t("agentSku.filterPartialProducts"),
   };
-  const label = filterLabels[filter] ?? "全部商品";
+  const label = filterLabels[filter] ?? t("agentSku.filterAll");
 
   return { ids, label };
 }
 
+function productTitle(
+  t: TranslateFn,
+  title: string | null,
+  productId: string | null,
+  ctx: SkuPageContext
+): string {
+  return (
+    title ??
+    ctx.focusProduct?.title ??
+    (productId
+      ? t("agentSku.productFallback", { id: productId.slice(-8) })
+      : t("agentSku.noProductSelected"))
+  );
+}
+
 export function planSkuCommand(
+  t: TranslateFn,
   draft: SkuCommandDraft,
   ctx: SkuPageContext
 ): SkuCommandPlan {
-  const resolved = resolveProductId(draft, ctx);
+  const resolved = resolveProductId(t, draft, ctx);
   const productId = resolved.productId;
-  const focusTitle =
-    resolved.title ??
-    ctx.focusProduct?.title ??
-    (productId ? `商品 ${productId.slice(-8)}` : "未选中商品");
+  const focusTitle = productTitle(t, resolved.title, productId, ctx);
 
   if (resolved.clarify) {
     return {
       draft,
-      operation: commandOperationLabel(draft.intent),
+      operation: commandOperationLabel(t, draft.intent),
       targetLabel: focusTitle,
       detailLines: [],
       executable: false,
@@ -145,11 +166,12 @@ export function planSkuCommand(
   switch (draft.intent) {
     case "open_filter": {
       const filter = draft.params.filterMode ?? "all";
+      const label = filterLabel(t, filter);
       return {
         draft,
-        operation: "切换列表筛选",
-        targetLabel: FILTER_LABELS[filter],
-        detailLines: [`将切换到「${FILTER_LABELS[filter]}」视图`],
+        operation: t("agentSku.opOpenFilter"),
+        targetLabel: label,
+        detailLines: [t("agentSku.detailSwitchFilter", { filter: label })],
         executable: true,
       };
     }
@@ -157,34 +179,35 @@ export function planSkuCommand(
       if (!productId) {
         return {
           draft,
-          operation: "聚焦商品",
+          operation: t("agentSku.opFocusProduct"),
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify:
-            "请先在列表中点选商品，或在命令里写出商品名（如：看「拖鞋」的详情）。",
+          clarify: t("agentSku.clarifySelectForFocus"),
         };
       }
       return {
         draft: { ...draft, productId },
-        operation: "聚焦商品",
+        operation: t("agentSku.opFocusProduct"),
         targetLabel: focusTitle,
-        detailLines: [`将在列表中定位：${focusTitle}`],
+        detailLines: [t("agentSku.detailLocateProduct", { title: focusTitle })],
         executable: true,
       };
     }
     case "rerun_auto_align": {
       if (draft.targetScope === "all") {
-        const batchResult = resolveBatchProductIds(draft, ctx);
+        const batchResult = resolveBatchProductIds(t, draft, ctx);
         const totalCount = batchResult.ids.length;
         if (totalCount === 0) {
           return {
             draft,
-            operation: "批量重新对齐",
+            operation: t("agentSku.opBatchRealign"),
             targetLabel: batchResult.label,
             detailLines: [],
             executable: false,
-            clarify: `当前「${batchResult.label}」范围内没有商品，无法执行批量对齐。`,
+            clarify: t("agentSku.clarifyNoProductsInScope", {
+              label: batchResult.label,
+            }),
           };
         }
         return {
@@ -196,11 +219,17 @@ export function planSkuCommand(
               batchProductIds: batchResult.ids,
             },
           },
-          operation: "批量重新对齐",
-          targetLabel: `${batchResult.label} · ${totalCount} 个`,
+          operation: t("agentSku.opBatchRealign"),
+          targetLabel: t("agentSku.targetScopeCount", {
+            label: batchResult.label,
+            count: totalCount,
+          }),
           detailLines: [
-            `处理范围：${batchResult.label}（共 ${totalCount} 个商品）`,
-            "将为每个商品重新运行自动对齐，查找 SKU 候选",
+            t("agentSku.detailBatchRealignScope", {
+              label: batchResult.label,
+              count: totalCount,
+            }),
+            t("agentSku.detailBatchRealignLine2"),
           ],
           executable: true,
         };
@@ -208,19 +237,18 @@ export function planSkuCommand(
       if (!productId) {
         return {
           draft,
-          operation: "重新对齐",
+          operation: t("agentSku.opRealign"),
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify:
-            "请先在列表中点选商品，或在命令里写出商品名（如：重新对齐「拖鞋」）。",
+          clarify: t("agentSku.clarifySelectForRealign"),
         };
       }
       return {
         draft: { ...draft, productId },
-        operation: "重新对齐",
+        operation: t("agentSku.opRealign"),
         targetLabel: focusTitle,
-        detailLines: [`将为「${focusTitle}」重新运行自动对齐，查找 SKU 候选`],
+        detailLines: [t("agentSku.detailRealign", { title: focusTitle })],
         executable: true,
       };
     }
@@ -228,19 +256,20 @@ export function planSkuCommand(
       if (!productId) {
         return {
           draft,
-          operation: "解释匹配",
+          operation: t("agentSku.opExplainMatch"),
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify:
-            "请先在列表中点选商品，或在命令里写出商品名（如：解释「拖鞋」的匹配）。",
+          clarify: t("agentSku.clarifySelectForExplain"),
         };
       }
       return {
         draft: { ...draft, productId },
-        operation: "解释匹配",
+        operation: t("agentSku.opExplainMatch"),
         targetLabel: focusTitle,
-        detailLines: [`将说明「${focusTitle}」的 SKU 匹配依据和置信度`],
+        detailLines: [
+          t("agentSku.detailExplainMatch", { title: focusTitle }),
+        ],
         executable: true,
       };
     }
@@ -248,34 +277,37 @@ export function planSkuCommand(
       if (!productId) {
         return {
           draft,
-          operation: "打开详情",
+          operation: t("agentSku.opOpenDetail"),
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify:
-            "请先在列表中点选商品，或在命令里写出商品名（如：打开「拖鞋」的详情）。",
+          clarify: t("agentSku.clarifySelectForDetail"),
         };
       }
       return {
         draft: { ...draft, productId },
-        operation: "打开详情",
+        operation: t("agentSku.opOpenDetail"),
         targetLabel: focusTitle,
-        detailLines: [`将打开「${focusTitle}」的 SKU 映射详情`],
+        detailLines: [
+          t("agentSku.detailOpenSkuDetail", { title: focusTitle }),
+        ],
         executable: true,
       };
     }
     case "batch_confirm_pending": {
-      const batchResult = resolveBatchProductIds(draft, ctx);
+      const batchResult = resolveBatchProductIds(t, draft, ctx);
       const totalCount = batchResult.ids.length;
 
       if (totalCount === 0) {
         return {
           draft,
-          operation: "批量确认待匹配",
+          operation: t("agentSku.opBatchConfirm"),
           targetLabel: batchResult.label,
           detailLines: [],
           executable: false,
-          clarify: `当前「${batchResult.label}」范围内没有待确认的变体，无法执行批量确认。`,
+          clarify: t("agentSku.clarifyNoPendingInScope", {
+            label: batchResult.label,
+          }),
         };
       }
 
@@ -289,11 +321,17 @@ export function planSkuCommand(
             batchProductIds: batchResult.ids,
           },
         },
-        operation: "批量确认待匹配",
-        targetLabel: `${batchResult.label} · ${totalCount} 个`,
+        operation: t("agentSku.opBatchConfirm"),
+        targetLabel: t("agentSku.targetScopeCount", {
+          label: batchResult.label,
+          count: totalCount,
+        }),
         detailLines: [
-          `处理范围：${batchResult.label}（共 ${totalCount} 个商品）`,
-          "将接受 AI 建议的 SKU 匹配，自动绑定为已对齐状态",
+          t("agentSku.detailBatchConfirmScope", {
+            label: batchResult.label,
+            count: totalCount,
+          }),
+          t("agentSku.detailBatchConfirmLine2"),
         ],
         executable: true,
       };
@@ -301,11 +339,11 @@ export function planSkuCommand(
     default:
       return {
         draft,
-        operation: "执行命令",
+        operation: t("agentSku.opExecute"),
         targetLabel: focusTitle,
         detailLines: [],
         executable: false,
-        clarify: "该命令暂未实现",
+        clarify: t("agentSku.clarifyNotImplemented"),
       };
   }
 }
@@ -317,22 +355,25 @@ export function commandRequiresConfirmation(plan: SkuCommandPlan): boolean {
   );
 }
 
-export function commandOperationLabel(intent: SkuCommandDraft["intent"]): string {
+export function commandOperationLabel(
+  t: TranslateFn,
+  intent: SkuCommandDraft["intent"]
+): string {
   switch (intent) {
     case "open_filter":
-      return "切换筛选";
+      return t("agentSku.opOpenFilter");
     case "focus_product":
-      return "聚焦商品";
+      return t("agentSku.opFocusProduct");
     case "batch_confirm_pending":
-      return "批量确认待匹配";
+      return t("agentSku.opBatchConfirm");
     case "rerun_auto_align":
-      return "重新对齐";
+      return t("agentSku.opRealign");
     case "explain_sku_match":
-      return "解释匹配";
+      return t("agentSku.opExplainMatch");
     case "open_sku_detail":
-      return "打开详情";
+      return t("agentSku.opOpenDetail");
     default:
-      return "执行命令";
+      return t("agentSku.opExecute");
   }
 }
 

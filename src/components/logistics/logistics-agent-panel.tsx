@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Send, Loader2, TrendingDown } from "lucide-react";
+import { Send, Loader2, TrendingDown } from "@/lib/ui/icons";
 import type { AgentSuggestedAction } from "@/lib/agents/types";
 import {
   type LogisticsCommandClassifyContext,
@@ -22,6 +22,7 @@ import { CommandAgentExecution } from "@/components/workbench/command-agent-exec
 import { SkillFeedbackCard } from "@/components/workbench/skill-feedback-card";
 import type { LogisticsPipelineProgress } from "@/lib/logistics/incremental-pipeline";
 import { Button } from "@/components/ui/button";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
 import type { ConfirmPreviewResult } from "@/components/select/command-confirm-card";
 import type { ExecutionStep, BatchProgress } from "@/components/select/execution-pipeline";
@@ -111,6 +112,8 @@ export function LogisticsAgentPanel({
   onCancelBatchAccept,
   catalogIngestingCount = 0,
 }: LogisticsAgentPanelProps) {
+  const t = useT();
+  const locale = useLocale();
   const [commandPlan, setCommandPlan] = useState<LogisticsCommandPlan | null>(null);
   const [commandExecuting, setCommandExecuting] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -149,11 +152,15 @@ export function LogisticsAgentPanel({
   const exampleCommands = useMemo(() => {
     const examples: string[] = [];
     if (!pipelineActive && batchAcceptCount > 0) {
-      examples.push("批量接受方案");
+      examples.push(t("logisticsAgent.exampleBatchAccept"));
     }
-    examples.push("调整物流模板", "查看问题");
+    examples.push(
+      t("logisticsAgent.exampleFullEstimate"),
+      t("logisticsAgent.exampleAdjustTemplate"),
+      t("logisticsAgent.exampleViewIssues")
+    );
     return examples;
-  }, [batchAcceptCount, pipelineActive]);
+  }, [batchAcceptCount, pipelineActive, t]);
 
   const classifyContext = useMemo<LogisticsCommandClassifyContext>(() => ({
     focusProductTitle: null,
@@ -179,16 +186,16 @@ export function LogisticsAgentPanel({
   const savings = useMemo(() => {
     const tips: string[] = [];
     if (activeTemplate?.speedPreference === "FAST") {
-      tips.push("当前偏好「快速」时效，可切换「均衡」模板以降低部分 SKU 运费。");
+      tips.push(t("logisticsAgent.tipFastToBalanced"));
     }
     if (activeTemplate?.packaging === "CARTON") {
-      tips.push("纸箱包装会增加体积重，服装类可尝试「极简包装」。");
+      tips.push(t("logisticsAgent.tipCartonToMinimal"));
     }
     if (tips.length === 0 && productCount > 0 && batchAcceptCount > 0) {
-      tips.push("运费预估完成后，可用「批量接受方案」一次确认 AI 推荐线路。");
+      tips.push(t("logisticsAgent.tipBatchAccept"));
     }
     return tips;
-  }, [activeTemplate, productCount, batchAcceptCount]);
+  }, [activeTemplate, productCount, batchAcceptCount, t]);
 
   const applyCommandExecution = useCallback(
     async (plan: LogisticsCommandPlan, execution: LogisticsCommandExecution) => {
@@ -198,11 +205,8 @@ export function LogisticsAgentPanel({
           break;
         }
         case "fetch_quotes": {
-          if (onRetryPipeline) {
-            onRetryPipeline();
-          } else {
-            onFetchQuotes();
-          }
+          // 明确为「全量刷新报价」，避免与顶部按钮的增量管线混淆（Agent 语义透明）
+          onFetchQuotes();
           break;
         }
         case "open_template": {
@@ -228,9 +232,9 @@ export function LogisticsAgentPanel({
 
   const executeCommand = useCallback(
     async (plan: LogisticsCommandPlan) => {
-      const execution = resolveLogisticsCommandExecution(plan);
+      const execution = resolveLogisticsCommandExecution(plan, pageContext);
       if (!execution) {
-        setClarify(plan.clarify ?? "无法执行该命令。");
+        setClarify(plan.clarify ?? t("logisticsAgent.errCannotExecute"));
         return;
       }
       setCommandExecuting(true);
@@ -245,12 +249,12 @@ export function LogisticsAgentPanel({
           if (feedback) setSkillFeedback(feedback);
         }
       } catch (err) {
-        setClarify(readableError(err) || "命令执行失败，请稍后重试。");
+        setClarify(readableError(err) || t("logisticsAgent.errCommandFailed"));
       } finally {
         setCommandExecuting(false);
       }
     },
-    [applyCommandExecution, pageContext]
+    [applyCommandExecution, pageContext, t]
   );
 
   const handleSubmit = useCallback(async (overrideText?: string) => {
@@ -267,13 +271,13 @@ export function LogisticsAgentPanel({
     const seq = ++requestSeq.current;
 
     try {
-      const classifyResult = await classifyLogisticsCommandInput(text, classifyContext);
+      const classifyResult = await classifyLogisticsCommandInput(text, classifyContext, locale);
       if (requestSeq.current !== seq) return;
 
       if (classifyResult.confidence === "high" && classifyResult.draft) {
-        const plan = planLogisticsCommand(classifyResult.draft, pageContext);
+        const plan = planLogisticsCommand(t, classifyResult.draft, pageContext);
         if (!plan.executable) {
-          setClarify(plan.clarify ?? "该命令暂不可执行。");
+          setClarify(plan.clarify ?? t("logisticsAgent.errCannotExecute"));
           return;
         }
         // 仅当命令需要确认且提供了预览生成器时才走预览流程
@@ -289,23 +293,23 @@ export function LogisticsAgentPanel({
         return;
       }
 
-      setClarify(classifyResult.clarify ?? "无法理解您的命令，请试试其他说法。");
+      setClarify(classifyResult.clarify ?? t("logisticsAgent.errCannotUnderstand"));
     } catch (err) {
       if (requestSeq.current !== seq) return;
-      setClarify(readableError(err) || "命令处理失败，请稍后重试。");
+      setClarify(readableError(err) || t("logisticsAgent.errCommandFailed"));
     } finally {
       if (requestSeq.current === seq) {
         setLoading(false);
         setInput("");
       }
     }
-  }, [input, pageContext, classifyContext, previewGenerators, executeCommand]);
+  }, [input, pageContext, classifyContext, previewGenerators, executeCommand, t, locale]);
 
   const generatePreview = useCallback(async () => {
     if (!commandPlan) return;
     const generator = previewGenerators[commandPlan.draft.intent];
     if (!generator) {
-      setPreviewError("该命令暂无预览生成器");
+      setPreviewError(t("logisticsAgent.errNoPreviewGenerator"));
       setPreviewLoading(false);
       setExecStep("error");
       return;
@@ -322,12 +326,12 @@ export function LogisticsAgentPanel({
       setExecStep("preview_ready");
     } catch (err) {
       if (previewSeq.current !== seq) return;
-      setPreviewError(readableError(err) || "预览生成失败");
+      setPreviewError(readableError(err) || t("logisticsAgent.errPreviewFailed"));
       setExecStep("error");
     } finally {
       if (previewSeq.current === seq) setPreviewLoading(false);
     }
-  }, [commandPlan, previewGenerators]);
+  }, [commandPlan, previewGenerators, t]);
 
   useEffect(() => {
     if (!commandPlan) return;
@@ -340,7 +344,7 @@ export function LogisticsAgentPanel({
     if (!commandPlan) return;
     const executor = commandExecutors[commandPlan.draft.intent];
     if (!executor) {
-      setClarify("该命令暂无执行器");
+      setClarify(t("logisticsAgent.errNoExecutor"));
       setExecStep("error");
       return;
     }
@@ -385,12 +389,12 @@ export function LogisticsAgentPanel({
         if (feedback) setSkillFeedback(feedback);
       }
     } catch (err) {
-      setClarify(readableError(err) || "执行失败，请稍后重试。");
+      setClarify(readableError(err) || t("logisticsAgent.errExecuteFailed"));
       setExecStep("error");
     } finally {
       setCommandExecuting(false);
     }
-  }, [commandPlan, commandExecutors, pageContext, preview, batchAcceptCount]);
+  }, [commandPlan, commandExecutors, pageContext, preview, batchAcceptCount, batchProgress, t]);
 
   const handleQuickCommand = useCallback((cmd: string) => {
     setInput(cmd);
@@ -409,9 +413,12 @@ export function LogisticsAgentPanel({
   return (
     <div className="flex flex-col gap-2">
       {catalogIngestingCount > 0 ? (
-        <p className="px-0.5 text-[11px] leading-relaxed text-sky-800">
-          {catalogIngestingCount} 个商品入库中，暂时无法获得物流预估；同步完成后可重试运费预估。
-        </p>
+        <div className="rounded-md border border-sky-100 bg-sky-50/60 px-2.5 py-2">
+          <p className="text-[11px] leading-relaxed text-sky-800">
+            {t("logisticsAgent.catalogIngesting", { count: catalogIngestingCount })}
+            {t("logisticsAgent.catalogIngestingHint")}
+          </p>
+        </div>
       ) : null}
 
       {pipelineProgress && pipelineProgress.phase !== "idle" ? (
@@ -471,7 +478,7 @@ export function LogisticsAgentPanel({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-              placeholder="输入命令，如：运费预估、批量接受方案"
+              placeholder={t("logisticsAgent.inputPlaceholder")}
               disabled={loading}
               className="flex-1 rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-1.5 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft disabled:opacity-50"
             />
@@ -527,7 +534,7 @@ export function LogisticsAgentPanel({
 
       {execStep === "done" && !skillFeedback ? (
         <div className="rounded-[var(--radius-card)] border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
-          执行完成
+          {t("logisticsAgent.execDone")}
         </div>
       ) : null}
 
@@ -539,7 +546,7 @@ export function LogisticsAgentPanel({
         <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3">
           <div className="flex items-center gap-1.5 mb-2">
             <TrendingDown className="h-3.5 w-3.5 text-brand" />
-            <span className="text-xs font-semibold text-ink">节省成本机会</span>
+            <span className="text-xs font-semibold text-ink">{t("logisticsAgent.savingsTitle")}</span>
           </div>
           <ul className="space-y-1.5">
             {savings.map((tip) => (
@@ -554,11 +561,11 @@ export function LogisticsAgentPanel({
 
       {activeRiskAlerts.length > 0 ? (
         <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50/80 p-3">
-          <div className="text-xs font-semibold text-amber-900 mb-2">AI 建议</div>
+          <div className="text-xs font-semibold text-amber-900 mb-2">{t("logisticsAgent.aiSuggestTitle")}</div>
           <ul className="space-y-1.5">
             {activeRiskAlerts.map((alert) => (
               <li key={alert.type} className="text-[11px] text-amber-800">
-                {formatActiveHighRiskAlert(alert)}
+                {formatActiveHighRiskAlert(t, alert)}
               </li>
             ))}
           </ul>
@@ -566,32 +573,32 @@ export function LogisticsAgentPanel({
       ) : null}
 
       <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-xs">
-        <div className="text-xs font-semibold text-ink mb-2">物流分析摘要</div>
+        <div className="text-xs font-semibold text-ink mb-2">{t("logisticsAgent.summaryTitle")}</div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="text-ink-muted">已分析商品</span>
-              <span className="text-ink">{productCount} 个</span>
+              <span className="text-ink-muted">{t("logisticsAgent.analyzedProducts")}</span>
+              <span className="text-ink">{t("logisticsAgent.countUnit", { count: productCount })}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-ink-muted">已分析 SKU</span>
-              <span className="text-ink">{variantCount} 个</span>
+              <span className="text-ink-muted">{t("logisticsAgent.analyzedSkus")}</span>
+              <span className="text-ink">{t("logisticsAgent.countUnit", { count: variantCount })}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-ink-muted">AI 自动规划</span>
-              <span className="text-ink">{confirmedCount} 个</span>
+              <span className="text-ink-muted">{t("logisticsAgent.aiAuto")}</span>
+              <span className="text-ink">{t("logisticsAgent.countUnit", { count: confirmedCount })}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-ink-muted">待报价</span>
-              <span className="text-ink">{pendingQuoteCount} 个</span>
+              <span className="text-ink-muted">{t("logisticsAgent.pendingQuote")}</span>
+              <span className="text-ink">{t("logisticsAgent.countUnit", { count: pendingQuoteCount })}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-ink-muted">待确认</span>
-              <span className="text-amber-700">{batchAcceptCount} 个</span>
+              <span className="text-ink-muted">{t("logisticsAgent.pendingConfirm")}</span>
+              <span className="text-amber-700">{t("logisticsAgent.countUnit", { count: batchAcceptCount })}</span>
             </div>
             {exceptionCount > 0 ? (
               <div className="flex items-center justify-between">
-                <span className="text-ink-muted">异常</span>
-                <span className="text-amber-700">{exceptionCount} 个</span>
+                <span className="text-ink-muted">{t("logisticsAgent.exceptions")}</span>
+                <span className="text-amber-700">{t("logisticsAgent.countUnit", { count: exceptionCount })}</span>
               </div>
             ) : null}
           </div>

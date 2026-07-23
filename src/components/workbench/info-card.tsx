@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import { Lightbulb } from "lucide-react";
+import { Lightbulb } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 
 export type InfoCardTone = "default" | "brand" | "warning";
 
 const toneMap: Record<InfoCardTone, { card: string; title: string }> = {
   default: { card: "border-hairline bg-surface", title: "text-ink" },
-  brand: { card: "border-emerald-100 bg-brand-soft", title: "text-brand-strong" },
+  brand: { card: "border-brand-accent/20 bg-brand-soft", title: "text-brand-accent" },
   warning: { card: "border-amber-100 bg-amber-50", title: "text-amber-800" },
 };
 

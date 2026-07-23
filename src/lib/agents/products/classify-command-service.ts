@@ -1,5 +1,6 @@
 import type { ChatMessage } from "@/lib/agents/llm/openai-compatible";
 import { chatCompletionJson } from "@/lib/agents/llm/openai-compatible";
+import { createTranslator } from "@/i18n/server";
 import {
   buildCommandClassifySystemPrompt,
   classifyProductCommandByRules,
@@ -12,6 +13,7 @@ import type {
   ProductCommandDraft,
 } from "@/lib/agents/products/command-schema";
 import { parseTargetLangFromText } from "@/lib/translate/lang-codes";
+import { buildResponseLanguageRule } from "@/lib/agents/runtime/response-language";
 
 function coerceProductCommandDraft(
   text: string,
@@ -56,8 +58,10 @@ function coerceProductCommandDraft(
  */
 export async function classifyProductCommand(
   raw: string,
-  ctx?: CommandClassifyContext | null
+  ctx?: CommandClassifyContext | null,
+  locale?: string | null
 ): Promise<ProductCommandClassifyResult> {
+  const t = createTranslator(locale);
   const text = raw.trim().slice(0, PRODUCTS_SHORT_INPUT_MAX);
   const byRules = classifyProductCommandByRules(text);
   if (byRules.confidence === "high" && byRules.draft) {
@@ -67,7 +71,13 @@ export async function classifyProductCommand(
   try {
     const content = await chatCompletionJson({
       messages: [
-        { role: "system", content: buildCommandClassifySystemPrompt(ctx) },
+        {
+          role: "system",
+          content: buildCommandClassifySystemPrompt(
+            ctx,
+            buildResponseLanguageRule(text, locale)
+          ),
+        },
         {
           role: "user",
           content: JSON.stringify({ userText: text }),
@@ -97,7 +107,6 @@ export async function classifyProductCommand(
     confidence: "none",
     source: "default",
     clarify:
-      byRules.clarify ??
-      "未识别为页面命令。可试试：只看待确认 / 给这个商品再找候选 / 翻译这个商品标题 / 把售价改成 9.9 美元。",
+      byRules.clarify ?? t("api.errNotRecognized"),
   };
 }

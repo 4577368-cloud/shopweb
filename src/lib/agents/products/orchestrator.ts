@@ -1,4 +1,5 @@
 import type { AgentResponse } from "@/lib/agents/types";
+import type { TranslateFn } from "@/i18n/server";
 import {
   intentDef,
   type ProductsIntentId,
@@ -16,11 +17,12 @@ import { handleSourcingAdvisor } from "@/lib/agents/products/sourcing-advisor";
  */
 export function routeProductsIntent(
   intent: ProductsIntentId,
-  ctx: ProductsPageContext
+  ctx: ProductsPageContext,
+  t: TranslateFn
 ): AgentResponse {
   const def = intentDef(intent);
   if (def.agent === "pricing_strategist") {
     return handlePricingStrategist(intent, ctx);
   }
-  return handleSourcingAdvisor(intent, ctx);
+  return handleSourcingAdvisor(intent, ctx, t);
 }

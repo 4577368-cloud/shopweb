@@ -1,5 +1,8 @@
-import type { ProductsIntentId } from "@/lib/agents/products/intents";
-import { PRODUCTS_INTENTS } from "@/lib/agents/products/intents";
+import { createTranslator } from "@/i18n/server";
+import {
+  PRODUCTS_INTENTS,
+  type ProductsIntentId,
+} from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
 import {
   PRODUCTS_CLASSIFY_RULES,
@@ -13,20 +16,21 @@ import type { IntentClassifyResult } from "@/lib/agents/runtime/types";
  * Hybrid classify for products — rules first, LLM enum-only fallback.
  */
 export async function classifyProductsIntent(
-  raw: string
+  raw: string,
+  locale?: string | null
 ): Promise<IntentClassifyResult<ProductsIntentId>> {
+  const t = createTranslator(locale);
   return classifyHybrid(raw, {
     maxLength: PRODUCTS_SHORT_INPUT_MAX,
     rules: PRODUCTS_CLASSIFY_RULES,
     fallbackIntent: "summarize_shop_status",
-    emptyClarify: "请输入简短问题，或直接点击上方任务。",
-    missClarify:
-      "暂时无法匹配到任务。可试试：当前状态 / 为什么要配定价 / 看待确认 / 去发现新品，或点击上方芯片。",
+    emptyClarify: t("api.errEmptyText"),
+    missClarify: t("api.errNotRecognized"),
     intents: PRODUCTS_INTENTS,
     allowed: PRODUCTS_INTENT_SET,
     logPrefix: "[products-intent-classify]",
-    defaultClarify:
-      "暂时无法理解该问题。请点击上方任务芯片，或换个更短的说法（如「看待确认」「去发现新品」）。",
+    defaultClarify: t("productsAgent.errTryAnother"),
+    fallbackLocale: locale,
   });
 }
 

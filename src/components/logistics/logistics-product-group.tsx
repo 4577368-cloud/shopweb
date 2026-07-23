@@ -7,9 +7,10 @@ import {
   ChevronDown,
   Loader2,
   RefreshCw,
-} from "lucide-react";
+} from "@/lib/ui/icons";
 import type { LogisticsEstimateResult } from "@/lib/api";
 import {
+  buildTypeOptions,
   collectQuoteLines,
   formatLineFeeOnly,
   formatMeasureFields,
@@ -22,8 +23,8 @@ import {
   collectProductQuotableVariantIds,
   resolveSelectedLogisticsLine,
   shouldShowManualAcceptAction,
-  TYPE_OPTIONS,
   variantCardTone,
+  type LogisticsTranslate,
 } from "@/lib/logistics/display";
 import { skuAlignProductHref } from "@/lib/sku-align/deep-link";
 import type { LogisticsPipelineProgress } from "@/lib/logistics/incremental-pipeline";
@@ -31,14 +32,15 @@ import {
   computeProductShellMeta,
   computeSkuRowStatus,
   formatVariantIssueHint,
-  PRODUCT_SHELL_STATUS_LABELS,
   productShellStatusClass,
-  SKU_ROW_STATUS_LABELS,
+  productShellStatusLabel,
+  skuRowStatusLabel,
   type ProductShellMeta,
 } from "@/lib/logistics/product-shell";
 import { Button } from "@/components/ui/button";
 import { CatalogIngestingBadge } from "@/components/ui/catalog-ingesting-badge";
 import { Select } from "@/components/ui/select";
+import { useT } from "@/i18n/LocaleProvider";
 import { useCatalogIngestStatus } from "@/hooks/use-catalog-ingest-status";
 import { isProductQuoteIngesting } from "@/lib/tangbuy/catalog-ingest-display";
 import { cn } from "@/lib/utils";
@@ -62,10 +64,12 @@ function ProductThumb({
   src,
   alt,
   size = 48,
+  noImageLabel,
 }: {
   src?: string | null;
   alt: string;
   size?: number;
+  noImageLabel: string;
 }) {
   if (src?.trim()) {
     return (
@@ -85,7 +89,7 @@ function ProductThumb({
       className="flex shrink-0 items-center justify-center rounded-lg border border-hairline bg-surface-muted text-[10px] text-ink-subtle"
       style={{ width: size, height: size }}
     >
-      无图
+      {noImageLabel}
     </div>
   );
 }
@@ -135,6 +139,9 @@ function FulfillmentSkuRow({
   selectedLineKey?: string | null;
   onSelectLine?: (lineKey: string) => void;
 }) {
+  const t = useT();
+  const typeOptions = useMemo(() => buildTypeOptions(t), [t]);
+
   const mergedDecision = useMemo(() => {
     if (!measureOverride) return variant;
     return {
@@ -147,11 +154,11 @@ function FulfillmentSkuRow({
   }, [variant, measureOverride]);
 
   const tone = variantCardTone(mergedDecision);
-  const measures = formatMeasureFields(mergedDecision, tone);
+  const measures = formatMeasureFields(t, mergedDecision, tone);
   const lines = collectQuoteLines(mergedDecision, quoteResult);
   const selectedLine = resolveSelectedLogisticsLine(lines, selectedLineKey);
   const routeFee = formatLineFeeOnly(selectedLine, pricing);
-  const transitLabel = formatTransitLabel(selectedLine);
+  const transitLabel = formatTransitLabel(t, selectedLine);
   const overtimeDays = computeOvertimeCompensationDays(selectedLine);
   const exception = isVariantException(mergedDecision);
   const rowStatus = computeSkuRowStatus(mergedDecision, quoteResult, {
@@ -161,7 +168,7 @@ function FulfillmentSkuRow({
         mergedDecision.decisionStatus !== "confirmed"
     ),
   });
-  const issueHint = formatVariantIssueHint(mergedDecision, quoteResult);
+  const issueHint = formatVariantIssueHint(t, mergedDecision, quoteResult);
 
   const showAccept = shouldShowManualAcceptAction(mergedDecision, {
     pipelineActive,
@@ -178,14 +185,14 @@ function FulfillmentSkuRow({
     primaryAction = (
       <Link href={skuAlignProductHref(profile.thirdPlatformItemId)}>
         <Button size="sm" className="h-7 text-[11px]">
-          去 SKU 对齐
+          {t("logisticsProduct.goSkuAlign")}
         </Button>
       </Link>
     );
   } else if (needsMeasure && !editingMeasures) {
     primaryAction = (
       <Button size="sm" className="h-7 text-[11px]" onClick={onToggleEdit}>
-        补充尺寸
+        {t("logisticsProduct.addDimensions")}
       </Button>
     );
   } else if (showAccept) {
@@ -201,13 +208,13 @@ function FulfillmentSkuRow({
         ) : (
           <Check className="mr-1 h-3.5 w-3.5" />
         )}
-        确认
+        {t("logisticsProduct.confirm")}
       </Button>
     );
   } else if (rowStatus === "pending_review" && exception && !hideQuoteActions) {
     primaryAction = (
       <Button size="sm" className="h-7 text-[11px]" onClick={onToggleEdit}>
-        补充信息
+        {t("logisticsProduct.addInfo")}
       </Button>
     );
   }
@@ -246,18 +253,18 @@ function FulfillmentSkuRow({
                 rowStatus === "processing" && "bg-sky-50 text-sky-800"
               )}
             >
-              {SKU_ROW_STATUS_LABELS[rowStatus]}
+              {skuRowStatusLabel(t, rowStatus)}
             </span>
             {rowStatus === "confirmed" ? (
               <span
                 className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600"
-                title="物流确认已暂存于本应用，同步步骤才会写入履约侧"
+                title={t("logisticsUi.fulfillmentSavedDetail")}
               >
-                暂存本应用
+                {t("logisticsProduct.stagedLocally")}
               </span>
             ) : null}
             {(() => {
-              const postal = formatPostalLimitBadge(mergedDecision);
+              const postal = formatPostalLimitBadge(t, mergedDecision);
               return (
                 <span
                   className={cn(
@@ -282,7 +289,7 @@ function FulfillmentSkuRow({
                   onChange={(e) => onSelectLine(e.target.value)}
                   disabled={busy || accepting}
                   className="h-7 w-full px-2 !text-[10px] leading-tight font-normal"
-                  title="选择物流线路"
+                  title={t("logisticsProduct.selectRoute")}
                 >
                   {lines.map((line) => {
                     const key = logisticsLineKey(line);
@@ -301,14 +308,18 @@ function FulfillmentSkuRow({
                     {selectedLine.lineName}
                   </span>
                   <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800 ring-1 ring-emerald-200">
-                    超时必赔
+                    {t("logisticsProduct.overtimeTitle")}
                   </span>
                 </div>
               )}
               <p className="mt-1 text-right text-[10px] leading-snug text-slate-600">
                 {[
-                  overtimeDays != null ? `超时时效 ${overtimeDays} 天` : null,
-                  transitLabel ? `时效 ${transitLabel}` : null,
+                  overtimeDays != null
+                    ? t("logisticsProduct.overtimeComp", { days: overtimeDays })
+                    : null,
+                  transitLabel
+                    ? t("logisticsProduct.transitTitle", { label: transitLabel })
+                    : null,
                 ]
                   .filter(Boolean)
                   .join(" · ")}
@@ -348,7 +359,7 @@ function FulfillmentSkuRow({
             onChange={(e) => onCorrect(e.target.value as LogisticsTypeCode)}
             className="h-7 w-36 text-[11px]"
           >
-            {TYPE_OPTIONS.map((o) => (
+            {typeOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
@@ -418,6 +429,7 @@ export function LogisticsProductGroup({
     onCancel: () => void
   ) => ReactNode;
 }) {
+  const t = useT();
   const variants = profile.variantDecisions ?? [];
   const identityIngesting = useCatalogIngestStatus(
     shopName,
@@ -435,8 +447,8 @@ export function LogisticsProductGroup({
   const catalogIngesting = identityIngesting || quoteIngesting;
   const busy = correctingId === profile.thirdPlatformItemId;
   const productQuoteLabel = useMemo(
-    () => productQuoteActionLabel(variants, quoteResults, pipelineActive),
-    [variants, quoteResults, pipelineActive]
+    () => productQuoteActionLabel(t, variants, quoteResults, pipelineActive),
+    [t, variants, quoteResults, pipelineActive]
   );
   const quotableSkuCount = useMemo(
     () =>
@@ -496,7 +508,8 @@ export function LogisticsProductGroup({
         >
           <ProductThumb
             src={profile.primaryImageUrl}
-            alt={profile.title ?? "商品"}
+            alt={profile.title ?? t("logisticsProduct.productAlt")}
+            noImageLabel={t("logisticsProduct.noImage")}
           />
           <div className="min-w-0 flex-1">
             <p className="line-clamp-1 text-sm font-medium text-ink">
@@ -509,14 +522,14 @@ export function LogisticsProductGroup({
                   productShellStatusClass(meta.status)
                 )}
               >
-                {PRODUCT_SHELL_STATUS_LABELS[meta.status]}
+                {productShellStatusLabel(t, meta.status)}
               </span>
               {catalogIngesting ? <CatalogIngestingBadge /> : null}
               {pipelineHighlighted || quotingProduct ? (
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-600" />
               ) : null}
               <span className="text-[11px] text-ink-subtle">
-                {meta.skuTotal} 个 SKU
+                {t("logisticsProduct.skuCount", { count: meta.skuTotal })}
                 {meta.summaryLine ? ` · ${meta.summaryLine}` : ""}
               </span>
             </div>
@@ -533,7 +546,7 @@ export function LogisticsProductGroup({
             onClick={(e) => e.stopPropagation()}
           >
             <Button size="sm" className="h-7 shrink-0">
-              去 SKU 对齐
+              {t("logisticsProduct.goSkuAlign")}
             </Button>
           </Link>
         ) : productQuoteLabel ? (
@@ -548,8 +561,8 @@ export function LogisticsProductGroup({
             disabled={busy || quotingProduct || pipelineHighlighted}
             title={
               meta.status === "failed"
-                ? `对本商品 ${quotableSkuCount} 个失败 SKU 重试报价`
-                : `对本商品 ${quotableSkuCount} 个 SKU 单独运费预估`
+                ? t("logisticsProduct.retryQuoteTitle", { count: quotableSkuCount })
+                : t("logisticsProduct.estimateQuoteTitle", { count: quotableSkuCount })
             }
           >
             {quotingProduct ? (
@@ -564,7 +577,7 @@ export function LogisticsProductGroup({
           type="button"
           onClick={onToggleExpanded}
           className="shrink-0 rounded-md p-1 text-ink-subtle hover:bg-surface-muted/40"
-          aria-label={expanded ? "收起 SKU" : "展开 SKU"}
+          aria-label={expanded ? t("logisticsProduct.collapseSku") : t("logisticsProduct.expandSku")}
         >
           <ChevronDown
             className={cn(
@@ -589,10 +602,10 @@ export function LogisticsProductGroup({
             )}
             aria-hidden
           >
-            <span>规格</span>
-            <span className="justify-self-end text-right">线路 · 时效</span>
-            <span className="text-right">运费</span>
-            {showOpsColumn ? <span className="text-right">操作</span> : null}
+            <span>{t("logisticsProduct.colSpec")}</span>
+            <span className="justify-self-end text-right">{t("logisticsProduct.colRoute")}</span>
+            <span className="text-right">{t("logisticsProduct.colFee")}</span>
+            {showOpsColumn ? <span className="text-right">{t("logisticsProduct.colOps")}</span> : null}
           </div>
           {variants.map((variant) => {
             const variantId = variant.thirdPlatformSkuId;
@@ -644,6 +657,7 @@ export function LogisticsProductGroup({
 }
 
 export function buildProductShellMeta(
+  t: LogisticsTranslate,
   profile: ProductLogisticsProfile,
   quoteResults: Map<string, LogisticsEstimateResult>,
   pricing: PricingTemplate | null | undefined,
@@ -651,6 +665,7 @@ export function buildProductShellMeta(
   pipelineActive?: boolean
 ) {
   return computeProductShellMeta(
+    t,
     profile,
     quoteResults,
     pricing,

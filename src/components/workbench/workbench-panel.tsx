@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@/lib/ui/icons";
 import { AssistantToggle } from "@/components/workbench/assistant-toggle";
 import { cn } from "@/lib/utils";
 
@@ -69,12 +69,12 @@ export function WorkbenchPanel({
               ))}
             </nav>
           ) : null}
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <h1 className="min-w-0 text-[22px] font-semibold leading-7 tracking-tight text-ink">
               {title}
             </h1>
             {actions || showAssistantToggle ? (
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                 {actions}
                 {showAssistantToggle ? (
                   <AssistantToggle

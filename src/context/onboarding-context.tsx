@@ -324,8 +324,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
           : item
       )
     );
-    setToastMessage("已批量确认高匹配商品");
-  }, []);
+    setToastMessage(t("toast.batchConfirmHighMatch"));
+  }, [t]);
 
   const updateSkuStatus = useCallback((id: string, status: SkuAlignStatus) => {
     const handleMap: Partial<Record<SkuAlignStatus, SkuHandleStatus>> = {
@@ -355,21 +355,21 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
               ...item,
               sourceSku: {
                 ...item.sourceSku,
-                title: `${item.sourceSku.title.replace(/（已换候选）$/, "")}（已换候选）`,
+                title: `${item.sourceSku.title.replace(new RegExp(`${t("onboarding.candidateSwappedSuffix").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`), "")}${t("onboarding.candidateSwappedSuffix")}`,
                 sku: item.sourceSku.sku.endsWith("-ALT")
                   ? item.sourceSku.sku
                   : `${item.sourceSku.sku}-ALT`,
               },
               status: "needs_confirm" as const,
               handleStatus: "modified" as const,
-              diffSummary: "已换候选，待再次确认",
-              note: "已切换为备选货源 SKU，请再次确认",
+              diffSummary: t("onboarding.diffSummarySwapped"),
+              note: t("onboarding.noteSwapped"),
             }
           : item
       )
     );
-    setToastMessage("已更换为备选 SKU（演示）");
-  }, []);
+    setToastMessage(t("toast.skuCandidateSwitched"));
+  }, [t]);
 
   const batchConfirmReadySkus = useCallback(() => {
     setSkuAlignments((prev) =>
@@ -383,8 +383,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
           : item
       )
     );
-    setToastMessage("已批量接受「可直接接受」SKU");
-  }, []);
+    setToastMessage(t("toast.skuBatchAccepted"));
+  }, [t]);
 
   const updateLogisticsForm = useCallback((patch: Partial<LogisticsForm>) => {
     setLogisticsForm((prev) => ({ ...prev, ...patch }));
@@ -394,8 +394,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setLogisticsCompleted(true);
     setSyncPhase("ready");
     updateStepStatus("logistics", "completed");
-    setToastMessage("物流配置已暂存于本应用，可开始同步");
-  }, [updateStepStatus]);
+    setToastMessage(t("toast.logisticsStaged"));
+  }, [updateStepStatus, t]);
 
   const startSync = useCallback(
     (options?: { force?: boolean }) => {
@@ -403,10 +403,10 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       setSyncPhase("syncing");
       window.setTimeout(() => {
         setSyncPhase("completed");
-        setToastMessage("同步完成");
+        setToastMessage(t("toast.syncComplete"));
       }, 1200);
     },
-    [logisticsCompleted]
+    [logisticsCompleted, t]
   );
 
   const completeSyncCeremony = useCallback(() => {
@@ -482,26 +482,32 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
       const templateMarketsConfigured =
         listTemplateCountryCodes(activeTemplate).length > 0;
-      const gate = evaluateLogisticsCompletionGate({
-        hasSavedTemplate: templateSaved,
-        pipelineActive: false,
-        analysis: mergedAnalysis,
-        quoteResults,
-        templateMarketsConfigured,
-      });
-      const gateSnapshot = deriveLogisticsStepSnapshot({
-        skuReady: isSkuStepComplete(computeWorkflowSkuProgress(skuOverview)),
-        pipelineActive: false,
-        gate,
-        logisticsCompleted:
-          metrics.variantCount > 0 &&
-          metrics.confirmedCount >= metrics.variantCount,
-      });
+      const gate = evaluateLogisticsCompletionGate(
+        {
+          hasSavedTemplate: templateSaved,
+          pipelineActive: false,
+          analysis: mergedAnalysis,
+          quoteResults,
+          templateMarketsConfigured,
+        },
+        t
+      );
+      const gateSnapshot = deriveLogisticsStepSnapshot(
+        {
+          skuReady: isSkuStepComplete(computeWorkflowSkuProgress(skuOverview)),
+          pipelineActive: false,
+          gate,
+          logisticsCompleted:
+            metrics.variantCount > 0 &&
+            metrics.confirmedCount >= metrics.variantCount,
+        },
+        t
+      );
       setLogisticsStepSnapshot(gateSnapshot);
     } catch {
       // Keep the last known snapshot on transient API errors.
     }
-  }, [authStatus, isAuthorized, shopApiName]);
+  }, [authStatus, isAuthorized, shopApiName, t]);
 
   useEffect(() => {
     if (!isAuthorized || !authSessionReady) return;
@@ -559,6 +565,20 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     const t = window.setTimeout(() => setToastMessage(null), 2800);
     return () => window.clearTimeout(t);
   }, [toastMessage]);
+
+  // 根据后端 workflowLogistics 数据恢复物流完成状态
+  useEffect(() => {
+    if (!workflowLogistics) return;
+    const logisticsDone =
+      workflowLogistics.variantCount > 0 &&
+      workflowLogistics.confirmedCount >= workflowLogistics.variantCount;
+    if (logisticsDone && !logisticsCompleted) {
+      setLogisticsCompleted(true);
+    }
+    if (logisticsDone && syncPhase === "blocked") {
+      setSyncPhase("ready");
+    }
+  }, [workflowLogistics, logisticsCompleted, syncPhase]);
 
   const syncCompleted = syncPhase === "completed";
 

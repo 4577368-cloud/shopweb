@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "@/lib/ui/icons";
 import type { LogisticsEstimateResult } from "@/lib/api";
 import {
   filterProfiles,
@@ -20,6 +20,7 @@ import {
 } from "@/components/logistics/logistics-product-group";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/LocaleProvider";
 import type {
   LogisticsAnalysis,
   LogisticsDecisionStatus,
@@ -51,6 +52,7 @@ function MeasureEditPanel({
   onSave: (next: MeasureOverride) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [weightG, setWeightG] = useState(
     String(override?.weightG ?? decision.estimatedWeightG ?? "")
   );
@@ -66,10 +68,12 @@ function MeasureEditPanel({
 
   return (
     <div className="mt-2 rounded-md border border-amber-200/80 bg-amber-50/50 px-2.5 py-2">
-      <p className="mb-2 text-[10px] font-medium text-amber-900">补充重量与尺寸</p>
+      <p className="mb-2 text-[10px] font-medium text-amber-900">
+        {t("logisticsDecision.measureTitle")}
+      </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <label className="space-y-1 text-[10px] text-ink-subtle">
-          重量 (g)
+          {t("logisticsDecision.weightG")}
           <Input
             value={weightG}
             onChange={(e) => setWeightG(e.target.value)}
@@ -78,7 +82,7 @@ function MeasureEditPanel({
           />
         </label>
         <label className="space-y-1 text-[10px] text-ink-subtle">
-          长 (cm)
+          {t("logisticsDecision.lengthCm")}
           <Input
             value={lengthCm}
             onChange={(e) => setLengthCm(e.target.value)}
@@ -87,7 +91,7 @@ function MeasureEditPanel({
           />
         </label>
         <label className="space-y-1 text-[10px] text-ink-subtle">
-          宽 (cm)
+          {t("logisticsDecision.widthCm")}
           <Input
             value={widthCm}
             onChange={(e) => setWidthCm(e.target.value)}
@@ -96,7 +100,7 @@ function MeasureEditPanel({
           />
         </label>
         <label className="space-y-1 text-[10px] text-ink-subtle">
-          高 (cm)
+          {t("logisticsDecision.heightCm")}
           <Input
             value={heightCm}
             onChange={(e) => setHeightCm(e.target.value)}
@@ -118,10 +122,10 @@ function MeasureEditPanel({
             })
           }
         >
-          保存并重算
+          {t("logisticsDecision.saveRecalc")}
         </Button>
         <Button size="sm" variant="secondary" className="h-7 text-[10px]" onClick={onCancel}>
-          取消
+          {t("logisticsDecision.cancel")}
         </Button>
       </div>
     </div>
@@ -186,6 +190,7 @@ export function LogisticsDecisionList({
   selectedLineByVariant?: Map<string, string>;
   onSelectLine?: (variantId: string, lineKey: string) => void;
 }) {
+  const t = useT();
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -240,9 +245,33 @@ export function LogisticsDecisionList({
     new Map()
   );
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
+  const expandedStorageKey = useMemo(
+    () => `logistics_expanded_${shopName}`,
+    [shopName]
+  );
   const [userExpandedOverrides, setUserExpandedOverrides] = useState<
     Map<string, boolean>
-  >(new Map());
+  >(() => {
+    try {
+      const stored = sessionStorage.getItem(expandedStorageKey);
+      if (stored) {
+        const obj = JSON.parse(stored) as Record<string, boolean>;
+        return new Map(Object.entries(obj));
+      }
+    } catch {
+    }
+    return new Map();
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        expandedStorageKey,
+        JSON.stringify(Object.fromEntries(userExpandedOverrides))
+      );
+    } catch {
+    }
+  }, [userExpandedOverrides, expandedStorageKey]);
 
   const shellMetaByProduct = useMemo(() => {
     const map = new Map<string, ReturnType<typeof buildProductShellMeta>>();
@@ -250,6 +279,7 @@ export function LogisticsDecisionList({
       map.set(
         profile.thirdPlatformItemId,
         buildProductShellMeta(
+          t,
           { ...profile, variantDecisions: variants },
           quoteResults,
           pricing,
@@ -259,7 +289,7 @@ export function LogisticsDecisionList({
       );
     }
     return map;
-  }, [profiles, quoteResults, pricing, pipelineProgress, pipelineActive]);
+  }, [profiles, quoteResults, pricing, pipelineProgress, pipelineActive, t]);
 
   const isExpanded = useCallback(
     (productId: string) => {
@@ -366,9 +396,9 @@ export function LogisticsDecisionList({
   if (profiles.length === 0) {
     return (
       <div className="rounded-[var(--radius-card)] border border-dashed border-hairline px-4 py-12 text-center">
-        <p className="text-sm font-medium text-ink">当前筛选下暂无商品</p>
+        <p className="text-sm font-medium text-ink">{t("logisticsDecision.emptyFilterTitle")}</p>
         <p className="mt-1 text-xs text-ink-subtle">
-          切换上方标签查看待处理或需关注的 SKU。
+          {t("logisticsDecision.emptyFilterHint")}
         </p>
       </div>
     );
@@ -380,12 +410,12 @@ export function LogisticsDecisionList({
     <div className="space-y-3">
       {resolvedFilter === "pending" ? (
         <p className="rounded-[var(--radius-control)] border border-brand/20 bg-brand-soft/30 px-3 py-2 text-[11px] leading-snug text-ink">
-          普货 SKU 待运费预估或待确认线路。点右上角「运费预估」批量处理；已有报价的普货将自动采纳推荐线路。
+          {t("logisticsDecision.pendingTabHint")}
         </p>
       ) : null}
       {resolvedFilter === "needs_attention" ? (
         <p className="rounded-[var(--radius-control)] border border-violet-200 bg-violet-50/50 px-3 py-2 text-[11px] leading-snug text-violet-900">
-          SKU 未关联货源，或邮限/品类异常。请先完成 SKU 对齐、补充尺寸后再确认线路。
+          {t("logisticsDecision.attentionTabHint")}
         </p>
       ) : null}
       {pagedProfiles.map(({ profile, variants }) => {
@@ -454,13 +484,13 @@ export function LogisticsDecisionList({
             className="h-7 w-7 px-0"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1}
-            title="上一页"
-            aria-label="上一页"
+            title={t("logisticsDecision.prevPage")}
+            aria-label={t("logisticsDecision.prevPage")}
           >
             <ChevronLeft className="h-3.5 w-3.5" />
           </Button>
           <span className="min-w-[5.5rem] text-center text-xs text-ink-subtle tabular-nums">
-            第 {page} / {totalPages} 页
+            {t("logisticsDecision.pageOf", { page, total: totalPages })}
           </span>
           <Button
             variant="secondary"
@@ -468,8 +498,8 @@ export function LogisticsDecisionList({
             className="h-7 w-7 px-0"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages}
-            title="下一页"
-            aria-label="下一页"
+            title={t("logisticsDecision.nextPage")}
+            aria-label={t("logisticsDecision.nextPage")}
           >
             <ChevronRight className="h-3.5 w-3.5" />
           </Button>

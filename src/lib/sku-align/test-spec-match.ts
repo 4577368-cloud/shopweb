@@ -125,6 +125,7 @@ import {
   blendSpecWithLlm,
   applyLlmToRanked,
   pairKey,
+  isCrossScript,
 } from "./spec-match-llm";
 import type { SourceSkuRowRanked } from "@/lib/source-sku-matrix";
 
@@ -144,10 +145,24 @@ const mkRow = (specLabel: string, specScore: number): SourceSkuRowRanked => ({
 });
 
 const rankedFixture = [mkRow("A", 0.95), mkRow("B", 0.7), mkRow("C", 0.6), mkRow("D", 0.3)];
-const gz = grayZoneRows(rankedFixture);
+// 常规灰区：非跨脚本变体只取 [GRAY_LOW, GRAY_HIGH) → B,C
+const gz = grayZoneRows("Wine Red / M", rankedFixture);
 const gzOk =
   gz.length === 2 && gz.every((r) => r.specScore >= GRAY_LOW && r.specScore < GRAY_HIGH);
 console.log(`${gzOk ? "✓" : "✗"} grayZoneRows 只取灰区          ${gz.map((r) => r.skuId).join(",")}`);
+
+// 跨脚本长尾：中文变体 + 0.3 行（D）应被纳入 LLM 复核
+const gzCross = grayZoneRows("酒红 / XL", rankedFixture);
+const crossOk =
+  gzCross.some((r) => r.skuId === "D" && r.specScore === 0.3) &&
+  gzCross.filter((r) => r.specScore < GRAY_LOW).length === 1;
+console.log(`${crossOk ? "✓" : "✗"} 跨脚本长尾接住 D(0.3)       ${gzCross.map((r) => r.skuId).join(",")}`);
+
+const crossDetectOk =
+  isCrossScript("Wine Red / M", "酒红 / XL") && // 中↔英
+  !isCrossScript("Wine Red / M", "Oatmeal / M") && // 同脚本
+  !isCrossScript("酒红 / XL", "藏青 / L"); // 同脚本
+console.log(`${crossDetectOk ? "✓" : "✗"} isCrossScript 判定          中↔英=跨, 同脚本=否`);
 
 const blendUp = blendSpecWithLlm(0.6, 0.95); // LLM 高 → 抬升
 const blendDown = blendSpecWithLlm(0.7, 0.1); // LLM 低 → 下压
@@ -160,9 +175,9 @@ const reranked = applyLlmToRanked("变体", rankedFixture, llmByKey);
 const rerankOk = reranked[0].skuId === "A" && reranked[1].skuId === "C";
 console.log(`${rerankOk ? "✓" : "✗"} applyLlmToRanked 重排           ${reranked.map((r) => r.skuId).join(",")}`);
 
-const phase3Fail = [gzOk, blendOk, rerankOk].filter((x) => !x).length;
+const phase3Fail = [gzOk, crossOk, crossDetectOk, blendOk, rerankOk].filter((x) => !x).length;
 fail += phase3Fail;
-pass += 3 - phase3Fail;
+pass += 5 - phase3Fail;
 
 console.log("\n" + "=".repeat(60));
 console.log(`结果: ${pass} 通过 / ${fail} 失败 / 共 ${cases.length + 4 + 3}`);

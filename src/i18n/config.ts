@@ -13,6 +13,14 @@ export const localeLabels: Record<Locale, string> = {
   zh: "中文",
 };
 
+/** Compact country / region code shown in the language switcher. */
+export const localeCodes: Record<Locale, string> = {
+  en: "EN",
+  fr: "FR",
+  es: "ES",
+  zh: "ZH",
+};
+
 // Short tag used for <html lang> and Accept-Language matching.
 export const localeHtmlLang: Record<Locale, string> = {
   en: "en",

@@ -7,6 +7,7 @@ import {
   fetchPageAgentCopy,
   type ClientAgentResponse,
 } from "@/lib/agents/runtime";
+import { createTranslator } from "@/i18n/server";
 
 export type { ClientAgentResponse };
 
@@ -15,24 +16,32 @@ export type { ClientAgentResponse };
  */
 export async function fetchProductsAgentResponse(
   intent: ProductsIntentId,
-  context: ProductsPageContext
+  context: ProductsPageContext,
+  opts?: { userText?: string; locale?: string | null }
 ): Promise<ClientAgentResponse> {
+  const t = createTranslator(opts?.locale);
   return fetchPageAgentCopy({
     endpoint: "/api/agents/products/copy",
     intent,
     context,
-    fallback: routeProductsIntent,
+    fallback: (id, ctx) => routeProductsIntent(id, ctx, t),
+    userText: opts?.userText,
+    locale: opts?.locale,
   });
 }
 
 /**
  * Map short NL input → fixed products intent.
  */
-export async function classifyProductsShortInput(text: string) {
+export async function classifyProductsShortInput(
+  text: string,
+  locale?: string | null
+) {
   return classifyPageShortInput({
     text,
     maxLength: PRODUCTS_SHORT_INPUT_MAX,
     classifyLocal: classifyProductsIntentByRules,
     classifyEndpoint: "/api/agents/products/classify",
+    locale,
   });
 }

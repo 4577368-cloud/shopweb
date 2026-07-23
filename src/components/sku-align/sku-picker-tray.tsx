@@ -2,7 +2,7 @@
 
 import { ThumbImage } from "@/components/ui/thumb-image";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ImageOff, Loader2, RefreshCw, X } from "lucide-react";
+import { ImageOff, Loader2, RefreshCw, X } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api, readableError } from "@/lib/api";
@@ -13,8 +13,10 @@ import {
   type SourceSkuRowRanked,
 } from "@/lib/source-sku-matrix";
 import { cn } from "@/lib/utils";
+import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
 import { formatSourceCostInShopCurrency } from "@/lib/purchase-cost-display";
 import type { PricingTemplate } from "@/lib/types";
+import { useT } from "@/i18n/LocaleProvider";
 
 const MATCH_HINT_THRESHOLD = 0.5;
 
@@ -102,6 +104,7 @@ export function SkuPickerTray({
   shopCurrency,
   pricingTemplate = null,
 }: SkuPickerTrayProps) {
+  const t = useT();
   const [rows, setRows] = useState<SourceSkuRowRanked[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +123,7 @@ export function SkuPickerTray({
       if (error) {
         setError(error);
       } else if (!ranked.length) {
-        setError("该货源未返回可用 SKU 规格");
+        setError(t("skuPicker.errNoSkuSpecs"));
       }
     } catch (err) {
       setError(readableError(err));
@@ -128,7 +131,7 @@ export function SkuPickerTray({
     } finally {
       setLoading(false);
     }
-  }, [detailUrl, variantLabel, variantPrice, variantImageUrl]);
+  }, [detailUrl, variantLabel, variantPrice, variantImageUrl, t]);
 
   useEffect(() => {
     if (!open) return;
@@ -154,7 +157,7 @@ export function SkuPickerTray({
         },
         { detailUrl }
       );
-      showToast(`已手动绑定 · ${row.specLabel}（立即生效）`);
+      showToast(t("skuPicker.toastBound", { spec: row.specLabel }));
       onClose();
       await onBound();
     } catch (err) {
@@ -167,10 +170,10 @@ export function SkuPickerTray({
   const hintText = useMemo(() => {
     if (loading || !rows.length) return null;
     if (topMatchScore >= MATCH_HINT_THRESHOLD) {
-      return `已按与「${variantLabel}」的规格相近度排序，请核对颜色/尺码后选择`;
+      return t("skuPicker.hintSorted", { label: variantLabel });
     }
-    return `未找到高相似规格，请对照 Shopify「${variantLabel}」人工选择`;
-  }, [loading, rows.length, topMatchScore, variantLabel]);
+    return t("skuPicker.hintManual", { label: variantLabel });
+  }, [loading, rows.length, topMatchScore, variantLabel, t]);
 
   if (!open) return null;
 
@@ -179,10 +182,10 @@ export function SkuPickerTray({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="text-[12px] font-semibold text-slate-800">
-            从货源规格表选择 SKU
+            {t("skuPicker.title")}
           </p>
           <p className="mt-0.5 text-[11px] text-slate-600">
-            对应 Shopify 变体：
+            {t("skuPicker.shopifyVariant")}
             <span className="font-medium text-slate-800"> {variantLabel}</span>
           </p>
           {hintText ? (
@@ -195,8 +198,8 @@ export function SkuPickerTray({
           size="sm"
           className="h-7 w-7 shrink-0 px-0"
           onClick={onClose}
-          title="收起"
-          aria-label="收起 SKU 选择"
+          title={t("skuPicker.collapse")}
+          aria-label={t("skuPicker.collapseAria")}
         >
           <X className="h-3.5 w-3.5" />
         </Button>
@@ -205,7 +208,7 @@ export function SkuPickerTray({
       {loading ? (
         <div className="mt-3 flex items-center gap-2 text-[11px] text-ink-subtle">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          载入 itemGet SKU 矩阵…
+          {t("skuPicker.loadingMatrix")}
         </div>
       ) : error ? (
         <div className="mt-3 flex items-center gap-2">
@@ -216,8 +219,8 @@ export function SkuPickerTray({
             size="sm"
             className="h-7 w-7 shrink-0 px-0"
             onClick={() => void load()}
-            title="重试加载规格表"
-            aria-label="重试加载规格表"
+            title={t("skuPicker.retryLoadTitle")}
+            aria-label={t("skuPicker.retryLoadAria")}
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
@@ -236,13 +239,13 @@ export function SkuPickerTray({
                 type="button"
                 disabled={Boolean(bindingSkuId)}
                 onClick={() => void pickSku(row)}
+                aria-selected={isSelected}
                 className={cn(
-                  "flex w-[11.5rem] shrink-0 flex-col rounded-lg border-2 bg-white p-2 text-left transition-colors",
-                  isSelected
-                    ? "border-sky-400 bg-sky-50/30"
-                    : isTopMatch
-                      ? "border-emerald-300 bg-emerald-50/20"
-                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/50",
+                  "flex w-[11.5rem] shrink-0 flex-col p-2 text-left transition-colors",
+                  selectableCardClassName({
+                    selected: isSelected,
+                    className: isTopMatch && !isSelected ? "bg-success-soft/30" : undefined,
+                  }),
                   bindingSkuId && !isBinding ? "opacity-60" : null
                 )}
               >
@@ -251,11 +254,11 @@ export function SkuPickerTray({
                   <div className="flex min-w-0 flex-col items-end gap-0.5">
                     {isTopMatch ? (
                       <Badge variant="success" className="text-[9px] px-1 py-0">
-                        最相近
+                        {t("skuPicker.bestMatch")}
                       </Badge>
                     ) : showMatchHint ? (
                       <Badge variant="outline" className="text-[9px] px-1 py-0">
-                        相近 {formatMatchPct(row.matchScore)}
+                        {t("skuPicker.similarPct", { pct: formatMatchPct(row.matchScore) })}
                       </Badge>
                     ) : null}
                   </div>
@@ -277,7 +280,8 @@ export function SkuPickerTray({
                   </div>
                 ) : null}
                 <p className="mt-1.5 text-xs font-semibold text-ink">
-                  采购价 {formatProcurementPrice(row.procurementPrice, shopCurrency, pricingTemplate)}
+                  {t("skuPicker.purchaseCost")}{" "}
+                  {formatProcurementPrice(row.procurementPrice, shopCurrency, pricingTemplate)}
                 </p>
                 <p className="mt-0.5 truncate text-[10px] text-ink-subtle">
                   skuId {row.skuId}
@@ -285,15 +289,15 @@ export function SkuPickerTray({
                 {isBinding ? (
                   <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-brand">
                     <Loader2 className="h-3 w-3 animate-spin" />
-                    绑定中…
+                    {t("skuPicker.binding")}
                   </span>
                 ) : isSelected ? (
                   <span className="mt-1.5 text-[10px] font-medium text-sky-700">
-                    当前绑定
+                    {t("skuPicker.currentBinding")}
                   </span>
                 ) : (
                   <span className="mt-1.5 text-[10px] font-medium text-brand">
-                    选此 SKU · 立即生效
+                    {t("skuPicker.pickSku")}
                   </span>
                 )}
               </button>

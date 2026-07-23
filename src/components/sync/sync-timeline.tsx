@@ -1,11 +1,13 @@
 "use client";
 
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2 } from "@/lib/ui/icons";
 import { motion } from "framer-motion";
+import { useT } from "@/i18n/LocaleProvider";
 import type { PipelineStep } from "@/lib/sync/launch-summary";
 import { cn } from "@/lib/utils";
 
 export function SyncTimeline({ steps }: { steps: PipelineStep[] }) {
+  const t = useT();
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -57,7 +59,7 @@ export function SyncTimeline({ steps }: { steps: PipelineStep[] }) {
                     !completed && !active && "bg-slate-100 text-slate-600"
                   )}
                 >
-                  {completed ? "已完成" : step.badge}
+                  {completed ? t("syncUi.stepCompleted") : step.badge}
                 </span>
               ) : null}
               <p className="mt-1.5 text-[11px] leading-snug text-ink-muted">

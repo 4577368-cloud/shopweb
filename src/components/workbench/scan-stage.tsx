@@ -6,8 +6,9 @@ import {
   Circle,
   Loader2,
   MinusCircle,
-} from "lucide-react";
+} from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
 
 export type ScanTaskStatus = "pending" | "running" | "done" | "failed" | "skipped";
@@ -19,6 +20,9 @@ export interface ScanTaskView {
   resultText?: string | null;
   error?: string | null;
 }
+
+/** Matches progress bar `transition-[width] duration-500` in this component. */
+export const SCAN_STAGE_PROGRESS_ANIMATION_MS = 500;
 
 interface ScanStageProps {
   /** Heading of the scan card, e.g. "首轮自动整理". */
@@ -33,6 +37,8 @@ interface ScanStageProps {
   done: boolean;
   /** "直接查看当前结果" (running) / "查看结果" (done). Never blocks — always available. */
   onViewResult: () => void;
+  /** Extra classes on the outer wrapper (e.g. adjust vertical offset). */
+  className?: string;
 }
 
 function settledCount(tasks: ScanTaskView[]): number {
@@ -66,7 +72,9 @@ export function ScanStage({
   progressPercent,
   done,
   onViewResult,
+  className,
 }: ScanStageProps) {
+  const t = useT();
   const total = tasks.length;
   const settled = settledCount(tasks);
   const matchRunning = tasks.some(
@@ -74,10 +82,19 @@ export function ScanStage({
   );
   const taskPct = total > 0 ? Math.round((settled / total) * 100) : 0;
   const pct =
-    matchRunning && progressPercent != null ? progressPercent : taskPct;
+    done || settled >= total
+      ? 100
+      : matchRunning && progressPercent != null
+        ? progressPercent
+        : taskPct;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
+    <div
+      className={cn(
+        "mx-auto max-w-2xl space-y-4 pt-10 sm:pt-16",
+        className
+      )}
+    >
       <section className="rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">
         <div className="border-b border-hairline px-5 py-4">
           <div className="flex items-center justify-between gap-3">
@@ -92,7 +109,10 @@ export function ScanStage({
           <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-muted">
             <div
               className="h-full rounded-full bg-brand transition-[width] duration-500 ease-out"
-              style={{ width: `${pct}%` }}
+              style={{
+                width: `${pct}%`,
+                transitionDuration: `${SCAN_STAGE_PROGRESS_ANIMATION_MS}ms`,
+              }}
             />
           </div>
         </div>
@@ -126,17 +146,17 @@ export function ScanStage({
 
         <div className="flex items-center justify-between gap-3 border-t border-hairline px-5 py-3">
           <span className="text-[11px] text-ink-subtle">
-            {done ? "整理完成，可查看结果" : "处理中，可先查看当前结果"}
+            {done ? t("workbenchScan.doneFooter") : t("workbenchScan.runningFooter")}
           </span>
           <Button size="sm" variant={done ? "primary" : "secondary"} onClick={onViewResult}>
-            {done ? "查看结果" : "先查看当前结果"}
+            {done ? t("workbenchScan.viewResults") : t("workbenchScan.previewResults")}
           </Button>
         </div>
       </section>
 
       {recent && recent.length > 0 ? (
         <section className="rounded-[var(--radius-card)] border border-hairline bg-surface px-5 py-4 shadow-card">
-          <p className="mb-2 text-xs font-medium text-ink-subtle">最近完成</p>
+          <p className="mb-2 text-xs font-medium text-ink-subtle">{t("workbenchScan.recentDone")}</p>
           <ul className="space-y-1.5">
             {recent.map((line, idx) => (
               <li

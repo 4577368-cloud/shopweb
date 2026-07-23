@@ -4,6 +4,7 @@ import type { BasePageContext } from "@/lib/agents/runtime";
 import type { ProductFocusSnapshot, CandidateSummary } from "@/lib/agents/products/product-focus-snapshot";
 import type { ProductCatalogEntry } from "@/lib/agents/products/resolve-product-target";
 import type { ScanHandoffPayload } from "@/lib/scan/handoff";
+import type { TranslateFn } from "@/i18n/server";
 import {
   resolvePurchaseCostDisplayContext,
 } from "@/lib/purchase-cost-display";
@@ -41,7 +42,7 @@ export interface ProductsPricingContext {
 }
 
 /**
- * Readable snapshot of the 智能选品 page for agents / conversational layer.
+ * Readable snapshot of the products page for agents / conversational layer.
  * Extends BasePageContext; page-specific fields stay here.
  */
 export interface ProductsPageContext extends BasePageContext {
@@ -92,10 +93,12 @@ export interface BuildProductsPageContextInput {
   productCatalog?: ProductCatalogEntry[];
   scanHandoff?: ScanHandoffPayload | null;
   shopCurrencyHint?: string | null;
+  t: TranslateFn;
 }
 
 export function buildPricingContext(
-  template: PricingTemplate | null
+  template: PricingTemplate | null,
+  t: TranslateFn
 ): ProductsPricingContext {
   if (!template) {
     return {
@@ -105,10 +108,15 @@ export function buildPricingContext(
       exchangeRate: null,
       multiplier: null,
       addend: null,
-      summaryLine: "尚未读取到定价模板",
+      summaryLine: t("productsPricing.summaryMissing"),
     };
   }
   const configured = !needsPricingSetup(template);
+  const baseParams = {
+    currency: template.targetCurrency,
+    rate: template.exchangeRate,
+    multiplier: template.multiplier,
+  };
   return {
     configured,
     isDefault: template.isDefault,
@@ -117,10 +125,13 @@ export function buildPricingContext(
     multiplier: template.multiplier,
     addend: template.addend,
     summaryLine: configured
-      ? `已配置：${template.targetCurrency} · 汇率 ${template.exchangeRate} · 倍率 ×${template.multiplier}${
-          template.addend ? ` · 加价 +${template.addend}` : ""
-        }`
-      : "尚未完成有效定价配置（当前为系统默认）",
+      ? template.addend
+        ? t("productsPricing.summaryConfiguredAddend", {
+            ...baseParams,
+            addend: template.addend,
+          })
+        : t("productsPricing.summaryConfigured", baseParams)
+      : t("productsPricing.summaryDefault"),
   };
 }
 
@@ -136,13 +147,20 @@ export function purchaseDisplayAlignedWithPricing(
 }
 
 export function buildPurchaseDisplayContext(
+  t: TranslateFn,
   shopCurrencyHint?: string | null,
   template?: PricingTemplate | null
 ): ProductsPurchaseDisplayContext {
   const ctx = resolvePurchaseCostDisplayContext(shopCurrencyHint, template);
   const summaryLine = ctx.fromPricingTemplate
-    ? `采购价展示：${ctx.currency} · 汇率 ${ctx.exchangeRate}（与定价模板一致，不含倍率加价）`
-    : `采购价展示：${ctx.currency} · 默认汇率 ${ctx.exchangeRate}（不含倍率加价）`;
+    ? t("productsPricing.purchaseFromTemplate", {
+        currency: ctx.currency,
+        rate: ctx.exchangeRate,
+      })
+    : t("productsPricing.purchaseDefault", {
+        currency: ctx.currency,
+        rate: ctx.exchangeRate,
+      });
   return {
     currency: ctx.currency,
     exchangeRate: ctx.exchangeRate,
@@ -153,8 +171,9 @@ export function buildPurchaseDisplayContext(
 export function buildProductsPageContext(
   input: BuildProductsPageContextInput
 ): ProductsPageContext {
-  const pricing = buildPricingContext(input.template);
+  const pricing = buildPricingContext(input.template, input.t);
   const purchaseDisplay = buildPurchaseDisplayContext(
+    input.t,
     input.shopCurrencyHint,
     input.template
   );

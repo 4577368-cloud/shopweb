@@ -202,37 +202,35 @@ export function buildSkuPageContextSummary(ctx: SkuCommandClassifyContext | null
 }
 
 export function buildSkuCommandClassifySystemPrompt(
-  ctx?: SkuCommandClassifyContext | null
+  ctx?: SkuCommandClassifyContext | null,
+  responseLanguageRule?: string
 ): string {
   const lines = SKU_COMMAND_DEFS.map(
     (c) => `- ${c.id}: ${c.description}`
   ).join("\n");
   const contextBlock = buildSkuPageContextSummary(ctx ?? null);
-  return `你是一位资深的 SKU 绑定运营专家，专注于变体与货源 SKU 的映射对齐工作。
+  const langBlock = responseLanguageRule
+    ? `\n[Language]\n${responseLanguageRule}\n`
+    : "\n[Language]\nUnderstand user input in any language.\n";
+  return `You are a SKU mapping operator. Map natural-language commands on the SKU page to executable intents.
 
-你的任务：理解用户在 SKU 绑定页面输入的自然语言指令，映射为系统可执行的命令。
-
-可用命令：
+Available commands:
 ${lines}
 ${contextBlock ? `\n${contextBlock}\n` : ""}
-[意图理解规则]
-1. "只看部分关联""看待确认商品" → open_filter（params.filterMode = partially_linked）
-2. "只看全部关联" → open_filter（params.filterMode = fully_linked）
-3. "看全部" → open_filter（params.filterMode = all）
-4. "重新对齐""重新匹配" → rerun_auto_align（单个商品时 targetScope=current，批量时 targetScope=all）
-5. "解释匹配""为什么匹配这个SKU" → explain_sku_match
-6. "看这个商品""聚焦当前商品" → focus_product
-7. "打开详情""查看SKU详情" → open_sku_detail
-8. "批量确认""接受全部待确认" → batch_confirm_pending（targetScope=all，confirmationRequired=true）
+${langBlock}
+[Intent rules]
+1. "Show partially linked only" / "pending confirm" → open_filter (filterMode=partially_linked)
+2. "Show fully linked" → open_filter (filterMode=fully_linked)
+3. "Show all" → open_filter (filterMode=all)
+4. "Re-align" / "re-match" → rerun_auto_align
+5. "Explain match" → explain_sku_match
+6. "Focus this product" → focus_product
+7. "Open SKU detail" → open_sku_detail
+8. "Batch confirm pending" → batch_confirm_pending (confirmationRequired=true)
 
-[批量操作识别]
-- 包含"所有/全部/批量/每个/一次性/统一/统统"等关键词，且操作对象是多个商品时，targetScope="all"
-- 批量确认时 params.batchFilter = all|partially_linked
-
-[输出格式]
-- 只输出 JSON：{"intent":"...","targetScope":"current|explicit|none|all","productId":null,"params":{},"confirmationRequired":false}
-- intent 必须是上述之一
-- open_filter：params.filterMode 填 all|fully_linked|partially_linked
-- batch_confirm_pending：confirmationRequired 必须为 true
-- 无法判断时输出 {"intent":""}`;
+[Output format]
+- JSON only: {"intent":"...","targetScope":"current|explicit|none|all","productId":null,"params":{},"confirmationRequired":false}
+- open_filter: params.filterMode = all|fully_linked|partially_linked
+- batch_confirm_pending: confirmationRequired=true
+- If unsure, output {"intent":""}`;
 }

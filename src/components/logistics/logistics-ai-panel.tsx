@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { Loader2, Sparkles, TrendingDown } from "lucide-react";
+import { Loader2, Sparkles, TrendingDown } from "@/lib/ui/icons";
 import { CopilotCard } from "@/components/workbench/assistant-rail";
 import { InfoCard } from "@/components/workbench/info-card";
 import { Button } from "@/components/ui/button";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 import {
   computeActiveHighRiskAlerts,
   computeLogisticsPlanMetrics,
@@ -46,6 +47,8 @@ export function LogisticsAiPanel({
   onFetchQuotes: () => void;
   onOpenTemplate: () => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const metrics = computeLogisticsPlanMetrics(analysis);
   const { auto, manual } = countAutoVsManual(decisionStatusCounts);
   const activeRiskAlerts = useMemo(
@@ -55,11 +58,14 @@ export function LogisticsAiPanel({
 
   const copilot: AiPanelContent = useMemo(() => {
     const bullets: string[] = [
-      `已分析 ${metrics.productCount} 个商品 · ${metrics.variantCount} 个 SKU`,
-      `AI 自动规划 ${auto} 项 · 待你确认 ${manual} 项`,
+      t("logisticsAi.analyzedSummary", {
+        products: metrics.productCount,
+        skus: metrics.variantCount,
+      }),
+      t("logisticsAi.autoManualSummary", { auto, manual }),
     ];
     if (activeTemplate) {
-      bullets.push(formatTemplateMeta(activeTemplate));
+      bullets.push(formatTemplateMeta(t, activeTemplate, locale));
     }
 
     const alerts =
@@ -67,32 +73,37 @@ export function LogisticsAiPanel({
         ? [
             {
               id: "pending-review",
-              text: `${manual} 个 SKU 需补充信息或确认邮限，其余已由 AI 完成规划。`,
+              text: t("logisticsAi.supplementHint", { manual }),
               targetId: "pending-review",
             },
           ]
         : undefined;
 
     return {
-      title: "AI 物流助手",
+      title: t("logisticsAi.title"),
       summary:
         pendingCount > 0
-          ? `AI 已为 ${metrics.aiAutoCount} 个 SKU 匹配重量、体积与推荐线路。你只需处理 ${pendingCount} 个 AI 无法确定的异常。`
+          ? t("logisticsAi.subtitleAuto", {
+              count: metrics.aiAutoCount,
+              pending: pendingCount,
+            })
           : metrics.aiAutoCount > 0
-            ? "全部 SKU 已完成 AI 物流规划。确认方案后即可保存并进入同步。"
-            : "等待 SKU 绑定完成后，AI 将自动读取商品规格并生成履约方案。",
+            ? t("logisticsAi.subtitleAllDone")
+            : t("logisticsAi.subtitleWaitingSku"),
       bullets,
       alerts,
       nextAction:
         readyAcceptCount > 0
           ? {
-              label: accepting ? "确认中…" : `一键确认 ${readyAcceptCount} 个方案`,
+              label: accepting
+                ? t("logisticsAi.confirmAccepting")
+                : t("logisticsAi.confirmLabel", { count: readyAcceptCount }),
               action: "accept_all",
               disabled: accepting || quoting,
             }
           : pendingCount > 0
             ? {
-                label: "查看待确认项",
+                label: t("logisticsAi.viewPending"),
                 action: "focus_issues",
               }
             : undefined,
@@ -101,6 +112,7 @@ export function LogisticsAiPanel({
     activeTemplate,
     auto,
     accepting,
+    locale,
     manual,
     metrics.aiAutoCount,
     metrics.productCount,
@@ -108,26 +120,27 @@ export function LogisticsAiPanel({
     pendingCount,
     quoting,
     readyAcceptCount,
+    t,
   ]);
 
   const savings = useMemo(() => {
     const tips: string[] = [];
     if (activeTemplate?.speedPreference === "FAST") {
-      tips.push("当前偏好「快速」时效，可切换「均衡」模板以降低部分 SKU 运费。");
+      tips.push(t("logisticsAi.tipFastToBalanced"));
     }
     if (activeTemplate?.packaging === "CARTON") {
-      tips.push("纸箱包装会增加体积重，服装类可尝试「极简包装」。");
+      tips.push(t("logisticsAi.tipCartonToMinimal"));
     }
     if (tips.length === 0 && metrics.aiAutoCount > 0) {
-      tips.push("批量确认 AI 方案可一次完成履约配置，无需逐条处理。");
+      tips.push(t("logisticsAi.tipBatchConfirm"));
     }
     return tips;
-  }, [activeTemplate, metrics.aiAutoCount]);
+  }, [activeTemplate, metrics.aiAutoCount, t]);
 
   return (
     <div className="flex flex-col gap-2">
       <CopilotCard
-        heading="AI 物流助手"
+        heading={t("logisticsAi.heading")}
         content={copilot}
         onNextAction={(action) => {
           if (action === "accept_all") onAcceptAllReady();
@@ -138,7 +151,7 @@ export function LogisticsAiPanel({
 
       {savings.length > 0 ? (
         <InfoCard
-          title="节省成本机会"
+          title={t("logisticsAi.savingsTitle")}
           icon={<TrendingDown className="h-3.5 w-3.5 text-brand" />}
           tone="brand"
         >
@@ -153,7 +166,7 @@ export function LogisticsAiPanel({
         </InfoCard>
       ) : null}
 
-      <InfoCard title="快捷操作">
+      <InfoCard title={t("logisticsAi.quickActionsTitle")}>
         <div className="flex flex-col gap-2">
           <Button
             size="sm"
@@ -166,7 +179,7 @@ export function LogisticsAiPanel({
             ) : (
               <Sparkles className="mr-1.5 h-3.5 w-3.5" />
             )}
-            确认全部 AI 方案 ({readyAcceptCount})
+            {t("logisticsAi.confirmAll", { count: readyAcceptCount })}
           </Button>
           <Button
             size="sm"
@@ -178,7 +191,7 @@ export function LogisticsAiPanel({
             {quoting ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
             ) : null}
-            刷新线路报价
+            {t("logisticsAi.refreshQuotes")}
           </Button>
           <Button
             size="sm"
@@ -186,19 +199,19 @@ export function LogisticsAiPanel({
             className="h-8 justify-start text-xs"
             onClick={onOpenTemplate}
           >
-            调整物流模板
+            {t("logisticsAi.adjustTemplate")}
           </Button>
         </div>
       </InfoCard>
 
       {(activeRiskAlerts.length > 0 || !skuReadyForNext) ? (
-        <InfoCard title="AI 建议" tone="warning">
+        <InfoCard title={t("logisticsAi.aiSuggestTitle")} tone="warning">
           <ul className="space-y-1.5">
             {!skuReadyForNext ? (
-              <li>部分商品 SKU 未齐，请先完成 SKU 绑定。</li>
+              <li>{t("logisticsAi.skuGapHint")}</li>
             ) : null}
             {activeRiskAlerts.map((alert) => (
-              <li key={alert.type}>{formatActiveHighRiskAlert(alert)}</li>
+              <li key={alert.type}>{formatActiveHighRiskAlert(t, alert)}</li>
             ))}
           </ul>
         </InfoCard>

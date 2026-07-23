@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Loader2, Check, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, Check, X } from "@/lib/ui/icons";
 import type { BaseCommandPlan } from "@/lib/agents/shared/command-plan";
 import type { ConfirmPreviewResult, ConfirmCardTheme } from "@/components/select/command-confirm-card";
+import { useT } from "@/i18n/LocaleProvider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { CommandSensitivity } from "@/lib/agents/shared/command-plan";
@@ -22,15 +23,6 @@ export interface BatchProgress {
   success: number;
   failed: number;
 }
-
-const STEP_LABELS: Record<ExecutionStep, string> = {
-  executing: "正在执行",
-  preview_ready: "预览就绪",
-  applying: "写入 Shopify",
-  batch_running: "批量执行中",
-  done: "完成",
-  error: "失败",
-};
 
 const HIGH_SENSITIVITY_AUTO_APPLY_MS = 3000;
 const LOW_SENSITIVITY_AUTO_APPLY_MS = 600;
@@ -77,6 +69,18 @@ export function ExecutionPipeline({
   onAutoApply: (payload: Record<string, unknown>) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
+  const stepLabels = useMemo(
+    (): Record<ExecutionStep, string> => ({
+      executing: t("commandUi.stepExecuting"),
+      preview_ready: t("commandUi.stepPreviewReady"),
+      applying: t("commandUi.stepApplying"),
+      batch_running: t("commandUi.stepBatchRunning"),
+      done: t("commandUi.stepDone"),
+      error: t("commandUi.stepError"),
+    }),
+    [t]
+  );
   const autoApplyMs =
     sensitivity === "high"
       ? HIGH_SENSITIVITY_AUTO_APPLY_MS
@@ -151,18 +155,20 @@ export function ExecutionPipeline({
         </span>
         <span className="text-[10px] text-slate-400">·</span>
         <span className={cn("text-[10px] font-medium", isDone ? "text-emerald-700" : THEME_ACCENT[theme])}>
-          {STEP_LABELS[step]}
+          {stepLabels[step]}
         </span>
         {showCountdown ? (
           <span className="ml-auto text-[10px] text-slate-500">
-            {(countdown / 1000).toFixed(1)}s 后自动应用
+            {t("commandUi.autoApplyIn", {
+              seconds: (countdown / 1000).toFixed(1),
+            })}
           </span>
         ) : null}
       </div>
 
       {/* Target */}
       <p className="mt-0.5 text-[10px] text-slate-500">
-        目标：{plan.targetLabel}
+        {t("commandUi.target", { label: plan.targetLabel })}
       </p>
 
       {/* Done summary */}
@@ -199,13 +205,17 @@ export function ExecutionPipeline({
           <span>
             {batchProgress.current} / {batchProgress.total}
           </span>
-          <span className="text-emerald-600">成功 {batchProgress.success}</span>
+          <span className="text-emerald-600">
+            {t("commandUi.batchSuccess", { count: batchProgress.success })}
+          </span>
           {batchProgress.failed > 0 && (
-            <span className="text-red-500">失败 {batchProgress.failed}</span>
+            <span className="text-red-500">
+              {t("commandUi.batchFailed", { count: batchProgress.failed })}
+            </span>
           )}
         </div>
       ) : isBatchRunning ? (
-        <p className="mt-1.5 text-[10px] text-slate-500">正在准备，请稍候…</p>
+        <p className="mt-1.5 text-[10px] text-slate-500">{t("commandUi.preparing")}</p>
       ) : null}
 
       {/* Preview diff (when ready) */}
@@ -216,9 +226,11 @@ export function ExecutionPipeline({
               {section.rows.map((row, ri) => (
                 <div key={ri} className="space-y-0.5">
                   <div className="rounded border border-slate-200/80 bg-white/70 px-2 py-1">
-                    <p className="text-[10px] text-slate-500">{row.label} · 原</p>
+                    <p className="text-[10px] text-slate-500">
+                      {t("commandUi.beforeLabel", { label: row.label })}
+                    </p>
                     <p className="text-[11px] leading-relaxed text-slate-600 line-through decoration-slate-300">
-                      {row.before || "（空）"}
+                      {row.before || t("commandUi.empty")}
                     </p>
                   </div>
                   <div
@@ -235,7 +247,7 @@ export function ExecutionPipeline({
                         isDone ? "text-emerald-700" : "text-sky-700"
                       )}
                     >
-                      {row.label} · 改后
+                      {t("commandUi.afterLabel", { label: row.label })}
                     </p>
                     <p
                       className={cn(
@@ -259,18 +271,20 @@ export function ExecutionPipeline({
       {/* Impact info (preview only) */}
       {preview?.impact && step === "preview_ready" ? (
         <div className="mt-2 rounded border border-amber-200/60 bg-amber-50/50 px-2 py-1.5">
-          <p className="text-[10px] font-medium text-amber-800/80">⚠ 执行前确认</p>
+          <p className="text-[10px] font-medium text-amber-800/80">{t("commandUi.impactConfirm")}</p>
           <div className="mt-0.5 space-y-0.5">
             <p className="text-[10px] text-amber-900/70">
-              影响范围：{preview.impact.scope}
+              {t("commandUi.impactScope", { scope: preview.impact.scope })}
             </p>
             {preview.impact.durationHint ? (
               <p className="text-[10px] text-amber-900/70">
-                预计耗时：{preview.impact.durationHint}
+                {t("commandUi.impactDuration", { duration: preview.impact.durationHint })}
               </p>
             ) : null}
             <p className="text-[10px] text-amber-900/70">
-              {preview.impact.reversible ? "✓ 可撤销（支持手动改回）" : "✗ 不可逆操作"}
+              {preview.impact.reversible
+                ? t("commandUi.impactReversible")
+                : t("commandUi.impactIrreversible")}
             </p>
             {preview.impact.riskNote ? (
               <p className="text-[10px] text-red-700/80">{preview.impact.riskNote}</p>
@@ -295,7 +309,7 @@ export function ExecutionPipeline({
               onCancel();
             }}
           >
-            取消
+            {t("common.cancel")}
           </Button>
         </div>
       ) : null}

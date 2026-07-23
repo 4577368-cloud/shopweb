@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState } from "react";
 import { ThumbImage } from "@/components/ui/thumb-image";
 import type { ClientAgentResponse } from "@/lib/agents/runtime/client";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
@@ -11,6 +10,7 @@ import type { ShopProductMini } from "@/lib/agents/products/shop-minis";
 import type { AgentSuggestedAction } from "@/lib/agents/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 
 export interface IntentResultProps {
   intent: ProductsIntentId;
@@ -111,23 +111,28 @@ export function StatusFactSummary({
   onExpand?: () => void;
   onCollapse?: () => void;
 }) {
+  const t = useT();
   const p = context.pricing;
   const purchaseAligned = purchaseDisplayAlignedWithPricing(p, context.purchaseDisplay);
   const pricingLine = p.configured
-    ? `${p.targetCurrency ?? "—"} · 汇率 ${p.exchangeRate ?? "—"} · 倍率 ×${p.multiplier ?? "—"}`
-    : "未配置";
+    ? t("productsIntent.pricingLine", {
+        currency: p.targetCurrency ?? "—",
+        rate: p.exchangeRate ?? "—",
+        multiplier: p.multiplier ?? "—",
+      })
+    : t("productsIntent.notConfigured");
 
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50/60 px-2.5 py-2">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold text-slate-800">店铺状态</p>
+        <p className="text-xs font-semibold text-slate-800">{t("productsIntent.shopStatus")}</p>
         {onCollapse ? (
           <button
             type="button"
             onClick={onCollapse}
             className="text-[11px] font-medium text-emerald-700 underline-offset-2 hover:text-emerald-800 hover:underline"
           >
-            收起分析
+            {t("productsIntent.collapseAnalysis")}
           </button>
         ) : onExpand ? (
           <button
@@ -135,31 +140,34 @@ export function StatusFactSummary({
             onClick={onExpand}
             className="text-[11px] font-medium text-emerald-700 underline-offset-2 hover:text-emerald-800 hover:underline"
           >
-            查看完整分析
+            {t("productsIntent.expandAnalysis")}
           </button>
         ) : null}
       </div>
       <div className="mt-1.5 space-y-0.5 text-[11px] leading-relaxed text-slate-600">
         <p>
-          <span className="text-slate-400">定价</span> {pricingLine}
+          <span className="text-slate-400">{t("productsIntent.pricing")}</span> {pricingLine}
           {purchaseAligned ? (
-            <span className="text-slate-500"> · 采购/物流同汇率（不含倍率）</span>
+            <span className="text-slate-500">{t("productsIntent.purchaseAligned")}</span>
           ) : null}
         </p>
         {!purchaseAligned ? (
           <p>
-            <span className="text-slate-400">采购价展示</span>{" "}
-            {context.purchaseDisplay.summaryLine.replace(/^采购价展示：/, "")}
+            <span className="text-slate-400">{t("productsIntent.purchaseDisplay")}</span>{" "}
+            {context.purchaseDisplay.summaryLine}
           </p>
         ) : null}
         <p>
-          <span className="text-slate-400">已匹配</span>{" "}
-          {context.matchedCount} / {context.analyzedCount}
+          <span className="text-slate-400">{t("productsIntent.matched")}</span>{" "}
+          {t("productsIntent.matchedCount", {
+            matched: context.matchedCount,
+            analyzed: context.analyzedCount,
+          })}
         </p>
         <p>
-          <span className="text-slate-400">待确认</span> {context.pendingCount}
+          <span className="text-slate-400">{t("productsIntent.pending")}</span> {context.pendingCount}
           <span className="mx-1.5 text-slate-300">·</span>
-          <span className="text-slate-400">未匹配</span> {context.unboundCount}
+          <span className="text-slate-400">{t("productsIntent.unbound")}</span> {context.unboundCount}
         </p>
       </div>
     </div>
@@ -167,23 +175,31 @@ export function StatusFactSummary({
 }
 
 function StatusExpanded({ response, context }: IntentResultProps) {
+  const t = useT();
   return (
-    <ExecShell title="状态详情" eyebrow="任务">
+    <ExecShell title={t("productsIntent.statusDetails")} eyebrow={t("productsIntent.task")}>
       <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-700">
         <FactCell
-          label="定价"
+          label={t("productsIntent.pricing")}
           value={
             context.pricing.configured
-              ? context.pricing.summaryLine.replace(/^已配置：/, "")
-              : "未配置"
+              ? t("productsIntent.pricingLine", {
+                  currency: context.pricing.targetCurrency ?? "—",
+                  rate: context.pricing.exchangeRate ?? "—",
+                  multiplier: context.pricing.multiplier ?? "—",
+                })
+              : t("productsIntent.notConfigured")
           }
         />
         <FactCell
-          label="已匹配"
-          value={`${context.matchedCount} / ${context.analyzedCount}`}
+          label={t("productsIntent.matched")}
+          value={t("productsIntent.matchedCount", {
+            matched: context.matchedCount,
+            analyzed: context.analyzedCount,
+          })}
         />
-        <FactCell label="待确认" value={String(context.pendingCount)} />
-        <FactCell label="未匹配" value={String(context.unboundCount)} />
+        <FactCell label={t("productsIntent.pending")} value={String(context.pendingCount)} />
+        <FactCell label={t("productsIntent.unbound")} value={String(context.unboundCount)} />
       </div>
       {response.explanation.length > 0 ? (
         <ul className="mt-2 space-y-0.5 text-[11px] text-slate-600">
@@ -209,19 +225,20 @@ function PricingExplainCard({
   context,
   onAction,
 }: IntentResultProps) {
+  const t = useT();
   const p = context.pricing;
   if (p.configured) {
     return (
       <ExecShell
-        title="定价已就绪"
-        eyebrow="已完成"
+        title={t("productsIntent.pricingReady")}
+        eyebrow={t("productsIntent.completed")}
         footer={
           <TextLink
-            label="查看 / 调整定价"
+            label={t("productsIntent.viewAdjustPricing")}
             onClick={() =>
               onAction({
                 kind: "open_pricing_drawer",
-                label: "查看 / 调整定价",
+                label: t("productsIntent.viewAdjustPricing"),
               })
             }
           />
@@ -229,34 +246,42 @@ function PricingExplainCard({
       >
         <ol className="space-y-1 text-[11px] text-slate-700">
           <li>
-            <span className="text-slate-400">1</span> 采购成本（RMB）
+            <span className="text-slate-400">1</span> {t("productsIntent.purchaseCostRmb")}
           </li>
           <li>
-            <span className="text-slate-400">2</span> 汇率 {p.exchangeRate ?? "—"} →{" "}
-            {p.targetCurrency ?? "目标币"}
+            <span className="text-slate-400">2</span>{" "}
+            {t("productsIntent.fxToTarget", {
+              rate: p.exchangeRate ?? "—",
+              currency: p.targetCurrency ?? "—",
+            })}
           </li>
           <li>
-            <span className="text-slate-400">3</span> 倍率 ×{p.multiplier ?? "—"}
-            {p.addend ? ` · 加价 +${p.addend}` : ""} → 建议售价
+            <span className="text-slate-400">3</span>{" "}
+            {t("productsIntent.multiplierAddend", {
+              multiplier: p.multiplier ?? "—",
+              addend: p.addend
+                ? t("productsIntent.addendSuffix", { addend: p.addend })
+                : "",
+            })}
           </li>
         </ol>
         <p className="mt-2 text-[10px] text-slate-500">
-          定价规则已生效，建议售价会按此规则计算。
+          {t("productsIntent.pricingActive")}
         </p>
       </ExecShell>
     );
   }
   return (
     <ExecShell
-      title="定价因果链"
-      eyebrow="任务"
+      title={t("productsIntent.pricingChain")}
+      eyebrow={t("productsIntent.task")}
       footer={
         <TextLink
-          label="打开定价侧栏"
+          label={t("productsIntent.openPricingDrawer")}
           onClick={() =>
             onAction({
               kind: "open_pricing_drawer",
-              label: "打开定价侧栏",
+              label: t("productsIntent.openPricingDrawer"),
             })
           }
         />
@@ -264,13 +289,13 @@ function PricingExplainCard({
     >
       <ol className="space-y-1 text-[11px] text-slate-700">
         <li>
-          <span className="text-slate-400">1</span> 采购成本（RMB）
+          <span className="text-slate-400">1</span> {t("productsIntent.purchaseCostRmb")}
         </li>
         <li>
-          <span className="text-slate-400">2</span> 定价规则尚未有效配置
+          <span className="text-slate-400">2</span> {t("productsIntent.pricingNotConfigured")}
         </li>
         <li>
-          <span className="text-slate-400">3</span> 配置后才会生成可信建议售价
+          <span className="text-slate-400">3</span> {t("productsIntent.pricingAfterConfig")}
         </li>
       </ol>
     </ExecShell>
@@ -282,20 +307,21 @@ function ConfigurePricingCard({
   onAction,
   suppressPrimaryCta,
 }: IntentResultProps) {
+  const t = useT();
   return (
     <ExecShell
-      title="配置定价"
-      eyebrow="任务"
+      title={t("productsIntent.configurePricing")}
+      eyebrow={t("productsIntent.task")}
       footer={
         suppressPrimaryCta ? (
-          <p className="text-[11px] text-slate-500">请使用上方「当前优先」完成配置。</p>
+          <p className="text-[11px] text-slate-500">{t("productsIntent.usePriorityCard")}</p>
         ) : (
           <TextLink
-            label="打开定价侧栏"
+            label={t("productsIntent.openPricingDrawer")}
             onClick={() =>
               onAction({
                 kind: "open_pricing_drawer",
-                label: "打开定价侧栏",
+                label: t("productsIntent.openPricingDrawer"),
               })
             }
           />
@@ -303,8 +329,7 @@ function ConfigurePricingCard({
       }
     >
       <p className="text-[11px] leading-relaxed text-slate-600">
-        {response.explanation[0] ??
-          "配置目标币种、汇率与倍率后，主区建议售价才会按你的规则计算。"}
+        {response.explanation[0] ?? t("productsIntent.configurePricingHint")}
       </p>
     </ExecShell>
   );
@@ -353,21 +378,22 @@ function PendingMiniList({
   onAction,
   suppressPrimaryCta,
 }: IntentResultProps) {
+  const t = useT();
   const list = pendingMinis.slice(0, 5);
   return (
     <ExecShell
-      title="待确认商品"
-      eyebrow="任务"
+      title={t("productsIntent.pendingProducts")}
+      eyebrow={t("productsIntent.task")}
       footer={
         suppressPrimaryCta || list.length > 0 ? null : (
           <TextLink
-            label="定位待确认列表"
+            label={t("productsIntent.locatePendingList")}
             onClick={() =>
               onAction({
                 kind: "set_shop_filter",
                 tab: "shop",
                 shopFilter: "pending",
-                label: "看待确认",
+                label: t("productsIntent.viewPendingLabel"),
               })
             }
           />
@@ -375,7 +401,7 @@ function PendingMiniList({
       }
     >
       {list.length === 0 ? (
-        <p className="text-[11px] text-slate-500">暂无待确认商品。</p>
+        <p className="text-[11px] text-slate-500">{t("productsIntent.noPendingProducts")}</p>
       ) : (
         <div className="space-y-1">
           {list.map((m) => (
@@ -397,28 +423,29 @@ function UnboundMiniList({
   onAction,
   suppressPrimaryCta,
 }: IntentResultProps) {
+  const t = useT();
   const list = unboundMinis.slice(0, 5);
   return (
     <ExecShell
-      title="未匹配商品"
-      eyebrow="任务"
+      title={t("productsIntent.unboundProducts")}
+      eyebrow={t("productsIntent.task")}
       footer={
         list[0] ? (
           <TextLink
-            label="为第一项搜索候选"
+            label={t("productsIntent.searchFirstItem")}
             onClick={() =>
               onFocusProduct(list[0]!.productId, { openSearch: true })
             }
           />
         ) : suppressPrimaryCta ? null : (
           <TextLink
-            label="定位未匹配列表"
+            label={t("productsIntent.locateUnboundList")}
             onClick={() =>
               onAction({
                 kind: "set_shop_filter",
                 tab: "shop",
                 shopFilter: "unbound",
-                label: "看未匹配",
+                label: t("productsIntent.viewUnboundLabel"),
               })
             }
           />
@@ -426,7 +453,7 @@ function UnboundMiniList({
       }
     >
       {list.length === 0 ? (
-        <p className="text-[11px] text-slate-500">暂无未匹配商品。</p>
+        <p className="text-[11px] text-slate-500">{t("productsIntent.noUnboundProducts")}</p>
       ) : (
         <div className="space-y-1">
           {list.map((m) => (
@@ -443,20 +470,25 @@ function UnboundMiniList({
 }
 
 function DiscoverBrief({ context, suppressPrimaryCta, onAction }: IntentResultProps) {
+  const t = useT();
   return (
     <ExecShell
-      title="发现新品"
-      eyebrow="任务"
+      title={t("productsIntent.discoverNew")}
+      eyebrow={t("productsIntent.task")}
       footer={
         suppressPrimaryCta ? (
           <p className="text-[11px] text-slate-500">
-            请使用上方「当前优先」打开发现新品。
+            {t("productsIntent.usePriorityCard")}
           </p>
         ) : (
           <TextLink
-            label="打开发现新品"
+            label={t("productsIntent.openDiscover")}
             onClick={() =>
-              onAction({ kind: "set_tab", tab: "catalog", label: "打开发现新品" })
+              onAction({
+                kind: "set_tab",
+                tab: "catalog",
+                label: t("productsIntent.openDiscoverLabel"),
+              })
             }
           />
         )
@@ -474,18 +506,21 @@ function DiscoverBrief({ context, suppressPrimaryCta, onAction }: IntentResultPr
           ))}
         </div>
       ) : (
-        <p className="text-[11px] text-slate-500">暂无推荐类目。</p>
+        <p className="text-[11px] text-slate-500">{t("productsIntent.noRecommendedCategories")}</p>
       )}
       <p className="mt-1.5 text-[10px] text-slate-500">
         {context.filterSummary.length > 0
-          ? `当前筛选：${context.filterSummary.join(" · ")}`
-          : "尚未应用额外筛选。"}
+          ? t("productsIntent.currentFilters", {
+              filters: context.filterSummary.join(" · "),
+            })
+          : t("productsIntent.noExtraFilters")}
       </p>
     </ExecShell>
   );
 }
 
 function FilterPresets({ context, onAction }: IntentResultProps) {
+  const t = useT();
   const presets = context.recommendedCategoryNames.slice(0, 3).map((name) => ({
     kind: "apply_filter_preset" as const,
     tab: "catalog" as const,
@@ -494,14 +529,14 @@ function FilterPresets({ context, onAction }: IntentResultProps) {
   }));
 
   return (
-    <ExecShell title="筛选建议" eyebrow="任务">
+    <ExecShell title={t("productsIntent.filterSuggestions")} eyebrow={t("productsIntent.task")}>
       {presets.length === 0 ? (
         <p className="text-[11px] text-slate-500">
-          暂无推荐类目预设。可在发现新品页手动筛选。
+          {t("productsIntent.noCategoryPresets")}
         </p>
       ) : (
         <div className="flex flex-col gap-1">
-          <p className="text-[10px] text-slate-500">一键应用（真实类目）：</p>
+          <p className="text-[10px] text-slate-500">{t("productsIntent.applyOneClick")}</p>
           {presets.map((p) => (
             <button
               key={p.label}
@@ -523,12 +558,13 @@ function CandidateSearchProposal({
   onAction,
   onFocusProduct,
 }: IntentResultProps) {
+  const t = useT();
   if (context.focusProductId && context.focusProduct) {
     const focus = context.focusProduct;
     return (
       <ExecShell
-        title="为这个商品找更多候选"
-        eyebrow="当前商品"
+        title={t("productsIntent.findMoreCandidates")}
+        eyebrow={t("productsIntent.currentProduct")}
         footer={
           <Button
             size="sm"
@@ -537,13 +573,13 @@ function CandidateSearchProposal({
               onFocusProduct(focus.productId, { openSearch: true })
             }
           >
-            打开图搜托盘
+            {t("productsIntent.openImageSearch")}
           </Button>
         }
       >
         <p className="text-[11px] font-medium text-slate-800">{focus.title}</p>
         <p className="mt-1 text-[11px] text-slate-600">
-          将重新图搜 Tangbuy 货源（最多 5 个候选），不会自动改绑已确认关联。
+          {t("productsIntent.imageSearchHint")}
         </p>
       </ExecShell>
     );
@@ -552,42 +588,46 @@ function CandidateSearchProposal({
   if (context.unboundCount <= 0) {
     return (
       <ExecShell
-        title="重搜候选"
-        eyebrow="任务"
+        title={t("productsIntent.rerunCandidates")}
+        eyebrow={t("productsIntent.task")}
         footer={
           <div className="flex flex-wrap gap-3">
             {context.pendingCount > 0 ? (
               <TextLink
-                label="看待确认"
+                label={t("productsIntent.viewPending")}
                 onClick={() =>
                   onAction({
                     kind: "set_shop_filter",
                     tab: "shop",
                     shopFilter: "pending",
-                    label: "看待确认",
+                    label: t("productsIntent.viewPendingLabel"),
                   })
                 }
               />
             ) : (
               <TextLink
-                label="发现新品"
+                label={t("productsIntent.openDiscover")}
                 onClick={() =>
-                  onAction({ kind: "set_tab", tab: "catalog", label: "发现新品" })
+                  onAction({
+                    kind: "set_tab",
+                    tab: "catalog",
+                    label: t("productsIntent.openDiscoverLabel"),
+                  })
                 }
               />
             )}
           </div>
         }
       >
-        <p className="text-[11px] text-slate-600">暂无未关联商品。</p>
+        <p className="text-[11px] text-slate-600">{t("productsIntent.noUnlinkedProducts")}</p>
       </ExecShell>
     );
   }
 
   return (
     <ExecShell
-      title="重搜候选"
-      eyebrow="任务"
+      title={t("productsIntent.rerunCandidates")}
+      eyebrow={t("productsIntent.task")}
       footer={
         <Button
           size="sm"
@@ -596,16 +636,16 @@ function CandidateSearchProposal({
             onAction({
               kind: "rematch_unbound",
               tab: "shop",
-              label: "重搜全部未匹配",
+              label: t("productsIntent.rerunAllUnbound"),
             })
           }
         >
-          重搜 {context.unboundCount} 个未匹配
+          {t("productsIntent.rerunUnboundCount", { count: context.unboundCount })}
         </Button>
       }
     >
       <p className="text-[11px] text-slate-600">
-        为全部未关联商品重新图搜，已关联的不会改绑。
+        {t("productsIntent.rerunUnboundHint")}
       </p>
     </ExecShell>
   );
@@ -619,19 +659,20 @@ function ProductFocusExplain({
   onFocusProduct,
   suppressPrimaryCta,
 }: IntentResultProps) {
+  const t = useT();
   const focus = context.focusProduct;
   const title =
     intent === "explain_match_reason"
-      ? "为什么推荐这个货源"
+      ? t("productsIntent.explainMatchReason")
       : intent === "explain_match_risk"
-        ? "匹配不确定点"
-        : "候选对比";
+        ? t("productsIntent.explainMatchRisk")
+        : t("productsIntent.compareCandidates");
 
   if (!focus) {
     return (
-      <ExecShell title="请先选择商品" eyebrow="任务">
+      <ExecShell title={t("productsIntent.selectProductFirst")} eyebrow={t("productsIntent.task")}>
         <p className="text-[11px] text-slate-600">
-          在「我的 Shopify」中点击商品卡片，再查看推荐依据或不确定点。
+          {t("productsIntent.selectProductHint")}
         </p>
       </ExecShell>
     );
@@ -646,7 +687,7 @@ function ProductFocusExplain({
   return (
     <ExecShell
       title={title}
-      eyebrow="当前商品"
+      eyebrow={t("productsIntent.currentProduct")}
       footer={
         showCta ? (
           <TextLink
@@ -667,8 +708,10 @@ function ProductFocusExplain({
       <p className="text-[11px] font-medium text-slate-800">{focus.title}</p>
       {focus.purchaseCostLabel ? (
         <p className="mt-1 text-[10px] text-slate-500">
-          采购成本 {focus.purchaseCostLabel}
-          {focus.profitLabel ? ` · 每单约 ${focus.profitLabel}` : ""}
+          {t("productsIntent.purchaseCost", { cost: focus.purchaseCostLabel })}
+          {focus.profitLabel
+            ? t("productsIntent.profitPerOrder", { profit: focus.profitLabel })
+            : ""}
         </p>
       ) : null}
       <ul className="mt-2 space-y-0.5 text-[11px] text-slate-600">
@@ -681,8 +724,9 @@ function ProductFocusExplain({
 }
 
 function FallbackBrief({ response }: IntentResultProps) {
+  const t = useT();
   return (
-    <ExecShell title={response.summary} eyebrow="任务">
+    <ExecShell title={response.summary} eyebrow={t("productsIntent.task")}>
       <ul className="space-y-0.5 text-[11px] text-slate-600">
         {response.explanation.slice(0, 3).map((line, i) => (
           <li key={`${i}-${line.slice(0, 16)}`}>· {line}</li>
@@ -704,14 +748,15 @@ export function ActiveTaskCard({
   action: AgentSuggestedAction;
   onAction: (a: AgentSuggestedAction) => void;
 }) {
+  const t = useT();
   return (
     <div
       className={cn(
-        "rounded-md border border-emerald-200/70 bg-emerald-50/40 px-2.5 py-2"
+        "rounded-md border border-brand-accent/20 bg-brand-soft/50 px-2.5 py-2"
       )}
     >
-      <p className="text-[10px] font-medium tracking-wide text-emerald-800/70">
-        当前优先
+      <p className="text-[10px] font-medium tracking-wide text-brand-accent/80">
+        {t("productsIntent.currentPriority")}
       </p>
       <h3 className="mt-0.5 text-sm font-semibold leading-snug text-slate-900">
         {title}
@@ -723,7 +768,7 @@ export function ActiveTaskCard({
         <button
           type="button"
           onClick={() => onAction(action)}
-          className="mt-1.5 text-xs font-semibold text-emerald-800 underline-offset-2 hover:underline"
+          className="mt-1.5 text-xs font-semibold text-link hover:text-link-hover underline-offset-2 hover:underline"
         >
           {action.label} →
         </button>

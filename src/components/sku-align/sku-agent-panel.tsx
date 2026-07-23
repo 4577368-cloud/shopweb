@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Send, Loader2 } from "lucide-react";
+import { Send, Loader2 } from "@/lib/ui/icons";
 import type { AgentSuggestedAction } from "@/lib/agents/types";
 import type { SkuPageContext } from "@/lib/agents/sku-align/plan-command";
 import {
@@ -22,6 +22,7 @@ import { CommandAgentExecution } from "@/components/workbench/command-agent-exec
 import { SkillFeedbackCard } from "@/components/workbench/skill-feedback-card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 import type { ConfirmPreviewResult } from "@/components/select/command-confirm-card";
 import type { ExecutionStep, BatchProgress } from "@/components/select/execution-pipeline";
 
@@ -51,6 +52,8 @@ export function SkuAgentPanel({
   previewGenerators = {},
   commandExecutors = {},
 }: SkuAgentPanelProps) {
+  const t = useT();
+  const locale = useLocale();
   const [commandPlan, setCommandPlan] = useState<SkuCommandPlan | null>(null);
   const [commandExecuting, setCommandExecuting] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -78,10 +81,14 @@ export function SkuAgentPanel({
       const pending = p.variants.filter((v) => v.bound?.bindStatus === "PENDING").length;
       return pending > 0 || (active > 0 && active < p.variants.length);
     }).length;
-    if (partiallyLinked > 0) examples.push("批量确认待匹配");
-    examples.push("只看部分关联", "重新对齐", "解释匹配");
+    if (partiallyLinked > 0) examples.push(t("skuAgent.exampleBatchConfirm"));
+    examples.push(
+      t("skuAgent.examplePartialOnly"),
+      t("skuAgent.exampleRealign"),
+      t("skuAgent.exampleExplain")
+    );
     return examples;
-  }, [context.productCatalog]);
+  }, [context.productCatalog, t]);
 
   const classifyContext = useMemo<SkuCommandClassifyContext>(() => ({
     focusProductTitle: context.focusProduct?.title ?? null,
@@ -116,31 +123,31 @@ export function SkuAgentPanel({
     const seq = ++requestSeq.current;
 
     try {
-      const classifyResult = await classifySkuCommandInput(text, classifyContext);
+      const classifyResult = await classifySkuCommandInput(text, classifyContext, locale);
       if (requestSeq.current !== seq) return;
 
       if (classifyResult.confidence === "high" && classifyResult.draft) {
-        const plan = planSkuCommand(classifyResult.draft, context);
+        const plan = planSkuCommand(t, classifyResult.draft, context);
         setCommandPlan(plan);
         return;
       }
 
-      setClarify(classifyResult.clarify ?? "无法理解您的命令，请试试其他说法。");
+      setClarify(classifyResult.clarify ?? t("skuAgent.errCannotUnderstand"));
     } catch (err) {
       if (requestSeq.current !== seq) return;
-      setClarify(readableError(err) || "命令处理失败，请稍后重试。");
+      setClarify(readableError(err) || t("skuAgent.errCommandFailed"));
     } finally {
       if (requestSeq.current === seq) {
         setLoading(false);
         setInput("");
       }
     }
-  }, [input, context, classifyContext]);
+  }, [input, context, classifyContext, t, locale]);
 
   const executeCommand = useCallback(async (plan: SkuCommandPlan) => {
     const execution = resolveSkuCommandExecution(plan);
     if (!execution) {
-      setClarify(plan.clarify ?? "无法执行该命令。");
+      setClarify(plan.clarify ?? t("skuAgent.errCannotExecute"));
       return;
     }
     setCommandExecuting(true);
@@ -155,11 +162,11 @@ export function SkuAgentPanel({
         if (feedback) setSkillFeedback(feedback);
       }
     } catch (err) {
-      setClarify(readableError(err) || "命令执行失败，请稍后重试。");
+      setClarify(readableError(err) || t("skuAgent.errCommandFailed"));
     } finally {
       setCommandExecuting(false);
     }
-  }, [context]);
+  }, [context, t]);
 
   const applyCommandExecution = async (
     plan: SkuCommandPlan,
@@ -187,7 +194,7 @@ export function SkuAgentPanel({
     if (!commandPlan) return;
     const generator = previewGenerators[commandPlan.draft.intent];
     if (!generator) {
-      setPreviewError("该命令暂无预览生成器");
+      setPreviewError(t("skuAgent.errNoPreviewGenerator"));
       setPreviewLoading(false);
       setExecStep("error");
       return;
@@ -204,12 +211,12 @@ export function SkuAgentPanel({
       setExecStep("preview_ready");
     } catch (err) {
       if (previewSeq.current !== seq) return;
-      setPreviewError(readableError(err) || "预览生成失败");
+      setPreviewError(readableError(err) || t("skuAgent.errPreviewFailed"));
       setExecStep("error");
     } finally {
       if (previewSeq.current === seq) setPreviewLoading(false);
     }
-  }, [commandPlan, previewGenerators, shopName]);
+  }, [commandPlan, previewGenerators, shopName, t]);
 
   useEffect(() => {
     if (!commandPlan) return;
@@ -222,7 +229,7 @@ export function SkuAgentPanel({
     if (!commandPlan) return;
     const executor = commandExecutors[commandPlan.draft.intent];
     if (!executor) {
-      setClarify("该命令暂无执行器");
+      setClarify(t("skuAgent.errNoExecutor"));
       setExecStep("error");
       return;
     }
@@ -263,12 +270,12 @@ export function SkuAgentPanel({
         if (feedback) setSkillFeedback(feedback);
       }
     } catch (err) {
-      setClarify(readableError(err) || "执行失败，请稍后重试。");
+      setClarify(readableError(err) || t("skuAgent.errExecuteFailed"));
       setExecStep("error");
     } finally {
       setCommandExecuting(false);
     }
-  }, [commandPlan, commandExecutors, context]);
+  }, [commandPlan, commandExecutors, context, batchProgress, t]);
 
   const handleQuickCommand = useCallback((cmd: string) => {
     setInput(cmd);
@@ -306,7 +313,7 @@ export function SkuAgentPanel({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            placeholder="输入命令，如：批量确认待匹配"
+            placeholder={t("skuAgent.inputPlaceholder")}
             disabled={loading}
             className="flex-1 rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-1.5 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft disabled:opacity-50"
           />
@@ -358,7 +365,7 @@ export function SkuAgentPanel({
 
       {execStep === "done" && !skillFeedback ? (
         <div className="rounded-[var(--radius-card)] border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
-          执行完成
+          {t("skuAgent.execDone")}
         </div>
       ) : null}
 
@@ -368,23 +375,23 @@ export function SkuAgentPanel({
 
       {!commandPlan && !skillFeedback && !clarify ? (
         <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-xs">
-          <div className="font-semibold text-ink mb-2">匹配规则说明</div>
+          <div className="font-semibold text-ink mb-2">{t("skuAgent.matchRulesTitle")}</div>
           <ul className="space-y-1.5">
             <li className="flex gap-2">
               <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
-              <span className="text-ink-muted">商品标题与关键词</span>
+              <span className="text-ink-muted">{t("sku.matchRuleTitle")}</span>
             </li>
             <li className="flex gap-2">
               <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
-              <span className="text-ink-muted">规格（颜色 / 尺寸 / 材质等）</span>
+              <span className="text-ink-muted">{t("sku.matchRuleSpec")}</span>
             </li>
             <li className="flex gap-2">
               <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
-              <span className="text-ink-muted">图片相似度</span>
+              <span className="text-ink-muted">{t("sku.matchRuleImage")}</span>
             </li>
             <li className="flex gap-2">
               <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
-              <span className="text-ink-muted">类目与属性</span>
+              <span className="text-ink-muted">{t("sku.matchRuleCategory")}</span>
             </li>
           </ul>
         </div>

@@ -13,7 +13,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
-} from "lucide-react";
+} from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useOnboarding } from "@/context/onboarding-context";
@@ -24,6 +24,7 @@ import {
 
 import { AppLogo } from "@/components/brand/app-logo";
 import { APP_FULL_NAME } from "@/lib/brand";
+import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 
@@ -91,12 +92,15 @@ export default function InstallPage() {
               {t("common.developerPreview")}
             </span>
           </div>
-          <Link
-            href={localePath(locale, "/authorize")}
-            className="text-xs font-medium text-ink-muted hover:text-ink"
-          >
-            {t("install.authorizedHint")}
-          </Link>
+          <div className="flex items-center gap-3">
+            <LanguageSwitcher />
+            <Link
+              href={localePath(locale, "/authorize")}
+              className="text-xs font-medium text-ink-muted hover:text-ink"
+            >
+              {t("install.authorizedHint")}
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -170,7 +174,7 @@ export default function InstallPage() {
                     key={title}
                     className="rounded-[var(--radius-control)] border border-hairline bg-canvas px-3 py-3"
                   >
-                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand-strong">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
                       <Icon className="h-3.5 w-3.5" />
                     </span>
                     <p className="mt-2 text-xs font-medium text-ink">{title}</p>
@@ -194,7 +198,7 @@ export default function InstallPage() {
                 key={title}
                 className="rounded-[var(--radius-card)] border border-hairline bg-surface px-4 py-4 shadow-card"
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-soft text-brand-strong">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
                   <Icon className="h-4 w-4" />
                 </span>
                 <p className="mt-3 text-sm font-medium text-ink">{title}</p>
@@ -257,7 +261,7 @@ export default function InstallPage() {
         </section>
 
         {/* Footer CTA */}
-        <section className="mt-10 flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-emerald-100 bg-brand-soft px-5 py-8 text-center">
+        <section className="mt-10 flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-brand-accent/20 bg-brand-soft px-5 py-8 text-center">
           <h3 className="text-lg font-semibold tracking-tight text-ink">
             {t("install.readyCta")}
           </h3>

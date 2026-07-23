@@ -8,7 +8,15 @@
  *
  * 学到的别名注入 `spec-match` 的 custom 兜底判等，下次匹配即受益。
  */
+import { api } from "@/lib/api";
 import { parseSpec, setLearnedAliasResolver } from "./spec-match";
+
+export interface RecordBindingOptions {
+  /** 归属店铺；接通 skuAlignV1RecordAlias 后作为全局别名库的归属维度（必填才能入库）。 */
+  shopName?: string;
+  /** 可选品类提示，透传给后端知识库（当前数据源未携带，留空）。 */
+  categoryHint?: string;
+}
 
 export interface LearnedAlias {
   a: string;
@@ -83,13 +91,24 @@ function persist(list: LearnedAlias[]): void {
 /**
  * 记录一次人工绑定，沉淀可学习别名。返回本次新增/强化的别名条数。
  * 立即更新内存索引，后续匹配无需刷新即可受益。
+ *
+ * 若提供 shopName，则把每条学到的别名对异步推送到后端联邦别名知识库
+ * （skuAlignV1RecordAlias 端点），把"本次人工确认"沉淀为**全局资产**——
+ * 同店（乃至后续跨店）下次匹配即可直接受益。推送为 fire-and-forget，
+ * 失败不影响本地闭环。
  */
-export function recordBinding(variantLabel: string, specLabel: string): number {
+export function recordBinding(
+  variantLabel: string,
+  specLabel: string,
+  opts?: RecordBindingOptions
+): number {
   const pairs = deriveAliasPairs(variantLabel, specLabel);
   if (!pairs.length) return 0;
   ensureLoaded();
   const list = loadLearnedAliases();
   const now = Date.now();
+  const pushToKnowledge =
+    typeof window !== "undefined" && Boolean(opts?.shopName);
   for (const [a, b] of pairs) {
     const existing = list.find(
       (x) => (x.a === a && x.b === b) || (x.a === b && x.b === a)
@@ -101,6 +120,20 @@ export function recordBinding(variantLabel: string, specLabel: string): number {
       list.push({ a, b, count: 1, updatedAt: now });
     }
     indexPair(a, b);
+    // 联邦别名知识库：人工确认 → 全局资产（fire-and-forget，失败静默降级）
+    if (pushToKnowledge) {
+      void api
+        .skuAlignV1RecordAlias({
+          shopName: opts!.shopName!,
+          sourceText: a,
+          targetText: b,
+          derivedFrom: "MANUAL_CORRECTION",
+          ...(opts?.categoryHint ? { categoryHint: opts.categoryHint } : {}),
+        })
+        .catch((err) => {
+          console.debug("[sku-align] alias knowledge push failed", err);
+        });
+    }
   }
   persist(list);
   return pairs.length;

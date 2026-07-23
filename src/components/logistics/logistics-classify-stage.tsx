@@ -8,8 +8,9 @@ import {
   Scale,
   Sparkles,
   Truck,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+} from "@/lib/ui/icons";
+import { useT } from "@/i18n/LocaleProvider";
+import type { LogisticsTranslate } from "@/lib/logistics/display";
 import { cn } from "@/lib/utils";
 
 type StageTaskStatus = "pending" | "running" | "done";
@@ -31,7 +32,10 @@ function TaskIcon({ status }: { status: StageTaskStatus }) {
   return <Circle className="h-4 w-4 text-ink-subtle" />;
 }
 
-function deriveTasks(phase: "loading" | "classifying"): StageTask[] {
+function deriveTasks(
+  t: LogisticsTranslate,
+  phase: "loading" | "classifying"
+): StageTask[] {
   const bind: StageTaskStatus =
     phase === "loading" ? "running" : "done";
   const classify: StageTaskStatus =
@@ -41,18 +45,18 @@ function deriveTasks(phase: "loading" | "classifying"): StageTask[] {
 
   if (phase === "classifying") {
     return [
-      { id: "bind", label: "读取 SKU 绑定与货源信息", status: "done", icon: Package },
-      { id: "classify", label: "AI 识别商品品类", status: "running", icon: Sparkles },
-      { id: "postal", label: "分析邮限与可运线路", status: postal, icon: Scale },
-      { id: "plan", label: "生成物流方案清单", status: plan, icon: Truck },
+      { id: "bind", label: t("logisticsClassify.taskBind"), status: "done", icon: Package },
+      { id: "classify", label: t("logisticsClassify.taskClassify"), status: "running", icon: Sparkles },
+      { id: "postal", label: t("logisticsClassify.taskPostal"), status: postal, icon: Scale },
+      { id: "plan", label: t("logisticsClassify.taskPlan"), status: plan, icon: Truck },
     ];
   }
 
   return [
-    { id: "bind", label: "读取 SKU 绑定与货源信息", status: bind, icon: Package },
-    { id: "classify", label: "AI 识别商品品类", status: classify, icon: Sparkles },
-    { id: "postal", label: "分析邮限与可运线路", status: postal, icon: Scale },
-    { id: "plan", label: "生成物流方案清单", status: plan, icon: Truck },
+    { id: "bind", label: t("logisticsClassify.taskBind"), status: bind, icon: Package },
+    { id: "classify", label: t("logisticsClassify.taskClassify"), status: classify, icon: Sparkles },
+    { id: "postal", label: t("logisticsClassify.taskPostal"), status: postal, icon: Scale },
+    { id: "plan", label: t("logisticsClassify.taskPlan"), status: plan, icon: Truck },
   ];
 }
 
@@ -63,9 +67,11 @@ export function LogisticsClassifyStage({
   phase: "loading" | "classifying";
   productCount?: number;
 }) {
-  const tasks = deriveTasks(phase);
-  const doneCount = tasks.filter((t) => t.status === "done").length;
+  const t = useT();
+  const tasks = deriveTasks(t, phase);
+  const doneCount = tasks.filter((task) => task.status === "done").length;
   const pct = Math.round((doneCount / tasks.length) * 100);
+  const runningTask = tasks.find((t) => t.status === "running");
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 py-6">
@@ -73,17 +79,21 @@ export function LogisticsClassifyStage({
         <div className="border-b border-hairline/80 bg-gradient-to-r from-brand-soft/60 via-white to-emerald-50/40 px-5 py-5">
           <div className="flex items-start gap-4">
             <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-brand/15 bg-gradient-to-br from-brand-soft to-white shadow-sm">
-              {!tasks.every((t) => t.status === "done") ? (
+              {!tasks.every((task) => task.status === "done") ? (
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-2xl bg-brand/15" />
               ) : null}
               <Sparkles className="relative h-6 w-6 text-brand-strong" />
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-base font-semibold text-ink">AI 正在规划物流方案</h2>
+              <h2 className="text-base font-semibold text-ink">
+                {runningTask
+                  ? t("logisticsClassify.stepInProgress", { step: runningTask.label })
+                  : t("logisticsClassify.heading")}
+              </h2>
               <p className="mt-1 text-xs leading-relaxed text-ink-subtle">
-                结合 SKU 绑定、品类邮限与模板市场，为每个规格匹配可报价线路。
+                {t("logisticsClassify.description")}
                 {productCount != null && productCount > 0
-                  ? ` 共 ${productCount} 个商品待分析。`
+                  ? t("logisticsClassify.productCountSuffix", { count: productCount })
                   : ""}
               </p>
             </div>
@@ -91,7 +101,7 @@ export function LogisticsClassifyStage({
 
           <div className="mt-4">
             <div className="mb-1.5 flex items-center justify-between text-[11px]">
-              <span className="text-ink-subtle">分析进度</span>
+              <span className="text-ink-subtle">{t("logisticsClassify.progressLabel")}</span>
               <span className="font-medium tabular-nums text-brand-strong">{pct}%</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-surface-muted">
@@ -121,7 +131,7 @@ export function LogisticsClassifyStage({
                 <span className="min-w-0 flex-1">{task.label}</span>
                 {task.status === "running" ? (
                   <span className="shrink-0 text-[10px] font-medium text-brand-strong">
-                    进行中
+                    {t("logisticsClassify.inProgress")}
                   </span>
                 ) : null}
               </li>
@@ -131,7 +141,7 @@ export function LogisticsClassifyStage({
       </div>
 
       <p className="text-center text-[11px] text-ink-subtle">
-        首次进入会拉取店铺 SKU 与货源数据，商品较多时可能需要十几秒。
+        {t("logisticsClassify.footnote")}
       </p>
     </div>
   );
@@ -143,10 +153,14 @@ export function LogisticsClassifyStageCompact({
 }: {
   phase: "loading" | "classifying";
 }) {
+  const t = useT();
+
   return (
     <div className="flex items-center justify-center gap-2 rounded-[var(--radius-card)] border border-hairline bg-surface px-4 py-8 text-sm text-ink-subtle">
       <Loader2 className="h-4 w-4 animate-spin text-brand" />
-      {phase === "classifying" ? "AI 正在分析邮限与线路…" : "正在加载物流数据…"}
+      {phase === "classifying"
+        ? t("logisticsClassify.compactClassifying")
+        : t("logisticsClassify.compactLoading")}
     </div>
   );
 }

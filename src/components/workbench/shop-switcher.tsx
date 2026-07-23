@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
@@ -8,23 +7,30 @@ import {
   Loader2,
   Plus,
   Store,
-} from "lucide-react";
+} from "@/lib/ui/icons";
+import Link from "next/link";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, type AuthorizedShopSummary } from "@/lib/api";
 import { SHOP_STORAGE_KEY } from "@/lib/shopify-install";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
+import { localeHtmlLang } from "@/i18n/config";
 import { cn } from "@/lib/utils";
 
-function fmtAuthorizedAt(raw?: string): string {
+function fmtAuthorizedAt(locale: string, raw?: string): string {
   if (!raw) return "";
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
-  return d.toLocaleString("zh-CN", { hour12: false });
+  const htmlLang = localeHtmlLang[locale as keyof typeof localeHtmlLang] ?? locale;
+  return d.toLocaleString(htmlLang, { hour12: false });
 }
 
 /**
  * Sidebar shop dropdown: switch among authorized shops, or jump to /install to add another.
  */
 export function ShopSwitcher() {
+  const t = useT();
+  const locale = useLocale();
   const { shop, isAuthorized, hydrateAuthorizedShop, showToast } = useOnboarding();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -88,25 +94,25 @@ export function ShopSwitcher() {
       window.localStorage.setItem(SHOP_STORAGE_KEY, normalized);
       const status = await api.getShopStatus(normalized);
       if (!status.authorized) {
-        showToast("该店铺授权已失效，请重新授权");
+        showToast(t("shopSwitcher.toastAuthExpired"));
         return;
       }
       hydrateAuthorizedShop({
         name: status.shopName ?? normalized.split(".")[0] ?? normalized,
         domain: status.shopDomain ?? normalized,
-        authorizedAt: fmtAuthorizedAt(status.authorizedAt),
+        authorizedAt: fmtAuthorizedAt(locale, status.authorizedAt),
         productCount: status.productCount ?? 0,
       });
-      showToast(`已切换到 ${status.shopName ?? normalized}`);
+      showToast(t("shopSwitcher.toastSwitched", { name: status.shopName ?? normalized }));
       setOpen(false);
     } catch {
-      showToast("切换店铺失败，请稍后重试");
+      showToast(t("shopSwitcher.toastSwitchFailed"));
     } finally {
       setSwitching(false);
     }
   };
 
-  const label = isAuthorized ? shop.name : "未连接店铺";
+  const label = isAuthorized ? shop.name : t("shopSwitcher.notConnected");
 
   return (
     <div ref={rootRef} className="relative px-4">
@@ -138,10 +144,10 @@ export function ShopSwitcher() {
             {loading ? (
               <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-ink-muted">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                加载店铺列表…
+                {t("shopSwitcher.loadingShops")}
               </div>
             ) : shops.length === 0 ? (
-              <p className="px-3 py-2.5 text-xs text-ink-muted">暂无已授权店铺</p>
+              <p className="px-3 py-2.5 text-xs text-ink-muted">{t("shopSwitcher.noAuthorizedShops")}</p>
             ) : (
               shops.map((s) => {
                 const active =
@@ -180,12 +186,12 @@ export function ShopSwitcher() {
           </div>
           <div className="border-t border-hairline">
             <Link
-              href="/install"
+              href={localePath(locale, "/install")}
               onClick={() => setOpen(false)}
               className="flex items-center gap-2 px-3 py-2.5 text-xs font-medium text-brand transition-colors hover:bg-brand-soft"
             >
               <Plus className="h-3.5 w-3.5" />
-              添加新店铺授权
+              {t("shopSwitcher.addShop")}
             </Link>
           </div>
         </div>

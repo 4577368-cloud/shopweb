@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown } from "@/lib/ui/icons";
 import { motion, AnimatePresence } from "framer-motion";
+import { useT } from "@/i18n/LocaleProvider";
 import type { FollowUpItem } from "@/lib/sync/launch-summary";
 import { cn } from "@/lib/utils";
 
 export function FollowUpList({ items }: { items: FollowUpItem[] }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
 
   if (items.length === 0) return null;
@@ -26,7 +28,7 @@ export function FollowUpList({ items }: { items: FollowUpItem[] }) {
         aria-expanded={open}
       >
         <p className="text-xs font-semibold text-amber-950">
-          待关注事项 ({items.length})
+          {t("syncUi.followUpTitle", { count: items.length })}
         </p>
         <ChevronDown
           className={cn(

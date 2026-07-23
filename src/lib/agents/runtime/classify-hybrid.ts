@@ -4,9 +4,11 @@ import {
   buildClassifySystemPrompt,
   buildClassifyUserPrompt,
   classifyByRules,
+  DEFAULT_SHORT_INPUT_MAX,
   parseConstrainedIntentId,
   type ClassifyByRulesOptions,
 } from "@/lib/agents/runtime/classify";
+import { buildResponseLanguageRule } from "@/lib/agents/runtime/response-language";
 import type {
   IntentClassifyResult,
   PageIntentDef,
@@ -19,6 +21,7 @@ export interface HybridClassifyOptions<TIntent extends string>
   logPrefix?: string;
   llmTimeoutMs?: number;
   defaultClarify?: string;
+  fallbackLocale?: string | null;
 }
 
 /**
@@ -29,15 +32,22 @@ export async function classifyHybrid<TIntent extends string>(
   raw: string,
   opts: HybridClassifyOptions<TIntent>
 ): Promise<IntentClassifyResult<TIntent>> {
+  const text = raw.trim().slice(0, opts.maxLength ?? DEFAULT_SHORT_INPUT_MAX);
   const byRules = classifyByRules(raw, opts);
   if (byRules.confidence === "high") return byRules;
+
+  const responseLanguageRule = buildResponseLanguageRule(text, opts.fallbackLocale);
 
   try {
     const content = await chatCompletionJson({
       messages: [
         {
           role: "system",
-          content: buildClassifySystemPrompt(opts.intents, opts.fallbackIntent),
+          content: buildClassifySystemPrompt(
+            opts.intents,
+            opts.fallbackIntent,
+            responseLanguageRule
+          ),
         },
         {
           role: "user",

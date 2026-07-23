@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, Loader2 } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { formatBatchCardQueueLine } from "@/lib/batch-link/confidence-display";
 import {
@@ -10,6 +10,7 @@ import {
 } from "@/lib/batch-link/types";
 import { isMatchJobActive } from "@/lib/match-queue-poll";
 import type { MatchJobProgress } from "@/lib/types";
+import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
 
 export function BatchLinkProgressCard({
@@ -21,6 +22,7 @@ export function BatchLinkProgressCard({
   unboundMatchJob?: MatchJobProgress | null;
   className?: string;
 }) {
+  const t = useT();
   const [queueExpanded, setQueueExpanded] = useState(false);
 
   const batchActive = batchLinkProgress?.active ?? false;
@@ -71,7 +73,7 @@ export function BatchLinkProgressCard({
         "relative overflow-hidden rounded-md border px-2.5 py-2 transition-colors",
         queueActive
           ? "border-sky-300 bg-sky-50/80 batch-link-shimmer"
-          : "border-emerald-300 bg-emerald-50/80 pipeline-done-flash",
+          : "border-emerald-200 bg-emerald-50/80 pipeline-done-flash",
         className
       )}
     >
@@ -82,7 +84,7 @@ export function BatchLinkProgressCard({
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
         )}
         <span className="text-[10px] font-medium uppercase tracking-wide text-slate-600">
-          一键关联
+          {t("batchLink.progressTitle")}
         </span>
         <span className="text-[10px] text-slate-400">·</span>
         <span
@@ -91,7 +93,7 @@ export function BatchLinkProgressCard({
             queueActive ? "text-sky-700" : "text-emerald-700"
           )}
         >
-          {queueActive ? "批量执行中" : "完成"}
+          {queueActive ? t("batchLink.progressRunning") : t("batchLink.progressDone")}
         </span>
         {hasQueueDetails ? (
           <Button
@@ -101,7 +103,9 @@ export function BatchLinkProgressCard({
             className="ml-auto h-6 px-1.5 text-[10px] text-slate-600"
             onClick={() => setQueueExpanded((v) => !v)}
             aria-expanded={queueExpanded}
-            aria-label={queueExpanded ? "收起队列明细" : "展开队列明细"}
+            aria-label={
+              queueExpanded ? t("batchLink.progressCollapseQueue") : t("batchLink.progressExpandQueue")
+            }
           >
             {queueExpanded ? (
               <ChevronUp className="h-3.5 w-3.5" />
@@ -115,18 +119,18 @@ export function BatchLinkProgressCard({
       <p className="mt-0.5 text-[10px] text-slate-500">
         {queueActive ? (
           <>
-            正在一键关联
+            {t("batchLink.progressRunningDetail")}
             {queueTotal > 0 ? ` ${queueProcessed}/${queueTotal}` : ""}
             {batchLinkProgress && batchLinkProgress.linked > 0
-              ? ` · 已关联 ${batchLinkProgress.linked} 个`
+              ? t("batchLink.progressLinked", { count: batchLinkProgress.linked })
               : unboundMatchJob && unboundMatchJob.linked > 0
-                ? ` · 已关联 ${unboundMatchJob.linked} 个`
+                ? t("batchLink.progressLinked", { count: unboundMatchJob.linked })
                 : ""}
           </>
         ) : batchDone && batchLinkProgress ? (
           formatBatchLinkSummary(batchLinkProgress)
         ) : unboundMatchJob ? (
-          formatUnboundMatchInline(unboundMatchJob)
+          formatUnboundMatchInline(unboundMatchJob, t)
         ) : (
           ""
         )}
@@ -134,7 +138,7 @@ export function BatchLinkProgressCard({
 
       {queueActive && batchLinkProgress?.currentProductTitle ? (
         <p className="mt-0.5 truncate text-[10px] text-sky-800">
-          当前：{batchLinkProgress.currentProductTitle}
+          {t("batchLink.progressCurrent", { title: batchLinkProgress.currentProductTitle })}
         </p>
       ) : null}
 
@@ -162,7 +166,7 @@ export function BatchLinkProgressCard({
             const title =
               drive.productTitle?.trim() ||
               `商品 ${productId.slice(-6)}`;
-            const line = formatBatchCardQueueLine(drive);
+            const line = formatBatchCardQueueLine(t, drive);
             const isCurrent = batchLinkProgress?.currentProductId === productId;
             return (
               <li
@@ -208,14 +212,17 @@ export function BatchLinkProgressCard({
   );
 }
 
-function formatUnboundMatchInline(job: MatchJobProgress): string {
+function formatUnboundMatchInline(
+  job: MatchJobProgress,
+  t: ReturnType<typeof useT>
+): string {
   const total = Math.max(job.total, job.processed);
-  if (total <= 0) return "暂无可关联的未匹配商品";
-  const parts = [`已完成 ${total} 个商品图搜`];
+  if (total <= 0) return t("batchLink.unboundEmpty");
+  const parts = [t("batchLink.unboundSearched", { count: total })];
   const detail: string[] = [];
-  if (job.linked > 0) detail.push(`${job.linked} 个进入待确认`);
+  if (job.linked > 0) detail.push(t("batchLink.unboundLinked", { count: job.linked }));
   const manual = job.skipped + job.failed;
-  if (manual > 0) detail.push(`${manual} 个需手动查找候选`);
-  if (detail.length > 0) parts.push(detail.join("，"));
-  return parts.join("，");
+  if (manual > 0) detail.push(t("batchLink.unboundManual", { count: manual }));
+  if (detail.length > 0) parts.push(detail.join(t("common.commaSeparator")));
+  return parts.join(t("common.commaSeparator"));
 }

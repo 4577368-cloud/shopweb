@@ -80,17 +80,21 @@ export function parseConstrainedIntentId<TIntent extends string>(
 
 export function buildClassifySystemPrompt<TIntent extends string>(
   intents: PageIntentDef<TIntent>[],
-  fallbackIntent: TIntent
+  fallbackIntent: TIntent,
+  responseLanguageRule?: string
 ): string {
   const ids = intents.map((i) => i.id).join(" | ");
-  return `你是意图分类器。把用户短句映射到且仅映射到下列 intent 之一：
+  const langBlock = responseLanguageRule
+    ? `\n${responseLanguageRule}\n`
+    : "\nUnderstand user input in any language.\n";
+  return `You are an intent classifier. Map the user's short message to exactly one of these intents:
 ${ids}
 
-规则：
-1. 只输出 JSON：{"intent":"<id>"}
-2. intent 必须是上面枚举之一，禁止其它值
-3. 禁止输出动作、解释、suggestedAction
-4. 若无法判断，输出 {"intent":"${fallbackIntent}"}`;
+Rules:
+1. Output JSON only: {"intent":"<id>"}
+2. intent must be one of the enum values above — no other values
+3. Do not output actions, explanations, or suggestedAction
+4. If unsure, output {"intent":"${fallbackIntent}"}${langBlock}`;
 }
 
 export function buildClassifyUserPrompt<TIntent extends string>(

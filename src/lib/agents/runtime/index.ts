@@ -21,8 +21,16 @@ export { classifyHybrid } from "@/lib/agents/runtime/classify-hybrid";
 export {
   parseAgentCopyFields,
   buildCopyEnrichUserPayload,
+  buildCopyEnrichConstraints,
   COPY_ENRICH_CONSTRAINTS,
 } from "@/lib/agents/runtime/copy-parse";
+
+export {
+  buildResponseLanguageRule,
+  buildCopyResponseLanguageRule,
+  detectResponseLanguage,
+  responseLanguageName,
+} from "@/lib/agents/runtime/response-language";
 
 export {
   assertCopyGrounded,

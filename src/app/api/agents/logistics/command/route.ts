@@ -1,18 +1,22 @@
 import { NextResponse } from "next/server";
-import { classifyLogisticsCommandByRules, buildLogisticsClassifyPrompt, parseLogisticsCommandDraft, type LogisticsCommandClassifyContext } from "@/lib/agents/logistics/classify-command";
+import { buildLogisticsClassifyPrompt, parseLogisticsCommandDraft, classifyLogisticsCommandByRules, type LogisticsCommandClassifyContext } from "@/lib/agents/logistics/classify-command";
+import { buildResponseLanguageRule } from "@/lib/agents/runtime/response-language";
 import type { LogisticsCommandClassifyResult } from "@/lib/agents/logistics/command-schema";
 import { chatCompletionJson } from "@/lib/agents/llm/openai-compatible";
 import { LlmUnavailableError } from "@/lib/agents/llm/openai-compatible";
+import { createTranslator } from "@/i18n/server";
 
 export async function POST(req: Request) {
+  const t = createTranslator(null);
   try {
     const body = await req.json();
     const text = body.text?.trim();
     const context = (body.context as LogisticsCommandClassifyContext | null) ?? null;
+    const localized = createTranslator(body.locale);
 
     if (!text) {
       return NextResponse.json(
-        { confidence: "none", source: "rules", clarify: "请输入命令或简短提问。" } as LogisticsCommandClassifyResult,
+        { confidence: "none", source: "rules", clarify: localized("api.errEmptyText") } as LogisticsCommandClassifyResult,
         { status: 400 }
       );
     }
@@ -23,7 +27,12 @@ export async function POST(req: Request) {
     }
 
     try {
-      const prompt = buildLogisticsClassifyPrompt(text, context);
+      const prompt = buildLogisticsClassifyPrompt(
+        localized,
+        text,
+        context,
+        buildResponseLanguageRule(text, body.locale)
+      );
       const llmResult = await chatCompletionJson({
         messages: [
           { role: "system", content: prompt },
@@ -44,7 +53,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         confidence: "none" as const,
         source: "llm" as const,
-        clarify: "无法理解您的命令，请试试其他说法。",
+        clarify: localized("api.errCannotUnderstand"),
       } as LogisticsCommandClassifyResult);
     } catch (llmErr) {
       if (llmErr instanceof LlmUnavailableError) {
@@ -55,7 +64,7 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error("[logistics command classify] error:", err);
     return NextResponse.json(
-      { confidence: "none", source: "rules", clarify: "命令处理失败，请稍后重试。" } as LogisticsCommandClassifyResult,
+      { confidence: "none", source: "rules", clarify: t("api.errCommandFailed") } as LogisticsCommandClassifyResult,
       { status: 500 }
     );
   }

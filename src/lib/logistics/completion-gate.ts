@@ -1,3 +1,4 @@
+import type { TranslateFn } from "@/i18n/server";
 import type { LogisticsEstimateResult } from "@/lib/api";
 import {
   effectiveQuoteStatus,
@@ -62,17 +63,16 @@ function variantPendingReview(variant: VariantLogisticsDecision): boolean {
   return isVariantException(variant);
 }
 
-function countLabel(n: number, suffix: string): string {
-  return `${n} ${suffix}`;
-}
-
-export function evaluateLogisticsCompletionGate(input: {
-  hasSavedTemplate: boolean;
-  pipelineActive: boolean;
-  analysis: LogisticsAnalysis | null | undefined;
-  quoteResults: Map<string, LogisticsEstimateResult>;
-  templateMarketsConfigured: boolean;
-}): CompletionGateResult {
+export function evaluateLogisticsCompletionGate(
+  input: {
+    hasSavedTemplate: boolean;
+    pipelineActive: boolean;
+    analysis: LogisticsAnalysis | null | undefined;
+    quoteResults: Map<string, LogisticsEstimateResult>;
+    templateMarketsConfigured: boolean;
+  },
+  t: TranslateFn
+): CompletionGateResult {
   const {
     hasSavedTemplate,
     pipelineActive,
@@ -96,13 +96,13 @@ export function evaluateLogisticsCompletionGate(input: {
   const warnings: string[] = [];
 
   if (!hasSavedTemplate) {
-    blockers.push("先保存物流模板");
+    blockers.push(t("completionGate.blockerNoTemplate"));
   }
   if (!templateMarketsConfigured) {
-    blockers.push("先选销售国家");
+    blockers.push(t("completionGate.blockerNoCountry"));
   }
   if (pipelineActive) {
-    blockers.push("匹配进行中");
+    blockers.push(t("completionGate.blockerPipelineRunning"));
   }
 
   for (const product of analysis?.productProfiles ?? []) {
@@ -127,21 +127,29 @@ export function evaluateLogisticsCompletionGate(input: {
 
   if (stats.pendingSkuCount > 0) {
     warnings.push(
-      `${stats.pendingSkuCount} 个 SKU 未绑定，已绑定部分仍可报价与确认`
+      t("completionGate.blockerSkuUnbound", { count: stats.pendingSkuCount })
     );
   }
   if (stats.missingMeasureCount > 0) {
-    blockers.push(`缺 ${stats.missingMeasureCount} 个重量信息`);
+    blockers.push(
+      t("completionGate.blockerMissingMeasure", { count: stats.missingMeasureCount })
+    );
   }
   if (stats.criticalUnquotedCount > 0) {
-    blockers.push(countLabel(stats.criticalUnquotedCount, "个 SKU 待报价"));
+    blockers.push(
+      t("completionGate.blockerPendingQuote", { count: stats.criticalUnquotedCount })
+    );
   }
 
   if (stats.pendingReviewCount > 0) {
-    warnings.push(countLabel(stats.pendingReviewCount, "个物流方案待确认"));
+    warnings.push(
+      t("completionGate.warningPendingReview", { count: stats.pendingReviewCount })
+    );
   }
   if (stats.failedQuoteCount > 0) {
-    warnings.push(countLabel(stats.failedQuoteCount, "个报价失败"));
+    warnings.push(
+      t("completionGate.warningQuoteFailed", { count: stats.failedQuoteCount })
+    );
   }
 
   const unconfirmedCount = stats.totalVariants - stats.confirmedCount;
@@ -155,7 +163,9 @@ export function evaluateLogisticsCompletionGate(input: {
       stats.criticalUnquotedCount === 0 &&
       stats.pendingSkuCount === 0
     ) {
-      warnings.push(countLabel(stats.otherUnconfirmedCount, "个方案待确认"));
+      warnings.push(
+        t("completionGate.warningOtherUnconfirmed", { count: stats.otherUnconfirmedCount })
+      );
     }
   }
 
@@ -169,8 +179,8 @@ export function evaluateLogisticsCompletionGate(input: {
     tier = "confirm";
   }
 
-  let footerHint = "可进入同步";
-  let primaryButtonLabel = "进入同步";
+  let footerHint = t("completionGate.footerReady");
+  let primaryButtonLabel = t("completionGate.primarySync");
 
   if (tier === "blocked") {
     const quoteOnlyBlocked =
@@ -180,21 +190,25 @@ export function evaluateLogisticsCompletionGate(input: {
       templateMarketsConfigured &&
       !pipelineActive;
     if (quoteOnlyBlocked) {
-      footerHint = `${stats.criticalUnquotedCount} 个 SKU 待运费预估`;
-      primaryButtonLabel = `运费预估 (${stats.criticalUnquotedCount})`;
+      footerHint = t("completionGate.footerPendingQuote", {
+        count: stats.criticalUnquotedCount,
+      });
+      primaryButtonLabel = t("completionGate.primaryEstimate", {
+        count: stats.criticalUnquotedCount,
+      });
     } else {
-      footerHint = blockers[0] ?? "先处理阻塞项";
-      primaryButtonLabel = "先处理阻塞项";
+      footerHint = blockers[0] ?? t("completionGate.footerBlocked");
+      primaryButtonLabel = t("completionGate.primaryBlocked");
     }
   } else if (tier === "confirm") {
     footerHint =
       exceptionCount > 0
-        ? `${exceptionCount} 项例外待处理`
-        : "含例外项";
+        ? t("completionGate.footerExceptions", { count: exceptionCount })
+        : t("completionGate.footerWithExceptions");
     primaryButtonLabel =
       exceptionCount > 0
-        ? `进入同步（${exceptionCount} 项例外）`
-        : "进入同步（含例外）";
+        ? t("completionGate.primarySyncWithExceptions", { count: exceptionCount })
+        : t("completionGate.primarySyncWithExceptionsGeneric");
   }
 
   return {
@@ -222,38 +236,53 @@ export type LogisticsStepSnapshot = {
 };
 
 /** Sidebar logistics step — aligned with completion gate + pipeline. */
-export function deriveLogisticsStepSnapshot(input: {
-  skuReady: boolean;
-  pipelineActive: boolean;
-  gate: CompletionGateResult;
-  logisticsCompleted?: boolean;
-}): LogisticsStepSnapshot {
+export function deriveLogisticsStepSnapshot(
+  input: {
+    skuReady: boolean;
+    pipelineActive: boolean;
+    gate: CompletionGateResult;
+    logisticsCompleted?: boolean;
+  },
+  t: TranslateFn
+): LogisticsStepSnapshot {
   if (!input.skuReady) {
-    return { display: "not_started", label: "待开始", hint: "待开始" };
+    return {
+      display: "not_started",
+      label: t("completionGate.stepNotStarted"),
+      hint: t("completionGate.stepNotStartedHint"),
+    };
   }
   if (input.logisticsCompleted) {
-    return { display: "ready", label: "已完成", hint: "可进入同步" };
+    return {
+      display: "ready",
+      label: t("completionGate.stepDone"),
+      hint: t("completionGate.stepDoneHint"),
+    };
   }
   if (input.pipelineActive) {
-    return { display: "running", label: "匹配中", hint: "匹配进行中" };
+    return {
+      display: "running",
+      label: t("completionGate.stepRunning"),
+      hint: t("completionGate.stepRunningHint"),
+    };
   }
   if (input.gate.tier === "blocked") {
     return {
       display: "blocked",
-      label: "有阻塞",
-      hint: input.gate.footerHint,
+      label: t("completionGate.stepBlocked"),
+      hint: input.gate.footerHint || t("completionGate.stepBlockedHint"),
     };
   }
   if (input.gate.tier === "confirm") {
     return {
       display: "warning",
-      label: "有例外",
-      hint: input.gate.footerHint,
+      label: t("completionGate.stepExceptions"),
+      hint: input.gate.footerHint || t("completionGate.stepExceptionsHint"),
     };
   }
   return {
     display: "ready",
-    label: "可同步",
-    hint: input.gate.footerHint,
+    label: t("completionGate.stepReady"),
+    hint: input.gate.footerHint || t("completionGate.stepReadyHint"),
   };
 }

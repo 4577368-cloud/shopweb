@@ -177,6 +177,8 @@ export interface SkuAlignManualBindRequest {
   reason?: string;
   /** Tangbuy product URL — backend validates skuId via itemGet (same as browser picker). */
   detailUrl?: string | null;
+  /** 回写 provenance：当该绑定由灰区 LLM 语义确认驱动时打 SEMANTIC（默认 RULE/MANUAL）。 */
+  matchSource?: MatchSourceV1 | null;
 }
 
 export interface SkuAlignBlockVariantRequest {

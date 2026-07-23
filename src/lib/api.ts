@@ -1,4 +1,4 @@
-// Minimal typed client for the tangbuy-plugin backend.
+import type { TranslateFn } from "@/i18n/server";
 // Base URL is read from NEXT_PUBLIC_API_BASE so it is injected into the browser bundle.
 // Endpoints are added per milestone: M0 connectivity (health/auth-status),
 // M1-5 path B (catalog recommendations, pricing template, single-candidate publish).
@@ -64,13 +64,16 @@ export class ApiError extends Error {
  * Callers that need machine-code-specific copy (image search, confirm, auto-align) map first, then
  * fall back to this.
  */
-export function readableError(err: unknown): string {
+export function readableError(err: unknown, t?: TranslateFn): string {
   if (err instanceof ApiError) {
     if (err.status === 0) return err.message;
-    return `请求失败（${err.status}）：${err.message}`;
+    if (t) {
+      return t("api.httpError", { status: err.status, message: err.message });
+    }
+    return `Request failed (${err.status}): ${err.message}`;
   }
   if (err instanceof Error) return err.message;
-  return "未知错误";
+  return t ? t("api.unknownError") : "Unknown error";
 }
 
 function safeJsonParse(text: string): unknown {

@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
 
 export function Card({
   className,
@@ -8,9 +9,31 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card",
+        "rounded-[var(--radius-card)] border border-surface-border bg-surface shadow-card",
         className
       )}
+      {...props}
+    />
+  );
+}
+
+/**
+ * User-pickable card — hover shadow + #333 selected border (spec §2.4.4).
+ * Pair with aria-selected and a visible selection affordance (checkbox, label, etc.).
+ */
+export function SelectableCard({
+  selected = false,
+  interactive = true,
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement> & {
+  selected?: boolean;
+  interactive?: boolean;
+}) {
+  return (
+    <div
+      className={selectableCardClassName({ selected, interactive, className })}
+      aria-selected={selected}
       {...props}
     />
   );
@@ -23,7 +46,7 @@ export function CardHeader({
   return (
     <div
       className={cn(
-        "flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3",
+        "flex items-start justify-between gap-3 border-b border-surface-border px-4 py-3",
         className
       )}
       {...props}
@@ -37,7 +60,7 @@ export function CardTitle({
 }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
     <h3
-      className={cn("text-sm font-semibold text-slate-900", className)}
+      className={cn("text-sm font-semibold text-foreground", className)}
       {...props}
     />
   );
@@ -48,7 +71,7 @@ export function CardDescription({
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>) {
   return (
-    <p className={cn("mt-0.5 text-xs text-slate-500", className)} {...props} />
+    <p className={cn("mt-0.5 text-xs text-muted-foreground", className)} {...props} />
   );
 }
 
@@ -66,7 +89,7 @@ export function CardFooter({
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3",
+        "flex items-center justify-between gap-3 border-t border-surface-border px-4 py-3",
         className
       )}
       {...props}

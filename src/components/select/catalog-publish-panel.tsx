@@ -9,6 +9,7 @@ import { CatalogLinkDrawer } from "@/components/select/catalog-link-drawer";
 import type { PublishCellState } from "@/components/select/catalog-product-card";
 import { SmartSourcingFilters } from "@/components/select/smart-sourcing-filters";
 import { useOnboarding } from "@/context/onboarding-context";
+import { useT } from "@/i18n/LocaleProvider";
 import { api, readableError } from "@/lib/api";
 import {
   fetchRecommendations,
@@ -91,6 +92,7 @@ export function CatalogPublishPanel({
   onBindingLinked?: (thirdPlatformItemId: string) => void;
   onPublished?: (thirdPlatformItemId: string) => void;
 }) {
+  const t = useT();
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
 
@@ -163,12 +165,12 @@ export function CatalogPublishPanel({
         const f = opts?.filters ?? appliedRef.current;
         await loadPage(1, tpl, f);
       } catch (err) {
-        setPageError(readableError(err));
+        setPageError(readableError(err, t));
       } finally {
         if (showSkeleton) setPageLoading(false);
       }
     },
-    [shopName, loadPage]
+    [shopName, loadPage, t]
   );
 
   // Hydrate saved searches; seed Top-1 recommended category on first enter.
@@ -257,12 +259,12 @@ export function CatalogPublishPanel({
       try {
         await loadPage(nextPage);
       } catch (err) {
-        showToast(readableError(err));
+        showToast(readableError(err, t));
       } finally {
         setPageTurning(false);
       }
     },
-    [hasNextPage, loadPage, page, pageTurning, showToast]
+    [hasNextPage, loadPage, page, pageTurning, showToast, t]
   );
 
   const applyFilters = useCallback(async () => {
@@ -276,7 +278,7 @@ export function CatalogPublishPanel({
     } finally {
       setPageTurning(false);
     }
-  }, [filters, loadPage, showToast]);
+  }, [filters, loadPage, showToast, t]);
 
   const clearFilters = useCallback(async () => {
     const next = { ...DEFAULT_CATALOG_FILTERS };
@@ -291,7 +293,7 @@ export function CatalogPublishPanel({
     } finally {
       setPageTurning(false);
     }
-  }, [loadPage, showToast]);
+  }, [loadPage, showToast, t]);
 
   const handleSaveSearch = useCallback(
     (name: string) => {
@@ -303,10 +305,10 @@ export function CatalogPublishPanel({
       setAppliedFilters(filters);
       setFiltersCollapsed(true);
       persistFiltersCollapsed(shopName, true);
-      showToast(`已保存搜索「${entry.name}」`);
+      showToast(t("catalogPublish.toastSearchSaved", { name: entry.name }));
       void loadPage(1, templateRef.current, filters);
     },
-    [filters, savedSearches, shopName, showToast, loadPage]
+    [filters, savedSearches, shopName, showToast, loadPage, t]
   );
 
   const handleSelectSaved = useCallback(
@@ -320,12 +322,12 @@ export function CatalogPublishPanel({
       try {
         await loadPage(1, templateRef.current, search.filters);
       } catch (err) {
-        showToast(readableError(err));
+        showToast(readableError(err, t));
       } finally {
         setPageTurning(false);
       }
     },
-    [loadPage, shopName, showToast]
+    [loadPage, shopName, showToast, t]
   );
 
   const handleRemoveSaved = useCallback(
@@ -343,10 +345,11 @@ export function CatalogPublishPanel({
     if (current?.loading) return;
     if (
       !window.confirm(
-        `确认将「${item.title}」以建议售价 ${money(
-          item.estimatedSalePrice,
-          item.targetCurrency
-        )} 上架到店铺 ${shopName}？`
+        t("catalogPublish.confirmPublish", {
+          title: item.title,
+          price: money(item.estimatedSalePrice, item.targetCurrency),
+          shopName: shopName,
+        })
       )
     ) {
       return;
@@ -375,18 +378,22 @@ export function CatalogPublishPanel({
           queuePublishReveal(shopName, productId, item);
           onPublished?.(productId);
         }
-        showToast("上架成功");
+        showToast(t("catalogPublish.publishSuccess"));
       } else if (result.publishStatus === "PUBLISHING") {
-        showToast("上架进行中");
+        showToast(t("catalogPublish.publishInProgress"));
       } else {
-        showToast(`上架未完成：${result.message ?? result.publishStatus}`);
+        showToast(
+          t("catalogPublish.publishIncomplete", {
+            message: result.message ?? result.publishStatus,
+          })
+        );
       }
     } catch (err) {
       setPublishState((prev) => ({
         ...prev,
-        [item.candidateId]: { loading: false, error: readableError(err) },
+        [item.candidateId]: { loading: false, error: readableError(err, t) },
       }));
-      showToast("上架失败");
+      showToast(t("catalogPublish.publishFailed"));
     }
   };
 
@@ -429,20 +436,20 @@ export function CatalogPublishPanel({
 
   return (
     <div className="space-y-3">
-      {filtersMountEl
+      {filtersMountEl?.isConnected
         ? createPortal(filtersNode, filtersMountEl)
         : filtersNode}
 
       {pageError ? (
         <Card className="border-red-200">
           <CardContent className="flex items-center justify-between gap-3 py-3 text-sm text-red-700">
-            <span>加载失败：{pageError}</span>
+            <span>{t("catalogPublish.loadFailed", { error: pageError })}</span>
             <Button
               size="sm"
               variant="secondary"
               onClick={() => void loadAll({ showSkeleton: true })}
             >
-              重试
+              {t("catalogPublish.retry")}
             </Button>
           </CardContent>
         </Card>

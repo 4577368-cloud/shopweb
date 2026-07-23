@@ -12,14 +12,14 @@ const toneMap = {
   default: "border-hairline",
   success: "border-emerald-200",
   warning: "border-amber-200",
-  teal: "border-emerald-200",
+  teal: "border-brand-accent/25",
 };
 
 const valueToneMap = {
   default: "text-slate-900",
   success: "text-emerald-700",
   warning: "text-amber-700",
-  teal: "text-brand-strong",
+  teal: "text-brand-accent",
 };
 
 export function MetricCard({

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/lib/ui/icons";
 import type {
   ListingPriceScope,
   ProductCommandExecution,
@@ -12,6 +12,7 @@ import {
   resolveVariantByLabelHint,
 } from "@/lib/agents/products/resolve-variant-target";
 import { api, readableError } from "@/lib/api";
+import { useT } from "@/i18n/LocaleProvider";
 import type { ShopMirrorSku, ShopProductDetail } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,7 @@ export function ListingPriceConfirmCard({
   ) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const productId = plan.draft.productId ?? plan.draft.params.productId;
   const price = plan.draft.params.price;
   const currency = plan.draft.params.currency ?? "USD";
@@ -90,18 +92,26 @@ export function ListingPriceConfirmCard({
           if (resolved.status === "resolved") {
             setScope("one");
             setSelectedSkuId(resolved.thirdPlatformSkuId);
-            setHintNote(`已根据「${draft.variantLabelHint}」预选：${resolved.label}`);
+            setHintNote(
+              t("commandUi.hintPreselected", {
+                hint: draft.variantLabelHint,
+                label: resolved.label,
+              })
+            );
             return;
           }
           if (resolved.status === "ambiguous") {
             setHintNote(
-              `「${draft.variantLabelHint}」匹配到多个规格，请点选一行：${resolved.matches.map((m) => m.label).join("、")}`
+              t("commandUi.hintAmbiguous", {
+                hint: draft.variantLabelHint,
+                matches: resolved.matches.map((m) => m.label).join(", "),
+              })
             );
           }
         }
       })
       .catch((err) => {
-        if (!cancelled) setError(readableError(err));
+        if (!cancelled) setError(readableError(err, t));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -109,7 +119,7 @@ export function ListingPriceConfirmCard({
     return () => {
       cancelled = true;
     };
-  }, [shopName, productId, plan.draft.params]);
+  }, [shopName, productId, plan.draft.params, t]);
 
   const canConfirm = useMemo(() => {
     if (price == null || !productId) return false;
@@ -137,18 +147,18 @@ export function ListingPriceConfirmCard({
   return (
     <div className="rounded-md border border-amber-200 bg-amber-50/80 px-2.5 py-2">
       <p className="text-[10px] font-medium uppercase tracking-wide text-amber-800/80">
-        命令确认
+        {t("commandUi.confirmHeader")}
       </p>
       <h3 className="mt-0.5 text-xs font-semibold text-amber-950">
         {plan.operation}
       </h3>
       <dl className="mt-2 space-y-1 text-[11px] text-amber-950">
         <div className="flex gap-2">
-          <dt className="shrink-0 text-amber-800/80">目标</dt>
+          <dt className="shrink-0 text-amber-800/80">{t("commandUi.targetLabel")}</dt>
           <dd className="min-w-0 font-medium">{plan.targetLabel}</dd>
         </div>
         <div className="flex gap-2">
-          <dt className="shrink-0 text-amber-800/80">新售价</dt>
+          <dt className="shrink-0 text-amber-800/80">{t("commandUi.newPrice")}</dt>
           <dd className="min-w-0 font-medium tabular-nums">
             {currency} {price?.toFixed(2)}
           </dd>
@@ -158,14 +168,14 @@ export function ListingPriceConfirmCard({
       {loading ? (
         <p className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-900/80">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          加载规格…
+          {t("commandUi.loadingVariants")}
         </p>
       ) : error ? (
         <p className="mt-2 text-[11px] text-red-700">{error}</p>
       ) : multi ? (
         <div className="mt-2 space-y-2">
           <p className="text-[11px] text-amber-900/90">
-            该商品有 {variants.length} 个规格，请选择修改范围：
+            {t("commandUi.multiVariantHint", { count: variants.length })}
           </p>
           <div className="flex flex-wrap gap-1.5">
             <button
@@ -182,7 +192,7 @@ export function ListingPriceConfirmCard({
                   : "border-amber-200 bg-white text-amber-950 hover:border-amber-300"
               )}
             >
-              全部规格统一价
+              {t("commandUi.allVariantsUnified")}
             </button>
             <button
               type="button"
@@ -195,7 +205,7 @@ export function ListingPriceConfirmCard({
                   : "border-amber-200 bg-white text-amber-950 hover:border-amber-300"
               )}
             >
-              仅某一规格
+              {t("commandUi.singleVariantOnly")}
             </button>
           </div>
           {hintNote ? (
@@ -206,9 +216,9 @@ export function ListingPriceConfirmCard({
               <thead className="sticky top-0 bg-amber-50/95 text-amber-800/80">
                 <tr>
                   {scope === "one" ? <th className="w-7 px-1.5 py-1" /> : null}
-                  <th className="px-2 py-1 font-medium">规格</th>
-                  <th className="px-2 py-1 font-medium">当前售价</th>
-                  <th className="px-2 py-1 font-medium">改后</th>
+                  <th className="px-2 py-1 font-medium">{t("commandUi.colVariant")}</th>
+                  <th className="px-2 py-1 font-medium">{t("commandUi.colCurrentPrice")}</th>
+                  <th className="px-2 py-1 font-medium">{t("commandUi.colAfter")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,21 +240,19 @@ export function ListingPriceConfirmCard({
             </table>
           </div>
           {scope === null ? (
-            <p className="text-[10px] text-amber-800/85">
-              请先选择「全部规格」或「仅某一规格」
-            </p>
+            <p className="text-[10px] text-amber-800/85">{t("commandUi.selectScopeHint")}</p>
           ) : null}
         </div>
       ) : variants.length === 1 ? (
         <p className="mt-2 text-[11px] text-amber-900/85">
-          单规格商品 · {formatVariantLabel(variants[0]!)} · 当前{" "}
-          {formatMoney(variants[0]!.price, detail?.currency ?? currency)} →{" "}
-          <span className="font-semibold tabular-nums text-amber-950">
-            {formatMoney(price, currency)}
-          </span>
+          {t("commandUi.singleVariantSummary", {
+            label: formatVariantLabel(variants[0]!),
+            current: formatMoney(variants[0]!.price, detail?.currency ?? currency),
+            next: formatMoney(price, currency),
+          })}
         </p>
       ) : (
-        <p className="mt-2 text-[11px] text-red-700">该商品无可用变体</p>
+        <p className="mt-2 text-[11px] text-red-700">{t("commandUi.noVariants")}</p>
       )}
 
       <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -255,7 +263,7 @@ export function ListingPriceConfirmCard({
           onClick={handleConfirm}
         >
           {executing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-          {executing ? "执行中…" : "确认修改"}
+          {executing ? t("commandUi.executing") : t("commandUi.confirmModify")}
         </Button>
         <Button
           size="sm"
@@ -264,7 +272,7 @@ export function ListingPriceConfirmCard({
           disabled={executing}
           onClick={onCancel}
         >
-          取消
+          {t("common.cancel")}
         </Button>
       </div>
     </div>
@@ -307,7 +315,7 @@ function VariantRow({
             checked={selected}
             onChange={onSelect}
             className="h-3 w-3 accent-sky-600"
-            aria-label={`选择 ${formatVariantLabel(variant)}`}
+            aria-label={`Select ${formatVariantLabel(variant)}`}
           />
         </td>
       ) : null}

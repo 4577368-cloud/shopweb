@@ -2,7 +2,7 @@
 
 import { ThumbImage } from "@/components/ui/thumb-image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2, X } from "@/lib/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ import type {
   ShopProductVariantUpdatePayload,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 const POLL_MS = 8000;
 
@@ -150,6 +151,8 @@ export function ShopProductDetailDrawer({
   onClose: () => void;
   onSaved?: () => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -361,14 +364,18 @@ export function ShopProductDetailDrawer({
         if (!cur.price.trim()) {
           return {
             ok: false,
-            error: `变体价格不能为空（${optionLabel(meta ?? {})}）`,
+            error: t("productDetail.errVariantPriceEmpty", {
+              label: optionLabel(meta ?? {}),
+            }),
           };
         }
         const n = Number(cur.price.trim());
         if (!Number.isFinite(n) || n < 0) {
           return {
             ok: false,
-            error: `变体价格须为 ≥ 0 的数字（${optionLabel(meta ?? {})}）`,
+            error: t("productDetail.errVariantPriceInvalid", {
+              label: optionLabel(meta ?? {}),
+            }),
           };
         }
         row.price = n;
@@ -377,14 +384,18 @@ export function ShopProductDetailDrawer({
         if (!cur.inventoryQuantity.trim()) {
           return {
             ok: false,
-            error: `库存不能为空（${optionLabel(meta ?? {})}）`,
+            error: t("productDetail.errVariantStockEmpty", {
+              label: optionLabel(meta ?? {}),
+            }),
           };
         }
         const n = Number(cur.inventoryQuantity.trim());
         if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
           return {
             ok: false,
-            error: `库存须为 ≥ 0 的整数（${optionLabel(meta ?? {})}）`,
+            error: t("productDetail.errVariantStockInvalid", {
+              label: optionLabel(meta ?? {}),
+            }),
           };
         }
         row.inventoryQuantity = n;
@@ -398,7 +409,7 @@ export function ShopProductDetailDrawer({
     if (!form || !itemId || saving || !dirty) return;
     const title = form.title.trim();
     if (!title) {
-      setSaveError("标题不能为空");
+      setSaveError(t("productDetail.errTitleEmpty"));
       return;
     }
     const variantResult = buildVariantPayload();
@@ -454,9 +465,7 @@ export function ShopProductDetailDrawer({
     } catch (err) {
       if (isProductConflict(err)) {
         setConflict(true);
-        setSaveError(
-          "镜像已在其他处更新（Shopify 后台或 webhook）。可重新加载，或强制覆盖。"
-        );
+        setSaveError(t("productDetail.conflictMessage"));
         try {
           const fresh = await api.getShopProductDetail(shopName, itemId);
           setDetail(fresh);
@@ -490,7 +499,7 @@ export function ShopProductDetailDrawer({
     <div className="fixed inset-0 z-50 flex justify-end">
       <button
         type="button"
-        aria-label="关闭"
+        aria-label={t("productDetail.close")}
         className="absolute inset-0 bg-ink/30"
         onClick={() => {
           if (!saving) onClose();
@@ -500,13 +509,14 @@ export function ShopProductDetailDrawer({
         <header className="flex items-start justify-between gap-3 border-b border-hairline px-4 py-3">
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-wide text-ink-subtle">
-              Shopify 商品详情
+              {t("productDetail.title")}
             </p>
             <h2 className="mt-0.5 truncate text-base font-semibold text-ink">
-              {detail?.title || (loading ? "加载中…" : "商品详情")}
+              {detail?.title ||
+                (loading ? t("productDetail.loading") : t("productDetail.fallbackTitle"))}
             </h2>
             <p className="mt-1 text-[11px] text-ink-muted">
-              编辑并同步到 Shopify · 支持删除多余 SKU / 商品图
+              {t("productDetail.subtitle")}
             </p>
           </div>
           <Button
@@ -515,7 +525,7 @@ export function ShopProductDetailDrawer({
             className="h-8 w-8 shrink-0 px-0"
             onClick={onClose}
             disabled={saving}
-            aria-label="关闭详情"
+            aria-label={t("productDetail.closeAria")}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -525,7 +535,7 @@ export function ShopProductDetailDrawer({
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-ink-muted">
               <Loader2 className="h-4 w-4 animate-spin" />
-              读取商品镜像…
+              {t("productDetail.loadingMirror")}
             </div>
           ) : error ? (
             <div className="rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -535,10 +545,9 @@ export function ShopProductDetailDrawer({
             <div className="space-y-5">
               {conflict ? (
                 <div className="rounded-[var(--radius-control)] border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-950">
-                  <p className="font-medium">检测到外部更新</p>
+                  <p className="font-medium">{t("productDetail.conflictDetected")}</p>
                   <p className="mt-1 text-amber-900/90">
-                    Shopify 后台或 webhook
-                    已更新此商品。重新加载会丢弃本地未保存改动；强制保存会覆盖远端。
+                    {t("productDetail.conflictBody")}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button
@@ -547,7 +556,7 @@ export function ShopProductDetailDrawer({
                       disabled={saving}
                       onClick={handleReload}
                     >
-                      重新加载
+                      {t("productDetail.reload")}
                     </Button>
                     <Button
                       size="sm"
@@ -557,7 +566,7 @@ export function ShopProductDetailDrawer({
                       {saving ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : null}
-                      强制覆盖保存
+                      {t("productDetail.forceSave")}
                     </Button>
                   </div>
                 </div>
@@ -577,7 +586,7 @@ export function ShopProductDetailDrawer({
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-[11px] text-ink-subtle">
-                      无图
+                      {t("productDetail.noImage")}
                     </div>
                   )}
                 </div>
@@ -602,8 +611,8 @@ export function ShopProductDetailDrawer({
                   </p>
                   {detail.updatedAt ? (
                     <p className="text-[11px] text-ink-subtle">
-                      镜像更新：
-                      {new Date(detail.updatedAt).toLocaleString("zh-CN", {
+                      {t("productDetail.mirrorUpdated")}
+                      {new Date(detail.updatedAt).toLocaleString(locale, {
                         hour12: false,
                       })}
                     </p>
@@ -612,26 +621,26 @@ export function ShopProductDetailDrawer({
               </div>
 
               <section className="space-y-3">
-                <h3 className="text-xs font-semibold text-ink">可编辑并同步</h3>
-                <Field label="标题">
+                <h3 className="text-xs font-semibold text-ink">{t("productDetail.editableSection")}</h3>
+                <Field label={t("productDetail.fieldTitle")}>
                   <Input
                     value={form.title}
                     onChange={(e) => patchForm({ title: e.target.value })}
                     disabled={saving}
                   />
                 </Field>
-                <Field label="状态">
+                <Field label={t("productDetail.fieldStatus")}>
                   <Select
                     value={form.status}
                     onChange={(e) => patchForm({ status: e.target.value })}
                     disabled={saving}
                   >
-                    <option value="ACTIVE">ACTIVE（在售）</option>
-                    <option value="DRAFT">DRAFT（草稿）</option>
-                    <option value="ARCHIVED">ARCHIVED（归档）</option>
+                    <option value="ACTIVE">{t("productDetail.statusActive")}</option>
+                    <option value="DRAFT">{t("productDetail.statusDraft")}</option>
+                    <option value="ARCHIVED">{t("productDetail.statusArchived")}</option>
                   </Select>
                 </Field>
-                <Field label="描述">
+                <Field label={t("productDetail.fieldDescription")}>
                   <div className="mb-2 flex gap-1">
                     <button
                       type="button"
@@ -643,7 +652,7 @@ export function ShopProductDetailDrawer({
                       )}
                       onClick={() => setDescriptionView("edit")}
                     >
-                      编辑文本
+                      {t("productDetail.editText")}
                     </button>
                     <button
                       type="button"
@@ -655,7 +664,7 @@ export function ShopProductDetailDrawer({
                       )}
                       onClick={() => setDescriptionView("preview")}
                     >
-                      预览 HTML
+                      {t("productDetail.previewHtml")}
                     </button>
                   </div>
                   {descriptionView === "edit" ? (
@@ -665,7 +674,7 @@ export function ShopProductDetailDrawer({
                       disabled={saving}
                       rows={5}
                       className="w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
-                      placeholder="保存时转为 HTML 段落"
+                      placeholder={t("productDetail.descPlaceholder")}
                     />
                   ) : (
                     <div className="rounded-[var(--radius-control)] border border-hairline bg-surface-muted/30 px-3 py-2">
@@ -675,44 +684,48 @@ export function ShopProductDetailDrawer({
                           dangerouslySetInnerHTML={{ __html: descriptionHtml }}
                         />
                       ) : (
-                        <p className="text-xs text-ink-subtle">暂无详情内容</p>
+                        <p className="text-xs text-ink-subtle">{t("productDetail.noDescription")}</p>
                       )}
                     </div>
                   )}
                   <p className="mt-1.5 text-[10px] leading-snug text-ink-subtle">
-                    Shopify 详情底层为 HTML。文内嵌的图片属于详情图，与下方「商品图库」分开管理；详情图删除将在下一步支持。
+                    {t("productDetail.descHtmlNote")}
                   </p>
                 </Field>
               </section>
 
               <section>
                 <h3 className="text-xs font-semibold text-ink">
-                  变体价格 / 库存（{form.variants.length}）
+                  {t("productDetail.variantsTitle", { count: form.variants.length })}
                 </h3>
                 <p className="mt-1 text-[11px] text-ink-subtle">
-                  库存写入店铺第一个启用地点；未追踪库存的变体会自动开启追踪。至少保留 1 个变体。
+                  {t("productDetail.variantsHint")}
                 </p>
                 {form.deletedVariantIds.length > 0 ? (
                   <p className="mt-1 text-[11px] text-amber-800">
-                    已标记删除 {form.deletedVariantIds.length} 个变体，保存后同步到 Shopify。
+                    {t("productDetail.variantsMarkedDelete", {
+                      count: form.deletedVariantIds.length,
+                    })}
                   </p>
                 ) : null}
                 {form.variants.length === 0 ? (
                   <p className="mt-1.5 text-xs text-ink-subtle">
-                    暂无变体镜像，请先同步商品
+                    {t("productDetail.noVariants")}
                   </p>
                 ) : (
                   <div className="mt-1.5 overflow-x-auto rounded-[var(--radius-control)] border border-hairline">
                     <table className="w-full min-w-[22rem] text-left text-[11px]">
                       <thead className="bg-surface-muted text-ink-muted">
                         <tr>
-                          <th className="px-2.5 py-1.5 font-medium">规格</th>
-                          <th className="px-2.5 py-1.5 font-medium">SKU</th>
+                          <th className="px-2.5 py-1.5 font-medium">{t("productDetail.colOption")}</th>
+                          <th className="px-2.5 py-1.5 font-medium">{t("productDetail.colSku")}</th>
                           <th className="px-2.5 py-1.5 font-medium">
-                            价格（{detail.currency || "币种"}）
+                            {t("productDetail.colPrice", {
+                              currency: detail.currency || t("productDetail.currencyFallback"),
+                            })}
                           </th>
-                          <th className="px-2.5 py-1.5 font-medium">库存</th>
-                          <th className="w-8 px-1 py-1.5" aria-label="删除" />
+                          <th className="px-2.5 py-1.5 font-medium">{t("productDetail.colStock")}</th>
+                          <th className="w-8 px-1 py-1.5" aria-label={t("productDetail.deleteColAria")} />
                         </tr>
                       </thead>
                       <tbody>
@@ -767,13 +780,15 @@ export function ShopProductDetailDrawer({
                                   disabled={!canDelete || saving}
                                   title={
                                     canDelete
-                                      ? "删除此变体"
-                                      : "至少保留一个变体"
+                                      ? t("productDetail.deleteVariant")
+                                      : t("productDetail.atLeastOneVariant")
                                   }
                                   aria-label={
                                     canDelete
-                                      ? `删除变体 ${optionLabel(meta ?? {})}`
-                                      : "无法删除最后一个变体"
+                                      ? t("productDetail.deleteVariantAria", {
+                                          label: optionLabel(meta ?? {}),
+                                        })
+                                      : t("productDetail.cannotDeleteLast")
                                   }
                                   onClick={() =>
                                     removeVariant(row.thirdPlatformSkuId)
@@ -818,7 +833,7 @@ export function ShopProductDetailDrawer({
       setSaveNotice(null);
                   }}
                 >
-                  {conflict ? "放弃并重新加载" : "重置"}
+                  {conflict ? t("productDetail.discardReload") : t("productDetail.reset")}
                 </Button>
                 <Button
                   size="sm"
@@ -828,21 +843,25 @@ export function ShopProductDetailDrawer({
                   {saving ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : null}
-                  {saving ? "同步中…" : "保存并同步到 Shopify"}
+                  {saving ? t("productDetail.saving") : t("productDetail.saveSync")}
                 </Button>
               </div>
 
               {(detail.media?.length ?? 0) > 0 ? (
                 <section>
                   <h3 className="text-xs font-semibold text-ink">
-                    商品图库（{visibleMedia.length}
-                    {form.deletedMediaIds.length > 0
-                      ? ` · 待删 ${form.deletedMediaIds.length}`
-                      : ""}
-                    ）
+                    {t("productDetail.galleryTitle", {
+                      count: visibleMedia.length,
+                      pending:
+                        form.deletedMediaIds.length > 0
+                          ? t("productDetail.galleryPending", {
+                              count: form.deletedMediaIds.length,
+                            })
+                          : "",
+                    })}
                   </h3>
                   <p className="mt-1 text-[10px] leading-snug text-ink-subtle">
-                    此处为 Shopify 商品媒体（主图 / 附图），保存后从店铺删除。
+                    {t("productDetail.galleryHint")}
                   </p>
                   <div className="mt-1.5 grid grid-cols-4 gap-2">
                     {detail.media.map((m, index) => {
@@ -871,7 +890,7 @@ export function ShopProductDetailDrawer({
                         ) : null}
                         {featured ? (
                           <span className="absolute left-1 top-1 rounded bg-ink/70 px-1.5 py-0.5 text-[9px] font-medium text-white">
-                            主图
+                            {t("productDetail.primaryImage")}
                           </span>
                         ) : null}
                         <Button
@@ -880,8 +899,8 @@ export function ShopProductDetailDrawer({
                           variant="secondary"
                           className="absolute right-1 top-1 h-7 w-7 px-0 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus:opacity-100"
                           disabled={saving}
-                          title="从 Shopify 删除此图片"
-                          aria-label="删除商品图片"
+                          title={t("productDetail.deleteImage")}
+                          aria-label={t("productDetail.deleteImageAria")}
                           onClick={() => removeMedia(mediaId)}
                         >
                           <X className="h-3.5 w-3.5" />
@@ -896,10 +915,12 @@ export function ShopProductDetailDrawer({
               {htmlDetailImages.length > 0 ? (
                 <section>
                   <h3 className="text-xs font-semibold text-ink">
-                    详情内嵌图（{htmlDetailImages.length}）
+                    {t("productDetail.htmlDetailTitle", {
+                      count: htmlDetailImages.length,
+                    })}
                   </h3>
                   <p className="mt-1 text-[10px] leading-snug text-ink-subtle">
-                    这些图片写在描述 HTML 里，当前只读展示；删除详情图将在下一步支持。
+                    {t("productDetail.htmlDetailHint")}
                   </p>
                   <div className="mt-1.5 grid grid-cols-4 gap-2">
                     {htmlDetailImages.map((url) => (

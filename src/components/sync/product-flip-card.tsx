@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight } from "@/lib/ui/icons";
 import { AnimatePresence, motion } from "framer-motion";
 import { ThumbImage } from "@/components/ui/thumb-image";
+import { useT } from "@/i18n/LocaleProvider";
 import type { LaunchProduct } from "@/lib/sync/launch-summary";
 
 const FLIP_INTERVAL_MS = 1200;
@@ -23,6 +24,7 @@ export function ProductFlipCard({
   carouselCount?: number;
   autoRotate?: boolean;
 }) {
+  const t = useT();
   const [index, setIndex] = useState(activeIndex);
 
   const count = products.length;
@@ -44,7 +46,7 @@ export function ProductFlipCard({
   if (!current) {
     return (
       <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-6 text-center text-sm text-ink-muted shadow-card">
-        暂无可展示的商品
+        {t("syncUi.noProductsToShow")}
       </div>
     );
   }
@@ -56,13 +58,13 @@ export function ProductFlipCard({
       className="rounded-[var(--radius-card)] border border-hairline bg-surface p-4 shadow-card"
     >
       <div className="mb-3">
-        <p className="text-sm font-semibold text-ink">店铺商品准备情况</p>
+        <p className="text-sm font-semibold text-ink">{t("syncUi.productPrepTitle")}</p>
         <p className="mt-0.5 text-xs text-ink-muted">
-          已扫描{" "}
-          <span className="font-medium tabular-nums text-ink">{processedCount}</span> /{" "}
-          <span className="tabular-nums">{totalCount}</span> 件
+          {t("syncUi.scannedCount", { processed: processedCount, total: totalCount })}
           {previewTotal < totalCount ? (
-            <span className="text-ink-subtle"> · 轮播展示 {previewTotal} 款</span>
+            <span className="text-ink-subtle">
+              {t("syncUi.carouselCount", { count: previewTotal })}
+            </span>
           ) : null}
         </p>
       </div>
@@ -73,7 +75,7 @@ export function ProductFlipCard({
             type="button"
             className="flex h-auto w-7 shrink-0 items-center justify-center self-center rounded-md text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
             onClick={() => setIndex((prev) => (prev - 1 + count) % count)}
-            aria-label="上一个商品"
+            aria-label={t("syncUi.prevProductAria")}
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -100,7 +102,7 @@ export function ProductFlipCard({
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-surface-muted text-[10px] text-ink-subtle">
-                    无图
+                    {t("syncUi.noImage")}
                   </div>
                 )}
               </div>
@@ -129,7 +131,7 @@ export function ProductFlipCard({
             type="button"
             className="flex h-auto w-7 shrink-0 items-center justify-center self-center rounded-md text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
             onClick={() => setIndex((prev) => (prev + 1) % count)}
-            aria-label="下一个商品"
+            aria-label={t("syncUi.nextProductAria")}
           >
             <ChevronRight className="h-4 w-4" />
           </button>

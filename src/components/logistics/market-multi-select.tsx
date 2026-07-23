@@ -1,12 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Search, X } from "@/lib/ui/icons";
 import { Input } from "@/components/ui/input";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
 import {
   MARKET_GROUPS,
-  countryLabel,
+  countryDisplayName,
+  localizedCountryLabel,
+  marketGroupLabel,
   findGroupForCountry,
 } from "@/lib/logistics/markets";
 import type { MarketSelection } from "@/lib/types";
@@ -57,6 +60,8 @@ export function MarketMultiSelect({
   value: string[];
   onChange: (codes: string[]) => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const [query, setQuery] = useState("");
   const selected = useMemo(() => new Set(value), [value]);
 
@@ -105,7 +110,7 @@ export function MarketMultiSelect({
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索国家 / 市场…"
+          placeholder={t("logisticsMarket.searchPlaceholder")}
           className="pl-8"
         />
       </div>
@@ -119,13 +124,15 @@ export function MarketMultiSelect({
               onClick={() => toggle(code)}
               className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-medium text-brand-strong"
             >
-              {countryLabel(code)}
+              {localizedCountryLabel(code, locale)}
               <X className="h-3 w-3" />
             </button>
           ))}
         </div>
       ) : (
-        <p className="text-[11px] text-ink-subtle">请至少选择一个销售国家</p>
+        <p className="text-[11px] text-ink-subtle">
+          {t("logisticsMarket.selectAtLeastOne")}
+        </p>
       )}
 
       <div className="max-h-64 space-y-3 overflow-y-auto rounded-[var(--radius-control)] border border-hairline bg-surface-muted/30 p-2.5">
@@ -141,13 +148,17 @@ export function MarketMultiSelect({
                   onClick={() => toggleGroup(g.id)}
                   className="text-xs font-semibold text-ink hover:text-brand-strong"
                 >
-                  {g.labelZh}
+                  {marketGroupLabel(g, locale)}
                   <span className="ml-1.5 font-normal text-ink-subtle">
                     {g.label}
                   </span>
                 </button>
                 <span className="text-[10px] text-ink-subtle">
-                  {allOn ? "全选" : someOn ? "部分" : "未选"}
+                  {allOn
+                    ? t("logisticsMarket.selectAll")
+                    : someOn
+                      ? t("logisticsMarket.selectPartial")
+                      : t("logisticsMarket.selectNone")}
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -165,7 +176,7 @@ export function MarketMultiSelect({
                           : "border-hairline bg-surface text-ink-muted hover:border-hairline-strong"
                       )}
                     >
-                      {c.nameZh}
+                      {countryDisplayName(c, locale)}
                     </button>
                   );
                 })}
@@ -174,7 +185,9 @@ export function MarketMultiSelect({
           );
         })}
         {filteredGroups.length === 0 ? (
-          <p className="py-4 text-center text-xs text-ink-subtle">无匹配市场</p>
+          <p className="py-4 text-center text-xs text-ink-subtle">
+            {t("logisticsMarket.noMatch")}
+          </p>
         ) : null}
       </div>
     </div>

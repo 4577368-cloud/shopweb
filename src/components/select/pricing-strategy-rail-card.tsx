@@ -1,10 +1,12 @@
 "use client";
 
-import { Coins } from "lucide-react";
+import { Coins } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { InfoCard } from "@/components/workbench/info-card";
+import { useT } from "@/i18n/LocaleProvider";
 import type { PricingTemplate } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
 
 export function needsPricingSetup(template: PricingTemplate | null): boolean {
   return template == null || template.isDefault;
@@ -30,17 +32,18 @@ export function PricingStrategyRailCard({
   onConfigure,
   className,
 }: PricingStrategyRailCardProps) {
+  const t = useT();
   const unset = forceGuide || needsPricingSetup(template);
   const guiding = unset && (forceGuide || analysisReady);
 
   if (template == null && !analysisReady && !forceGuide) {
     return (
       <InfoCard
-        title="定价策略"
+        title={t("pricingRail.title")}
         icon={<Coins className="h-3.5 w-3.5 text-brand" />}
         className={className}
       >
-        <p>读取定价策略中…</p>
+        <p>{t("pricingRail.loading")}</p>
       </InfoCard>
     );
   }
@@ -48,17 +51,20 @@ export function PricingStrategyRailCard({
   if (!template || template.isDefault || forceGuide) {
     return (
       <section
-        className={cn(
-          "rounded-[var(--radius-card)] border px-3.5 py-3 shadow-card transition-shadow",
-          guiding
-            ? "border-brand/35 bg-brand-soft/80 ring-1 ring-brand/20"
-            : "border-emerald-100 bg-brand-soft/50",
-          className
-        )}
+        className={selectableCardClassName({
+          interactive: true,
+          className: cn(
+            "px-3.5 py-3",
+            guiding
+              ? "border-brand/35 bg-brand-soft/80"
+              : "border-brand-accent/20 bg-brand-soft/50",
+            className
+          ),
+        })}
       >
         <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-brand-strong">
           <Coins className="h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">先配置定价策略</span>
+          <span className="min-w-0 flex-1 truncate">{t("pricingRail.setupTitle")}</span>
           {guiding ? (
             <span
               className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-brand"
@@ -67,14 +73,14 @@ export function PricingStrategyRailCard({
           ) : null}
         </div>
         <p className="text-xs leading-5 text-ink-muted">
-          设置目标币种、汇率、倍率等后，系统才会生成建议售价。
+          {t("pricingRail.setupDesc")}
         </p>
         <Button
           size="sm"
           className="mt-2.5 w-full"
           onClick={onConfigure}
         >
-          立即配置
+          {t("pricingRail.configureNow")}
         </Button>
       </section>
     );
@@ -82,30 +88,34 @@ export function PricingStrategyRailCard({
 
   return (
     <InfoCard
-      title="定价策略"
+      title={t("pricingRail.title")}
       icon={<Coins className="h-3.5 w-3.5 text-brand" />}
       action={
         <button
           type="button"
           onClick={onConfigure}
-          className="font-medium text-brand-strong hover:underline"
+          className="font-medium text-link hover:text-link-hover hover:underline"
         >
-          调整定价
+          {t("pricingRail.adjustPricing")}
         </button>
       }
       className={className}
     >
       <div className="space-y-1.5">
         <p>
-          目标币种{" "}
+          {t("pricingRail.targetCurrency")}{" "}
           <span className="font-medium text-ink">{template.targetCurrency}</span>
-          ，汇率{" "}
+          {t("common.commaSeparator")}
+          {t("pricingRail.exchangeRate")}{" "}
           <span className="font-medium text-ink">{template.exchangeRate}</span>
-          ，倍率 ×{template.multiplier}
-          {template.addend ? `，加价 +${template.addend}` : ""}
+          {t("common.commaSeparator")}
+          {t("pricingRail.multiplier")} ×{template.multiplier}
+          {template.addend
+            ? `${t("common.commaSeparator")}${t("pricingRail.addend")} +${template.addend}`
+            : ""}
         </p>
         <p className="text-[11px] text-ink-subtle">
-          采购价按汇率换算为目标币种后，再按倍率、加价与取整生成建议售价。
+          {t("pricingRail.summaryDesc")}
         </p>
       </div>
     </InfoCard>

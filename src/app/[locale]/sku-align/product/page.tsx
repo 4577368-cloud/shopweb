@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -27,6 +27,8 @@ import { readProductSourceIdentity } from "@/lib/product-source-identity";
 import { resolveSkuDetailUrl } from "@/lib/source-sku-matrix";
 import type { PricingTemplate, SkuProductOverview } from "@/lib/types";
 import type { SkuAlignProductDetail } from "@/lib/sku-align-v1/types";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 
 function SkuAlignProductContent() {
   const router = useRouter();
@@ -34,6 +36,8 @@ function SkuAlignProductContent() {
   const { shop, showToast, isAuthorized, authSessionReady } = useOnboarding();
   const shopName = shop.name;
   const wb = useWorkbenchPage("sku-align");
+  const t = useT();
+  const locale = useLocale();
 
   const productId = searchParams.get(SKU_ALIGN_PRODUCT_PARAM)?.trim() ?? "";
   const tab = parseSkuAlignTabParam(searchParams.get(SKU_ALIGN_TAB_PARAM));
@@ -68,7 +72,7 @@ function SkuAlignProductContent() {
         overview.find((p) => p.thirdPlatformItemId === productId) ?? null;
       if (!found) {
         setProduct(null);
-        setError("商品不在 SKU 绑定列表中，可能尚未完成货源匹配。");
+        setError(t("sku.errNotInList"));
         return;
       }
       setProduct(found);
@@ -79,7 +83,7 @@ function SkuAlignProductContent() {
     } finally {
       setLoading(false);
     }
-  }, [shopName, productId]);
+  }, [shopName, productId, t]);
 
   useEffect(() => {
     if (!isAuthorized || !productId) return;
@@ -124,21 +128,23 @@ function SkuAlignProductContent() {
 
   const breadcrumbs = useMemo(
     () => [
-      { label: "工作台", href: "/" },
-      { label: "智能选品", href: "/products" },
-      { label: "SKU 绑定", href: skuAlignHref() },
-      { label: product?.title?.trim() || "商品对照" },
+      { label: t("nav.workbench"), href: localePath(locale, "/") },
+      { label: t("products.title"), href: localePath(locale, "/products") },
+      { label: t("sku.breadcrumb"), href: skuAlignHref() },
+      { label: product?.title?.trim() || t("sku.compareFallback") },
     ],
-    [product?.title]
+    [product?.title, t, locale]
   );
+
+  const panelTitle = t("sku.breadcrumb");
 
   if (!authSessionReady) {
     return (
       <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
-        <WorkbenchPanel title="SKU 绑定" breadcrumbs={breadcrumbs} {...wb.panelProps}>
+        <WorkbenchPanel title={panelTitle} breadcrumbs={breadcrumbs} {...wb.panelProps}>
           <div className="flex items-center gap-2 text-sm text-ink-muted">
             <Loader2 className="h-4 w-4 animate-spin text-brand" />
-            正在恢复店铺授权…
+            {t("sku.restoringAuth")}
           </div>
         </WorkbenchPanel>
       </WorkbenchShell>
@@ -148,14 +154,14 @@ function SkuAlignProductContent() {
   if (!isAuthorized) {
     return (
       <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
-        <WorkbenchPanel title="SKU 绑定" breadcrumbs={breadcrumbs} {...wb.panelProps}>
+        <WorkbenchPanel title={panelTitle} breadcrumbs={breadcrumbs} {...wb.panelProps}>
           <EmptyState
-            title="尚未连接店铺"
-            description="完成授权后即可进行 SKU 绑定。"
+            title={t("sku.notConnectedTitle")}
+            description={t("sku.notConnectedDesc")}
             action={
-              <Link href="/authorize">
+              <Link href={localePath(locale, "/authorize")}>
                 <Button size="sm" className="mt-1">
-                  去授权店铺
+                  {t("sku.goAuthorize")}
                 </Button>
               </Link>
             }
@@ -168,14 +174,14 @@ function SkuAlignProductContent() {
   if (!productId) {
     return (
       <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
-        <WorkbenchPanel title="SKU 绑定" breadcrumbs={breadcrumbs} {...wb.panelProps}>
+        <WorkbenchPanel title={panelTitle} breadcrumbs={breadcrumbs} {...wb.panelProps}>
           <EmptyState
-            title="未指定商品"
-            description="请从 SKU 绑定列表选择一个商品。"
+            title={t("sku.noProductSpecified")}
+            description={t("sku.noProductSpecifiedDesc")}
             action={
               <Link href={skuAlignHref()}>
                 <Button size="sm" className="mt-1">
-                  返回列表
+                  {t("sku.backToList")}
                 </Button>
               </Link>
             }
@@ -188,8 +194,8 @@ function SkuAlignProductContent() {
   return (
     <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
       <WorkbenchPanel
-        title="SKU 绑定"
-        description="对照店铺变体与货源规格；整款换绑与补充货源为独立流程。"
+        title={panelTitle}
+        description={t("sku.panelDescription")}
         breadcrumbs={breadcrumbs}
         maxWidth={1280}
         {...wb.panelProps}
@@ -197,16 +203,16 @@ function SkuAlignProductContent() {
         {loading ? (
           <div className="flex items-center gap-2 py-16 text-sm text-ink-muted">
             <Loader2 className="h-4 w-4 animate-spin text-brand" />
-            正在加载商品与货源规格…
+            {t("sku.loadingProductSpecs")}
           </div>
         ) : error || !product ? (
           <EmptyState
-            title="无法打开对照工作台"
-            description={error ?? "商品不存在"}
+            title={t("sku.errOpenWorkbench")}
+            description={error ?? t("sku.productNotFound")}
             action={
               <Link href={skuAlignHref()}>
                 <Button size="sm" className="mt-1">
-                  返回列表
+                  {t("sku.backToList")}
                 </Button>
               </Link>
             }
@@ -241,20 +247,23 @@ function SkuAlignProductContent() {
   );
 }
 
+function SkuAlignProductPageFallback() {
+  const t = useT();
+  return (
+    <WorkbenchShell sidebar={<StepSidebar />}>
+      <WorkbenchPanel title={t("sku.breadcrumb")}>
+        <div className="flex items-center gap-2 py-16 text-sm text-ink-muted">
+          <Loader2 className="h-4 w-4 animate-spin text-brand" />
+          {t("sku.loading")}
+        </div>
+      </WorkbenchPanel>
+    </WorkbenchShell>
+  );
+}
+
 export default function SkuAlignProductPage() {
   return (
-    <Suspense
-      fallback={
-        <WorkbenchShell sidebar={<StepSidebar />}>
-          <WorkbenchPanel title="SKU 绑定">
-            <div className="flex items-center gap-2 py-16 text-sm text-ink-muted">
-              <Loader2 className="h-4 w-4 animate-spin text-brand" />
-              加载中…
-            </div>
-          </WorkbenchPanel>
-        </WorkbenchShell>
-      }
-    >
+    <Suspense fallback={<SkuAlignProductPageFallback />}>
       <SkuAlignProductContent />
     </Suspense>
   );

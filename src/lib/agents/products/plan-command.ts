@@ -1,3 +1,4 @@
+import type { TranslateFn } from "@/i18n/server";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
 import type {
@@ -12,17 +13,20 @@ import {
 } from "@/lib/agents/products/resolve-product-target";
 import {
   isActiveShopStatus,
-  LISTING_STATUS_LABELS,
+  listingStatusLabel,
   normalizeShopStatus,
 } from "@/lib/shop-product-status";
 
-const FILTER_LABELS: Record<ProductCommandShopFilter, string> = {
-  all: "全部商品",
-  pending: "AI 待确认",
-  unbound: "未关联",
-  confirmed: "已确认",
-  new_arrivals: "新入库",
-};
+function filterLabel(t: TranslateFn, filter: ProductCommandShopFilter): string {
+  const keys: Record<ProductCommandShopFilter, string> = {
+    all: "agentProducts.filterAll",
+    pending: "agentProducts.filterPending",
+    unbound: "agentProducts.filterUnbound",
+    confirmed: "agentProducts.filterConfirmed",
+    new_arrivals: "agentProducts.filterNewArrivals",
+  };
+  return t(keys[filter]);
+}
 
 function needsFocusProduct(intent: ProductCommandDraft["intent"]): boolean {
   return (
@@ -36,6 +40,7 @@ function needsFocusProduct(intent: ProductCommandDraft["intent"]): boolean {
 }
 
 function resolveProductId(
+  t: TranslateFn,
   draft: ProductCommandDraft,
   ctx: ProductsPageContext
 ): { productId: string | null; title: string | null; clarify?: string } {
@@ -64,15 +69,15 @@ function resolveProductId(
       return {
         productId: null,
         title: null,
-        clarify: `找到多个名称相近的商品，请点选其中一个后再试：${resolved.matches
-          .map((m) => `「${m.title}」`)
-          .join("、")}`,
+        clarify: t("agentProducts.clarifyAmbiguous", {
+          matches: resolved.matches.map((m) => `「${m.title}」`).join("、"),
+        }),
       };
     }
     return {
       productId: null,
       title: null,
-      clarify: `未找到名称包含「${hint}」的商品，请先在列表中点选商品，或换个更完整的标题。`,
+      clarify: t("agentProducts.clarifyNotFound", { hint }),
     };
   }
 
@@ -103,6 +108,7 @@ function resolveCurrency(
 }
 
 function resolveBatchProductIds(
+  t: TranslateFn,
   draft: ProductCommandDraft,
   ctx: ProductsPageContext,
   opts?: { activeOnly?: boolean }
@@ -134,28 +140,88 @@ function resolveBatchProductIds(
   const ids = result.map((p) => p.productId);
 
   const filterLabels: Record<string, string> = {
-    all: opts?.activeOnly ? "全部在售商品" : "全部商品",
-    pending: "待确认商品",
-    confirmed: "已确认商品",
-    unbound: "未匹配商品",
+    all: opts?.activeOnly
+      ? t("agentProducts.filterAllActive")
+      : t("agentProducts.filterAll"),
+    pending: t("agentProducts.filterPendingProducts"),
+    confirmed: t("agentProducts.filterConfirmedProducts"),
+    unbound: t("agentProducts.filterUnboundProducts"),
   };
-  const label = filterLabels[filter] ?? (opts?.activeOnly ? "全部在售商品" : "全部商品");
+  const label =
+    filterLabels[filter] ??
+    (opts?.activeOnly
+      ? t("agentProducts.filterAllActive")
+      : t("agentProducts.filterAll"));
 
   return { ids, label };
 }
 
+function productTitle(
+  t: TranslateFn,
+  title: string | null,
+  productId: string | null,
+  ctx: ProductsPageContext
+): string {
+  return (
+    title ??
+    ctx.focusProduct?.title ??
+    (productId
+      ? t("agentProducts.productFallback", { id: productId.slice(-8) })
+      : t("agentProducts.noProductSelected"))
+  );
+}
+
+function copyFieldLabel(
+  t: TranslateFn,
+  field: "title" | "description" | "all"
+): string {
+  const keys = {
+    title: "agentProducts.fieldTitle",
+    description: "agentProducts.fieldDescription",
+    all: "agentProducts.fieldAll",
+  } as const;
+  return t(keys[field]);
+}
+
+function copyActionLabel(
+  t: TranslateFn,
+  action: "translate" | "rewrite" | "optimize",
+  targetLang?: string
+): string {
+  if (action === "translate") {
+    return targetLang
+      ? t("agentProducts.actionLocalize") +
+          t("agentProducts.actionLocalizeLang", {
+            lang: targetLang.toUpperCase(),
+          })
+      : t("agentProducts.actionLocalize");
+  }
+  if (action === "rewrite") return t("agentProducts.actionRewrite");
+  return t("agentProducts.actionOptimize");
+}
+
+function copyOperationLabel(
+  t: TranslateFn,
+  action: string,
+  field: string,
+  batch = false
+): string {
+  return t(
+    batch ? "agentProducts.actionBatchProductField" : "agentProducts.actionProductField",
+    { action, field }
+  );
+}
+
 function planSingleStatusChange(
+  t: TranslateFn,
   draft: ProductCommandDraft,
   ctx: ProductsPageContext,
   targetStatus: "DRAFT" | "ARCHIVED",
   operation: string
 ): ProductCommandPlan {
-  const resolved = resolveProductId(draft, ctx);
+  const resolved = resolveProductId(t, draft, ctx);
   const productId = resolved.productId;
-  const focusTitle =
-    resolved.title ??
-    ctx.focusProduct?.title ??
-    (productId ? `商品 ${productId.slice(-8)}` : "未选中商品");
+  const focusTitle = productTitle(t, resolved.title, productId, ctx);
 
   if (resolved.clarify) {
     return {
@@ -175,8 +241,7 @@ function planSingleStatusChange(
       targetLabel: focusTitle,
       detailLines: [],
       executable: false,
-      clarify:
-        "请先在左侧列表中点一下目标商品，或在命令里写出商品名（如：把「拖鞋」放到草稿）。",
+      clarify: t("agentProducts.clarifySelectForStatus"),
     };
   }
 
@@ -190,7 +255,10 @@ function planSingleStatusChange(
       targetLabel: focusTitle,
       detailLines: [],
       executable: false,
-      clarify: `「${focusTitle}」已经是 ${LISTING_STATUS_LABELS[targetStatus]}，无需重复操作。`,
+      clarify: t("agentProducts.clarifyAlreadyStatus", {
+        title: focusTitle,
+        status: listingStatusLabel(t, targetStatus),
+      }),
     };
   }
 
@@ -199,21 +267,24 @@ function planSingleStatusChange(
     operation,
     targetLabel: focusTitle,
     detailLines: [
-      `当前状态：${currentStatus}`,
-      `目标状态：${LISTING_STATUS_LABELS[targetStatus]}`,
-      "确认后将同步到 Shopify",
+      t("agentProducts.detailCurrentStatus", { status: currentStatus }),
+      t("agentProducts.detailTargetStatus", {
+        status: listingStatusLabel(t, targetStatus),
+      }),
+      t("agentProducts.detailSyncShopify"),
     ],
     executable: true,
   };
 }
 
 function planBatchStatusChange(
+  t: TranslateFn,
   draft: ProductCommandDraft,
   ctx: ProductsPageContext,
   targetStatus: "DRAFT" | "ARCHIVED",
   operation: string
 ): ProductCommandPlan {
-  const batchResult = resolveBatchProductIds(draft, ctx, { activeOnly: true });
+  const batchResult = resolveBatchProductIds(t, draft, ctx, { activeOnly: true });
   const totalCount = batchResult.ids.length;
 
   if (totalCount === 0) {
@@ -223,7 +294,9 @@ function planBatchStatusChange(
       targetLabel: batchResult.label,
       detailLines: [],
       executable: false,
-      clarify: `当前「${batchResult.label}」范围内没有可操作的 ACTIVE 商品。`,
+      clarify: t("agentProducts.clarifyNoActiveInScope", {
+        label: batchResult.label,
+      }),
     };
   }
 
@@ -238,31 +311,37 @@ function planBatchStatusChange(
       },
     },
     operation,
-    targetLabel: `${batchResult.label} · ${totalCount} 个`,
+    targetLabel: t("agentProducts.targetScopeCount", {
+      label: batchResult.label,
+      count: totalCount,
+    }),
     detailLines: [
-      `处理范围：${batchResult.label}（共 ${totalCount} 个 ACTIVE 商品）`,
-      `目标状态：${LISTING_STATUS_LABELS[targetStatus]}`,
-      "确认后将逐个同步到 Shopify",
+      t("agentProducts.detailBatchScope", {
+        label: batchResult.label,
+        count: totalCount,
+      }),
+      t("agentProducts.detailTargetStatus", {
+        status: listingStatusLabel(t, targetStatus),
+      }),
+      t("agentProducts.detailBatchSyncShopify"),
     ],
     executable: true,
   };
 }
 
 export function planProductCommand(
+  t: TranslateFn,
   draft: ProductCommandDraft,
   ctx: ProductsPageContext
 ): ProductCommandPlan {
-  const resolved = resolveProductId(draft, ctx);
+  const resolved = resolveProductId(t, draft, ctx);
   const productId = resolved.productId;
-  const focusTitle =
-    resolved.title ??
-    ctx.focusProduct?.title ??
-    (productId ? `商品 ${productId.slice(-8)}` : "未选中商品");
+  const focusTitle = productTitle(t, resolved.title, productId, ctx);
 
   if (resolved.clarify) {
     return {
       draft,
-      operation: commandOperationLabel(draft.intent),
+      operation: commandOperationLabel(t, draft.intent),
       targetLabel: focusTitle,
       detailLines: [],
       executable: false,
@@ -273,11 +352,12 @@ export function planProductCommand(
   switch (draft.intent) {
     case "open_filter": {
       const filter = draft.params.shopFilter ?? "all";
+      const label = filterLabel(t, filter);
       return {
         draft,
-        operation: "切换列表筛选",
-        targetLabel: FILTER_LABELS[filter],
-        detailLines: [`将切换到「${FILTER_LABELS[filter]}」视图`],
+        operation: t("agentProducts.opOpenFilter"),
+        targetLabel: label,
+        detailLines: [t("agentProducts.detailSwitchFilter", { filter: label })],
         executable: true,
       };
     }
@@ -285,19 +365,18 @@ export function planProductCommand(
       if (!productId) {
         return {
           draft,
-          operation: "聚焦商品",
+          operation: t("agentProducts.opFocusProduct"),
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify:
-            "请先在列表中点选商品，或在命令里写出商品名（如：把「拖鞋」的售价改成 9.9）。",
+          clarify: t("agentProducts.clarifySelectForFocus"),
         };
       }
       return {
         draft: { ...draft, productId },
-        operation: "聚焦商品",
+        operation: t("agentProducts.opFocusProduct"),
         targetLabel: focusTitle,
-        detailLines: [`将在列表中定位：${focusTitle}`],
+        detailLines: [t("agentProducts.detailLocateProduct", { title: focusTitle })],
         executable: true,
       };
     }
@@ -305,19 +384,20 @@ export function planProductCommand(
       if (!productId) {
         return {
           draft,
-          operation: "重新搜索候选",
+          operation: t("agentProducts.opRerunSearch"),
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify:
-            "请先在列表中点选商品，或在命令里写出商品名（如：给「拖鞋」再找候选）。",
+          clarify: t("agentProducts.clarifySelectForRerun"),
         };
       }
       return {
         draft: { ...draft, productId },
-        operation: "重新搜索候选",
+        operation: t("agentProducts.opRerunSearch"),
         targetLabel: focusTitle,
-        detailLines: [`将为「${focusTitle}」打开图搜并加载候选`],
+        detailLines: [
+          t("agentProducts.detailRerunSearch", { title: focusTitle }),
+        ],
         executable: true,
       };
     }
@@ -325,39 +405,47 @@ export function planProductCommand(
       if (!productId) {
         return {
           draft,
-          operation: "解释匹配",
+          operation: t("agentProducts.opExplainMatch"),
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify:
-            "请先在列表中点选商品，或在命令里写出商品名（如：为什么推荐「拖鞋」的货源）。",
+          clarify: t("agentProducts.clarifySelectForExplain"),
         };
       }
       if (!ctx.focusProduct || ctx.focusProduct.productId !== productId) {
         return {
           draft: { ...draft, productId },
-          operation: "解释匹配",
+          operation: t("agentProducts.opExplainMatch"),
           targetLabel: focusTitle,
-          detailLines: [`将先定位「${focusTitle}」，再说明匹配依据`],
+          detailLines: [
+            t("agentProducts.detailExplainThenLocate", { title: focusTitle }),
+          ],
           executable: true,
         };
       }
-      const mode = draft.params.matchExplain === "risk" ? "不确定点" : "推荐依据";
+      const mode =
+        draft.params.matchExplain === "risk"
+          ? t("agentProducts.matchModeRisk")
+          : t("agentProducts.matchModeReason");
       return {
         draft: { ...draft, productId },
-        operation: "解释匹配",
+        operation: t("agentProducts.opExplainMatch"),
         targetLabel: focusTitle,
-        detailLines: [`将说明「${focusTitle}」的${mode}`],
+        detailLines: [
+          t("agentProducts.explainMatchDetail", { title: focusTitle, mode }),
+        ],
         executable: true,
       };
     }
     case "open_pricing_editor": {
-      const lines = ["将打开定价策略侧栏"];
-      if (productId) lines.push(`当前上下文：${focusTitle}`);
+      const lines = [t("agentProducts.detailOpenPricing")];
+      if (productId) {
+        lines.push(t("agentProducts.detailContextProduct", { title: focusTitle }));
+      }
       return {
         draft,
-        operation: "打开定价设置",
-        targetLabel: productId ? focusTitle : "店铺定价",
+        operation: t("agentProducts.opOpenPricing"),
+        targetLabel: productId ? focusTitle : t("agentProducts.targetShopPricing"),
         detailLines: lines,
         executable: true,
       };
@@ -368,32 +456,31 @@ export function planProductCommand(
       if (!productId) {
         return {
           draft,
-          operation: "修改商品售价",
+          operation: t("agentProducts.opUpdatePrice"),
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify:
-            "请先在左侧列表中点一下目标商品（右侧会显示「已选 · 商品名」），再说「这个商品价格改为 22.9」。",
+          clarify: t("agentProducts.clarifySelectForPrice"),
         };
       }
       if (price == null || !Number.isFinite(price) || price <= 0) {
         return {
           draft,
-          operation: "修改商品售价",
+          operation: t("agentProducts.opUpdatePrice"),
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify: "请说明合法的 Shopify 售价金额，例如「把售价改成 9.9 美元」。",
+          clarify: t("agentProducts.clarifyInvalidPrice"),
         };
       }
       if (price > 1_000_000) {
         return {
           draft,
-          operation: "修改商品售价",
+          operation: t("agentProducts.opUpdatePrice"),
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify: "售价超出允许范围，请检查金额是否正确。",
+          clarify: t("agentProducts.clarifyPriceOutOfRange"),
         };
       }
       return {
@@ -403,11 +490,14 @@ export function planProductCommand(
           confirmationRequired: true,
           params: { ...draft.params, price, currency },
         },
-        operation: "修改商品售价",
+        operation: t("agentProducts.opUpdatePrice"),
         targetLabel: focusTitle,
         detailLines: [
-          `新售价：${currency} ${price.toFixed(2)}`,
-          "确认时将选择要修改的规格范围（全部或某一 SKU）",
+          t("agentProducts.detailNewPrice", {
+            currency,
+            price: price.toFixed(2),
+          }),
+          t("agentProducts.detailPriceScope"),
         ],
         executable: true,
       };
@@ -417,59 +507,63 @@ export function planProductCommand(
       const copyAction = draft.params.copyAction ?? "translate";
       const targetLang = draft.params.copyTargetLang;
       const copyStyle = draft.params.copyStyle ?? "amazon";
-      const fieldLabel =
-        copyField === "title" ? "标题" : copyField === "description" ? "描述" : "全部文案";
-      const actionLabel =
-        copyAction === "translate"
-          ? `本土化${targetLang ? `为 ${targetLang.toUpperCase()}` : ""}`
-          : copyAction === "rewrite"
-            ? "改写"
-            : "优化";
+      const fieldLabel = copyFieldLabel(t, copyField);
+      const actionLabel = copyActionLabel(t, copyAction, targetLang);
+      const operation = copyOperationLabel(t, actionLabel, fieldLabel);
 
       if (!productId) {
         return {
           draft,
-          operation: `${actionLabel}商品${fieldLabel}`,
+          operation,
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify:
-            "请先在左侧列表中点一下目标商品（右侧会显示「已选 · 商品名」），再说「翻译这个商品标题」。",
+          clarify: t("agentProducts.clarifySelectForCopy"),
         };
       }
 
       if (copyAction === "translate" && !targetLang) {
         return {
           draft,
-          operation: `${actionLabel}商品${fieldLabel}`,
+          operation,
           targetLabel: focusTitle,
           detailLines: [],
           executable: false,
-          clarify: "请说明目标语言，例如「把标题翻译成英文」。",
+          clarify: t("agentProducts.clarifyMissingLang"),
         };
       }
 
       const detailLines: string[] = [];
-      detailLines.push(`目标字段：${fieldLabel}`);
-      detailLines.push(`操作类型：${actionLabel}`);
+      detailLines.push(t("agentProducts.detailFieldTarget", { field: fieldLabel }));
+      detailLines.push(t("agentProducts.detailActionType", { action: actionLabel }));
       if (copyAction === "translate" && targetLang) {
-        detailLines.push(`目标语言：${targetLang.toUpperCase()}`);
+        detailLines.push(
+          t("agentProducts.detailTargetLang", {
+            lang: targetLang.toUpperCase(),
+          })
+        );
         detailLines.push(
           copyStyle === "literal"
-            ? "模式：直译"
-            : "模式：去噪 + Amazon 结构重组（批发/跨境/营销词过滤，非直译）"
+            ? t("agentProducts.detailModeLiteral")
+            : t("agentProducts.detailModeAmazon")
         );
       }
-      detailLines.push("确认后将生成新标题并更新到 Shopify");
+      detailLines.push(t("agentProducts.detailCopySyncShopify"));
 
       return {
         draft: {
           ...draft,
           productId,
           confirmationRequired: true,
-          params: { ...draft.params, copyField, copyAction, copyTargetLang: targetLang, copyStyle },
+          params: {
+            ...draft.params,
+            copyField,
+            copyAction,
+            copyTargetLang: targetLang,
+            copyStyle,
+          },
         },
-        operation: `${actionLabel}商品${fieldLabel}`,
+        operation,
         targetLabel: focusTitle,
         detailLines,
         executable: true,
@@ -480,53 +574,59 @@ export function planProductCommand(
       const copyAction = draft.params.copyAction ?? "translate";
       const targetLang = draft.params.copyTargetLang;
       const copyStyle = draft.params.copyStyle ?? "amazon";
-      const fieldLabel =
-        copyField === "title" ? "标题" : copyField === "description" ? "描述" : "全部文案";
-      const actionLabel =
-        copyAction === "translate"
-          ? `本土化${targetLang ? `为 ${targetLang.toUpperCase()}` : ""}`
-          : copyAction === "rewrite"
-            ? "改写"
-            : "优化";
+      const fieldLabel = copyFieldLabel(t, copyField);
+      const actionLabel = copyActionLabel(t, copyAction, targetLang);
+      const operation = copyOperationLabel(t, actionLabel, fieldLabel, true);
 
       if (copyAction === "translate" && !targetLang) {
         return {
           draft,
-          operation: `批量${actionLabel}商品${fieldLabel}`,
-          targetLabel: "未指定语言",
+          operation,
+          targetLabel: t("agentProducts.targetUnspecifiedLang"),
           detailLines: [],
           executable: false,
-          clarify: "请说明目标语言，例如「把所有商品标题翻译成英文」。",
+          clarify: t("agentProducts.clarifyMissingLangBatch"),
         };
       }
 
-      const batchResult = resolveBatchProductIds(draft, ctx);
+      const batchResult = resolveBatchProductIds(t, draft, ctx);
       const totalCount = batchResult.ids.length;
 
       if (totalCount === 0) {
         return {
           draft,
-          operation: `批量${actionLabel}商品${fieldLabel}`,
+          operation,
           targetLabel: batchResult.label,
           detailLines: [],
           executable: false,
-          clarify: `当前「${batchResult.label}」范围内没有商品，无法执行批量操作。`,
+          clarify: t("agentProducts.clarifyNoProductsInScope", {
+            label: batchResult.label,
+          }),
         };
       }
 
       const detailLines: string[] = [];
-      detailLines.push(`处理范围：${batchResult.label}（共 ${totalCount} 个商品）`);
-      detailLines.push(`目标字段：${fieldLabel}`);
-      detailLines.push(`操作类型：${actionLabel}`);
+      detailLines.push(
+        t("agentProducts.detailBatchScopeProducts", {
+          label: batchResult.label,
+          count: totalCount,
+        })
+      );
+      detailLines.push(t("agentProducts.detailFieldTarget", { field: fieldLabel }));
+      detailLines.push(t("agentProducts.detailActionType", { action: actionLabel }));
       if (copyAction === "translate" && targetLang) {
-        detailLines.push(`目标语言：${targetLang.toUpperCase()}`);
+        detailLines.push(
+          t("agentProducts.detailTargetLang", {
+            lang: targetLang.toUpperCase(),
+          })
+        );
         detailLines.push(
           copyStyle === "literal"
-            ? "模式：直译"
-            : "模式：去噪 + Amazon 结构重组（批发/跨境/营销词过滤，非直译）"
+            ? t("agentProducts.detailModeLiteral")
+            : t("agentProducts.detailModeAmazon")
         );
       }
-      detailLines.push("确认后将逐个生成新标题并更新到 Shopify");
+      detailLines.push(t("agentProducts.detailBatchCopySync"));
 
       return {
         draft: {
@@ -542,8 +642,11 @@ export function planProductCommand(
             batchProductIds: batchResult.ids,
           },
         },
-        operation: `批量${actionLabel}商品${fieldLabel}`,
-        targetLabel: `${batchResult.label} · ${totalCount} 个`,
+        operation,
+        targetLabel: t("agentProducts.targetScopeCount", {
+          label: batchResult.label,
+          count: totalCount,
+        }),
         detailLines,
         executable: true,
       };
@@ -555,36 +658,47 @@ export function planProductCommand(
       if (!multiplier && !fixedPrice) {
         return {
           draft,
-          operation: "批量修改商品售价",
-          targetLabel: "未指定价格",
+          operation: t("agentProducts.opBatchUpdatePrice"),
+          targetLabel: t("agentProducts.targetUnspecifiedPrice"),
           detailLines: [],
           executable: false,
-          clarify: "请说明定价方式，例如「所有商品定价改为采购价2倍」或「所有商品售价改成9.9」。",
+          clarify: t("agentProducts.clarifyMissingPricing"),
         };
       }
 
-      const batchResult = resolveBatchProductIds(draft, ctx);
+      const batchResult = resolveBatchProductIds(t, draft, ctx);
       const totalCount = batchResult.ids.length;
 
       if (totalCount === 0) {
         return {
           draft,
-          operation: "批量修改商品售价",
+          operation: t("agentProducts.opBatchUpdatePrice"),
           targetLabel: batchResult.label,
           detailLines: [],
           executable: false,
-          clarify: `当前「${batchResult.label}」范围内没有商品，无法执行批量操作。`,
+          clarify: t("agentProducts.clarifyNoProductsInScope", {
+            label: batchResult.label,
+          }),
         };
       }
 
       const detailLines: string[] = [];
-      detailLines.push(`处理范围：${batchResult.label}（共 ${totalCount} 个商品）`);
+      detailLines.push(
+        t("agentProducts.detailBatchScopeProducts", {
+          label: batchResult.label,
+          count: totalCount,
+        })
+      );
       if (multiplier) {
-        detailLines.push(`定价方式：采购价 × ${multiplier}`);
+        detailLines.push(
+          t("agentProducts.detailPricingMultiplier", { multiplier })
+        );
       } else if (fixedPrice) {
-        detailLines.push(`定价方式：固定价格 ${fixedPrice}`);
+        detailLines.push(
+          t("agentProducts.detailPricingFixed", { price: fixedPrice })
+        );
       }
-      detailLines.push("确认后将逐个更新商品售价到 Shopify");
+      detailLines.push(t("agentProducts.detailBatchPriceSync"));
 
       return {
         draft: {
@@ -596,33 +710,61 @@ export function planProductCommand(
             batchProductIds: batchResult.ids,
           },
         },
-        operation: "批量修改商品售价",
-        targetLabel: `${batchResult.label} · ${totalCount} 个`,
+        operation: t("agentProducts.opBatchUpdatePrice"),
+        targetLabel: t("agentProducts.targetScopeCount", {
+          label: batchResult.label,
+          count: totalCount,
+        }),
         detailLines,
         executable: true,
       };
     }
     case "draft_product":
-      return planSingleStatusChange(draft, ctx, "DRAFT", "放到草稿");
+      return planSingleStatusChange(
+        t,
+        draft,
+        ctx,
+        "DRAFT",
+        t("agentProducts.opDraftProduct")
+      );
     case "archive_product":
-      return planSingleStatusChange(draft, ctx, "ARCHIVED", "下架归档");
+      return planSingleStatusChange(
+        t,
+        draft,
+        ctx,
+        "ARCHIVED",
+        t("agentProducts.opArchiveProduct")
+      );
     case "batch_draft_products":
-      return planBatchStatusChange(draft, ctx, "DRAFT", "批量放到草稿");
+      return planBatchStatusChange(
+        t,
+        draft,
+        ctx,
+        "DRAFT",
+        t("agentProducts.opBatchDraft")
+      );
     case "batch_archive_products":
-      return planBatchStatusChange(draft, ctx, "ARCHIVED", "批量下架归档");
+      return planBatchStatusChange(
+        t,
+        draft,
+        ctx,
+        "ARCHIVED",
+        t("agentProducts.opBatchArchive")
+      );
     default:
       return {
         draft,
-        operation: "未知命令",
+        operation: t("agentProducts.opUnknown"),
         targetLabel: "",
         detailLines: [],
         executable: false,
-        clarify: "无法执行该命令。",
+        clarify: t("agentProducts.clarifyCannotExecute"),
       };
   }
 }
 
 export function resolveCommandExecution(
+  t: TranslateFn,
   plan: ProductCommandPlan
 ): ProductCommandExecution | null {
   if (!plan.executable) return null;
@@ -631,11 +773,12 @@ export function resolveCommandExecution(
 
   switch (draft.intent) {
     case "open_filter": {
+      const filter = draft.params.shopFilter ?? "all";
       const action: AgentSuggestedAction = {
         kind: "set_shop_filter",
         tab: "shop",
-        shopFilter: draft.params.shopFilter ?? "all",
-        label: FILTER_LABELS[draft.params.shopFilter ?? "all"],
+        shopFilter: filter,
+        label: filterLabel(t, filter),
       };
       return { type: "agent_action", action };
     }
@@ -643,13 +786,21 @@ export function resolveCommandExecution(
       if (!productId) return null;
       return {
         type: "agent_action",
-        action: { kind: "focus_product", productId, label: "聚焦商品" },
+        action: {
+          kind: "focus_product",
+          productId,
+          label: t("agentProducts.actionFocusProduct"),
+        },
       };
     case "rerun_candidate_search":
       if (!productId) return null;
       return {
         type: "agent_action",
-        action: { kind: "open_candidate_search", productId, label: "重搜候选" },
+        action: {
+          kind: "open_candidate_search",
+          productId,
+          label: t("agentProducts.actionRerunCandidates"),
+        },
       };
     case "explain_product_match": {
       const intent: ProductsIntentId =
@@ -665,7 +816,10 @@ export function resolveCommandExecution(
     case "open_pricing_editor":
       return {
         type: "agent_action",
-        action: { kind: "open_pricing_drawer", label: "定价策略" },
+        action: {
+          kind: "open_pricing_drawer",
+          label: t("agentProducts.actionPricingStrategy"),
+        },
       };
     case "update_listing_price": {
       const price = draft.params.price;
@@ -783,35 +937,38 @@ export function commandRequiresConfirmation(plan: ProductCommandPlan): boolean {
   );
 }
 
-function commandOperationLabel(intent: ProductCommandDraft["intent"]): string {
+function commandOperationLabel(
+  t: TranslateFn,
+  intent: ProductCommandDraft["intent"]
+): string {
   switch (intent) {
     case "open_filter":
-      return "切换列表筛选";
+      return t("agentProducts.opOpenFilter");
     case "focus_product":
-      return "聚焦商品";
+      return t("agentProducts.opFocusProduct");
     case "rerun_candidate_search":
-      return "重新搜索候选";
+      return t("agentProducts.opRerunSearch");
     case "explain_product_match":
-      return "解释匹配";
+      return t("agentProducts.opExplainMatch");
     case "open_pricing_editor":
-      return "打开定价设置";
+      return t("agentProducts.opOpenPricing");
     case "update_listing_price":
-      return "修改商品售价";
+      return t("agentProducts.opUpdatePrice");
     case "update_product_copy":
-      return "修改商品文案";
+      return t("agentProducts.opUpdateCopy");
     case "batch_update_product_copy":
-      return "批量修改商品文案";
+      return t("agentProducts.opBatchUpdateCopy");
     case "batch_update_listing_price":
-      return "批量修改商品售价";
+      return t("agentProducts.opBatchUpdatePrice");
     case "draft_product":
-      return "放到草稿";
+      return t("agentProducts.opDraftProduct");
     case "archive_product":
-      return "下架归档";
+      return t("agentProducts.opArchiveProduct");
     case "batch_draft_products":
-      return "批量放到草稿";
+      return t("agentProducts.opBatchDraft");
     case "batch_archive_products":
-      return "批量下架归档";
+      return t("agentProducts.opBatchArchive");
     default:
-      return "执行命令";
+      return t("agentProducts.opExecute");
   }
 }

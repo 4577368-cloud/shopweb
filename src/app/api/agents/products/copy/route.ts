@@ -34,7 +34,17 @@ export async function POST(request: Request) {
 
   const result = await resolveProductsAgentResponse(
     intent as ProductsIntentId,
-    context
+    context,
+    {
+      userText:
+        typeof (body as { userText?: unknown }).userText === "string"
+          ? (body as { userText: string }).userText
+          : undefined,
+      locale:
+        typeof (body as { locale?: unknown }).locale === "string"
+          ? (body as { locale: string }).locale
+          : null,
+    }
   );
   return NextResponse.json(result);
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2, X } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input } from "@/components/ui/input";
@@ -9,13 +9,16 @@ import { Select } from "@/components/ui/select";
 import { CURRENCY_OPTIONS } from "@/lib/catalog-sourcing-types";
 import { calculateSalePrice } from "@/lib/price-calculator";
 import type { PricingTemplate } from "@/lib/types";
+import { useT } from "@/i18n/LocaleProvider";
 
-const ROUNDING_OPTIONS: { value: string; label: string }[] = [
-  { value: "HALF_UP", label: "四舍五入 (HALF_UP)" },
-  { value: "CEIL", label: "向上取整 (CEIL)" },
-  { value: "FLOOR", label: "向下取整 (FLOOR)" },
-  { value: "CHARM_99", label: "魅力价 .99 (CHARM_99)" },
-];
+function roundingOptions(t: ReturnType<typeof useT>) {
+  return [
+    { value: "HALF_UP", label: t("pricingDrawer.roundHalfUp") },
+    { value: "CEIL", label: t("pricingDrawer.roundCeil") },
+    { value: "FLOOR", label: t("pricingDrawer.roundFloor") },
+    { value: "CHARM_99", label: t("pricingDrawer.roundCharm99") },
+  ];
+}
 
 /** Sample procurement amount used only for the calculation breakdown preview. */
 const SAMPLE_COST = 33;
@@ -90,46 +93,53 @@ function PricingCalculationBreakdown({
   targetCurrency: string;
   roundingLabel: string;
 }) {
+  const t = useT();
   const converted = cost / rate;
   const afterMultiplier = converted * multiplier;
   const afterAddend = afterMultiplier + addend;
 
   return (
     <div className="mt-4 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-3 py-2.5">
-      <p className="text-[11px] font-medium text-ink">计算过程</p>
+      <p className="text-[11px] font-medium text-ink">{t("pricingDrawer.calcTitle")}</p>
       <p className="mt-0.5 text-[10px] text-ink-subtle">
-        以下为示例采购价，随上方参数实时变化
+        {t("pricingDrawer.calcHint")}
       </p>
       <ol className="mt-2 space-y-1.5 text-[11px] leading-relaxed text-ink-muted">
         <li>
           <span className="text-ink-subtle">1. </span>
-          采购价：
+          {t("pricingDrawer.purchaseLabel")}
           <span className="font-medium text-ink">{cost.toFixed(2)} RMB</span>
         </li>
         <li>
           <span className="text-ink-subtle">2. </span>
-          汇率换算：{cost.toFixed(2)} ÷ {rate} ={" "}
-          <span className="font-medium text-ink">
-            {converted.toFixed(2)} {targetCurrency}
-          </span>
+          {t("pricingDrawer.fxStep", {
+            cost: cost.toFixed(2),
+            rate,
+            converted: converted.toFixed(2),
+          })}{" "}
+          <span className="font-medium text-ink">{targetCurrency}</span>
         </li>
         <li>
           <span className="text-ink-subtle">3. </span>
-          倍率计算：{converted.toFixed(2)} × {multiplier} ={" "}
-          <span className="font-medium text-ink">
-            {afterMultiplier.toFixed(2)} {targetCurrency}
-          </span>
+          {t("pricingDrawer.multiplierStep", {
+            converted: converted.toFixed(2),
+            multiplier,
+            afterMul: afterMultiplier.toFixed(2),
+          })}{" "}
+          <span className="font-medium text-ink">{targetCurrency}</span>
         </li>
         <li>
           <span className="text-ink-subtle">4. </span>
-          加价计算：{afterMultiplier.toFixed(2)} + {addend} ={" "}
-          <span className="font-medium text-ink">
-            {afterAddend.toFixed(2)} {targetCurrency}
-          </span>
+          {t("pricingDrawer.addendStep", {
+            afterMul: afterMultiplier.toFixed(2),
+            addend,
+            afterAdd: afterAddend.toFixed(2),
+          })}{" "}
+          <span className="font-medium text-ink">{targetCurrency}</span>
         </li>
         <li>
           <span className="text-ink-subtle">5. </span>
-          取整后结果（{roundingLabel}）：
+          {t("pricingDrawer.roundedResult", { rounding: roundingLabel })}
           <span className="font-semibold text-brand-strong">
             {sale != null ? `${sale.toFixed(2)} ${targetCurrency}` : "—"}
           </span>
@@ -151,6 +161,7 @@ export function PricingTemplateDrawer({
   clearing = false,
   highlighted = false,
 }: PricingTemplateDrawerProps) {
+  const t = useT();
   const [form, setForm] = useState<TemplateForm | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -199,19 +210,19 @@ export function PricingTemplateDrawer({
     const decimals = Number.parseInt(form.decimals, 10);
 
     if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
-      setFormError("汇率必须为大于 0 的数字");
+      setFormError(t("pricingDrawer.errRate"));
       return;
     }
     if (!Number.isFinite(multiplier) || multiplier <= 0) {
-      setFormError("倍率必须为大于 0 的数字");
+      setFormError(t("pricingDrawer.errMultiplier"));
       return;
     }
     if (!Number.isFinite(addend)) {
-      setFormError("加价必须为数字");
+      setFormError(t("pricingDrawer.errAddend"));
       return;
     }
     if (!Number.isInteger(decimals) || decimals < 0 || decimals > 4) {
-      setFormError("小数位需为 0–4 的整数");
+      setFormError(t("pricingDrawer.errDecimals"));
       return;
     }
 
@@ -226,32 +237,33 @@ export function PricingTemplateDrawer({
     });
   };
 
+  const roundingOpts = roundingOptions(t);
   const roundingLabel =
-    ROUNDING_OPTIONS.find((o) => o.value === form?.roundingStrategy)?.label ??
+    roundingOpts.find((o) => o.value === form?.roundingStrategy)?.label ??
     form?.roundingStrategy ??
-    "取整";
+    t("pricingDrawer.roundingFallback");
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <button
         type="button"
         className="absolute inset-0 bg-ink/30"
-        aria-label="关闭定价面板"
+        aria-label={t("pricingDrawer.closeAria")}
         onClick={onClose}
       />
       <aside className={`relative z-10 flex h-full w-full max-w-md flex-col border-l border-hairline bg-surface shadow-xl transition-all duration-500 ${highlighted ? "ring-2 ring-emerald-400/60" : ""}`}>
         <header className="flex items-center justify-between border-b border-hairline px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-ink">定价模板</h2>
+            <h2 className="text-sm font-semibold text-ink">{t("pricingDrawer.title")}</h2>
             <p className="mt-0.5 text-[11px] leading-relaxed text-ink-subtle">
-              系统会将采购价按汇率换算为目标币种后，再按倍率、加价和取整规则生成建议售价。
+              {t("pricingDrawer.subtitle")}
             </p>
           </div>
           <div className="flex items-center gap-2">
             {template?.isDefault ? (
-              <Badge variant="warning">系统默认</Badge>
+              <Badge variant="warning">{t("pricingDrawer.badgeDefault")}</Badge>
             ) : (
-              <Badge variant="success">已保存</Badge>
+              <Badge variant="success">{t("pricingDrawer.badgeSaved")}</Badge>
             )}
             <button
               type="button"
@@ -265,10 +277,10 @@ export function PricingTemplateDrawer({
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
           {!form ? (
-            <p className="text-xs text-ink-subtle">加载中…</p>
+            <p className="text-xs text-ink-subtle">{t("pricingDrawer.loading")}</p>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="目标售价币种" className="col-span-2">
+              <Field label={t("pricingDrawer.targetCurrency")} className="col-span-2">
                 <Select
                   value={form.targetCurrency}
                   onChange={(e) => patch({ targetCurrency: e.target.value })}
@@ -281,7 +293,7 @@ export function PricingTemplateDrawer({
                   ))}
                 </Select>
               </Field>
-              <Field label="汇率">
+              <Field label={t("pricingDrawer.exchangeRate")}>
                 <Input
                   type="number"
                   inputMode="decimal"
@@ -290,10 +302,10 @@ export function PricingTemplateDrawer({
                   disabled={saving}
                 />
                 <p className="mt-1 text-[10px] leading-relaxed text-ink-subtle">
-                  多少采购币（RMB）= 1 目标币种，例如 6.5 表示 6.5 RMB = 1 USD
+                  {t("pricingDrawer.rateHint")}
                 </p>
               </Field>
-              <Field label="倍率">
+              <Field label={t("pricingDrawer.multiplier")}>
                 <Input
                   type="number"
                   inputMode="decimal"
@@ -302,7 +314,7 @@ export function PricingTemplateDrawer({
                   disabled={saving}
                 />
               </Field>
-              <Field label="加价">
+              <Field label={t("pricingDrawer.addend")}>
                 <Input
                   type="number"
                   inputMode="decimal"
@@ -310,9 +322,9 @@ export function PricingTemplateDrawer({
                   onChange={(e) => patch({ addend: e.target.value })}
                   disabled={saving}
                 />
-                <p className="mt-1 text-[10px] text-ink-subtle">目标币种金额</p>
+                <p className="mt-1 text-[10px] text-ink-subtle">{t("pricingDrawer.addendHint")}</p>
               </Field>
-              <Field label="小数位">
+              <Field label={t("pricingDrawer.decimals")}>
                 <Input
                   type="number"
                   inputMode="numeric"
@@ -322,13 +334,13 @@ export function PricingTemplateDrawer({
                 />
                 <p className="mt-1 text-[10px] text-ink-subtle">0–4</p>
               </Field>
-              <Field label="取整策略" className="col-span-2">
+              <Field label={t("pricingDrawer.roundingStrategy")} className="col-span-2">
                 <Select
                   value={form.roundingStrategy}
                   onChange={(e) => patch({ roundingStrategy: e.target.value })}
                   disabled={saving}
                 >
-                  {ROUNDING_OPTIONS.map((o) => (
+                  {roundingOpts.map((o) => (
                     <option key={o.value} value={o.value}>
                       {o.label}
                     </option>
@@ -358,14 +370,14 @@ export function PricingTemplateDrawer({
         <footer className="flex items-center gap-2 border-t border-hairline px-4 py-3">
           <Button onClick={handleSave} disabled={saving || clearing || !form}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {saving ? "保存中…" : "保存模板"}
+            {saving ? t("pricingDrawer.saving") : t("pricingDrawer.save")}
           </Button>
           <Button
             variant="secondary"
             onClick={onClose}
             disabled={saving || clearing}
           >
-            取消
+            {t("pricingDrawer.cancel")}
           </Button>
           {onClear && template && !template.isDefault ? (
             <button
@@ -374,7 +386,7 @@ export function PricingTemplateDrawer({
               disabled={saving || clearing}
               className="ml-auto text-[11px] text-ink-subtle hover:text-ink hover:underline disabled:opacity-50"
             >
-              {clearing ? "恢复中…" : "恢复系统默认"}
+              {clearing ? t("pricingDrawer.clearing") : t("pricingDrawer.restoreDefault")}
             </button>
           ) : null}
         </footer>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
 
 const CHAR_INTERVAL_MS = 24;
@@ -22,6 +23,7 @@ export function LaunchReportStream({
   instant?: boolean;
   className?: string;
 }) {
+  const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [revealed, setRevealed] = useState(0);
 
@@ -77,9 +79,9 @@ export function LaunchReportStream({
       )}
     >
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-4 py-2.5">
-        <p className="text-sm font-semibold text-ink">开店准备报告</p>
+        <p className="text-sm font-semibold text-ink">{t("syncUi.launchReportTitle")}</p>
         <span className="text-[10px] tabular-nums text-ink-subtle">
-          {revealed}/{text.length} 字
+          {t("syncUi.charsRevealed", { revealed, total: text.length })}
         </span>
       </div>
 

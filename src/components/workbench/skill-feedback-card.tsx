@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "@/lib/ui/icons";
+import { useT } from "@/i18n/LocaleProvider";
 
 type FeedbackStep = { label: string };
 
@@ -16,6 +17,7 @@ export function SkillFeedbackCard({
   };
   onNextStep?: (step: FeedbackStep) => void;
 }) {
+  const t = useT();
   return (
     <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3">
       <div className="mb-2 text-xs font-semibold text-ink">{feedback.summary}</div>
@@ -27,7 +29,7 @@ export function SkillFeedbackCard({
       {feedback.progress != null ? (
         <div className="mt-2">
           <div className="mb-1 text-[10px] text-ink-subtle">
-            进度：{feedback.progress}%
+            {t("workbenchScan.progressLabel", { percent: feedback.progress })}
           </div>
           <div className="h-1 w-full overflow-hidden rounded-full bg-slate-100">
             <div

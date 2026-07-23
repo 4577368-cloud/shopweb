@@ -20,10 +20,7 @@ export function buildImageSearchRecoveryHints(input: {
       "换一张更清晰、无遮挡的商品主图后重试",
       "标题补充材质/品类关键词后再图搜",
     ];
-    if (
-      input.result.querySource === "title" ||
-      input.result.imageSource === "title"
-    ) {
+    if (input.result.querySource === "TITLE") {
       hints.push("当前以标题召回为主，可优先优化主图质量");
     }
     hints.push("仍无结果时可用「手动匹配」直接关联货源");

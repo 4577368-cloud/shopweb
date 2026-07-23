@@ -11,6 +11,8 @@ export interface CandidateTrayExplainContext {
   bindPending: boolean;
 }
 
+export type CandidateTrayTranslate = (key: string) => string;
+
 function pickCheapestCandidate(
   candidates: CandidateSummary[]
 ): CandidateSummary | null {
@@ -26,7 +28,8 @@ function pickCheapestCandidate(
 export function buildCandidateTrayInlineReason(
   candidate: CandidateSummary,
   all: CandidateSummary[],
-  ctx: CandidateTrayExplainContext
+  ctx: CandidateTrayExplainContext,
+  t: CandidateTrayTranslate
 ): string | null {
   const top = pickTopCandidate(all);
   if (!top) return null;
@@ -36,7 +39,9 @@ export function buildCandidateTrayInlineReason(
   const cheapest = pickCheapestCandidate(all);
 
   if (isBound) {
-    return ctx.bindPending ? "待你确认的关联" : "当前已关联货源";
+    return ctx.bindPending
+      ? t("candidateTray.boundPending")
+      : t("candidateTray.boundCurrent");
   }
 
   const profit = profitPerOrderPurchaseDisplay(
@@ -58,13 +63,13 @@ export function buildCandidateTrayInlineReason(
       candidate.priceCny != null &&
       cheapest.priceCny < candidate.priceCny;
 
-    if (cheaperExists) return "综合匹配优于更低成本选项";
-    if (profit != null && profit.amount >= 0) return "匹配与利润空间较均衡";
+    if (cheaperExists) return t("candidateTray.topBetterThanCheaper");
+    if (profit != null && profit.amount >= 0) return t("candidateTray.topBalanced");
     if ((candidate.soldCount ?? 0) > 0 || candidate.repurchaseRate) {
-      return "供应与销售信号较强";
+      return t("candidateTray.topSupplySignal");
     }
     if (candidate.matchScore != null && candidate.matchScore > 0) {
-      return "标题综合分最高";
+      return t("candidateTray.topHighestScore");
     }
     return null;
   }
@@ -76,8 +81,8 @@ export function buildCandidateTrayInlineReason(
   if (isCheapest) {
     const topScore = top.matchScore ?? 0;
     const candScore = candidate.matchScore ?? 0;
-    if (topScore > candScore) return "成本更低，但匹配弱于首推";
-    return "采购成本最低";
+    if (topScore > candScore) return t("candidateTray.cheaperWeakerMatch");
+    return t("candidateTray.lowestCost");
   }
 
   if (
@@ -86,15 +91,15 @@ export function buildCandidateTrayInlineReason(
     topProfit != null &&
     topProfit.amount >= 0
   ) {
-    return "按当前售价利润空间偏低";
+    return t("candidateTray.lowProfit");
   }
 
   const topScore = top.matchScore ?? 0;
   const candScore = candidate.matchScore ?? 0;
-  if (topScore > candScore + 3) return "标题综合分低于首推";
+  if (topScore > candScore + 3) return t("candidateTray.lowerTitleScore");
 
   if ((candidate.inventory ?? 0) > 0 && (top.inventory ?? 0) <= 0) {
-    return "库存较稳，可作备选";
+    return t("candidateTray.stableInventory");
   }
 
   return null;
@@ -102,11 +107,12 @@ export function buildCandidateTrayInlineReason(
 
 export function buildTrayInlineReasons(
   all: CandidateSummary[],
-  ctx: CandidateTrayExplainContext
+  ctx: CandidateTrayExplainContext,
+  t: CandidateTrayTranslate
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const c of all) {
-    const reason = buildCandidateTrayInlineReason(c, all, ctx);
+    const reason = buildCandidateTrayInlineReason(c, all, ctx, t);
     if (reason) out[c.productId] = reason;
   }
   return out;

@@ -2,10 +2,11 @@
 
 import { ThumbImage } from "@/components/ui/thumb-image";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ImageOff, Loader2, Search, X } from "lucide-react";
+import { ImageOff, Loader2, Search, X } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { api, readableError } from "@/lib/api";
+import { useT } from "@/i18n/LocaleProvider";
 import {
   buildManualMatchConfirmRequest,
   finalizeManualMatchBinding,
@@ -53,6 +54,7 @@ export function CatalogLinkDrawer({
   onLinked?: (thirdPlatformItemId: string) => void;
   showToast: (message: string) => void;
 }) {
+  const t = useT();
   const [products, setProducts] = useState<ShopMirrorProduct[]>([]);
   const [bindings, setBindings] = useState<Record<string, ImageBindingView>>({});
   const [listLoading, setListLoading] = useState(false);
@@ -116,7 +118,7 @@ export function CatalogLinkDrawer({
         setBindings(map);
       })
       .catch((err) => {
-        if (!cancelled) setListError(readableError(err));
+        if (!cancelled) setListError(readableError(err, t));
       })
       .finally(() => {
         if (!cancelled) setListLoading(false);
@@ -144,7 +146,7 @@ export function CatalogLinkDrawer({
         setSelectedSkuId(rows[0]?.skuId ?? null);
       })
       .catch((err) => {
-        if (!cancelled) setDetailError(readableError(err));
+        if (!cancelled) setDetailError(readableError(err, t));
       })
       .finally(() => {
         if (!cancelled) setDetailLoading(false);
@@ -169,7 +171,7 @@ export function CatalogLinkDrawer({
     detail?.itemNameTrans?.trim() ||
     detail?.itemName?.trim() ||
     catalogItem?.title ||
-    "货源商品";
+    t("catalogLink.defaultSourceTitle");
 
   const sourceHero =
     catalogItem?.imageUrl?.trim() ||
@@ -192,11 +194,11 @@ export function CatalogLinkDrawer({
       });
       const view = await api.confirmImageMatch(req);
       await finalizeManualMatchBinding(shopName, selectedItemId, view, req);
-      showToast("已关联货源");
+      showToast(t("catalogLink.toastLinked"));
       onLinked?.(selectedItemId);
       onClose();
     } catch (err) {
-      setSaveError(mapImageMatchConfirmError(err, "确认关联失败"));
+      setSaveError(mapImageMatchConfirmError(err, t("catalogLink.confirmFailed")));
     } finally {
       setSaving(false);
     }
@@ -210,7 +212,7 @@ export function CatalogLinkDrawer({
     <div className="fixed inset-0 z-50 flex justify-end">
       <button
         type="button"
-        aria-label="关闭"
+        aria-label={t("catalogLink.closeAria")}
         className="absolute inset-0 bg-ink/30"
         onClick={() => {
           if (!saving) onClose();
@@ -220,13 +222,13 @@ export function CatalogLinkDrawer({
         <header className="flex items-start justify-between gap-3 border-b border-hairline px-4 py-3">
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-wide text-ink-subtle">
-              关联到在售商品
+              {t("catalogLink.title")}
             </p>
             <h2 className="mt-0.5 line-clamp-2 text-base font-semibold text-ink">
               {sourceTitle}
             </h2>
             <p className="mt-1 text-[11px] text-ink-muted">
-              选择店铺商品并确认，关联逻辑与手动匹配一致
+              {t("catalogLink.subtitle")}
             </p>
           </div>
           <Button
@@ -235,7 +237,7 @@ export function CatalogLinkDrawer({
             className="h-8 w-8 shrink-0 px-0"
             onClick={onClose}
             disabled={saving}
-            aria-label="关闭关联抽屉"
+            aria-label={t("catalogLink.closeLinkDrawerAria")}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -244,7 +246,7 @@ export function CatalogLinkDrawer({
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {!gatewayReady ? (
             <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              商城货源暂不可用，无法关联。请稍后重试或联系管理员。
+              {t("catalogLink.mallUnavailable")}
             </div>
           ) : (
             <div className="space-y-5">
@@ -272,7 +274,9 @@ export function CatalogLinkDrawer({
                   </p>
                   {catalogItem.price != null ? (
                     <p className="mt-1 text-ink-muted">
-                      采购成本 ≈ {formatCny(catalogItem.price)}
+                      {t("catalogLink.purchaseCost", {
+                        price: formatCny(catalogItem.price),
+                      })}
                     </p>
                   ) : null}
                 </div>
@@ -281,7 +285,7 @@ export function CatalogLinkDrawer({
               {detailLoading ? (
                 <div className="flex items-center gap-2 text-sm text-ink-muted">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  读取货源 SKU…
+                  {t("catalogLink.loadingSku")}
                 </div>
               ) : detailError ? (
                 <div className="rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -291,19 +295,19 @@ export function CatalogLinkDrawer({
 
               <section className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-xs font-semibold text-ink">在售商品</h3>
+                  <h3 className="text-xs font-semibold text-ink">{t("catalogLink.shopProductsTitle")}</h3>
                   <span className="text-[11px] text-ink-subtle">
-                    {filteredProducts.length} 个
+                    {t("catalogLink.productCount", { count: filteredProducts.length })}
                   </span>
                 </div>
-                <Field label="搜索">
+                <Field label={t("catalogLink.searchLabel")}>
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
                     <Input
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                       disabled={listLoading || saving}
-                      placeholder="按商品标题搜索"
+                      placeholder={t("catalogLink.searchPlaceholder")}
                       className="pl-8"
                     />
                   </div>
@@ -315,11 +319,11 @@ export function CatalogLinkDrawer({
                 ) : listLoading ? (
                   <div className="flex items-center gap-2 py-6 text-sm text-ink-muted">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    加载在售商品…
+                    {t("catalogLink.loadingProducts")}
                   </div>
                 ) : filteredProducts.length === 0 ? (
                   <p className="py-6 text-center text-xs text-ink-subtle">
-                    暂无匹配的在售商品
+                    {t("catalogLink.noProducts")}
                   </p>
                 ) : (
                   <div className="max-h-[14rem] space-y-1.5 overflow-y-auto rounded-[var(--radius-control)] border border-hairline p-1.5">
@@ -351,13 +355,13 @@ export function CatalogLinkDrawer({
                               />
                             ) : (
                               <div className="flex h-full items-center justify-center text-[9px] text-ink-subtle">
-                                无图
+                                {t("catalogLink.noImage")}
                               </div>
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="line-clamp-2 text-xs font-medium text-ink">
-                              {product.title ?? "(无标题)"}
+                              {product.title ?? t("catalogLink.noTitle")}
                             </p>
                             <p className="mt-0.5 text-[11px] text-ink-muted">
                               {formatShopPrice(
@@ -369,7 +373,7 @@ export function CatalogLinkDrawer({
                           </div>
                           {bound ? (
                             <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                              已关联
+                              {t("catalogLink.alreadyLinked")}
                             </span>
                           ) : null}
                         </button>
@@ -382,18 +386,18 @@ export function CatalogLinkDrawer({
               {detail && skuRows.length > 0 ? (
                 <section>
                   <h3 className="text-xs font-semibold text-ink">
-                    SKU 规格（{skuRows.length}）
+                    {t("catalogLink.skuSpecs", { count: skuRows.length })}
                   </h3>
                   <p className="mt-1 text-[11px] text-ink-subtle">
-                    选择默认关联规格
+                    {t("catalogLink.selectDefaultSku")}
                   </p>
                   <div className="mt-1.5 overflow-x-auto rounded-[var(--radius-control)] border border-hairline">
                     <table className="w-full min-w-[20rem] text-left text-[11px]">
                       <thead className="bg-surface-muted text-ink-muted">
                         <tr>
-                          <th className="px-2.5 py-1.5 font-medium">选用</th>
-                          <th className="px-2.5 py-1.5 font-medium">规格</th>
-                          <th className="px-2.5 py-1.5 font-medium">采购价</th>
+                          <th className="px-2.5 py-1.5 font-medium">{t("catalogLink.colSelect")}</th>
+                          <th className="px-2.5 py-1.5 font-medium">{t("catalogLink.colSpec")}</th>
+                          <th className="px-2.5 py-1.5 font-medium">{t("catalogLink.colPrice")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -441,7 +445,7 @@ export function CatalogLinkDrawer({
 
         <footer className="flex items-center justify-end gap-2 border-t border-hairline px-4 py-3">
           <Button size="sm" variant="secondary" disabled={saving} onClick={onClose}>
-            取消
+            {t("catalogLink.cancel")}
           </Button>
           <Button
             size="sm"
@@ -457,7 +461,7 @@ export function CatalogLinkDrawer({
             onClick={() => void handleSave()}
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {saving ? "关联中…" : "确认关联"}
+            {saving ? t("catalogLink.linking") : t("catalogLink.confirmLink")}
           </Button>
         </footer>
       </aside>

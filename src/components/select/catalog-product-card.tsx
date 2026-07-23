@@ -1,11 +1,13 @@
 "use client";
 
 import { ThumbImage } from "@/components/ui/thumb-image";
-import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Loader2 } from "@/lib/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/LocaleProvider";
 import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
+import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
 import type { CatalogRecommendation, PublishResult, PublishStatus } from "@/lib/types";
 
 export interface PublishCellState {
@@ -18,16 +20,6 @@ function money(value?: number | null, currency?: string | null): string {
   if (value == null) return "—";
   return `${value.toFixed(2)}${currency ? ` ${currency}` : ""}`;
 }
-
-const PUBLISH_BADGE: Record<
-  PublishStatus,
-  { variant: "warning" | "success" | "danger" | "default"; label: string }
-> = {
-  PENDING: { variant: "default", label: "待上架" },
-  PUBLISHING: { variant: "warning", label: "上架进行中" },
-  PUBLISHED: { variant: "success", label: "已上架" },
-  FAILED: { variant: "danger", label: "上架失败" },
-};
 
 export interface CatalogProductCardProps {
   item: CatalogRecommendation;
@@ -47,14 +39,32 @@ export function CatalogProductCard({
   onPublish,
   onLink,
 }: CatalogProductCardProps) {
+  const t = useT();
+  const publishBadge = useMemo(
+    (): Record<
+      PublishStatus,
+      { variant: "warning" | "success" | "danger" | "default"; label: string }
+    > => ({
+      PENDING: { variant: "default", label: t("catalogCard.pending") },
+      PUBLISHING: { variant: "warning", label: t("catalogCard.publishing") },
+      PUBLISHED: { variant: "success", label: t("catalogCard.published") },
+      FAILED: { variant: "danger", label: t("catalogCard.failed") },
+    }),
+    [t]
+  );
   const result = state?.result;
   const published = result?.publishStatus === "PUBLISHED";
   const publishing = state?.loading || result?.publishStatus === "PUBLISHING";
   const [imgError, setImgError] = useState(false);
 
   return (
-    <article className="flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface p-3 shadow-card">
-      <div className="relative aspect-square w-full overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
+    <article
+      className={selectableCardClassName({
+        interactive: true,
+        className: "flex flex-col p-3",
+      })}
+    >
+      <div className="relative aspect-square w-full overflow-hidden rounded-[var(--radius-control)] border border-surface-border bg-muted">
         {item.imageUrl && !imgError ? (
           <ThumbImage
             src={item.imageUrl}
@@ -68,18 +78,18 @@ export function CatalogProductCard({
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-[10px] text-ink-subtle">
-            {item.imageUrl ? "货源图暂不可用" : "无图"}
+            {item.imageUrl ? t("catalogCard.imageUnavailable") : t("syncUi.noImage")}
           </div>
         )}
         {result ? (
           <div className="absolute left-2 top-2">
-            <Badge variant={PUBLISH_BADGE[result.publishStatus].variant}>
-              {PUBLISH_BADGE[result.publishStatus].label}
+            <Badge variant={publishBadge[result.publishStatus].variant}>
+              {publishBadge[result.publishStatus].label}
             </Badge>
           </div>
         ) : state?.error ? (
           <div className="absolute left-2 top-2">
-            <Badge variant="danger">上架失败</Badge>
+            <Badge variant="danger">{t("catalogCard.failed")}</Badge>
           </div>
         ) : null}
       </div>
@@ -90,8 +100,8 @@ export function CatalogProductCard({
             href={item.tangbuyUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-ink hover:text-brand-strong hover:underline"
-            title="在 Tangbuy 打开货源"
+            className="text-ink hover:text-link hover:underline"
+            title={t("catalogCard.openOnTangbuy")}
           >
             {item.title}
           </a>
@@ -102,10 +112,14 @@ export function CatalogProductCard({
 
       <div className="mt-1.5">
         <p className="text-sm font-semibold text-brand-strong">
-          建议售价 {money(item.estimatedSalePrice, item.targetCurrency ?? targetCurrency)}
+          {t("catalogCard.suggestedPrice", {
+            price: money(item.estimatedSalePrice, item.targetCurrency ?? targetCurrency),
+          })}
         </p>
         <p className="mt-0.5 text-xs font-medium text-ink">
-          采购成本 {money(purchasePriceUsd, targetCurrency)}
+          {t("catalogCard.purchaseCost", {
+            price: money(purchasePriceUsd, targetCurrency),
+          })}
         </p>
       </div>
 
@@ -119,12 +133,12 @@ export function CatalogProductCard({
         >
           {state?.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {published
-            ? "已上架"
+            ? t("catalogCard.publishedBtn")
             : publishing
-              ? "上架中…"
+              ? t("catalogCard.publishingBtn")
               : state?.error
-                ? "重试上架"
-                : "上架"}
+                ? t("catalogCard.retryPublish")
+                : t("catalogCard.publishBtn")}
         </Button>
         <Button
           size="sm"
@@ -133,12 +147,12 @@ export function CatalogProductCard({
           disabled={publishing || !isMallGatewayConfigured()}
           title={
             !isMallGatewayConfigured()
-              ? "商城货源暂不可用"
-              : "关联到已有在售商品"
+              ? t("catalogCard.mallUnavailable")
+              : t("catalogCard.linkToLiveTitle")
           }
           onClick={onLink}
         >
-          关联
+          {t("catalogCard.linkBtn")}
         </Button>
       </div>
         {published && result?.shopifyProductId ? (
@@ -147,7 +161,7 @@ export function CatalogProductCard({
           </p>
         ) : null}
         {state?.error ? (
-          <p className="mt-1.5 text-[10px] leading-tight text-red-500">{state.error}</p>
+          <p className="mt-1.5 text-[10px] leading-tight text-destructive">{state.error}</p>
         ) : null}
     </article>
   );

@@ -519,79 +519,49 @@ export function buildPageContextSummary(ctx: CommandClassifyContext | null): str
 }
 
 export function buildCommandClassifySystemPrompt(
-  ctx?: CommandClassifyContext | null
+  ctx?: CommandClassifyContext | null,
+  responseLanguageRule?: string
 ): string {
   const lines = PRODUCT_COMMAND_DEFS.map(
     (c) => `- ${c.id}: ${c.description}`
   ).join("\n");
   const contextBlock = buildPageContextSummary(ctx ?? null);
-  return `你是一位资深的 Shopify 独立站选品运营专家，兼具以下领域能力：
-- 选品策略：品类趋势判断、利润空间分析、竞品对比、季节性选品
-- 定价分析：汇率换算、成本结构、利润率计算、多市场定价策略
-- SKU 管理：变体管理、库存监控、货源绑定、供应链协调
-- SEO 文案：商品标题优化、描述改写、关键词布局、多语言翻译
-- 数据分析：转化率、ROAS、客单价、退货率等核心指标解读
+  const langBlock = responseLanguageRule
+    ? `\n[Language]\n${responseLanguageRule}\n`
+    : "\n[Language]\nUnderstand user input in any language (English, French, Spanish, Chinese, etc.).\n";
+  return `You are a senior Shopify product-sourcing operator. Map natural-language commands to executable system intents.
 
-你的任务：理解用户在选品页面输入的自然语言指令，映射为系统可执行的命令。
-
-不要把自己当"分类器"。要像一个资深运营同事，理解用户的真实意图，再决定执行什么操作。
-
-可用命令：
+Available commands:
 ${lines}
 ${contextBlock ? `\n${contextBlock}\n` : ""}
-[意图理解规则]
-1. 先理解用户想做什么（修改价格？翻译文案？打开设置？查看商品？），再映射到对应命令
-2. 关键区分——"修改售价" vs "打开定价设置"：
-   - "把这个商品价格改成 9.9" → update_listing_price（改某个商品的 Shopify 售价）
-   - "定价汇率改为 7.2""定价策略改成 xx""配置定价" → open_pricing_editor（打开定价模板设置）
-   - 判断依据：如果说的是针对某个具体商品的价格数值修改 → update_listing_price；如果说的是定价模板/汇率/倍率/策略/配置 → open_pricing_editor
-3. "翻译标题""改写描述""优化文案" → update_product_copy（单个商品）
-   - 默认 copyStyle=amazon：按 Amazon 热销标题结构本土化，不是机械直译
-   - 用户说「直译」时 copyStyle=literal
-4. 批量操作识别——包含"所有/全部/批量/每个/一次性/统一/统统"等关键词，且操作对象是多个商品：
-   - "所有商品标题翻译成英文" → batch_update_product_copy（批量文案修改）
-   - "把全部商品描述改成英文" → batch_update_product_copy
-   - 批量操作 targetScope = "all"，params.batchFilter = all|pending|confirmed|unbound
-5. "只看待确认""看未匹配" → open_filter
-6. "再找候选""重搜货源" → rerun_candidate_search
-7. "为什么推荐这个" → explain_product_match (matchExplain=reason)
-8. "这个靠谱吗""有什么风险" → explain_product_match (matchExplain=risk)
-9. "放到草稿""设为草稿" → draft_product（单个）或 batch_draft_products（批量）
-10. "下架""归档" → archive_product（单个）或 batch_archive_products（批量）；与 draft 区分：明确说草稿才用 draft 命令
+${langBlock}
+[Intent rules]
+1. Understand what the user wants (change price? translate copy? open settings? view products?) before mapping.
+2. Distinguish "change listing price" vs "open pricing settings":
+   - "Set this product price to 9.9" → update_listing_price
+   - "Change exchange rate to 7.2" / "configure pricing" → open_pricing_editor
+3. "Translate title" / "rewrite description" / "optimize copy" → update_product_copy (single product)
+   - Default copyStyle=amazon unless user asks for literal translation
+4. Batch ops — keywords like all/every/batch/each → batch_* intents with targetScope=all
+5. "Show pending only" / "show unlinked" → open_filter
+6. "Re-search candidates" → rerun_candidate_search
+7. "Why recommend this" → explain_product_match (matchExplain=reason)
+8. "Is this reliable" / "any risks" → explain_product_match (matchExplain=risk)
+9. "Move to draft" → draft_product or batch_draft_products
+10. "Archive" / "delist" → archive_product or batch_archive_products
 
-[结合上下文判断]
-- 如果用户说"翻译这个商品标题"，而上下文显示有选中商品，则 targetScope=current
-- 如果用户说"把拖鞋价格改成 9.9"，而上下文选中的是别的商品，则 targetScope=explicit，提取商品名
-- 如果上下文未选中商品，但用户说"翻译标题"，仍可归类为 update_product_copy，targetScope=current（系统会提示选商品）
-
-[输出格式]
-- 只输出 JSON：{"intent":"...","targetScope":"current|explicit|none","productId":null,"params":{},"confirmationRequired":false}
-- intent 必须是上述之一
-- update_listing_price：从原文提取 price（数字）和 currency（如 USD）；confirmationRequired 必须为 true
-- 多规格时 params 填 priceScope=all 或 priceScope=one + variantLabelHint
-- open_filter：params.shopFilter 填 all|pending|confirmed|unbound|new_arrivals
-- explain_product_match：params.matchExplain = reason|risk
-- update_product_copy：
-   - params.copyField: title|description|all（默认 title）
+[Output format]
+- JSON only: {"intent":"...","targetScope":"current|explicit|none|all","productId":null,"params":{},"confirmationRequired":false}
+- intent must be one of the commands above
+- update_listing_price: extract price + currency; confirmationRequired=true
+- open_filter: params.shopFilter = all|pending|confirmed|unbound|new_arrivals
+- explain_product_match: params.matchExplain = reason|risk
+- update_product_copy / batch_update_product_copy:
+   - params.copyField: title|description|all
    - params.copyAction: translate|rewrite|optimize
-   - params.copyTargetLang: 目标语言代码（en/zh/ja/ko/ar/es/fr/de/ru/pt/it/th/vi/tr 等），仅 translate 时需要
-   - params.copyStyle: amazon（默认，Amazon 热销标题本土化）| literal（直译）
-   - confirmationRequired 必须为 true
-- batch_update_product_copy（批量文案修改）：
-   - targetScope = "all"
-   - params.copyField: title|description|all（默认 title）
-   - params.copyAction: translate|rewrite|optimize
-   - params.copyTargetLang: 目标语言代码（en/zh/ja/ko/ar/es/fr/de/ru/pt/it/th/vi/tr 等），仅 translate 时需要
-   - params.copyStyle: amazon（默认，Amazon 热销标题本土化）| literal（直译）
-   - params.batchFilter: all|pending|confirmed|unbound（默认 all）
-   - confirmationRequired 必须为 true
-- draft_product / archive_product（单个商品 Shopify 状态）：
-   - draft_product → status=DRAFT（前台不可见）
-   - archive_product → status=ARCHIVED（归档下架）
-   - confirmationRequired 必须为 true
-- batch_draft_products / batch_archive_products（批量状态）：
-   - targetScope = "all"
-   - params.batchFilter: all|pending|confirmed|unbound（默认 all）
-   - confirmationRequired 必须为 true
-- 无法判断时输出 {"intent":""}`;
+   - params.copyTargetLang: en/zh/ja/ko/ar/es/fr/de/ru/pt/it/th/vi/tr etc. (translate only)
+   - params.copyStyle: amazon|literal
+   - confirmationRequired=true for write ops
+- draft/archive batch ops: params.batchFilter = all|pending|confirmed|unbound
+- If unsure, output {"intent":""}`;
 }
