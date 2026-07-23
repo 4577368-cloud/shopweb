@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { api, readableError } from "@/lib/api";
+import { resolve1688ProductTitle, resolveImageSearchDisplayTitle } from "@/lib/batch-link/1688-title-locale";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
 import {
   identityFromSearchCandidate,
@@ -64,7 +65,8 @@ import {
   displayStateLabel,
   type SkuVariantDisplayState,
 } from "@/lib/sku-align/display";
-import { useT } from "@/i18n/LocaleProvider";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import type { Locale } from "@/i18n/config";
 import {
   formatShopListingPrice,
   formatSourceCostInShopCurrency,
@@ -199,6 +201,7 @@ export function SkuProductWorkbench({
   showToast,
 }: SkuProductWorkbenchProps) {
   const t = useT();
+  const locale = useLocale();
   /* ---------- state ---------- */
   const [sourceOverride, setSourceOverride] = useState<PrimarySourceOverride | null>(null);
   const [sourceRevision, setSourceRevision] = useState(0);
@@ -377,7 +380,8 @@ export function SkuProductWorkbench({
           title: product.title,
           primaryImageUrl: product.imageUrl,
         },
-        5
+        5,
+        { locale }
       );
       if (pipeline.error) {
         setSearchError(pipeline.error);
@@ -448,7 +452,7 @@ export function SkuProductWorkbench({
       setSearchLoading(false);
       setMatrixLoading(false);
     }
-  }, [shopName, product, supplementGaps, tangbuyProductId, detailUrl, v1Detail, showToast, t]);
+  }, [shopName, product, supplementGaps, tangbuyProductId, detailUrl, v1Detail, showToast, t, locale]);
 
   const clearSupplementWorkspace = useCallback(() => {
     setCandidates([]);
@@ -561,7 +565,8 @@ export function SkuProductWorkbench({
           title: product.title,
           primaryImageUrl: product.imageUrl,
         },
-        6
+        6,
+        { locale }
       );
       if (pipeline.error) {
         setReplaceSearchError(pipeline.error);
@@ -577,7 +582,7 @@ export function SkuProductWorkbench({
     } finally {
       setReplaceSearchLoading(false);
     }
-  }, [shopName, product, t]);
+  }, [shopName, product, t, locale]);
 
   const applyReplacePrimary = async (candidate: ImageSearchProduct) => {
     if (replacingPrimary) return;
@@ -594,6 +599,16 @@ export function SkuProductWorkbench({
       if (!confirmDetailUrl?.trim()) {
         throw new Error(t("skuWorkbench.errCannotParseDetailUrl"));
       }
+      const localizedTitle =
+        resolve1688ProductTitle({
+          locale,
+          title: candidate.title,
+          titleTrans: candidate.titleTrans,
+          subject: candidate.subject,
+          subjectTrans: candidate.subjectTrans,
+          englishTitle: candidate.englishTitle,
+        })?.trim() || null;
+
       await api.confirmImageMatch({
         shopName,
         thirdPlatformItemId: product.thirdPlatformItemId,
@@ -606,14 +621,14 @@ export function SkuProductWorkbench({
         appliedQuery: "sku_replace_primary",
         offerImageUrl: candidate.imageUrl,
         offerPrice: candidate.price,
-        offerTitle: candidate.title?.trim() || null,
+        offerTitle: localizedTitle,
         auto: false,
       });
       writeProductSourceIdentity(shopName, product.thirdPlatformItemId, fromCandidate);
       setSourceOverride({
         detailUrl: confirmDetailUrl.trim(),
         tangbuyProductId: offerProductId,
-        title: candidate.title?.trim() || t("skuWorkbench.newPrimarySource"),
+        title: localizedTitle || t("skuWorkbench.newPrimarySource"),
         imageUrl: candidate.imageUrl ?? null,
       });
       setSourceRevision((n) => n + 1);
@@ -1137,6 +1152,7 @@ export function SkuProductWorkbench({
             error={replaceSearchError}
             candidates={replaceCandidates}
             replacing={replacingPrimary}
+            locale={locale}
             onSearch={() => void runReplacePrimarySearch()}
             onApply={(c) => void applyReplacePrimary(c)}
           />
@@ -1157,6 +1173,7 @@ export function SkuProductWorkbench({
             hasSupplementOffer={hasSupplementOffer}
             shopCurrency={product.currency}
             pricingTemplate={pricingTemplate}
+            locale={locale}
             onSearch={() => void runSupplementSearch()}
             onManualAddInputChange={setManualAddInput}
             onManualAdd={() => void runManualSupplementAdd()}
@@ -1556,6 +1573,7 @@ function ReplacePrimaryPanel({
   error,
   candidates,
   replacing,
+  locale,
   onSearch,
   onApply,
 }: {
@@ -1565,6 +1583,7 @@ function ReplacePrimaryPanel({
   error: string | null;
   candidates: ImageSearchProduct[];
   replacing: boolean;
+  locale: Locale;
   onSearch: () => void;
   onApply: (candidate: ImageSearchProduct) => void;
 }) {
@@ -1630,6 +1649,9 @@ function ReplacePrimaryPanel({
           <div className="space-y-2">
             {candidates.map((candidate) => {
               const key = candidateKeyOf(candidate);
+              const displayTitle =
+                resolveImageSearchDisplayTitle(candidate, locale) ||
+                t("skuWorkbench.unnamedSource");
               return (
                 <div
                   key={key}
@@ -1637,12 +1659,12 @@ function ReplacePrimaryPanel({
                 >
                   <VariantThumb
                     src={candidate.imageUrl}
-                    alt={candidate.title}
+                    alt={displayTitle}
                     className="h-12 w-12"
                   />
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 text-xs font-medium text-ink">
-                      {candidate.title?.trim() || t("skuWorkbench.unnamedSource")}
+                      {displayTitle}
                     </p>
                     <p className="mt-0.5 text-[11px] text-ink-muted">
                       {candidate.price ? `¥${candidate.price}` : t("skuWorkbench.priceUnknown")}
@@ -1701,6 +1723,7 @@ function SupplementPanel({
   onSetSku,
   matrixFetchingKey,
   className,
+  locale,
 }: {
   supplementGaps: SkuVariant[];
   searchLoading: boolean;
@@ -1716,6 +1739,7 @@ function SupplementPanel({
   hasSupplementOffer: boolean;
   shopCurrency?: string | null;
   pricingTemplate?: PricingTemplate | null;
+  locale: Locale;
   onSearch: () => void;
   onManualAddInputChange: (value: string) => void;
   onManualAdd: () => void;
@@ -1857,6 +1881,7 @@ function SupplementPanel({
                 shopCurrency={shopCurrency}
                 pricingTemplate={pricingTemplate}
                 matrixFetchingKey={matrixFetchingKey}
+                locale={locale}
                 onSetMerchant={(key) => onSetMerchant(variant, key)}
                 onSetSku={(skuId) => onSetSku(variant.thirdPlatformSkuId, skuId)}
               />
@@ -1877,6 +1902,7 @@ function SupplementGapRow({
   shopCurrency,
   pricingTemplate,
   matrixFetchingKey,
+  locale,
   onSetMerchant,
   onSetSku,
 }: {
@@ -1887,6 +1913,7 @@ function SupplementGapRow({
   shopCurrency?: string | null;
   pricingTemplate?: PricingTemplate | null;
   matrixFetchingKey?: string | null;
+  locale: Locale;
   onSetMerchant: (candidateKey: string) => void;
   onSetSku: (skuId: string) => void;
 }) {
@@ -1956,7 +1983,11 @@ function SupplementGapRow({
               const matrixLoaded = candidateMatrices.has(key);
               return (
                 <option key={key} value={key}>
-                  {truncateMerchant(c.candidate.title, unknownSource, 28)}
+                  {truncateMerchant(
+                    resolveImageSearchDisplayTitle(c.candidate, locale),
+                    unknownSource,
+                    28
+                  )}
                   {matrixLoaded && c.total > 0
                     ? t("skuWorkbench.coverage", {
                         coverage: c.coverage,
@@ -2007,7 +2038,15 @@ function SupplementGapRow({
                 <Check className="mr-0.5 inline h-3 w-3" />
               </span>
               {t("skuWorkbench.providedBy", {
-                merchant: truncateMerchant(chosenCandidate?.candidate.title, unknownSource),
+                merchant: truncateMerchant(
+                  chosenCandidate
+                    ? resolveImageSearchDisplayTitle(
+                        chosenCandidate.candidate,
+                        locale
+                      )
+                    : null,
+                  unknownSource
+                ),
                 spec: chosenRow?.specLabel ?? "",
               })}
             </span>

@@ -41,6 +41,7 @@ import {
   type AiFieldId,
 } from "@/lib/ai-field-edit-feedback";
 import { api, ApiError, readableError } from "@/lib/api";
+import { getMirrorCache, setMirrorCache, isMirrorCacheFresh } from "@/lib/products/mirror-cache";
 import type {
   ImageBindingView,
   ImageSearchProduct,
@@ -51,7 +52,8 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
-import { useT } from "@/i18n/LocaleProvider";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import type { Locale } from "@/i18n/config";
 
 type ShopProductsT = ReturnType<typeof useT>;
 import {
@@ -131,6 +133,10 @@ import {
   filterLinkableProducts,
   SHOP_PRODUCTS_PAGE_SIZE,
 } from "@/lib/batch-link/scope";
+import {
+  offerDetailCountryForLocale,
+  resolveImageSearchDisplayTitle,
+} from "@/lib/batch-link/1688-title-locale";
 import {
   resolveBoundSourceDisplayTitle,
   snapTitleNeedsItemGetFallback,
@@ -526,6 +532,7 @@ export function ShopProductsPanel({
 }) {
   const { shop, showToast } = useOnboarding();
   const t = useT();
+  const locale = useLocale();
   const shopName = shop.name;
 
   const [loading, setLoading] = useState(true);
@@ -550,6 +557,16 @@ export function ShopProductsPanel({
   const load = useCallback(async (opts?: { silent?: boolean }): Promise<ShopMirrorProduct[] | null> => {
     const silent = opts?.silent ?? false;
     if (!silent) {
+      // 切语言等整页重 mount 时，若缓存新鲜则直接 hydrate，不触发网关 fetch / skeleton。
+      // 列表数据与语言无关，可跨 locale 安全复用；随后后台静默刷新保持新鲜。
+      const cached = getMirrorCache(shopName);
+      if (cached && isMirrorCacheFresh(shopName)) {
+        setProducts(cached.items);
+        setBindings(cached.bindings);
+        onShopProductsChange?.(cached.items, cached.bindings);
+        void load({ silent: true });
+        return cached.items;
+      }
       setLoading(true);
       setError(null);
     }
@@ -571,6 +588,7 @@ export function ShopProductsPanel({
       const ackedMap = await autoAckHighConfidencePendingBindings(shopName, map);
       setBindings(ackedMap);
       onShopProductsChange?.(items, ackedMap);
+      setMirrorCache(shopName, { items, bindings: ackedMap });
 
       void (async () => {
         try {
@@ -666,6 +684,7 @@ export function ShopProductsPanel({
     markCardResolved,
   } = useBatchLinkQueue({
     shopName,
+    locale,
     onBound: handleBound,
     onScrollToProduct: scrollToBatchLinkProduct,
   });
@@ -1171,6 +1190,7 @@ export function ShopProductsPanel({
                   publishRevealStates[p.thirdPlatformItemId]
                 }
                 linkingLocked={linkingLocked}
+                locale={locale}
               />
             ))}
           </div>
@@ -1242,6 +1262,7 @@ function ShopProductCard({
   batchLinkDrive = undefined,
   linkingLocked = false,
   pricingTemplate = null,
+  locale = "zh",
 }: {
   item: ShopMirrorProduct;
   shopName: string;
@@ -1264,6 +1285,7 @@ function ShopProductCard({
   batchLinkDrive?: BatchLinkCardDrive;
   linkingLocked?: boolean;
   pricingTemplate?: PricingTemplate | null;
+  locale?: Locale;
 }) {
   const { showToast } = useOnboarding();
   const t = useT();
@@ -1541,7 +1563,7 @@ function ShopProductCard({
     // Legacy bindings without snapshot: lazy-fetch offer detail for 货源图/价 fallback.
     setOfferLoading(true);
     api
-      .getOfferDetail(boundOfferId)
+      .getOfferDetail(boundOfferId, offerDetailCountryForLocale(locale))
       .then((d) => {
         if (!cancelled) setOffer(d);
       })
@@ -1554,7 +1576,7 @@ function ShopProductCard({
     return () => {
       cancelled = true;
     };
-  }, [boundOfferId, hasSnapshot]);
+  }, [boundOfferId, hasSnapshot, locale]);
 
   const runSearchWithPhases = async () => {
     if (searching) return;
@@ -1581,7 +1603,7 @@ function ShopProductCard({
         shopName,
         item,
         5,
-        { binding }
+        { binding, locale }
       );
       if (pipeline.error || !pipeline.result) {
         setResult(null);
@@ -1652,6 +1674,7 @@ function ShopProductCard({
         imageScores,
         titleScores: matchScores,
         allowPoolIngest,
+        locale,
       });
       onBound(item.thirdPlatformItemId, merged);
       if (merged.offerTitle?.trim()) {
@@ -1778,7 +1801,7 @@ function ShopProductCard({
     if (!candidates?.length) return [];
     return candidates.map((c, idx) => ({
       productId: c.productId,
-      title: c.title ?? null,
+      title: resolveImageSearchDisplayTitle(c, locale),
       priceCny: parseGatewayPrice(c.price),
       matchScore:
         matchScores[c.productId] ??
@@ -1790,7 +1813,7 @@ function ShopProductCard({
       repurchaseRate: c.repurchaseRate,
       inventory: c.inventory,
     }));
-  }, [candidates, matchScores, imageScores]);
+  }, [candidates, matchScores, imageScores, locale]);
 
   const shopPrice = item.minPrice ?? item.maxPrice ?? null;
   const shopCurrency = item.currency;
@@ -1855,15 +1878,17 @@ function ShopProductCard({
     itemGetHeroImage ??
     publishDisplaySnapshot?.imageUrl ??
     offerImage(offer);
-  const boundCandidateTitle =
-    candidates?.find((c) => c.productId === boundOfferId)?.title?.trim() ??
-    null;
+  const boundCandidate =
+    candidates?.find((c) => c.productId === boundOfferId) ?? null;
   const boundTitle = resolveBoundSourceDisplayTitle({
+    locale,
     snapTitle,
     itemGetTitle,
     offerSubjectTrans: offer?.subjectTrans,
     offerSubject: offer?.subject,
-    candidateTitle: boundCandidateTitle,
+    candidateTitle: boundCandidate?.title,
+    candidateTitleTrans: boundCandidate?.titleTrans,
+    candidateEnglishTitle: boundCandidate?.englishTitle,
   });
   const boundCostCny =
     itemGetCostCny ??
@@ -1878,7 +1903,7 @@ function ShopProductCard({
     rightMode === "candidate" && current
       ? {
           image: current.imageUrl ?? null,
-          title: current.title || null,
+          title: resolveImageSearchDisplayTitle(current, locale),
           costCny: parseGatewayPrice(current.price),
           priceText: formatOfferCost(
             parseGatewayPrice(current.price),
@@ -2785,13 +2810,20 @@ function ShopProductCard({
                       disabled={!c.imageUrl}
                       aria-label={c.imageUrl ? t("shopProducts.zoomSourceImage") : undefined}
                       onClick={(e) =>
-                        openImageZoom(e, c.imageUrl, c.title || c.productId)
+                        openImageZoom(
+                          e,
+                          c.imageUrl,
+                          resolveImageSearchDisplayTitle(c, locale) || c.productId
+                        )
                       }
                     >
                       {c.imageUrl ? (
                         <ThumbImage
                           src={c.imageUrl}
-                          alt={c.title || c.productId}
+                          alt={
+                            resolveImageSearchDisplayTitle(c, locale) ||
+                            c.productId
+                          }
                           fill
                           sizes="180px"
                           pixelWidth={360}
@@ -2812,7 +2844,8 @@ function ShopProductCard({
                       </div>
                     </button>
                     <p className="mt-1.5 line-clamp-2 min-h-[2rem] text-[11px] leading-4 text-foreground">
-                      {c.title || t("shopProducts.noTitle")}
+                      {resolveImageSearchDisplayTitle(c, locale) ||
+                        t("shopProducts.noTitle")}
                     </p>
                     <p className="mt-1 shrink-0 text-[11px] font-semibold text-foreground">
                       {costLabel}

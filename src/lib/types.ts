@@ -558,6 +558,13 @@ export interface ProductSourceIdentity {
 export interface ImageSearchProduct {
   productId: string;
   title: string;
+  /** Translated headline from 1688 subjectTrans for the requested country. */
+  titleTrans?: string | null;
+  /** Chinese subject when backend exposes both fields. */
+  subject?: string | null;
+  subjectTrans?: string | null;
+  /** English subjectTrans fallback when locale is fr/es but primary trans is missing. */
+  englishTitle?: string | null;
   imageUrl?: string | null;
   /** 后端归一化为可直接打开的完整 1688 offer 链接 */
   detailUrl?: string | null;

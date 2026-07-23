@@ -444,11 +444,21 @@ export const api = {
    * (original image → title → LLM) and returns candidates (top-1 first) plus how it resolved them.
    * No persistence. Defaults to 4 candidates. The UI never sends a query (backend-driven).
    */
-  imageSearch: (shopName: string, thirdPlatformItemId: string, limit = 4) =>
+  imageSearch: (
+    shopName: string,
+    thirdPlatformItemId: string,
+    limit = 4,
+    opts?: { country?: string }
+  ) =>
     request<ImageSearchResult>("/api/plugin/match/image-search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ shopName, thirdPlatformItemId, limit }),
+      body: JSON.stringify({
+        shopName,
+        thirdPlatformItemId,
+        limit,
+        ...(opts?.country ? { country: opts.country } : {}),
+      }),
     }),
 
   /**

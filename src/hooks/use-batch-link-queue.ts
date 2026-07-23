@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import type { Locale } from "@/i18n/config";
 import { classifyMatchConfidence } from "@/lib/batch-link/confidence";
 import { ackAutoLinkedBinding } from "@/lib/batch-link/auto-ack-binding";
 import { resolveCandidateConfidence } from "@/lib/batch-link/candidate-confidence";
@@ -62,10 +63,12 @@ function confidenceDrivePatch(
 
 export function useBatchLinkQueue({
   shopName,
+  locale,
   onBound,
   onScrollToProduct,
 }: {
   shopName: string;
+  locale: Locale;
   onBound: (itemId: string, view: ImageBindingView) => void;
   onScrollToProduct?: (productId: string) => void;
 }) {
@@ -206,7 +209,9 @@ export function useBatchLinkQueue({
           doneFlash: false,
         });
 
-        const pipeline = await runImageSearchPipeline(shopName, product);
+        const pipeline = await runImageSearchPipeline(shopName, product, undefined, {
+          locale,
+        });
         if (runId !== runIdRef.current) break;
 
         const confidencePatch = pipeline.rankedItems.length
@@ -307,6 +312,7 @@ export function useBatchLinkQueue({
                 allowPoolIngest: true,
                 imageScores: pipeline.imageScores,
                 titleScores: pipeline.matchScores,
+                locale,
               }
             );
             const acked = await ackAutoLinkedBinding(shopName, id, view);

@@ -1,4 +1,10 @@
 import { api } from "@/lib/api";
+import {
+  OFFER_TITLE_ENGLISH_COUNTRY,
+  imageSearchCountryForLocale,
+  offerDetailCountryForLocale,
+} from "@/lib/batch-link/1688-title-locale";
+import type { Locale } from "@/i18n/config";
 import { normalizeMatchScore } from "@/lib/agents/products/match-rank";
 import {
   applyImageUrlMatchFloor,
@@ -7,7 +13,12 @@ import {
   resolveTopAutoBindScore,
 } from "@/lib/batch-link/image-match";
 import { isAlreadySourcedProduct } from "@/lib/batch-link/publish-source";
-import { enrich1688CandidateWithCatalogIdentity } from "@/lib/catalog-product-resolve";
+import {
+  enrich1688CandidateWithCatalogIdentity,
+  extractOfferIdFromUrl,
+  isInternalGoodsId,
+  isOfferId1688,
+} from "@/lib/catalog-product-resolve";
 import type {
   ImageBindingView,
   ImageSearchProduct,
@@ -30,6 +41,7 @@ export interface ImageSearchPipelineResult {
 
 export interface ImageSearchPipelineContext {
   binding?: ImageBindingView | null;
+  locale?: Locale;
 }
 
 const PUBLISH_SOURCED_SKIP_MESSAGE =
@@ -145,6 +157,71 @@ async function scoreImageCandidates(
   return scores;
 }
 
+function resolveOfferIdForDetail(
+  candidate: ImageSearchProduct
+): string | null {
+  const offerId =
+    candidate.offerId1688?.trim() ||
+    (isOfferId1688(candidate.productId) ? candidate.productId : null) ||
+    extractOfferIdFromUrl(candidate.detailUrl);
+  if (!offerId || isInternalGoodsId(offerId)) return null;
+  return offerId;
+}
+
+/** Fill titleTrans / englishTitle from offer-detail when image-search omits them. */
+async function enrichCandidateDisplayTitles(
+  items: ImageSearchProduct[],
+  locale: Locale | undefined,
+  maxEnrich = 6
+): Promise<ImageSearchProduct[]> {
+  if (!locale || locale === "zh") return items;
+
+  return Promise.all(
+    items.map(async (item, idx) => {
+      if (idx >= maxEnrich) return item;
+
+      const hasLocaleTitle = Boolean(
+        item.titleTrans?.trim() || item.subjectTrans?.trim()
+      );
+      const hasEnglish = Boolean(item.englishTitle?.trim());
+      if (hasLocaleTitle && (locale === "en" || hasEnglish)) return item;
+
+      const offerId = resolveOfferIdForDetail(item);
+      if (!offerId) return item;
+
+      const localeCountry = offerDetailCountryForLocale(locale);
+      const patches: Partial<ImageSearchProduct> = {};
+
+      if (!hasLocaleTitle) {
+        try {
+          const detail = await api.getOfferDetail(offerId, localeCountry);
+          patches.titleTrans =
+            detail.subjectTrans?.trim() || detail.subject?.trim() || null;
+        } catch {
+          /* keep original title */
+        }
+      }
+
+      if (locale !== "en" && !hasEnglish) {
+        try {
+          const detail = await api.getOfferDetail(
+            offerId,
+            OFFER_TITLE_ENGLISH_COUNTRY
+          );
+          patches.englishTitle =
+            detail.subjectTrans?.trim() || detail.subject?.trim() || null;
+        } catch {
+          /* optional fallback */
+        }
+      } else if (locale === "en" && patches.titleTrans && !hasEnglish) {
+        patches.englishTitle = patches.titleTrans;
+      }
+
+      return Object.keys(patches).length > 0 ? { ...item, ...patches } : item;
+    })
+  );
+}
+
 /**
  * Shared image-search pipeline:
  * 1) 1688 图搜（后端 image-search API）
@@ -170,21 +247,34 @@ export async function runImageSearchPipeline(
   }
 
   try {
-    const res = await api.imageSearch(shopName, item.thirdPlatformItemId, limit);
+    const country = context?.locale
+      ? imageSearchCountryForLocale(context.locale)
+      : undefined;
+    const res = await api.imageSearch(
+      shopName,
+      item.thirdPlatformItemId,
+      limit,
+      country ? { country } : undefined
+    );
 
     const enriched1688 = await Promise.all(
       res.items.map((c) =>
         enrich1688CandidateWithCatalogIdentity(c, item.title, shopName)
       )
     );
+    const localizedItems = await enrichCandidateDisplayTitles(
+      enriched1688,
+      context?.locale,
+      limit
+    );
 
-    const titleScores = await scoreTitleCandidates(item, enriched1688);
+    const titleScores = await scoreTitleCandidates(item, localizedItems);
     const imageScores = await scoreImageCandidates(
       item.primaryImageUrl,
-      enriched1688
+      localizedItems
     );
     const ranked = rankCandidatesWithImageGate(
-      enriched1688,
+      localizedItems,
       titleScores,
       imageScores
     );
