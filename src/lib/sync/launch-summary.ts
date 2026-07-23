@@ -66,6 +66,8 @@ export interface LaunchSummary {
     logisticsTotal: number;
     pendingReview: number;
     footnote: string;
+    /** Logistics acceptances are local-only until synced to fulfillment backend. */
+    showLocalLogisticsGap?: boolean;
     ctaHref: string;
     ctaLabel: string;
   };

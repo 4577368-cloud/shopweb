@@ -4,6 +4,11 @@ import type {
   LogisticsEstimateResponse,
   LogisticsEstimateResult,
 } from "@/lib/api";
+import {
+  buildGatewayGoodsNotReadyMessage,
+  GOODS_INGESTING_MESSAGE,
+  isGatewayGoodsNotReadyMessage,
+} from "@/lib/logistics/estimate-goods-block";
 
 function pickString(obj: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
@@ -267,14 +272,8 @@ function resolveQuoteStatus(
 const TANGBUY_DELIVERY_PRESET_URL =
   "https://dropshipping.tangbuy.cc/setting/delivery-preset";
 
-function buildInvalidGoodsIdMessage(offerHint?: string): string {
-  const offer = offerHint?.trim();
-  return (
-    `Tangbuy 网关拒绝报价（data: null）—— goodsId 不是商品库 internal ID。` +
-    (offer ? `当前绑定 offerId=${offer}。` : "") +
-    `1688 图搜绑定的 offerId 不能直接用于 estimateSkuSaleFeePrice；` +
-    `请先在 dropshipping.tangbuy.cc 将商品加入商品库，或使用商品库 goodsId（如 72417809760272）试算。`
-  );
+function buildInvalidGoodsIdMessage(_offerHint?: string): string {
+  return buildGatewayGoodsNotReadyMessage(_offerHint);
 }
 
 function buildEmptyDataMessage(
@@ -302,6 +301,20 @@ function buildEmptyDataMessage(
   );
 }
 
+function resolveFailedQuoteStatus(
+  errorMessage?: string,
+  gatewayMsg?: string | null
+): QuoteStatus {
+  if (
+    gatewayMsg === "INVALID_GOODS_ID" ||
+    isGatewayGoodsNotReadyMessage(errorMessage) ||
+    isGatewayGoodsNotReadyMessage(gatewayMsg)
+  ) {
+    return "INGESTING";
+  }
+  return "FAILED";
+}
+
 function parseSkuResult(
   rawResult: Record<string, unknown>,
   thirdPlatformSkuId: string,
@@ -314,19 +327,29 @@ function parseSkuResult(
   const quoteStatus = resolveQuoteStatus(rawResult, lines);
   const recommendedLine = primary ?? lines[0];
   const alternativeLines = primary ? alternatives : lines.slice(1);
+  const errorMessage =
+    quoteStatus === "FAILED"
+      ? String(
+          rawResult.errorMessage ??
+            rawResult.msg ??
+            rawResult.message ??
+            emptyDataMessage ??
+            "报价失败"
+        )
+      : undefined;
+  const effectiveStatus =
+    quoteStatus === "FAILED" && errorMessage
+      ? resolveFailedQuoteStatus(errorMessage, String(rawResult.msg ?? rawResult.message ?? ""))
+      : quoteStatus;
+  const friendlyError =
+    effectiveStatus === "INGESTING" ? GOODS_INGESTING_MESSAGE : errorMessage;
 
   return {
     thirdPlatformSkuId,
-    quoteStatus,
+    quoteStatus: effectiveStatus,
     errorMessage:
-      quoteStatus === "FAILED"
-        ? String(
-            rawResult.errorMessage ??
-              rawResult.msg ??
-              rawResult.message ??
-              emptyDataMessage ??
-              "报价失败"
-          )
+      effectiveStatus === "FAILED" || effectiveStatus === "INGESTING"
+        ? friendlyError
         : undefined,
     recommendedLine,
     alternativeLines: alternativeLines.length ? alternativeLines : undefined,
@@ -371,13 +394,17 @@ export function normalizeTangbuyEstimateResponse(
       : undefined;
 
   if (rawResults.length === 0) {
+    const goodsNotReady =
+      gatewayMsg === "INVALID_GOODS_ID" ||
+      isGatewayGoodsNotReadyMessage(emptyDataMessage) ||
+      isGatewayGoodsNotReadyMessage(gatewayMsg);
     return {
       success,
       message,
       results: requestVariants.map((variant) => ({
         thirdPlatformSkuId: variant.thirdPlatformSkuId,
-        quoteStatus: "FAILED",
-        errorMessage: emptyDataMessage,
+        quoteStatus: goodsNotReady ? "INGESTING" : "FAILED",
+        errorMessage: goodsNotReady ? GOODS_INGESTING_MESSAGE : emptyDataMessage,
       })),
     };
   }

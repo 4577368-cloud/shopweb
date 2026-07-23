@@ -1,6 +1,9 @@
+"use client";
+
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 import type {
   AuthStatus,
   ProductMatchStatus,
@@ -14,22 +17,19 @@ import { Badge } from "@/components/ui/badge";
 /** 全站 4 类流程状态 */
 export const workflowStatusMap: Record<
   WorkflowStatus,
-  {
-    label: string;
-    variant: "info" | "warning" | "success" | "danger";
-  }
+  { labelKey: string; variant: "info" | "warning" | "success" | "danger" }
 > = {
-  in_progress: { label: "进行中", variant: "info" },
-  pending_confirm: { label: "待确认", variant: "warning" },
-  completed: { label: "已完成", variant: "success" },
-  error: { label: "异常", variant: "danger" },
+  in_progress: { labelKey: "status.inProgress", variant: "info" },
+  pending_confirm: { labelKey: "status.pending", variant: "warning" },
+  completed: { labelKey: "status.done", variant: "success" },
+  error: { labelKey: "status.exception", variant: "danger" },
 };
 
 const stepStatusMap: Record<
   StepStatus,
-  { label: string; variant: "default" | "info" | "warning" | "success" | "danger" }
+  { labelKey: string; variant: "default" | "info" | "warning" | "success" | "danger" }
 > = {
-  not_started: { label: "未开始", variant: "default" },
+  not_started: { labelKey: "status.notStarted", variant: "default" },
   in_progress: workflowStatusMap.in_progress,
   pending_confirm: workflowStatusMap.pending_confirm,
   completed: workflowStatusMap.completed,
@@ -37,105 +37,115 @@ const stepStatusMap: Record<
 };
 
 /** 授权流程状态 → 统一四类 */
-const authToWorkflow: Record<AuthStatus, { label: string; status: WorkflowStatus | "not_started" }> = {
-  waiting_input: { label: "进行中", status: "in_progress" },
-  ready_to_authorize: { label: "进行中", status: "in_progress" },
-  authorizing: { label: "进行中", status: "in_progress" },
-  authorized: { label: "已完成", status: "completed" },
-  error: { label: "异常", status: "error" },
+const authToWorkflow: Record<
+  AuthStatus,
+  { labelKey: string; status: WorkflowStatus | "not_started" }
+> = {
+  waiting_input: { labelKey: "status.inProgress", status: "in_progress" },
+  ready_to_authorize: { labelKey: "status.inProgress", status: "in_progress" },
+  authorizing: { labelKey: "status.inProgress", status: "in_progress" },
+  authorized: { labelKey: "status.done", status: "completed" },
+  error: { labelKey: "status.exception", status: "error" },
 };
 
 /** 商品匹配处置状态 → 统一四类 */
 const matchToWorkflow: Record<
   ProductMatchStatus,
-  { label: string; status: WorkflowStatus }
+  { labelKey: string; status: WorkflowStatus }
 > = {
-  high_match: { label: "待确认", status: "pending_confirm" },
-  medium_match: { label: "待确认", status: "pending_confirm" },
-  needs_review: { label: "异常", status: "error" },
-  confirmed: { label: "已完成", status: "completed" },
-  deferred: { label: "已完成", status: "completed" },
-  flagged: { label: "异常", status: "error" },
-  rejected: { label: "已完成", status: "completed" },
+  high_match: { labelKey: "status.pending", status: "pending_confirm" },
+  medium_match: { labelKey: "status.pending", status: "pending_confirm" },
+  needs_review: { labelKey: "status.exception", status: "error" },
+  confirmed: { labelKey: "status.done", status: "completed" },
+  deferred: { labelKey: "status.done", status: "completed" },
+  flagged: { labelKey: "status.exception", status: "error" },
+  rejected: { labelKey: "status.done", status: "completed" },
 };
 
 /** SKU 对齐状态 → 统一四类（冲突单独文案） */
 const skuToWorkflow: Record<
   SkuAlignStatus,
-  { label: string; status: WorkflowStatus }
+  { labelKey: string; status: WorkflowStatus }
 > = {
-  auto_aligned: { label: "待确认", status: "pending_confirm" },
-  needs_confirm: { label: "待确认", status: "pending_confirm" },
-  pending: { label: "进行中", status: "in_progress" },
-  confirmed: { label: "已完成", status: "completed" },
-  conflict: { label: "冲突", status: "error" },
-  skipped: { label: "已完成", status: "completed" },
-  flagged: { label: "异常", status: "error" },
+  auto_aligned: { labelKey: "status.pending", status: "pending_confirm" },
+  needs_confirm: { labelKey: "status.pending", status: "pending_confirm" },
+  pending: { labelKey: "status.inProgress", status: "in_progress" },
+  confirmed: { labelKey: "status.done", status: "completed" },
+  conflict: { labelKey: "status.conflict", status: "error" },
+  skipped: { labelKey: "status.done", status: "completed" },
+  flagged: { labelKey: "status.exception", status: "error" },
 };
 
 const syncKindMap: Record<
   SyncResultKind,
-  { label: string; variant: "success" | "default" | "danger" }
+  { labelKey: string; variant: "success" | "default" | "danger" }
 > = {
-  success: { label: "已成功同步", variant: "success" },
-  skipped: { label: "跳过", variant: "default" },
-  exception: { label: "待处理异常", variant: "danger" },
+  success: { labelKey: "sync.kindSuccess", variant: "success" },
+  skipped: { labelKey: "sync.kindSkipped", variant: "default" },
+  exception: { labelKey: "sync.kindException", variant: "danger" },
 };
 
 export function WorkflowBadge({ status }: { status: WorkflowStatus }) {
+  const t = useT();
   const item = workflowStatusMap[status];
-  return <Badge variant={item.variant}>{item.label}</Badge>;
+  return <Badge variant={item.variant}>{t(item.labelKey)}</Badge>;
 }
 
 export function StepStatusBadge({ status }: { status: StepStatus }) {
+  const t = useT();
   const item = stepStatusMap[status];
-  return <Badge variant={item.variant}>{item.label}</Badge>;
+  return <Badge variant={item.variant}>{t(item.labelKey)}</Badge>;
 }
 
 export function AuthStatusBadge({ status }: { status: AuthStatus }) {
+  const t = useT();
   const mapped = authToWorkflow[status];
   const variant =
     mapped.status === "not_started"
       ? "default"
       : workflowStatusMap[mapped.status as WorkflowStatus].variant;
-  return <Badge variant={variant}>{mapped.label}</Badge>;
+  return <Badge variant={variant}>{t(mapped.labelKey)}</Badge>;
 }
 
 export function MatchStatusBadge({ status }: { status: ProductMatchStatus }) {
+  const t = useT();
   const mapped = matchToWorkflow[status];
   return (
     <Badge variant={workflowStatusMap[mapped.status].variant}>
-      {mapped.label}
+      {t(mapped.labelKey)}
     </Badge>
   );
 }
 
 export function SkuStatusBadge({ status }: { status: SkuAlignStatus }) {
+  const t = useT();
   const mapped = skuToWorkflow[status];
   return (
     <Badge variant={workflowStatusMap[mapped.status].variant}>
-      {mapped.label}
+      {t(mapped.labelKey)}
     </Badge>
   );
 }
 
 /** 自动对齐 vs 需确认 的补充标签（非流程状态） */
 export function SkuKindBadge({ status }: { status: SkuAlignStatus }) {
+  const t = useT();
   if (status === "auto_aligned") {
-    return <Badge variant="teal">自动对齐</Badge>;
+    return <Badge variant="teal">{t("sku.statusAutoAligned")}</Badge>;
   }
   if (status === "needs_confirm") {
-    return <Badge variant="warning">需核对</Badge>;
+    return <Badge variant="warning">{t("sku.statusNeedsConfirm")}</Badge>;
   }
   if (status === "conflict") {
-    return <Badge variant="danger">冲突</Badge>;
+    return <Badge variant="danger">{t("status.conflict")}</Badge>;
   }
   return null;
 }
 
 export function SyncKindBadge({ kind }: { kind: SyncResultKind }) {
+  const t = useT();
   const item = syncKindMap[kind];
-  return <Badge variant={item.variant}>{item.label}</Badge>;
+  return <Badge variant={item.variant}>{t(item.labelKey)}</Badge>;
 }
 
 export function matchWorkflowStatus(status: ProductMatchStatus): WorkflowStatus {

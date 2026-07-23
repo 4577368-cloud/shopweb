@@ -6,12 +6,10 @@ import {
   rankCandidatesWithImageGate,
   resolveTopAutoBindScore,
 } from "@/lib/batch-link/image-match";
-import {
-  enrich1688CandidateWithCatalogIdentity,
-  searchCatalogImageCandidates,
-} from "@/lib/catalog-product-resolve";
-import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
+import { isAlreadySourcedProduct } from "@/lib/batch-link/publish-source";
+import { enrich1688CandidateWithCatalogIdentity } from "@/lib/catalog-product-resolve";
 import type {
+  ImageBindingView,
   ImageSearchProduct,
   ImageSearchResult,
   ShopMirrorProduct,
@@ -26,14 +24,32 @@ export interface ImageSearchPipelineResult {
   rankedItems: ImageSearchProduct[];
   topScore: number | null;
   error: string | null;
-  catalogHitCount?: number;
+  /** True when the product already has a Tangbuy publish source — image search skipped. */
+  skippedPublishSourced?: boolean;
 }
 
-const CATALOG_SCORE_BOOST = 12;
+export interface ImageSearchPipelineContext {
+  binding?: ImageBindingView | null;
+}
+
+const PUBLISH_SOURCED_SKIP_MESSAGE =
+  "该商品来自 Tangbuy 上架，已对应货源，无需图搜";
 
 function imageSearchError(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
   return "图搜失败，请稍后重试";
+}
+
+function publishSourcedSkipResult(): ImageSearchPipelineResult {
+  return {
+    result: null,
+    matchScores: {},
+    imageScores: {},
+    rankedItems: [],
+    topScore: null,
+    error: PUBLISH_SOURCED_SKIP_MESSAGE,
+    skippedPublishSourced: true,
+  };
 }
 
 async function scoreTitleCandidates(
@@ -46,9 +62,6 @@ async function scoreTitleCandidates(
     const key = candidateStorageKey(c);
     const n = normalizeMatchScore(c.similarityScore);
     if (n != null && scores[key] == null) scores[key] = n;
-    if (c.catalogSource && scores[key] != null) {
-      scores[key] = Math.min(100, scores[key]! + CATALOG_SCORE_BOOST);
-    }
   }
 
   const needLlm = items.filter((c) => scores[candidateStorageKey(c)] == null);
@@ -74,11 +87,7 @@ async function scoreTitleCandidates(
       for (const c of needLlm) {
         const key = candidateStorageKey(c);
         const raw = fromLlm[c.productId] ?? fromLlm[key];
-        if (raw != null) {
-          scores[key] = c.catalogSource
-            ? Math.min(100, raw + CATALOG_SCORE_BOOST)
-            : raw;
-        }
+        if (raw != null) scores[key] = raw;
       }
     }
   } catch {
@@ -136,35 +145,31 @@ async function scoreImageCandidates(
   return scores;
 }
 
-function dedupeCandidates(items: ImageSearchProduct[]): ImageSearchProduct[] {
-  const out: ImageSearchProduct[] = [];
-  const seen = new Set<string>();
-  for (const item of items) {
-    const key = candidateStorageKey(item);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-  }
-  return out;
-}
-
 /**
  * Shared image-search pipeline:
- * 1) Tangbuy 商品库 keyword 优先
- * 2) 1688 图搜 fallback
- * 3) Title score (LLM auxiliary) + image score (API / URL / pHash / vision)
- * 4) Rank with image hard gate + image-first ordering
+ * 1) 1688 图搜（后端 image-search API）
+ * 2) Title score (LLM auxiliary) + image score (API / URL / pHash / vision)
+ * 3) Rank with image hard gate + image-first ordering
+ *
+ * Tangbuy 商城上架商品（已有 1:1 货源对应）跳过图搜。
  */
 export async function runImageSearchPipeline(
   shopName: string,
   item: Pick<ShopMirrorProduct, "thirdPlatformItemId" | "title" | "primaryImageUrl">,
-  limit = 5
+  limit = 5,
+  context?: ImageSearchPipelineContext
 ): Promise<ImageSearchPipelineResult> {
-  try {
-    const catalogHits = isMallGatewayConfigured()
-      ? await searchCatalogImageCandidates(item.title ?? "", limit)
-      : [];
+  if (
+    isAlreadySourcedProduct(
+      context?.binding,
+      shopName,
+      item.thirdPlatformItemId
+    )
+  ) {
+    return publishSourcedSkipResult();
+  }
 
+  try {
     const res = await api.imageSearch(shopName, item.thirdPlatformItemId, limit);
 
     const enriched1688 = await Promise.all(
@@ -173,26 +178,24 @@ export async function runImageSearchPipeline(
       )
     );
 
-    const merged = dedupeCandidates([...catalogHits, ...enriched1688]);
-    const titleScores = await scoreTitleCandidates(item, merged);
-    const imageScores = await scoreImageCandidates(item.primaryImageUrl, merged);
-    const ranked = rankCandidatesWithImageGate(merged, titleScores, imageScores);
+    const titleScores = await scoreTitleCandidates(item, enriched1688);
+    const imageScores = await scoreImageCandidates(
+      item.primaryImageUrl,
+      enriched1688
+    );
+    const ranked = rankCandidatesWithImageGate(
+      enriched1688,
+      titleScores,
+      imageScores
+    );
     const topScore = resolveTopAutoBindScore(ranked, titleScores, imageScores);
 
     return {
-      result: {
-        ...res,
-        items: ranked,
-        appliedQuery:
-          catalogHits.length > 0
-            ? [res.appliedQuery, "商品库优先"].filter(Boolean).join(" · ")
-            : res.appliedQuery,
-      },
+      result: { ...res, items: ranked },
       matchScores: titleScores,
       imageScores,
       rankedItems: ranked,
       topScore,
-      catalogHitCount: catalogHits.length,
       error: null,
     };
   } catch (err) {

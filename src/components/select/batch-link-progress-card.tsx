@@ -1,6 +1,9 @@
 "use client";
 
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { formatBatchCardQueueLine } from "@/lib/batch-link/confidence-display";
 import {
   formatBatchLinkSummary,
   type BatchLinkProgress,
@@ -18,6 +21,8 @@ export function BatchLinkProgressCard({
   unboundMatchJob?: MatchJobProgress | null;
   className?: string;
 }) {
+  const [queueExpanded, setQueueExpanded] = useState(false);
+
   const batchActive = batchLinkProgress?.active ?? false;
   const batchDone = batchLinkProgress?.done ?? false;
   const batchTotal = batchLinkProgress?.total ?? 0;
@@ -54,6 +59,10 @@ export function BatchLinkProgressCard({
     batchLinkSessionActive ||
     (unboundMatchJob != null && (queueActive || queueDone));
 
+  const sessionOrder = batchLinkProgress?.sessionOrder ?? [];
+  const cardStates = batchLinkProgress?.cardStates ?? {};
+  const hasQueueDetails = sessionOrder.length > 0;
+
   if (!show) return null;
 
   return (
@@ -84,6 +93,23 @@ export function BatchLinkProgressCard({
         >
           {queueActive ? "批量执行中" : "完成"}
         </span>
+        {hasQueueDetails ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-6 px-1.5 text-[10px] text-slate-600"
+            onClick={() => setQueueExpanded((v) => !v)}
+            aria-expanded={queueExpanded}
+            aria-label={queueExpanded ? "收起队列明细" : "展开队列明细"}
+          >
+            {queueExpanded ? (
+              <ChevronUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        ) : null}
       </div>
 
       <p className="mt-0.5 text-[10px] text-slate-500">
@@ -128,7 +154,40 @@ export function BatchLinkProgressCard({
         </div>
       ) : null}
 
-      {(batchLinkProgress?.recent.length ?? 0) > 0 ? (
+      {queueExpanded && hasQueueDetails ? (
+        <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto border-t border-slate-200/80 pt-2">
+          {sessionOrder.map((productId) => {
+            const drive = cardStates[productId];
+            if (!drive) return null;
+            const title =
+              drive.productTitle?.trim() ||
+              `商品 ${productId.slice(-6)}`;
+            const line = formatBatchCardQueueLine(drive);
+            const isCurrent = batchLinkProgress?.currentProductId === productId;
+            return (
+              <li
+                key={productId}
+                className={cn(
+                  "rounded px-1.5 py-1 text-[10px] leading-snug",
+                  isCurrent
+                    ? "bg-sky-100/80 text-sky-900"
+                    : drive.state === "failed"
+                      ? "text-red-700"
+                      : drive.state === "needs_review"
+                        ? "text-amber-800"
+                        : drive.state === "done"
+                          ? "text-emerald-700"
+                          : "text-slate-600"
+                )}
+              >
+                <span className="font-medium">{title}</span>
+                <span className="text-slate-400"> · </span>
+                <span>{line}</span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (batchLinkProgress?.recent.length ?? 0) > 0 ? (
         <ul className="mt-1.5 space-y-0.5 text-[10px] leading-snug text-slate-600">
           {batchLinkProgress!.recent.slice(0, 3).map((line) => (
             <li key={line} className="truncate">

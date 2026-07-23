@@ -19,6 +19,8 @@ import { shippingOptionLabel, speedPreferenceToShippingOption } from "@/lib/logi
 
 export type LogisticsFilterMode =
   | "all"
+  | "pending"
+  | "needs_attention"
   | "pending_quote"
   | "pending_confirm"
   | "sku_unlinked"
@@ -30,19 +32,19 @@ export function normalizeLogisticsFilterMode(
   mode: string | null | undefined
 ): LogisticsFilterMode {
   switch (mode) {
+    case "pending":
     case "pending_quote":
     case "ready":
-      return "pending_quote";
     case "pending_confirm":
+      return "pending";
+    case "needs_attention":
     case "issues":
-      return "pending_confirm";
     case "sku_unlinked":
     case "unidentified":
-      return "sku_unlinked";
-    case "quoted":
-      return "quoted";
     case "exceptions":
-      return "exceptions";
+      return "needs_attention";
+    case "quoted":
+      return "all";
     default:
       return "all";
   }
@@ -199,6 +201,53 @@ export interface LogisticsPlanMetrics {
   completionPercent: number;
 }
 
+export function pendingWorkCount(metrics: LogisticsPlanMetrics): number {
+  return metrics.pendingQuoteCount + metrics.pendingConfirmCount;
+}
+
+export function needsAttentionCount(metrics: LogisticsPlanMetrics): number {
+  return metrics.exceptionCount + metrics.skuUnlinkedCount;
+}
+
+/** Visible filter tabs — omit empty buckets (always keep「全部」). */
+export function buildLogisticsFilterTabs(
+  metrics: LogisticsPlanMetrics
+): { id: LogisticsFilterMode; label: string; count?: number }[] {
+  const tabs: { id: LogisticsFilterMode; label: string; count?: number }[] = [
+    { id: "all", label: "全部", count: metrics.variantCount },
+  ];
+  const pending = pendingWorkCount(metrics);
+  if (pending > 0) {
+    tabs.push({ id: "pending", label: "待处理", count: pending });
+  }
+  const attention = needsAttentionCount(metrics);
+  if (attention > 0) {
+    tabs.push({ id: "needs_attention", label: "需关注", count: attention });
+  }
+  return tabs;
+}
+
+/** Keep filter valid when counts drop (e.g. after auto-accept). */
+export function coerceLogisticsFilterMode(
+  mode: LogisticsFilterMode,
+  metrics: LogisticsPlanMetrics
+): LogisticsFilterMode {
+  const resolved = normalizeLogisticsFilterMode(mode);
+  const available = new Set(buildLogisticsFilterTabs(metrics).map((t) => t.id));
+  if (available.has(resolved)) return resolved;
+  return "all";
+}
+
+export function logisticsFilterExpandsProducts(mode: LogisticsFilterMode): boolean {
+  switch (normalizeLogisticsFilterMode(mode)) {
+    case "pending":
+    case "needs_attention":
+      return true;
+    default:
+      return false;
+  }
+}
+
 export type VariantCardTone = "auto" | "review" | "unidentified";
 
 const PACKAGING_SUGGESTION: Record<PackagingType, string> = {
@@ -322,6 +371,15 @@ export function variantMatchesFilter(
   const hasQuote = variantHasQuoteLine(variant, quoteResult);
 
   switch (mode) {
+    case "pending":
+      if (variant.decisionStatus === "pending_sku") return false;
+      if (confirmed) return false;
+      if (isVariantException(variant)) return false;
+      return true;
+    case "needs_attention":
+      if (variant.decisionStatus === "pending_sku") return true;
+      if (confirmed) return false;
+      return isVariantException(variant);
     case "sku_unlinked":
       return variant.decisionStatus === "pending_sku";
     case "pending_quote":
@@ -386,12 +444,8 @@ export function shouldDefaultExpand(
   profile: ProductLogisticsProfile,
   mode: LogisticsFilterMode
 ): boolean {
-  if (
-    mode === "pending_confirm" ||
-    mode === "sku_unlinked" ||
-    mode === "pending_quote" ||
-    mode === "exceptions"
-  ) {
+  const resolved = normalizeLogisticsFilterMode(mode);
+  if (resolved === "pending" || resolved === "needs_attention") {
     return true;
   }
   if (mode === "all") return hasIssues(profile);
@@ -442,7 +496,17 @@ export function shouldShowManualAcceptAction(
   if (decision.decisionStatus === "pending_sku") return false;
 
   const hasQuote = variantHasQuoteLine(decision, opts?.quoteResult);
-  if (hasQuote) return true;
+  if (hasQuote) {
+    if (
+      decision.decisionStatus === "ready_for_quote" &&
+      !isVariantException(decision) &&
+      opts?.quoteResult?.recommendedLine &&
+      opts.quoteResult.quoteStatus !== "INGESTING"
+    ) {
+      return false;
+    }
+    return true;
+  }
 
   if (
     decision.decisionStatus === "ready_for_quote" &&
@@ -973,9 +1037,7 @@ export function buildQuoteColumn(
       if (quoteStatus === "INGESTING") {
         return {
           primary: "商品入库中",
-          secondary:
-            quoteResult?.errorMessage?.trim() ||
-            "已登记商品库，同步完成后可拉取物流报价",
+          secondary: "同步完成后可重试运费预估",
         };
       }
       if (quoteStatus === "FAILED") {

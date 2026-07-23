@@ -37,7 +37,10 @@ import {
   type ProductShellMeta,
 } from "@/lib/logistics/product-shell";
 import { Button } from "@/components/ui/button";
+import { CatalogIngestingBadge } from "@/components/ui/catalog-ingesting-badge";
 import { Select } from "@/components/ui/select";
+import { useCatalogIngestStatus } from "@/hooks/use-catalog-ingest-status";
+import { isProductQuoteIngesting } from "@/lib/tangbuy/catalog-ingest-display";
 import { cn } from "@/lib/utils";
 import type {
   LogisticsTemplate,
@@ -216,6 +219,7 @@ function FulfillmentSkuRow({
       className={cn(
         "border-t border-hairline/80 px-4 py-3 first:border-t-0",
         rowStatus === "failed" && "bg-red-50/30",
+        rowStatus === "ingesting" && "bg-sky-50/25",
         rowStatus === "pending_review" && "bg-amber-50/20"
       )}
     >
@@ -238,11 +242,20 @@ function FulfillmentSkuRow({
                 rowStatus === "pending_review" && "bg-amber-100 text-amber-800",
                 rowStatus === "pending_sku" && "bg-surface-muted text-ink-subtle",
                 rowStatus === "failed" && "bg-red-50 text-red-700",
+                rowStatus === "ingesting" && "bg-sky-50 text-sky-800",
                 rowStatus === "processing" && "bg-sky-50 text-sky-800"
               )}
             >
               {SKU_ROW_STATUS_LABELS[rowStatus]}
             </span>
+            {rowStatus === "confirmed" ? (
+              <span
+                className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600"
+                title="物流确认已暂存于本应用，同步步骤才会写入履约侧"
+              >
+                暂存本应用
+              </span>
+            ) : null}
             {(() => {
               const postal = formatPostalLimitBadge(mergedDecision);
               return (
@@ -373,6 +386,7 @@ export function LogisticsProductGroup({
   quotingProduct = false,
   selectedLineByVariant,
   onSelectLine,
+  shopName = "",
 }: {
   profile: ProductLogisticsProfile;
   quoteResults: Map<string, LogisticsEstimateResult>;
@@ -394,6 +408,7 @@ export function LogisticsProductGroup({
   onCorrect: (type: LogisticsTypeCode) => void;
   onMeasureOverride?: (variantId: string, next: MeasureOverride) => void;
   quotingProduct?: boolean;
+  shopName?: string;
   selectedLineByVariant?: Map<string, string>;
   onSelectLine?: (variantId: string, lineKey: string) => void;
   renderMeasureEditPanel: (
@@ -404,6 +419,20 @@ export function LogisticsProductGroup({
   ) => ReactNode;
 }) {
   const variants = profile.variantDecisions ?? [];
+  const identityIngesting = useCatalogIngestStatus(
+    shopName,
+    profile.thirdPlatformItemId,
+    null,
+    {
+      poll: true,
+      titleHint: profile.title,
+    }
+  );
+  const quoteIngesting = useMemo(
+    () => isProductQuoteIngesting(variants, quoteResults),
+    [variants, quoteResults]
+  );
+  const catalogIngesting = identityIngesting || quoteIngesting;
   const busy = correctingId === profile.thirdPlatformItemId;
   const productQuoteLabel = useMemo(
     () => productQuoteActionLabel(variants, quoteResults, pipelineActive),
@@ -482,6 +511,7 @@ export function LogisticsProductGroup({
               >
                 {PRODUCT_SHELL_STATUS_LABELS[meta.status]}
               </span>
+              {catalogIngesting ? <CatalogIngestingBadge /> : null}
               {pipelineHighlighted || quotingProduct ? (
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-600" />
               ) : null}

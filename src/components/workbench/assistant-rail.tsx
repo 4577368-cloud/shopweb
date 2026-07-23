@@ -101,6 +101,8 @@ interface CopilotCardProps {
   content: AiPanelContent;
   /** Header label; defaults to "AI 助手". Pages can specialize it, e.g. "AI 运营顾问". */
   heading?: string;
+  /** Tighter layout + primary CTA for onboarding / authorize rail. */
+  variant?: "default" | "onboarding";
   onAlertClick?: (targetId: string) => void;
   onNextAction?: (action: string) => void;
   highlightedAlertId?: string;
@@ -124,6 +126,7 @@ interface CopilotCardProps {
 export function CopilotCard({
   content,
   heading = "AI 助手",
+  variant = "default",
   onAlertClick,
   onNextAction,
   highlightedAlertId,
@@ -134,6 +137,9 @@ export function CopilotCard({
   const next = content.nextAction;
   const backendHealth = useBackendHealth();
   const backendOk = backendHealth === "ok";
+  const onboarding = variant === "onboarding";
+  const metrics = content.metrics ?? [];
+  const showBullets = content.bullets.length > 0 && metrics.length === 0;
   return (
     <section
       data-copilot-card
@@ -163,15 +169,49 @@ export function CopilotCard({
         </span>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3.5 py-2.5">
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto",
+          onboarding ? "space-y-3 px-3 py-3" : "space-y-2.5 px-3.5 py-2.5"
+        )}
+      >
         {content.title ? (
-          <p className="text-[11px] font-medium text-ink-subtle">{content.title}</p>
+          <p
+            className={cn(
+              onboarding
+                ? "text-sm font-semibold tracking-tight text-ink"
+                : "text-[11px] font-medium text-ink-subtle"
+            )}
+          >
+            {content.title}
+          </p>
         ) : null}
         {content.summary ? (
-          <p className="text-xs leading-5 text-ink-muted">{content.summary}</p>
+          <p
+            className={cn(
+              onboarding
+                ? "text-xs leading-5 text-ink-muted"
+                : "text-xs leading-5 text-ink-muted"
+            )}
+          >
+            {content.summary}
+          </p>
         ) : null}
 
-        {content.bullets.length > 0 ? (
+        {metrics.length > 0 ? (
+          <div className="grid grid-cols-2 gap-2 rounded-[var(--radius-control)] border border-hairline/80 bg-surface-muted/50 p-2.5">
+            {metrics.map((item) => (
+              <div key={item.label} className="min-w-0">
+                <p className="text-[10px] text-ink-subtle">{item.label}</p>
+                <p className="mt-0.5 truncate text-xs font-medium text-ink">
+                  {item.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {showBullets ? (
           <div>
             <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-ink-subtle">
               <Lightbulb className="h-3 w-3" />
@@ -223,32 +263,43 @@ export function CopilotCard({
         ) : null}
 
         {next ? (
-          <div className="rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-2.5 py-2.5">
-            <p className="text-[11px] font-medium text-ink-subtle">下一步</p>
-            <p className="mt-1 text-xs leading-5 text-ink-muted">
+          <div
+            className={cn(
+              "rounded-[var(--radius-control)] border px-2.5 py-2.5",
+              onboarding
+                ? "border-brand/20 bg-brand-soft/40"
+                : "border-hairline bg-surface-muted"
+            )}
+          >
+            <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
+              下一步
+            </p>
+            <p className="mt-1 text-xs leading-5 text-ink">
               {next.disabled && next.disabledReason
                 ? next.disabledReason
-                : next.description ??
-                  `执行「${next.label}」继续当前步骤。`}
+                : next.description ?? `前往「${next.label}」继续。`}
             </p>
             <div className="mt-2">
               {next.href && !next.disabled ? (
                 <Link href={next.href} className="block">
-                  <Button className="w-full" variant="secondary">
+                  <Button
+                    className="h-8 w-full text-xs"
+                    variant={onboarding ? "primary" : "secondary"}
+                  >
                     {next.label}
                   </Button>
                 </Link>
               ) : next.action && onNextAction ? (
                 <Button
-                  className="w-full"
-                  variant="secondary"
+                  className="h-8 w-full text-xs"
+                  variant={onboarding ? "primary" : "secondary"}
                   disabled={next.disabled}
                   onClick={() => onNextAction(next.action!)}
                 >
                   {next.label}
                 </Button>
               ) : (
-                <Button className="w-full" variant="secondary" disabled>
+                <Button className="h-8 w-full text-xs" variant="secondary" disabled>
                   {next.label}
                 </Button>
               )}
@@ -258,7 +309,11 @@ export function CopilotCard({
       </div>
 
       {suggestions && suggestions.length > 0 ? (
-        <GuidedComposer key={suggestionsKey} suggestions={suggestions} />
+        <GuidedComposer
+          key={suggestionsKey}
+          suggestions={suggestions}
+          variant={variant}
+        />
       ) : (
         /* Visual composer stub — not wired to any chat backend on pages without guided input. */
         <div className="mt-auto shrink-0 border-t border-hairline p-2.5">
@@ -282,29 +337,39 @@ export function CopilotCard({
  * Phase A guided composer: suggestion chips + a revealed fixed answer. Not a free-text LLM — the
  * disabled input signals that open chat is coming later. Remounted (via key) to reset on state change.
  */
-function GuidedComposer({ suggestions }: { suggestions: AssistantSuggestion[] }) {
+function GuidedComposer({
+  suggestions,
+  variant = "default",
+}: {
+  suggestions: AssistantSuggestion[];
+  variant?: "default" | "onboarding";
+}) {
   const [active, setActive] = useState<AssistantSuggestion | null>(null);
+  const onboarding = variant === "onboarding";
 
   return (
-    <div className="mt-auto shrink-0 space-y-2 border-t border-hairline p-2.5">
-      {active ? (
-        <div className="flex gap-2 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft px-2.5 py-2">
-          <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-strong" />
-          <p className="text-[11px] leading-5 text-ink-muted">{active.a}</p>
-        </div>
-      ) : null}
+    <div
+      className={cn(
+        "mt-auto shrink-0 border-t border-hairline",
+        onboarding ? "space-y-2 p-3" : "space-y-2 p-2.5"
+      )}
+    >
+      <p className="text-[10px] font-medium text-ink-subtle">常见问题</p>
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className={cn("flex gap-1.5", onboarding ? "flex-col" : "flex-wrap")}>
         {suggestions.map((s) => (
           <button
             key={s.id}
             type="button"
-            onClick={() => setActive(s)}
+            onClick={() => setActive((cur) => (cur?.id === s.id ? null : s))}
             className={cn(
-              "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+              "rounded-[var(--radius-control)] border text-left transition-colors",
+              onboarding
+                ? "w-full px-2.5 py-1.5 text-xs leading-snug"
+                : "rounded-full px-2.5 py-1 text-[11px]",
               active?.id === s.id
-                ? "border-brand bg-surface text-ink"
-                : "border-hairline bg-surface text-ink-muted hover:border-brand hover:text-ink"
+                ? "border-brand bg-brand-soft text-ink"
+                : "border-hairline bg-surface text-ink-muted hover:border-brand/40 hover:text-ink"
             )}
           >
             {s.q}
@@ -312,13 +377,20 @@ function GuidedComposer({ suggestions }: { suggestions: AssistantSuggestion[] })
         ))}
       </div>
 
+      {active ? (
+        <div className="flex gap-2 rounded-[var(--radius-control)] border border-emerald-100 bg-brand-soft/60 px-2.5 py-2">
+          <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-strong" />
+          <p className="text-xs leading-5 text-ink-muted">{active.a}</p>
+        </div>
+      ) : null}
+
       <div className="flex items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-2.5 py-1.5">
         <input
           disabled
-          placeholder="点击上方问题获取解答 · 自由对话即将上线"
-          className="min-w-0 flex-1 bg-transparent text-xs text-ink placeholder:text-ink-subtle focus:outline-none"
+          placeholder="点选上方问题查看解答"
+          className="min-w-0 flex-1 bg-transparent text-[11px] text-ink placeholder:text-ink-subtle focus:outline-none"
         />
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand/40 text-white">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand text-white">
           <Send className="h-3 w-3" />
         </span>
       </div>

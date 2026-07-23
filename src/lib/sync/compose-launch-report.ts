@@ -73,14 +73,14 @@ export function composeLaunchReport(summary: LaunchSummary): string {
       logParts.push(`已拉取报价 ${stats.logisticsQuoted}`);
     }
     if (stats.logisticsConfirmed > 0) {
-      logParts.push(`已确认线路 ${stats.logisticsConfirmed}`);
+      logParts.push(`本应用暂存确认 ${stats.logisticsConfirmed}`);
     }
     const remain = stats.logisticsTotal - stats.logisticsConfirmed;
     if (remain > 0) {
       logParts.push(`尚有 ${remain} 个待确认或待报价`);
     }
     paragraphs.push(
-      `${logParts.join("，")}。目标市场 ${logistics.markets}，策略为 ${logistics.speed} · ${logistics.packaging}。`
+      `${logParts.join("，")}。目标市场 ${logistics.markets}，策略为 ${logistics.speed} · ${logistics.packaging}。物流确认记录尚未同步履约系统。`
     );
   } else {
     paragraphs.push(
@@ -107,7 +107,7 @@ export function composeLaunchReport(summary: LaunchSummary): string {
     );
   } else {
     paragraphs.push(
-      `待关注事项：未发现阻塞开业的异常项。店铺商品、SKU 与物流配置已具备接单履约的基础条件。`
+      `待关注事项：未发现阻塞开业的异常项。店铺商品与 SKU 映射已具备基础条件；物流确认暂存于本应用，尚未同步履约系统。`
     );
   }
 

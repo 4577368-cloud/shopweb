@@ -34,6 +34,7 @@ import type {
 } from "@/lib/catalog-sourcing-types";
 import { resolvePublishSnapshot } from "@/lib/tangbuy-mall-gateway";
 import { markCatalogPublished } from "@/lib/batch-link/publish-source";
+import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
 import type { CatalogRecommendation, PricingTemplate } from "@/lib/types";
 
 const PAGE_SIZE = 30;
@@ -76,6 +77,8 @@ export function CatalogPublishPanel({
   filterPresetRequest = null,
   onFilterPresetConsumed,
   onBindingLinked,
+  /** Fired after a catalog item is published to Shopify (for mirror refresh + reveal animation). */
+  onPublished,
 }: {
   onActivity?: () => void;
   recommendedCategories?: RecommendedCategory[];
@@ -86,6 +89,7 @@ export function CatalogPublishPanel({
   onFilterPresetConsumed?: () => void;
   /** Called after catalog item is linked to an existing shop product. */
   onBindingLinked?: (thirdPlatformItemId: string) => void;
+  onPublished?: (thirdPlatformItemId: string) => void;
 }) {
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
@@ -366,7 +370,10 @@ export function CatalogPublishPanel({
       onActivity?.();
       if (result.publishStatus === "PUBLISHED") {
         if (result.shopifyProductId?.trim()) {
-          markCatalogPublished(shopName, result.shopifyProductId.trim());
+          const productId = result.shopifyProductId.trim();
+          markCatalogPublished(shopName, productId);
+          queuePublishReveal(shopName, productId, item);
+          onPublished?.(productId);
         }
         showToast("上架成功");
       } else if (result.publishStatus === "PUBLISHING") {

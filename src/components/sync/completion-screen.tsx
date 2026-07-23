@@ -44,7 +44,7 @@ export function CompletionScreen({
 
       <p className="mt-4 text-sm font-medium text-ink">恭喜完成开店准备！</p>
       <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
-        商品已在 Shopify 就绪，SKU 与物流方案已为履约准备完成。
+        商品已在 Shopify 就绪，SKU 映射已写入 Tangbuy；物流确认暂存于本应用，尚未同步履约系统。
       </p>
       {shopDomain ? (
         <p className="mt-1 text-xs text-ink-subtle">{shopDomain}</p>

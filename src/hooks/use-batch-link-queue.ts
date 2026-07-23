@@ -2,6 +2,8 @@
 
 import { useCallback, useRef, useState } from "react";
 import { classifyMatchConfidence } from "@/lib/batch-link/confidence";
+import { ackAutoLinkedBinding } from "@/lib/batch-link/auto-ack-binding";
+import { resolveCandidateConfidence } from "@/lib/batch-link/candidate-confidence";
 import { confirmCandidateBinding } from "@/lib/batch-link/confirm-binding";
 import {
   isOfferNotFoundError,
@@ -14,7 +16,7 @@ import {
   type BatchLinkCardState,
   type BatchLinkProgress,
 } from "@/lib/batch-link/types";
-import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
+import type { ImageBindingView, ImageSearchProduct, ShopMirrorProduct } from "@/lib/types";
 import type { BatchLinkSource } from "@/lib/batch-link/types";
 
 const CANDIDATES_READY_MS = 650;
@@ -29,6 +31,33 @@ function sleep(ms: number) {
 
 function pushRecent(recent: string[], line: string, max = 5): string[] {
   return [line, ...recent].slice(0, max);
+}
+
+function confidenceDrivePatch(
+  pipeline: {
+    rankedItems: ImageSearchProduct[];
+    topScore: number | null;
+    matchScores: Record<string, number>;
+    imageScores: Record<string, number | null>;
+  }
+): Pick<
+  BatchLinkCardDrive,
+  "confidenceTier" | "titleScore" | "imageScore" | "effectiveScore"
+> {
+  const top = pipeline.rankedItems[0];
+  const conf = top
+    ? resolveCandidateConfidence(
+        top,
+        pipeline.matchScores,
+        pipeline.imageScores
+      )
+    : null;
+  return {
+    confidenceTier: conf?.tier ?? classifyMatchConfidence(pipeline.topScore),
+    titleScore: conf?.titleScore ?? null,
+    imageScore: conf?.imageScore ?? null,
+    effectiveScore: conf?.effectiveScore ?? pipeline.topScore,
+  };
 }
 
 export function useBatchLinkQueue({
@@ -88,13 +117,15 @@ export function useBatchLinkQueue({
 
       const initialStates: Record<string, BatchLinkCardDrive> = {};
       for (const p of products) {
+        const title = p.title ?? p.thirdPlatformItemId;
         if (!p.primaryImageUrl) {
           initialStates[p.thirdPlatformItemId] = {
             state: "failed",
+            productTitle: title,
             errorMessage: "无主图，无法图搜",
           };
         } else {
-          initialStates[p.thirdPlatformItemId] = { state: "queued" };
+          initialStates[p.thirdPlatformItemId] = { state: "queued", productTitle: title };
         }
       }
 
@@ -169,6 +200,7 @@ export function useBatchLinkQueue({
         await sleep(SCROLL_SETTLE_MS);
 
         setCardState(id, "searching", {
+          productTitle: title,
           highlightTopCandidate: false,
           selectButtonPhase: "idle",
           doneFlash: false,
@@ -177,8 +209,13 @@ export function useBatchLinkQueue({
         const pipeline = await runImageSearchPipeline(shopName, product);
         if (runId !== runIdRef.current) break;
 
+        const confidencePatch = pipeline.rankedItems.length
+          ? confidenceDrivePatch(pipeline)
+          : {};
+
         if (pipeline.error || !pipeline.result || pipeline.rankedItems.length === 0) {
           setCardState(id, "failed", {
+            productTitle: title,
             errorMessage: pipeline.error ?? "未找到可靠候选",
             searchResult: null,
             matchScores: {},
@@ -189,19 +226,23 @@ export function useBatchLinkQueue({
         }
 
         const tier = classifyMatchConfidence(pipeline.topScore);
-        if (tier === "low" || tier === "none") {
+        if (tier === "none") {
           setCardState(id, "failed", {
+            productTitle: title,
+            ...confidencePatch,
             searchResult: pipeline.result,
             matchScores: pipeline.matchScores,
             imageScores: pipeline.imageScores,
             highlightTopCandidate: true,
-            errorMessage: "标题或图像未达自动关联门槛，请人工确认",
+            errorMessage: "标题或图像未达关联门槛，请人工确认",
           });
           bumpProcessed(product, "failed", `${title}：标题或图像未达门槛`);
           continue;
         }
 
         setCardState(id, "candidates_ready", {
+          productTitle: title,
+          ...confidencePatch,
           searchResult: pipeline.result,
           matchScores: pipeline.matchScores,
           imageScores: pipeline.imageScores,
@@ -210,8 +251,10 @@ export function useBatchLinkQueue({
         await sleep(CANDIDATES_READY_MS);
         if (runId !== runIdRef.current) break;
 
-        if (tier === "medium") {
+        if (tier === "medium" || tier === "low") {
           setCardState(id, "needs_review", {
+            productTitle: title,
+            ...confidencePatch,
             searchResult: pipeline.result,
             matchScores: pipeline.matchScores,
             imageScores: pipeline.imageScores,
@@ -220,7 +263,7 @@ export function useBatchLinkQueue({
           bumpProcessed(
             product,
             "needs_review",
-            `${title}：已展开候选，待人工确认`
+            `${title}：${tier === "low" ? "低匹配" : "中匹配"}，待确认货源`
           );
           continue;
         }
@@ -228,6 +271,8 @@ export function useBatchLinkQueue({
         // High confidence — auto select top candidate (same as「选用」).
         const candidatesToTry = pipeline.rankedItems.slice(0, AUTO_BIND_CANDIDATE_LIMIT);
         setCardState(id, "auto_selecting", {
+          productTitle: title,
+          ...confidencePatch,
           searchResult: pipeline.result,
           matchScores: pipeline.matchScores,
           imageScores: pipeline.imageScores,
@@ -238,6 +283,8 @@ export function useBatchLinkQueue({
         if (runId !== runIdRef.current) break;
 
         setCardState(id, "binding", {
+          productTitle: title,
+          ...confidencePatch,
           searchResult: pipeline.result,
           matchScores: pipeline.matchScores,
           imageScores: pipeline.imageScores,
@@ -257,12 +304,16 @@ export function useBatchLinkQueue({
               pipeline.result,
               {
                 auto: true,
+                allowPoolIngest: true,
                 imageScores: pipeline.imageScores,
                 titleScores: pipeline.matchScores,
               }
             );
-            onBound(id, view);
+            const acked = await ackAutoLinkedBinding(shopName, id, view);
+            onBound(id, acked);
             setCardState(id, "done", {
+              productTitle: title,
+              ...confidencePatch,
               searchResult: pipeline.result,
               matchScores: pipeline.matchScores,
               imageScores: pipeline.imageScores,
@@ -272,7 +323,7 @@ export function useBatchLinkQueue({
             });
             const suffix =
               i > 0 ? `（已跳过 ${i} 个失效货源）` : "";
-            bumpProcessed(product, "linked", `${title}：已自动关联${suffix}`);
+            bumpProcessed(product, "linked", `${title}：已自动关联并确认${suffix}`);
             await sleep(DONE_FLASH_MS);
             patchCard(id, { doneFlash: false });
             bound = true;
@@ -286,6 +337,8 @@ export function useBatchLinkQueue({
         if (!bound) {
           const msg = mapImageMatchConfirmError(lastErr, "绑定失败，请手动选用");
           setCardState(id, "failed", {
+            productTitle: title,
+            ...confidencePatch,
             searchResult: pipeline.result,
             matchScores: pipeline.matchScores,
             imageScores: pipeline.imageScores,

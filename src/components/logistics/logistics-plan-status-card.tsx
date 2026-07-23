@@ -5,8 +5,11 @@ import { Select } from "@/components/ui/select";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { cn } from "@/lib/utils";
 import {
+  buildLogisticsFilterTabs,
   collectPostalLimitFilterOptions,
   computeLogisticsPlanMetrics,
+  pendingWorkCount,
+  needsAttentionCount,
   type LogisticsFilterMode,
   type PostalLimitFilter,
 } from "@/lib/logistics/display";
@@ -67,16 +70,7 @@ function ProgressRing({
   );
 }
 
-const FILTER_TABS = (
-  metrics: ReturnType<typeof computeLogisticsPlanMetrics>
-): { id: LogisticsFilterMode; label: string; count?: number }[] => [
-  { id: "all", label: "全部", count: metrics.variantCount },
-  { id: "pending_quote", label: "待报价", count: metrics.pendingQuoteCount },
-  { id: "pending_confirm", label: "待确认", count: metrics.pendingConfirmCount },
-  { id: "exceptions", label: "异常", count: metrics.exceptionCount },
-  { id: "sku_unlinked", label: "SKU未关联", count: metrics.skuUnlinkedCount },
-  { id: "quoted", label: "已报价", count: metrics.quotedCount },
-];
+const FILTER_TABS = buildLogisticsFilterTabs;
 
 function StrategyCard({
   activeTemplate,
@@ -126,14 +120,13 @@ function PlanStatusTip({
     metrics.pendingQuoteCount > 0
   ) {
     const parts: string[] = [];
-    if (metrics.pendingQuoteCount > 0) {
-      parts.push(`待报价 ${metrics.pendingQuoteCount} 个`);
+    const pending = pendingWorkCount(metrics);
+    if (pending > 0) {
+      parts.push(`待处理 ${pending} 个`);
     }
-    if (metrics.pendingConfirmCount > 0) {
-      parts.push(`待确认 ${metrics.pendingConfirmCount} 个`);
-    }
-    if (metrics.skuUnlinkedCount > 0) {
-      parts.push(`SKU未关联 ${metrics.skuUnlinkedCount} 个`);
+    const attention = needsAttentionCount(metrics);
+    if (attention > 0) {
+      parts.push(`需关注 ${attention} 个`);
     }
     return (
       <p className="min-w-0 flex-1 text-[11px] leading-snug text-amber-900">
@@ -227,19 +220,22 @@ export function LogisticsPlanStatusCard({
             <ProgressRing percent={ringPercent} />
 
             <div
-              className="grid min-h-[3.75rem] flex-1 grid-cols-2 divide-x divide-hairline sm:grid-cols-4"
+              className="grid min-h-[3.75rem] flex-1 grid-cols-3 divide-x divide-hairline"
               aria-label="物流报价统计"
             >
-              <StatCell label="待报价" value={metrics.pendingQuoteCount} />
               <StatCell
-                label="待确认"
-                value={metrics.pendingConfirmCount}
-                valueClassName="text-amber-600"
+                label="待处理"
+                value={pendingWorkCount(metrics)}
+                valueClassName={
+                  pendingWorkCount(metrics) > 0 ? "text-amber-600" : undefined
+                }
               />
               <StatCell
-                label="SKU未关联"
-                value={metrics.skuUnlinkedCount}
-                valueClassName="text-ink-subtle"
+                label="需关注"
+                value={needsAttentionCount(metrics)}
+                valueClassName={
+                  needsAttentionCount(metrics) > 0 ? "text-violet-700" : undefined
+                }
               />
               <StatCell
                 label="已报价"

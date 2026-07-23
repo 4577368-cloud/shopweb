@@ -6,6 +6,7 @@ import {
 } from "@/lib/catalog-product-resolve";
 import {
   buildEstimateGoodsBlockMessage,
+  buildGatewayGoodsNotReadyMessage,
   classifyGoodsBlockFromIdentity,
   type EstimateGoodsBlockReason,
   isPoolIngestPending,
@@ -44,6 +45,35 @@ export interface UnresolvedEstimateGoodsId {
 }
 
 export type EstimateGoodsIdResult = ResolvedEstimateGoodsId | UnresolvedEstimateGoodsId;
+
+function isEstimateReadyGoodsId(
+  goodsId: string,
+  identity?: ProductSourceIdentity | null
+): boolean {
+  const id = goodsId.trim();
+  if (!isInternalGoodsId(id) || isOfferId1688(id)) return false;
+  if (
+    identity &&
+    isPoolIngestPending(identity.poolIngestStatus) &&
+    identity.internalGoodsId?.trim() !== id
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function asUnresolvedIngesting(
+  variant: EstimateGoodsIdInput,
+  offerId?: string | null,
+  identity?: ProductSourceIdentity
+): UnresolvedEstimateGoodsId {
+  return {
+    errorMessage: buildGatewayGoodsNotReadyMessage(offerId),
+    offerId1688: offerId ?? undefined,
+    identity,
+    blockReason: "ingesting",
+  };
+}
 
 function extractOfferIdFromUrl(url: string | null | undefined): string | null {
   const raw = url?.trim();
@@ -99,8 +129,12 @@ async function resolveWithPoolIngest(
   await persistIdentity(shopName, input.thirdPlatformItemId ?? undefined, afterPool);
 
   if (afterPool.internalGoodsId?.trim()) {
+    const goodsId = afterPool.internalGoodsId;
+    if (!isEstimateReadyGoodsId(goodsId, afterPool)) {
+      return asUnresolvedIngesting(input, offerId, afterPool);
+    }
     return {
-      goodsId: afterPool.internalGoodsId,
+      goodsId,
       source: "pool_ingest",
       offerId1688: offerId,
       identity: afterPool,
@@ -134,9 +168,17 @@ export async function resolveEstimateGoodsId(
       : null;
 
     if (effective?.internalGoodsId?.trim()) {
+      const goodsId = effective.internalGoodsId;
+      if (!isEstimateReadyGoodsId(goodsId, effective)) {
+        return asUnresolvedIngesting(
+          input,
+          effective.offerId1688 ?? undefined,
+          effective
+        );
+      }
       await persistIdentity(shopName, input.thirdPlatformItemId, effective);
       return {
-        goodsId: effective.internalGoodsId,
+        goodsId,
         source: "stored",
         offerId1688: effective.offerId1688 ?? undefined,
         identity: effective,
@@ -144,7 +186,7 @@ export async function resolveEstimateGoodsId(
     }
 
     const fromStored = resolveEstimateGoodsIdFromIdentity(effective ?? stored, rawGoodsId);
-    if (fromStored) {
+    if (fromStored && isEstimateReadyGoodsId(fromStored, effective ?? stored)) {
       return {
         goodsId: fromStored,
         source: "stored",
@@ -171,12 +213,32 @@ export async function resolveEstimateGoodsId(
     }
   }
 
-  if (isInternalGoodsId(rawGoodsId)) {
-    return {
-      goodsId: rawGoodsId,
-      source: "internal",
-      offerId1688: extractOfferIdFromUrl(input.detailUrl) ?? undefined,
-    };
+  if (isInternalGoodsId(rawGoodsId) && !isOfferId1688(rawGoodsId)) {
+    const cachedIdentity =
+      shopName && input.thirdPlatformItemId?.trim()
+        ? readProductSourceIdentity(shopName, input.thirdPlatformItemId)
+        : null;
+    if (isEstimateReadyGoodsId(rawGoodsId, cachedIdentity)) {
+      return {
+        goodsId: rawGoodsId,
+        source: "internal",
+        offerId1688: extractOfferIdFromUrl(input.detailUrl) ?? undefined,
+        identity: cachedIdentity ?? undefined,
+      };
+    }
+    const offerId =
+      cachedIdentity?.offerId1688?.trim() ||
+      extractOfferIdFromUrl(input.detailUrl) ||
+      null;
+    if (offerId) {
+      return resolveWithPoolIngest(
+        input,
+        shopName,
+        offerId,
+        cachedIdentity ?? { offerId1688: offerId }
+      );
+    }
+    return asUnresolvedIngesting(input, rawGoodsId, cachedIdentity ?? undefined);
   }
 
   const identity = await resolveProductSourceIdentity({
@@ -188,9 +250,17 @@ export async function resolveEstimateGoodsId(
   });
 
   if (identity.internalGoodsId?.trim()) {
+    const goodsId = identity.internalGoodsId;
+    if (!isEstimateReadyGoodsId(goodsId, identity)) {
+      return asUnresolvedIngesting(
+        input,
+        identity.offerId1688 ?? rawGoodsId,
+        identity
+      );
+    }
     await persistIdentity(shopName, input.thirdPlatformItemId ?? undefined, identity);
     return {
-      goodsId: identity.internalGoodsId,
+      goodsId,
       source:
         identity.resolvedVia === "offer_sku_lookup"
           ? "offer_sku_lookup"
@@ -215,7 +285,7 @@ export async function resolveEstimateGoodsId(
   }
 
   return {
-    errorMessage: `无法解析 Tangbuy goodsId：${rawGoodsId}`,
+    errorMessage: buildEstimateGoodsBlockMessage("unresolved_offer", rawGoodsId),
     blockReason: "unresolved_offer",
   };
 }

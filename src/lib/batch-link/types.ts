@@ -1,3 +1,4 @@
+import type { MatchConfidenceTier } from "@/lib/batch-link/confidence";
 import type { ImageSearchResult } from "@/lib/types";
 
 /** Who triggered the shared batch-link pipeline. */
@@ -26,6 +27,7 @@ export type BatchLinkSelectButtonPhase = "idle" | "pressed" | "loading";
 
 export interface BatchLinkCardDrive {
   state: BatchLinkCardState;
+  productTitle?: string;
   searchResult?: ImageSearchResult | null;
   matchScores?: Record<string, number>;
   imageScores?: Record<string, number | null>;
@@ -33,6 +35,10 @@ export interface BatchLinkCardDrive {
   selectButtonPhase?: BatchLinkSelectButtonPhase;
   errorMessage?: string;
   doneFlash?: boolean;
+  confidenceTier?: MatchConfidenceTier;
+  titleScore?: number | null;
+  imageScore?: number | null;
+  effectiveScore?: number | null;
 }
 
 export interface BatchLinkProgress {
@@ -78,7 +84,7 @@ export function formatBatchLinkSummary(progress: BatchLinkProgress): string {
   if (progress.total <= 0) return "暂无可关联的未匹配商品";
   const parts = [`已完成 ${progress.processed}/${progress.total} 个商品图搜关联`];
   const detail: string[] = [];
-  if (progress.linked > 0) detail.push(`${progress.linked} 个进入待确认`);
+  if (progress.linked > 0) detail.push(`${progress.linked} 个已自动关联`);
   const manual = progress.needsReview + progress.failed;
   if (manual > 0) detail.push(`${manual} 个需手动处理`);
   if (detail.length > 0) parts.push(`其中 ${detail.join("，")}`);

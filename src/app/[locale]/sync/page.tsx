@@ -28,6 +28,8 @@ import {
 import { composeLaunchReport } from "@/lib/sync/compose-launch-report";
 import { getLaunchSummary, type LaunchSummary } from "@/lib/sync/launch-summary";
 import { Button } from "@/components/ui/button";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 
 type CeremonyPhase = "loading" | "running" | "holding" | "complete" | "summary";
 
@@ -44,6 +46,8 @@ function readCeremonyCelebrated(): boolean {
 export default function SyncPage() {
   const { shop, isAuthorized, completeSyncCeremony } = useOnboarding();
   const shopName = resolveShopApiName(shop);
+  const t = useT();
+  const locale = useLocale();
   const revisitRef = useRef(readSummaryViewed());
   const [reportInstant, setReportInstant] = useState(
     () => readSummaryViewed() || readCeremonyCelebrated()
@@ -80,7 +84,7 @@ export default function SyncPage() {
       if (cancelled()) return;
       if (isAuthorized && shopName) {
         setSummary(null);
-        setLoadError("无法加载开店准备数据，请稍后重试。");
+        setLoadError(t("sync.loadError"));
         setPhase("loading");
       } else {
         setSummary(getLaunchSummary());
@@ -155,7 +159,7 @@ export default function SyncPage() {
   );
 
   const handleExportReport = () => {
-    window.alert("准备报告导出功能即将上线。");
+    window.alert(t("sync.exportSoon"));
   };
 
   useEffect(() => {
@@ -189,10 +193,10 @@ export default function SyncPage() {
     return (
       <WorkbenchShell sidebar={<StepSidebar />}>
         <WorkbenchPanel
-          title="同步至店铺"
+          title={t("sync.title")}
           breadcrumbs={[
-            { label: "工作台", href: "/" },
-            { label: "同步至店铺" },
+            { label: t("nav.workbench"), href: localePath(locale, "/") },
+            { label: t("sync.title") },
           ]}
           maxWidth={1080}
         >
@@ -206,13 +210,13 @@ export default function SyncPage() {
                 onClick={() => void loadSummary(() => false)}
               >
                 <RefreshCw className="h-3.5 w-3.5" />
-                重试
+                {t("common.retry")}
               </Button>
             </div>
           ) : (
             <div className="flex items-center justify-center gap-2 py-20 text-sm text-ink-muted">
               <Loader2 className="h-4 w-4 animate-spin" />
-              正在汇总开店准备数据…
+              {t("sync.summarizing")}
             </div>
           )}
         </WorkbenchPanel>
@@ -223,15 +227,15 @@ export default function SyncPage() {
   return (
     <WorkbenchShell sidebar={<StepSidebar />}>
         <WorkbenchPanel
-          title="同步至店铺"
+          title={t("sync.title")}
           description={
             phase === "summary"
               ? undefined
-              : "正在回顾各步骤已完成的操作，请稍候…"
+              : t("sync.reviewing")
           }
         breadcrumbs={[
-          { label: "工作台", href: "/" },
-          { label: "同步至店铺" },
+          { label: t("nav.workbench"), href: localePath(locale, "/") },
+          { label: t("sync.title") },
         ]}
         maxWidth={1080}
       >
@@ -250,11 +254,11 @@ export default function SyncPage() {
               ) : (
                 <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-6 text-center text-sm text-ink-muted shadow-card">
                   {summary.stats.productsTotal > 0
-                    ? "店铺商品已加载，但暂无可展示的主图或标题"
-                    : "店铺暂无商品数据"}
-                  <Link href="/products" className="mt-2 block">
+                    ? t("sync.noPreview")
+                    : t("sync.noProducts")}
+                  <Link href={localePath(locale, "/products")} className="mt-2 block">
                     <Button size="sm" variant="secondary">
-                      去选品页
+                      {t("sync.goProducts")}
                     </Button>
                   </Link>
                 </div>

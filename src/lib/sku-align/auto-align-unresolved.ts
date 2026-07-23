@@ -1,6 +1,6 @@
 import { enqueueSkuAlignRun } from "@/lib/sku-align-v1/run-client";
 import {
-  collectNeedsReviewVariantIds,
+  collectAutoConfirmVariantIds,
   countNeedsReview,
   countUnbound,
 } from "@/lib/sku-align/display";
@@ -31,15 +31,14 @@ export async function autoAlignUnboundProducts(
 }
 
 /**
- * 自动确认所有待确认（needs_review）的变体。
- * 高置信度（matchScore≥0.8）已在显示层视为 active_auto，
- * 此函数将后端 PENDING 状态提升为 ACTIVE，保持前后端一致。
+ * 自动确认高置信度变体（显示层 active_auto、后端仍为 PENDING）。
+ * 中低置信 needs_review 项保留人工确认，不在此自动提升。
  */
 export async function autoConfirmPendingVariants(
   shopName: string,
   products: SkuProductOverview[]
 ) {
-  const pendingVariantIds = collectNeedsReviewVariantIds(products);
+  const pendingVariantIds = collectAutoConfirmVariantIds(products);
   if (pendingVariantIds.length === 0) {
     return { confirmedCount: 0 };
   }

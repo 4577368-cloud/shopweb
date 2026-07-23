@@ -1,5 +1,8 @@
 import type { PoolIngestStatus, QuoteStatus } from "@/lib/types";
 
+/** User-facing label when 1688 source is not yet in Tangbuy catalog. */
+export const GOODS_INGESTING_MESSAGE = "商品入库中";
+
 /** Why logistics estimate cannot run yet (distinct from real quote API failure). */
 export type EstimateGoodsBlockReason =
   | "ingesting"
@@ -20,7 +23,9 @@ export function isPoolIngestPending(
 export function quoteStatusForGoodsBlock(
   reason: EstimateGoodsBlockReason
 ): QuoteStatus {
-  if (reason === "ingesting") return "INGESTING";
+  if (reason === "ingesting" || reason === "unresolved_offer") {
+    return "INGESTING";
+  }
   return "FAILED";
 }
 
@@ -31,10 +36,8 @@ export function buildEstimateGoodsBlockMessage(
   const offerHint = offerId?.trim() ? `（1688 ${offerId.trim()}）` : "";
   switch (reason) {
     case "ingesting":
-      return (
-        `商品入库中${offerHint}：已登记 Tangbuy 商品库，正在同步规格与报价 ID。` +
-        `通常需数十秒，请稍后点击「运费预估」重试，无需重新选品。`
-      );
+    case "unresolved_offer":
+      return GOODS_INGESTING_MESSAGE;
     case "pool_failed":
       return (
         `商品库登记失败${offerHint}，暂时无法拉取物流报价。` +
@@ -45,14 +48,29 @@ export function buildEstimateGoodsBlockMessage(
         `尚未配置商品库入池凭证，无法将 1688 货源同步到 Tangbuy 商品库，物流报价暂不可用。` +
         `请联系管理员配置 TANGBUY_ADMIN_TOKEN。`
       );
-    case "unresolved_offer":
-      return (
-        `货源 ID 尚未解析为商品库 goodsId${offerHint}。` +
-        `系统正在尝试登记商品库，请稍后重试运费预估。`
-      );
     default:
-      return `无法解析商品库 goodsId${offerHint}，请稍后重试。`;
+      return GOODS_INGESTING_MESSAGE;
   }
+}
+
+/** Gateway rejected estimate because goodsId is not a catalog internal id yet. */
+export function buildGatewayGoodsNotReadyMessage(
+  _offerId?: string | null
+): string {
+  return GOODS_INGESTING_MESSAGE;
+}
+
+export function isGatewayGoodsNotReadyMessage(msg?: string | null): boolean {
+  if (!msg?.trim()) return false;
+  const t = msg.trim();
+  return (
+    t.includes("商品库") ||
+    t.includes("入库中") ||
+    t.includes("同步到 Tangbuy") ||
+    t.includes("INVALID_GOODS_ID") ||
+    t.includes("data: null") ||
+    t.includes("internal ID")
+  );
 }
 
 export function classifyGoodsBlockFromIdentity(

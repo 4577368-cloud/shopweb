@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import type { LaunchSummary } from "@/lib/sync/launch-summary";
+import { LOGISTICS_LOCAL_CONFIRM_HINT } from "@/lib/sync/fulfillment-copy";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 
 export function LaunchMetricsGrid({
   shopify,
@@ -16,70 +19,70 @@ export function LaunchMetricsGrid({
   /** Render one column inside the sync page 2-col layout, or both in a row. */
   column?: "both" | "shopify" | "fulfillment";
 }) {
+  const t = useT();
+  const locale = useLocale();
   const { pricing, logistics } = strategy;
 
   const shopifyCard = (
     <section className="rounded-[var(--radius-card)] border border-hairline bg-surface p-4 shadow-card">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-ink">已上店 · Shopify</h3>
+        <h3 className="text-sm font-semibold text-ink">{t("sync.cardShopify")}</h3>
         <Link
-          href={shopify.ctaHref}
+          href={localePath(locale, shopify.ctaHref)}
           className="text-xs font-medium text-brand-strong hover:underline"
         >
-          查看商品
+          {t("sync.viewProducts")}
         </Link>
       </div>
       <dl className="grid grid-cols-2 gap-3">
-        <Metric label="货源已确认" value={shopify.newListings} />
-        <Metric label="货源关联" value={shopify.sourceLinks} />
+        <Metric label={t("sync.mSourceConfirmed")} value={shopify.newListings} />
+        <Metric label={t("sync.mSourceLinks")} value={shopify.sourceLinks} />
         <Metric
-          label="标题优化"
+          label={t("sync.mTitleOpt")}
           value={shopify.showAuditGap ? "—" : shopify.titleOptimizations}
-          hint={shopify.showAuditGap ? "待接入审计" : undefined}
+          hint={shopify.showAuditGap ? t("sync.auditPending") : undefined}
         />
         <Metric
-          label="价格调整"
+          label={t("sync.mPriceAdj")}
           value={shopify.showAuditGap ? "—" : shopify.priceAdjustments}
-          hint={shopify.showAuditGap ? "待接入审计" : undefined}
+          hint={shopify.showAuditGap ? t("sync.auditPending") : undefined}
         />
       </dl>
-      <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">{shopify.footnote}</p>
+      <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">{t(shopify.footnote)}</p>
     </section>
   );
 
   const fulfillmentCard = (
     <section className="rounded-[var(--radius-card)] border border-hairline bg-surface p-4 shadow-card">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-ink">已备履约 · Tangbuy</h3>
+        <h3 className="text-sm font-semibold text-ink">{t("sync.cardFulfillment")}</h3>
         <Link
-          href={fulfillment.ctaHref}
+          href={localePath(locale, fulfillment.ctaHref)}
           className="text-xs font-medium text-brand-strong hover:underline"
         >
-          SKU 详情
+          {t("sync.skuDetails")}
         </Link>
       </div>
       <dl className="grid grid-cols-3 gap-3">
+        <Metric label={t("sync.mSkuMap")} value={`${fulfillment.skuMapped}/${fulfillment.skuTotal}`} />
         <Metric
-          label="SKU 映射"
-          value={`${fulfillment.skuMapped}/${fulfillment.skuTotal}`}
-        />
-        <Metric
-          label="物流确认"
+          label={t("sync.mLogisticsConfirm")}
           value={`${fulfillment.logisticsConfirmed}/${fulfillment.logisticsTotal}`}
+          hint={fulfillment.showLocalLogisticsGap ? t(LOGISTICS_LOCAL_CONFIRM_HINT) : undefined}
         />
-        <Metric label="待复核" value={fulfillment.pendingReview} tone="warning" />
+        <Metric label={t("sync.mPendingReview")} value={fulfillment.pendingReview} tone="warning" />
       </dl>
       <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
-        {fulfillment.footnote}
+        {t(fulfillment.footnote)}
       </p>
       <div className="mt-3 border-t border-hairline pt-3">
-        <p className="text-[10px] font-medium text-ink-muted">当前策略</p>
+        <p className="text-[10px] font-medium text-ink-muted">{t("sync.currentStrategy")}</p>
         <p className="mt-1 text-xs text-ink">
-          定价 CNY ×{pricing.exchangeRate} ×{pricing.multiplier} +{pricing.addend} →{" "}
+          {t("sync.pricing")} {pricing.sourceLabel} ×{pricing.exchangeRate} ×{pricing.multiplier} +{pricing.addend} →{" "}
           {pricing.targetCurrency}
         </p>
         <p className="mt-0.5 text-[11px] text-ink-muted">
-          物流 {logistics.markets} · {logistics.speed} · {logistics.packaging}
+          {t("nav.logistics")} {logistics.markets} · {logistics.speed} · {logistics.packaging}
         </p>
       </div>
     </section>

@@ -5,7 +5,22 @@ import type {
   WorkflowSkuProgress,
 } from "@/lib/workflow-progress";
 
+type TFn = (key: string, params?: Record<string, string | number>) => string;
+
+export type WorkflowStatusKey =
+  | "completed"
+  | "in_progress"
+  | "pending"
+  | "not_started"
+  | "error"
+  | "loading"
+  | "ready"
+  | "syncing";
+
 export type WorkflowStepSnapshot = {
+  /** Locale-agnostic status key — use this for logic/comparisons. */
+  statusKey: WorkflowStatusKey;
+  /** Localized, display-ready status label. */
   statusLabel: string;
   statusTone: string;
   description: string;
@@ -25,223 +40,254 @@ function toneForStatus(status: StepStatus): string {
   }
 }
 
-function labelForStatus(status: StepStatus): string {
+function keyForStatus(status: StepStatus): WorkflowStatusKey {
   switch (status) {
     case "completed":
-      return "已完成";
+      return "completed";
     case "in_progress":
     case "pending_confirm":
-      return "进行中";
+      return "in_progress";
     case "error":
-      return "异常";
+      return "error";
     default:
-      return "待开始";
+      return "not_started";
   }
 }
 
+const STATUS_MSG_KEY: Record<WorkflowStatusKey, string> = {
+  completed: "status.done",
+  in_progress: "status.inProgress",
+  pending: "status.pending",
+  not_started: "status.notStarted",
+  error: "status.error",
+  loading: "status.loading",
+  ready: "status.ready",
+  syncing: "status.syncing",
+};
+
+function statusLabelFor(key: WorkflowStatusKey, t: TFn): string {
+  return t(STATUS_MSG_KEY[key]);
+}
+
 export function snapshotAuthorizeStep(
+  t: TFn,
   authorized: boolean,
   shopLabel?: string
 ): WorkflowStepSnapshot {
+  const statusKey: WorkflowStatusKey = authorized ? "completed" : "not_started";
   const status: StepStatus = authorized ? "completed" : "not_started";
   return {
-    statusLabel: labelForStatus(status),
+    statusKey,
+    statusLabel: statusLabelFor(statusKey, t),
     statusTone: toneForStatus(status),
     description: authorized
-      ? shopLabel?.trim() || "店铺连接成功"
-      : "连接 Shopify 店铺并同步基础数据",
+      ? shopLabel?.trim() || t("snapshot.shopConnected")
+      : t("snapshot.connectStoreDesc"),
   };
 }
 
 export function snapshotProductsStep(
+  t: TFn,
   authorized: boolean,
   binding: WorkflowBindingProgress | null
 ): WorkflowStepSnapshot {
   if (!authorized) {
     return {
-      statusLabel: "待开始",
+      statusKey: "not_started",
+      statusLabel: statusLabelFor("not_started", t),
       statusTone: "text-ink-subtle",
-      description: "在售关联 + 目录上架",
+      description: t("snapshot.productsNotStarted"),
     };
   }
   if (!binding) {
     return {
-      statusLabel: "加载中",
+      statusKey: "loading",
+      statusLabel: statusLabelFor("loading", t),
       statusTone: "text-ink-subtle",
-      description: "正在同步店铺商品…",
+      description: t("snapshot.productsLoading"),
     };
   }
   if (binding.analyzed === 0) {
     return {
-      statusLabel: "待处理",
+      statusKey: "pending",
+      statusLabel: statusLabelFor("pending", t),
       statusTone: "text-brand",
-      description: "店铺暂无商品，或镜像同步中",
+      description: t("snapshot.productsEmpty"),
     };
   }
 
   const linked = binding.confirmed + binding.pending;
   const complete = binding.unbound === 0 && binding.pending === 0;
   const inProgress = linked > 0 || binding.unbound > 0;
-  const status: StepStatus = complete
+  const statusKey: WorkflowStatusKey = complete
     ? "completed"
     : inProgress
       ? "in_progress"
-      : "pending_confirm";
+      : "pending";
 
-  const parts: string[] = [`${linked}/${binding.analyzed} 商品已关联`];
-  if (binding.confirmed > 0) parts.push(`已确认 ${binding.confirmed}`);
-  if (binding.pending > 0) parts.push(`待确认 ${binding.pending}`);
-  if (binding.unbound > 0) parts.push(`未关联 ${binding.unbound}`);
+  const parts: string[] = [t("snapshot.productsLinked", { linked, analyzed: binding.analyzed })];
+  if (binding.confirmed > 0) parts.push(t("snapshot.productsConfirmed", { count: binding.confirmed }));
+  if (binding.pending > 0) parts.push(t("snapshot.productsPending", { count: binding.pending }));
+  if (binding.unbound > 0) parts.push(t("snapshot.productsUnbound", { count: binding.unbound }));
 
   return {
-    statusLabel: complete ? "已完成" : labelForStatus(status),
-    statusTone: toneForStatus(status),
+    statusKey,
+    statusLabel: statusLabelFor(statusKey, t),
+    statusTone: toneForStatus(
+      complete ? "completed" : inProgress ? "in_progress" : "pending_confirm"
+    ),
     description: parts.join(" · "),
   };
 }
 
 export function snapshotSkuStep(
+  t: TFn,
   authorized: boolean,
   productsComplete: boolean,
   sku: WorkflowSkuProgress | null
 ): WorkflowStepSnapshot {
   if (!authorized || !productsComplete) {
     return {
-      statusLabel: "待开始",
+      statusKey: "not_started",
+      statusLabel: statusLabelFor("not_started", t),
       statusTone: "text-ink-subtle",
-      description: "核对规格映射关系",
+      description: t("snapshot.skuNotStarted"),
     };
   }
   if (!sku) {
     return {
-      statusLabel: "加载中",
+      statusKey: "loading",
+      statusLabel: statusLabelFor("loading", t),
       statusTone: "text-ink-subtle",
-      description: "正在汇总 SKU 映射…",
+      description: t("snapshot.skuLoading"),
     };
   }
   if (sku.productCount === 0) {
     return {
-      statusLabel: "待处理",
+      statusKey: "pending",
+      statusLabel: statusLabelFor("pending", t),
       statusTone: "text-brand",
-      description: "暂无 SKU 数据",
+      description: t("snapshot.skuEmpty"),
     };
   }
 
   const mapped = sku.activeAuto + sku.manualActive;
   const complete = sku.issueProductCount === 0;
-  const status: StepStatus = complete
+  const statusKey: WorkflowStatusKey = complete
     ? "completed"
     : mapped > 0
       ? "in_progress"
-      : "pending_confirm";
+      : "pending";
 
-  const parts: string[] = [`${mapped}/${sku.variantCount} 变体已映射`];
-  if (sku.needsReview > 0) parts.push(`待确认 ${sku.needsReview}`);
-  if (sku.unbound > 0) parts.push(`未匹配 ${sku.unbound}`);
+  const parts: string[] = [t("snapshot.skuMapped", { mapped, total: sku.variantCount })];
+  if (sku.needsReview > 0) parts.push(t("snapshot.skuPending", { count: sku.needsReview }));
+  if (sku.unbound > 0) parts.push(t("snapshot.skuUnbound", { count: sku.unbound }));
 
   return {
-    statusLabel: complete ? "已完成" : labelForStatus(status),
-    statusTone: toneForStatus(status),
+    statusKey,
+    statusLabel: statusLabelFor(statusKey, t),
+    statusTone: toneForStatus(
+      complete ? "completed" : mapped > 0 ? "in_progress" : "pending_confirm"
+    ),
     description: parts.join(" · "),
   };
 }
 
-export function snapshotLogisticsStep(input: {
-  authorized: boolean;
-  skuReady: boolean;
-  metrics: LogisticsPlanMetrics | null;
-  pipelineActive: boolean;
-  hasTemplate: boolean;
-}): WorkflowStepSnapshot {
+export function snapshotLogisticsStep(
+  t: TFn,
+  input: {
+    authorized: boolean;
+    skuReady: boolean;
+    metrics: LogisticsPlanMetrics | null;
+    pipelineActive: boolean;
+    hasTemplate: boolean;
+  }
+): WorkflowStepSnapshot {
   if (!input.authorized || !input.skuReady) {
     return {
-      statusLabel: "待开始",
+      statusKey: "not_started",
+      statusLabel: statusLabelFor("not_started", t),
       statusTone: "text-ink-subtle",
-      description: "识别物流类型并配置策略模板",
+      description: t("snapshot.logisticsNotStarted"),
     };
   }
 
   if (input.pipelineActive) {
     return {
-      statusLabel: "进行中",
+      statusKey: "syncing",
+      statusLabel: statusLabelFor("syncing", t),
       statusTone: "text-brand",
-      description: "物流线路预估进行中",
+      description: t("snapshot.logisticsPipeline"),
     };
   }
 
   const m = input.metrics;
   if (!m || m.variantCount === 0) {
     return {
-      statusLabel: "进行中",
+      statusKey: "syncing",
+      statusLabel: statusLabelFor("syncing", t),
       statusTone: "text-brand",
       description: input.hasTemplate
-        ? "模板已保存，待拉取线路报价"
-        : "先保存物流模板与销售国家",
+        ? t("snapshot.logisticsTemplateSaved")
+        : t("snapshot.logisticsSaveTemplate"),
     };
   }
 
   const parts: string[] = [];
-  if (m.quotedCount > 0) parts.push(`已报价 ${m.quotedCount}`);
-  if (m.confirmedCount > 0) parts.push(`已确认 ${m.confirmedCount}`);
-  parts.push(`共 ${m.variantCount} 变体`);
+  if (m.quotedCount > 0) parts.push(t("snapshot.logisticsQuoted", { count: m.quotedCount }));
+  if (m.confirmedCount > 0) parts.push(t("snapshot.logisticsConfirmed", { count: m.confirmedCount }));
+  parts.push(t("snapshot.logisticsVariantTotal", { total: m.variantCount }));
   const description = parts.join(" · ");
 
   const allConfirmed = m.confirmedCount >= m.variantCount;
   const hasProgress = m.quotedCount > 0 || m.confirmedCount > 0;
 
-  if (allConfirmed) {
-    return {
-      statusLabel: "已完成",
-      statusTone: "text-brand",
-      description,
-    };
-  }
-
-  if (hasProgress) {
-    return {
-      statusLabel: "进行中",
-      statusTone: "text-brand",
-      description,
-    };
-  }
-
+  const statusKey: WorkflowStatusKey = allConfirmed ? "completed" : "syncing";
   return {
-    statusLabel: "进行中",
+    statusKey,
+    statusLabel: statusLabelFor(statusKey, t),
     statusTone: "text-brand",
     description,
   };
 }
 
-export function snapshotSyncStep(input: {
-  syncCompleted: boolean;
-  syncPhase: "blocked" | "ready" | "syncing" | "completed";
-  logisticsReady: boolean;
-}): WorkflowStepSnapshot {
+export function snapshotSyncStep(
+  t: TFn,
+  input: {
+    syncCompleted: boolean;
+    syncPhase: "blocked" | "ready" | "syncing" | "completed";
+    logisticsReady: boolean;
+  }
+): WorkflowStepSnapshot {
   if (input.syncCompleted) {
     return {
-      statusLabel: "已完成",
+      statusKey: "completed",
+      statusLabel: statusLabelFor("completed", t),
       statusTone: "text-brand",
-      description: "开店准备仪式已完成",
+      description: t("snapshot.syncDone"),
     };
   }
   if (input.syncPhase === "syncing") {
     return {
-      statusLabel: "同步中",
+      statusKey: "syncing",
+      statusLabel: statusLabelFor("syncing", t),
       statusTone: "text-brand",
-      description: "正在写入映射与履约配置",
+      description: t("snapshot.syncSyncing"),
     };
   }
   if (input.logisticsReady) {
     return {
-      statusLabel: "可开始",
+      statusKey: "ready",
+      statusLabel: statusLabelFor("ready", t),
       statusTone: "text-brand",
-      description: "前置步骤已就绪，可进入完成仪式",
+      description: t("snapshot.syncReady"),
     };
   }
   return {
-    statusLabel: "待开始",
+    statusKey: "not_started",
+    statusLabel: statusLabelFor("not_started", t),
     statusTone: "text-ink-subtle",
-    description: "完成物流确认后可同步",
+    description: t("snapshot.syncBlocked"),
   };
 }
 

@@ -24,62 +24,13 @@ import {
 
 import { AppLogo } from "@/components/brand/app-logo";
 import { APP_FULL_NAME } from "@/lib/brand";
-
-const trustSignals = [
-  "官方 OAuth 授权",
-  "只读访问",
-  "不修改店铺数据",
-  "加密传输",
-];
-
-// Core value points — only capabilities that already exist in the product.
-const valuePoints: { icon: typeof Database; title: string; desc: string }[] = [
-  {
-    icon: Database,
-    title: "自动同步商品",
-    desc: "授权后自动拉取 Shopify 在售商品镜像，无需手动导入。",
-  },
-  {
-    icon: Search,
-    title: "AI 图搜关联货源",
-    desc: "用商品主图在 Tangbuy 图搜，结合 AI 识图纠偏，自动匹配货源。",
-  },
-  {
-    icon: LayoutGrid,
-    title: "SKU 逐变体对齐",
-    desc: "把 Shopify 变体按 Tangbuy 货源 SKU 矩阵自动对齐，减少人工核对。",
-  },
-  {
-    icon: Boxes,
-    title: "定价推算与上架",
-    desc: "按定价模板推算售价，从 Tangbuy 商城一键上架为可售商品。",
-  },
-];
-
-// Honest preview frames of the real product pages (no fabricated dashboards / fake data).
-const previews: { title: string; desc: string }[] = [
-  {
-    title: "智能选品 · 商品卡对照",
-    desc: "Shopify 在售商品与 Tangbuy 货源左右对照，支持图搜关联与 Tangbuy 商城上架。",
-  },
-  {
-    title: "SKU 绑定 · 人眼对照确认",
-    desc: "按商品折叠、变体左右对照，一眼判断 Shopify 与 Tangbuy 是否同一款。",
-  },
-  {
-    title: "首轮自动处理 · 任务扫描",
-    desc: "进入工作台前自动同步、图搜关联、对齐 SKU，真实任务进度可见。",
-  },
-];
-
-const steps: { title: string; desc: string }[] = [
-  { title: "连接店铺", desc: "通过 Shopify 官方 OAuth 授权，只读接入店铺基础数据。" },
-  { title: "AI 匹配货源", desc: "系统自动为在售商品图搜关联 Tangbuy 货源并对齐 SKU。" },
-  { title: "确认并上架", desc: "确认匹配、按定价模板推算售价，上架为可售商品。" },
-];
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 
 export default function InstallPage() {
   const { showToast } = useOnboarding();
+  const t = useT();
+  const locale = useLocale();
   const [domain, setDomain] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -91,11 +42,39 @@ export default function InstallPage() {
     if (saved) setDomain(saved);
   }, []);
 
+  const trustSignals = [
+    t("install.trustOfficialOAuth"),
+    t("install.trustReadOnly"),
+    t("install.trustNoEdit"),
+    t("install.trustEncrypted"),
+  ];
+
+  // Core value points — only capabilities that already exist in the product.
+  const valuePoints: { icon: typeof Database; title: string; desc: string }[] = [
+    { icon: Database, title: t("install.valueAutoSync"), desc: t("install.valueAutoSyncDesc") },
+    { icon: Search, title: t("install.valueImageSearch"), desc: t("install.valueImageSearchDesc") },
+    { icon: LayoutGrid, title: t("install.valueSku"), desc: t("install.valueSkuDesc") },
+    { icon: Boxes, title: t("install.valuePricing"), desc: t("install.valuePricingDesc") },
+  ];
+
+  // Honest preview frames of the real product pages (no fabricated dashboards / fake data).
+  const previews: { title: string; desc: string }[] = [
+    { title: t("install.previewProducts"), desc: t("install.previewProductsDesc") },
+    { title: t("install.previewSku"), desc: t("install.previewSkuDesc") },
+    { title: t("install.previewScan"), desc: t("install.previewScanDesc") },
+  ];
+
+  const steps: { title: string; desc: string }[] = [
+    { title: t("install.step1Title"), desc: t("install.step1Desc") },
+    { title: t("install.step2Title"), desc: t("install.step2Desc") },
+    { title: t("install.step3Title"), desc: t("install.step3Desc") },
+  ];
+
   const connect = () => {
     setError(null);
     const result = launchShopifyInstall(domain);
     if (!result.ok) {
-      setError(result.error ?? "无法发起授权");
+      setError(result.error ?? t("install.launchError"));
       if (result.error) showToast(result.error);
     }
     // On success the browser navigates away to Shopify — nothing else to do here.
@@ -109,14 +88,14 @@ export default function InstallPage() {
           <div className="flex items-center gap-2.5">
             <AppLogo variant="header" size="sm" />
             <span className="ml-0.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-              Developer Preview
+              {t("common.developerPreview")}
             </span>
           </div>
           <Link
-            href="/authorize"
+            href={localePath(locale, "/authorize")}
             className="text-xs font-medium text-ink-muted hover:text-ink"
           >
-            已授权？进入工作台 →
+            {t("install.authorizedHint")}
           </Link>
         </div>
       </header>
@@ -130,13 +109,10 @@ export default function InstallPage() {
               Shopify × Tangbuy Smart Match
             </span>
             <h1 className="mt-4 text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl">
-              连接 Shopify，
-              <br />
-              让 AI 自动为你的商品匹配 Tangbuy 货源
+              {t("install.heroHeading")}
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-ink-muted">
-              授权后自动同步在售商品、图搜关联货源、逐变体对齐 SKU，并按定价模板推算售价上架，
-              尽量减少人工干预。
+              {t("install.heroSubtitle")}
             </p>
 
             {/* Domain + primary CTA */}
@@ -149,9 +125,9 @@ export default function InstallPage() {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") connect();
                     }}
-                    placeholder="your-store.myshopify.com"
+                    placeholder={t("install.domainPlaceholder")}
                     className="pr-9"
-                    aria-label="Shopify 店铺域名"
+                    aria-label={t("install.domainAria")}
                   />
                   <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-ink-subtle">
                     <ShieldCheck className="h-4 w-4" />
@@ -159,14 +135,14 @@ export default function InstallPage() {
                 </div>
                 <Button className="shrink-0 sm:w-auto" onClick={connect}>
                   <Link2 className="h-4 w-4" />
-                  连接 Shopify
+                  {t("install.connectButton")}
                 </Button>
               </div>
               {error ? (
                 <p className="text-[11px] leading-4 text-red-600">{error}</p>
               ) : (
                 <p className="text-[11px] leading-4 text-ink-subtle">
-                  下一步将前往 Shopify 官方页面完成授权，授权为只读、可随时移除。
+                  {t("install.connectNote")}
                 </p>
               )}
             </div>
@@ -187,7 +163,7 @@ export default function InstallPage() {
 
           {/* Hero preview frame (honest product preview, no fake data) */}
           <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 shadow-card">
-            <BrowserFrame label="app · 智能选品">
+            <BrowserFrame label={t("install.browserLabelProducts")}>
               <div className="grid gap-2.5 p-3 sm:grid-cols-2">
                 {valuePoints.slice(0, 2).map(({ icon: Icon, title, desc }) => (
                   <div
@@ -208,8 +184,10 @@ export default function InstallPage() {
 
         {/* Core value points */}
         <section className="mt-12">
-          <h2 className="text-lg font-semibold tracking-tight text-ink">核心能力</h2>
-          <p className="mt-0.5 text-xs text-ink-muted">以下均为当前已实现的功能。</p>
+          <h2 className="text-lg font-semibold tracking-tight text-ink">
+            {t("install.coreCapabilities")}
+          </h2>
+          <p className="mt-0.5 text-xs text-ink-muted">{t("install.coreCapabilitiesDesc")}</p>
           <div className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
             {valuePoints.map(({ icon: Icon, title, desc }) => (
               <div
@@ -228,10 +206,10 @@ export default function InstallPage() {
 
         {/* Product previews */}
         <section className="mt-12">
-          <h2 className="text-lg font-semibold tracking-tight text-ink">产品页面预览</h2>
-          <p className="mt-0.5 text-xs text-ink-muted">
-            以下为产品真实功能页面的说明预览。
-          </p>
+          <h2 className="text-lg font-semibold tracking-tight text-ink">
+            {t("install.pagePreviews")}
+          </h2>
+          <p className="mt-0.5 text-xs text-ink-muted">{t("install.pagePreviewsDesc")}</p>
           <div className="mt-4 grid gap-3 lg:grid-cols-3">
             {previews.map((p) => (
               <BrowserFrame key={p.title} label={p.title}>
@@ -246,7 +224,9 @@ export default function InstallPage() {
 
         {/* How it works */}
         <section className="mt-12">
-          <h2 className="text-lg font-semibold tracking-tight text-ink">如何运作</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-ink">
+            {t("install.howItWorks")}
+          </h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             {steps.map((s, idx) => (
               <div
@@ -268,11 +248,9 @@ export default function InstallPage() {
           <div className="flex items-start gap-2.5">
             <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
             <div>
-              <p className="text-sm font-medium text-amber-900">开发测试说明</p>
+              <p className="text-sm font-medium text-amber-900">{t("install.devNoticeTitle")}</p>
               <p className="mt-1 text-xs leading-5 text-amber-800">
-                本应用目前处于开发测试阶段，<strong>尚未在 Shopify App Store 正式上架</strong>，
-                仅面向测试店铺开放。授权通过 Shopify 官方 OAuth 完成，仅只读读取商品、库存、订单等
-                基础数据用于分析与货源匹配，不会修改或删除你的店铺数据。
+                {t("install.devNoticeDesc")}
               </p>
             </div>
           </div>
@@ -281,10 +259,10 @@ export default function InstallPage() {
         {/* Footer CTA */}
         <section className="mt-10 flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-emerald-100 bg-brand-soft px-5 py-8 text-center">
           <h3 className="text-lg font-semibold tracking-tight text-ink">
-            准备好连接你的 Shopify 店铺了吗？
+            {t("install.readyCta")}
           </h3>
           <p className="max-w-md text-xs leading-5 text-ink-muted">
-            输入店铺域名即可通过 Shopify 官方授权接入，1 分钟内完成。
+            {t("install.readyCtaDesc")}
           </p>
           <div className="mt-1 flex w-full max-w-md flex-col gap-2 sm:flex-row">
             <div className="relative flex-1">
@@ -294,16 +272,16 @@ export default function InstallPage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") connect();
                 }}
-                placeholder="your-store.myshopify.com"
+                placeholder={t("install.domainPlaceholder")}
                 className="pr-9 bg-surface"
-                aria-label="Shopify 店铺域名"
+                aria-label={t("install.domainAria")}
               />
               <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-ink-subtle">
                 <ShieldCheck className="h-4 w-4" />
               </span>
             </div>
             <Button className="shrink-0" onClick={connect}>
-              连接 Shopify
+              {t("install.connectButton")}
               <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
@@ -321,7 +299,7 @@ export default function InstallPage() {
         </section>
 
         <footer className="mt-10 border-t border-hairline pt-5 text-center text-[11px] text-ink-subtle">
-          {APP_FULL_NAME} — Developer Preview。仅供测试店铺接入，非 Shopify 官方商店页面。
+          {t("install.footerNote", { name: APP_FULL_NAME })}
         </footer>
       </div>
     </main>

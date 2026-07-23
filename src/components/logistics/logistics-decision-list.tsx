@@ -7,6 +7,8 @@ import {
   filterProfiles,
   filterVariants,
   LOGISTICS_PAGE_SIZE,
+  logisticsFilterExpandsProducts,
+  normalizeLogisticsFilterMode,
   variantCardTone,
   type LogisticsFilterMode,
   type PostalLimitFilter,
@@ -143,6 +145,7 @@ function profileMatchesFilter(
 
 export function LogisticsDecisionList({
   analysis,
+  shopName = "",
   filterMode,
   postalLimitFilter = "all",
   quoteResults,
@@ -163,6 +166,7 @@ export function LogisticsDecisionList({
   onSelectLine,
 }: {
   analysis: LogisticsAnalysis;
+  shopName?: string;
   filterMode: LogisticsFilterMode;
   postalLimitFilter?: PostalLimitFilter;
   quoteResults: Map<string, LogisticsEstimateResult>;
@@ -270,12 +274,7 @@ export function LogisticsDecisionList({
         return true;
       }
       const meta = shellMetaByProduct.get(productId);
-      if (
-        filterMode === "pending_quote" ||
-        filterMode === "pending_confirm" ||
-        filterMode === "sku_unlinked" ||
-        filterMode === "exceptions"
-      ) {
+      if (logisticsFilterExpandsProducts(filterMode)) {
         return true;
       }
       return meta?.defaultExpanded ?? false;
@@ -369,36 +368,24 @@ export function LogisticsDecisionList({
       <div className="rounded-[var(--radius-card)] border border-dashed border-hairline px-4 py-12 text-center">
         <p className="text-sm font-medium text-ink">当前筛选下暂无商品</p>
         <p className="mt-1 text-xs text-ink-subtle">
-          切换上方标签：自动完成、需确认、无法识别等。
+          切换上方标签查看待处理或需关注的 SKU。
         </p>
       </div>
     );
   }
 
-  const readySkuCount = profiles.reduce((sum, { variants }) => sum + variants.length, 0);
+  const resolvedFilter = normalizeLogisticsFilterMode(filterMode);
 
   return (
     <div className="space-y-3">
-      {filterMode === "exceptions" ? (
-        <p className="rounded-[var(--radius-control)] border border-violet-200 bg-violet-50/50 px-3 py-2 text-[11px] leading-snug text-violet-900">
-          邮限或品类异常项。请核对分类、补充尺寸重量后再「确认」或重新运费预估。
-        </p>
-      ) : null}
-      {filterMode === "pending_confirm" ? (
-        <p className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50/50 px-3 py-2 text-[11px] leading-snug text-amber-900">
-          已有线路报价但尚未确认。展开后核对线路与运费，点击「确认」。
-        </p>
-      ) : null}
-      {filterMode === "sku_unlinked" ? (
-        <p className="rounded-[var(--radius-control)] border border-hairline bg-surface-muted/40 px-3 py-2 text-[11px] leading-snug text-ink-subtle">
-          这些 SKU 尚未关联货源。点击商品卡片上的「去 SKU 对齐」即可处理整款商品。
-        </p>
-      ) : null}
-      {filterMode === "pending_quote" && readySkuCount > 0 ? (
+      {resolvedFilter === "pending" ? (
         <p className="rounded-[var(--radius-control)] border border-brand/20 bg-brand-soft/30 px-3 py-2 text-[11px] leading-snug text-ink">
-          本 Tab 共{" "}
-          <span className="font-semibold tabular-nums">{readySkuCount}</span>{" "}
-          个普货 SKU 待运费预估。点击右上角「运费预估」可批量处理；失败项请展开后点「重试报价」。
+          普货 SKU 待运费预估或待确认线路。点右上角「运费预估」批量处理；已有报价的普货将自动采纳推荐线路。
+        </p>
+      ) : null}
+      {resolvedFilter === "needs_attention" ? (
+        <p className="rounded-[var(--radius-control)] border border-violet-200 bg-violet-50/50 px-3 py-2 text-[11px] leading-snug text-violet-900">
+          SKU 未关联货源，或邮限/品类异常。请先完成 SKU 对齐、补充尺寸后再确认线路。
         </p>
       ) : null}
       {pagedProfiles.map(({ profile, variants }) => {
@@ -417,6 +404,7 @@ export function LogisticsDecisionList({
         return (
           <LogisticsProductGroup
             key={productId}
+            shopName={shopName}
             profile={displayProfile}
             quoteResults={quoteResults}
             activeTemplate={activeTemplate}

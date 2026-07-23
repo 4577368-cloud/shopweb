@@ -6,7 +6,7 @@ import {
 import { parseGatewayPrice } from "@/lib/agents/products/match-rank";
 import { formatSourceCostInShopCurrency } from "@/lib/purchase-cost-display";
 import { scoreSpecMatch } from "@/lib/sku-align/spec-match";
-import type { PricingTemplate } from "@/lib/types";
+import type { OfferDetail, PricingTemplate } from "@/lib/types";
 
 export type SkuDisplayStatus = "LOADING" | "READY" | "ERROR";
 
@@ -203,6 +203,44 @@ export function mapItemGetToSourceSkuMatrix(
       imageUrl: firstSkuImage(sku.skuAttributes),
       procurementPrice: resolveProcurementPrice(sku, detail.price),
       amountOnSale: null,
+    });
+  }
+
+  return rows;
+}
+
+/** Map offer-detail SKUs → SourceSkuRow[] (1688 fallback when itemGet unavailable). */
+export function mapOfferDetailToSourceSkuMatrix(detail: OfferDetail): SourceSkuRow[] {
+  const skus = detail.skus;
+  if (!skus?.length) return [];
+
+  const rows: SourceSkuRow[] = [];
+  const seenIds = new Set<string>();
+
+  for (const sku of skus) {
+    const skuId = sku.skuId?.trim() ?? "";
+    if (!skuId || seenIds.has(skuId)) continue;
+
+    const attrs = sku.skuAttributes?.map((a) => ({
+      attrName: a.attributeName,
+      attrNameTrans: a.attributeNameTrans,
+      attrValue: a.value,
+      attrValueTrans: a.valueTrans,
+      skuImageList: a.skuImageUrl ? [a.skuImageUrl] : null,
+    }));
+    const specLabel = specLabelFromAttributes(attrs);
+    if (!specLabel) continue;
+
+    seenIds.add(skuId);
+    const rawPrice = sku.price?.trim() || sku.consignPrice?.trim() || null;
+    rows.push({
+      skuId,
+      specLabel,
+      optionParts: mapOptionParts(attrs),
+      imageUrl:
+        sku.skuAttributes?.map((a) => a.skuImageUrl).find(Boolean) ?? null,
+      procurementPrice: rawPrice ? parseGatewayPrice(rawPrice) : null,
+      amountOnSale: sku.amountOnSale ?? null,
     });
   }
 

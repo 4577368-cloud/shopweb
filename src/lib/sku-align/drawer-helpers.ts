@@ -117,6 +117,25 @@ export function coverageCount(hits: VariantSkuHit[]): number {
   return hits.filter((h) => h.hit != null).length;
 }
 
+/** Auto-pick supplement SKU per gap variant when matrix is already loaded. */
+export function autoAssignSupplementGaps(
+  gaps: SkuVariant[],
+  candidateKey: string,
+  matrix: SourceSkuRow[]
+): Record<string, { candidateKey: string; skuId: string }> {
+  const out: Record<string, { candidateKey: string; skuId: string }> = {};
+  if (!matrix.length) return out;
+  for (const variant of gaps) {
+    const top = rankSourceSkuRows(matrix, variant.optionLabel, {
+      variantPrice: variant.price,
+      variantImageUrl: variant.imageUrl,
+    })[0];
+    if (!top || top.matchScore < COVERAGE_MATCH_THRESHOLD) continue;
+    out[variant.thirdPlatformSkuId] = { candidateKey, skuId: top.skuId };
+  }
+  return out;
+}
+
 export interface RankedCoverageCandidate {
   candidate: ImageSearchProduct;
   hits: VariantSkuHit[];

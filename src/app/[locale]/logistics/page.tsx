@@ -28,7 +28,11 @@ import { useLogisticsIncrementalPipeline } from "@/hooks/use-logistics-increment
 import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
 import { api, readableError, type LogisticsAcceptDecisionRequest, type LogisticsEstimateResult } from "@/lib/api";
 import type { LogisticsFilterMode, PostalLimitFilter } from "@/lib/logistics/display";
-import { normalizeLogisticsFilterMode } from "@/lib/logistics/display";
+import {
+  coerceLogisticsFilterMode,
+  normalizeLogisticsFilterMode,
+} from "@/lib/logistics/display";
+import { LogisticsWorkflowSteps, deriveLogisticsWorkflowStep, type LogisticsWorkflowStep } from "@/components/logistics/logistics-workflow-steps";
 import { LogisticsClassifyStage } from "@/components/logistics/logistics-classify-stage";
 import {
   buildEstimateParams,
@@ -55,8 +59,10 @@ import {
   writeQuoteCache,
 } from "@/lib/logistics/quote-cache";
 import { enrichVariantsWithMeasures } from "@/lib/logistics/variant-measures";
+import { GOODS_INGESTING_MESSAGE } from "@/lib/logistics/estimate-goods-block";
 import { enrichVariantsWithEstimateGoodsIds } from "@/lib/logistics/resolve-estimate-goods-id";
 import { quoteStatusForGoodsBlock } from "@/lib/logistics/estimate-goods-block";
+import { countCatalogIngestingProducts } from "@/lib/tangbuy/catalog-ingest-display";
 import type {
   LogisticsAnalysis,
   LogisticsDecisionStatus,
@@ -99,6 +105,7 @@ function LogisticsContent() {
   const [error, setError] = useState<string | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [filterMode, setFilterMode] = useState<LogisticsFilterMode>("all");
+  const [workflowStep, setWorkflowStep] = useState<LogisticsWorkflowStep>("setup");
   const [postalLimitFilter, setPostalLimitFilter] = useState<PostalLimitFilter>("all");
   const [quoteResults, setQuoteResults] = useState<
     Map<string, LogisticsEstimateResult>
@@ -136,13 +143,13 @@ function LogisticsContent() {
   }, []);
 
   const handleViewPendingConfirm = useCallback(() => {
-    setFilterMode("pending_confirm");
+    setFilterMode("pending");
     setFocusTarget(null);
     scrollToLogisticsList();
   }, [scrollToLogisticsList]);
 
   const handleViewExceptions = useCallback(() => {
-    setFilterMode("exceptions");
+    setFilterMode("needs_attention");
     setFocusTarget(null);
     scrollToLogisticsList();
   }, [scrollToLogisticsList]);
@@ -152,6 +159,25 @@ function LogisticsContent() {
     [analysis, quoteResults]
   );
   const planMetrics = workbench.metrics;
+
+  const catalogIngestingCount = useMemo(() => {
+    if (!analysis || !shopName) return 0;
+    const variantsByProduct = new Map<string, VariantLogisticsDecision[]>();
+    for (const profile of analysis.productProfiles ?? []) {
+      variantsByProduct.set(
+        profile.thirdPlatformItemId,
+        profile.variantDecisions ?? []
+      );
+    }
+    return countCatalogIngestingProducts({
+      shopName,
+      productIds: (analysis.productProfiles ?? []).map(
+        (profile) => profile.thirdPlatformItemId
+      ),
+      variantsByProduct,
+      quoteResults,
+    });
+  }, [analysis, shopName, quoteResults]);
 
   const hasSavedTemplate = hasSavedLogisticsTemplate(templates);
 
@@ -292,7 +318,8 @@ function LogisticsContent() {
         return [saved, ...prev];
       });
       setActiveTemplate(saved);
-      showToast("物流模板已保存");
+      showToast("物流模板已暂存于本应用");
+      setWorkflowStep("estimate");
       return saved;
     } catch (err) {
       showToast(readableError(err));
@@ -532,7 +559,7 @@ function LogisticsContent() {
             quoteCurrency: pricingTemplate?.targetCurrency?.trim().toUpperCase() || "USD",
             variants: quotableVariants.map(
               ({
-                estimateGoodsId: _id,
+                estimateGoodsId,
                 estimateGoodsError: _err,
                 titleHint: _title,
                 thirdPlatformItemId: _itemId,
@@ -540,7 +567,7 @@ function LogisticsContent() {
                 ...variant
               }) => ({
                 ...variant,
-                tangbuyGoodsId: variant.tangbuyGoodsId,
+                tangbuyGoodsId: estimateGoodsId ?? variant.tangbuyGoodsId,
               })
             ),
             needOtherLine: true,
@@ -784,13 +811,15 @@ function LogisticsContent() {
       const resultsMap = await fetchQuotesForVariants(variantIds, overrideMap);
       if (!resultsMap) return;
       const params = buildEstimateParams(activeTemplate, quoteMarketCode);
-      const withLine = [...resultsMap.values()].filter((r) => r.recommendedLine)
-        .length;
-      const firstError = [...resultsMap.values()].find((r) => r.errorMessage)?.errorMessage;
+      const results = [...resultsMap.values()];
+      const withLine = results.filter((r) => r.recommendedLine).length;
+      const ingestingCount = results.filter((r) => r.quoteStatus === "INGESTING").length;
       showToast(
         withLine > 0
           ? `已拉取 ${withLine}/${resultsMap.size} 条线路（${params?.countryCode ?? ""} · 时效${params?.shippingOption ?? ""}）`
-          : firstError ||
+          : ingestingCount > 0
+            ? GOODS_INGESTING_MESSAGE
+            : results.find((r) => r.errorMessage)?.errorMessage ||
               `已请求 ${resultsMap.size} 条报价，但 Tangbuy 未返回可用线路（${params?.countryCode ?? ""}）`
       );
       setFilterMode("all");
@@ -935,9 +964,9 @@ function LogisticsContent() {
 
   const handleFocusStatus = (status: LogisticsDecisionStatus) => {
     if (status === "pending_sku") {
-      setFilterMode("sku_unlinked");
+      setFilterMode("needs_attention");
     } else {
-      setFilterMode("pending_confirm");
+      setFilterMode("pending");
     }
     setFocusTarget({ status });
   };
@@ -946,6 +975,40 @@ function LogisticsContent() {
     setFilterMode(normalizeLogisticsFilterMode(mode));
     setFocusTarget(null);
   }, []);
+
+  useEffect(() => {
+    setFilterMode((prev) => coerceLogisticsFilterMode(prev, planMetrics));
+  }, [planMetrics]);
+
+  useEffect(() => {
+    if (!hasSavedTemplate) {
+      setWorkflowStep("setup");
+      return;
+    }
+    setWorkflowStep((prev) => {
+      if (prev === "setup") {
+        return deriveLogisticsWorkflowStep({ hasSavedTemplate, metrics: planMetrics });
+      }
+      return prev;
+    });
+  }, [hasSavedTemplate, planMetrics]);
+
+  const handleWorkflowStepChange = useCallback(
+    (step: LogisticsWorkflowStep) => {
+      setWorkflowStep(step);
+      if (step === "estimate") {
+        setFilterMode("pending");
+        scrollToLogisticsList();
+      } else if (step === "confirm") {
+        const attention = planMetrics.exceptionCount + planMetrics.skuUnlinkedCount;
+        setFilterMode(attention > 0 ? "needs_attention" : "pending");
+        scrollToLogisticsList();
+      } else {
+        setFilterMode("all");
+      }
+    },
+    [planMetrics.exceptionCount, planMetrics.skuUnlinkedCount, scrollToLogisticsList]
+  );
 
   const logisticsPreviewGenerators = useMemo(
     () => ({
@@ -1079,7 +1142,7 @@ function LogisticsContent() {
               onStartEstimate={handleStartEstimate}
               onSaveAndSync={handleSaveAndSync}
               onViewUnidentified={() => {
-                setFilterMode("sku_unlinked");
+                setFilterMode("needs_attention");
                 scrollToLogisticsList();
               }}
               onViewPendingConfirm={handleViewPendingConfirm}
@@ -1088,6 +1151,7 @@ function LogisticsContent() {
               onCancelBatchAccept={() => {
                 batchAcceptCancelRef.current = true;
               }}
+              catalogIngestingCount={catalogIngestingCount}
             />
           }
         />
@@ -1127,11 +1191,20 @@ function LogisticsContent() {
         }
       >
         <div className="space-y-4">
-          {!hasSavedTemplate && !loading ? (
+          {!loading || analysis ? (
+            <LogisticsWorkflowSteps
+              step={workflowStep}
+              onStepChange={handleWorkflowStepChange}
+              hasSavedTemplate={hasSavedTemplate}
+              metrics={planMetrics}
+            />
+          ) : null}
+
+          {workflowStep === "setup" && !hasSavedTemplate && !loading ? (
             <LogisticsTemplateSetupCard onOpenTemplate={() => setShowDrawer(true)} />
           ) : null}
 
-          {hasSavedTemplate && analysis ? (
+          {hasSavedTemplate && analysis && workflowStep !== "setup" ? (
             <LogisticsPlanStatusCard
               analysis={analysis}
               activeTemplate={activeTemplate}
@@ -1144,6 +1217,27 @@ function LogisticsContent() {
               pipelineProgress={pipeline.progress}
               quoteResults={quoteResults}
             />
+          ) : null}
+
+          {workflowStep === "setup" && hasSavedTemplate && analysis ? (
+            <div className="rounded-[var(--radius-card)] border border-hairline bg-surface-muted/20 px-4 py-6 text-center">
+              <p className="text-sm font-medium text-ink">物流策略已配置</p>
+              <p className="mt-1 text-xs text-ink-subtle">
+                进入「运费预估」批量获取线路报价，或打开模板继续调整。
+              </p>
+              <div className="mt-3 flex justify-center gap-2">
+                <Button size="sm" onClick={() => handleWorkflowStepChange("estimate")}>
+                  开始运费预估
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setShowDrawer(true)}
+                >
+                  修改策略
+                </Button>
+              </div>
+            </div>
           ) : null}
 
           {showSyncConfirm ? (
@@ -1175,10 +1269,11 @@ function LogisticsContent() {
                 重试
               </Button>
             </div>
-          ) : hasSavedTemplate && analysis ? (
+          ) : hasSavedTemplate && analysis && workflowStep !== "setup" ? (
             <div ref={logisticsListRef} className="scroll-mt-4">
             <LogisticsDecisionList
               analysis={analysis}
+              shopName={shopName}
               filterMode={filterMode}
               postalLimitFilter={postalLimitFilter}
               quoteResults={quoteResults}

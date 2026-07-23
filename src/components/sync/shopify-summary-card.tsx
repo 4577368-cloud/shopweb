@@ -5,23 +5,27 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import type { LaunchSummary } from "@/lib/sync/launch-summary";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 
 export function ShopifySummaryCard({
   data,
 }: {
   data: LaunchSummary["shopifyWrites"];
 }) {
+  const t = useT();
+  const locale = useLocale();
   const metrics = [
-    { label: "货源已确认", value: data.newListings },
-    { label: "货源关联", value: data.sourceLinks },
+    { label: t("sync.mSourceConfirmed"), value: data.newListings },
+    { label: t("sync.mSourceLinks"), value: data.sourceLinks },
     ...(data.showAuditGap
       ? [
-          { label: "标题优化", value: "—", muted: true },
-          { label: "价格调整", value: "—", muted: true },
+          { label: t("sync.mTitleOpt"), value: "—", muted: true },
+          { label: t("sync.mPriceAdj"), value: "—", muted: true },
         ]
       : [
-          { label: "标题优化", value: data.titleOptimizations },
-          { label: "价格调整", value: data.priceAdjustments },
+          { label: t("sync.mTitleOpt"), value: data.titleOptimizations },
+          { label: t("sync.mPriceAdj"), value: data.priceAdjustments },
         ]),
   ] as const;
 
@@ -33,7 +37,7 @@ export function ShopifySummaryCard({
     >
       <Card className="h-full rounded-2xl shadow-card">
         <CardHeader className="border-b-0 pb-0">
-          <CardTitle className="text-base">已上店 Shopify</CardTitle>
+          <CardTitle className="text-base">{t("sync.cardShopify")}</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-3 pt-2">
           {metrics.map((metric) => (
@@ -50,11 +54,11 @@ export function ShopifySummaryCard({
         </CardContent>
         <CardFooter className="flex-col items-start gap-3">
           <p className="text-[11px] leading-relaxed text-ink-muted">
-            {data.footnote}
+            {t(data.footnote)}
           </p>
-          <Link href={data.ctaHref}>
+          <Link href={localePath(locale, data.ctaHref)}>
             <Button size="sm" variant="secondary">
-              {data.ctaLabel}
+              {t(data.ctaLabel)}
             </Button>
           </Link>
         </CardFooter>

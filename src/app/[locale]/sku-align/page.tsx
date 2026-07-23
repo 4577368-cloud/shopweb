@@ -244,7 +244,7 @@ function SkuAlignContent() {
         ) {
           const next = await api.getSkuOverview(shopName);
           setProducts(next);
-          // autoAlign 完成后自动确认所有待确认变体（高置信度项已在显示层视为 active_auto）
+          // autoAlign 完成后静默确认高置信 active_auto（后端 PENDING → ACTIVE）
           try {
             await autoConfirmPendingVariants(shopName, next);
             const confirmed = await api.getSkuOverview(shopName);
@@ -528,10 +528,10 @@ function SkuAlignContent() {
   const scanCopilot: AiPanelContent = {
     title: "正在自动整理",
     summary: scanDone
-      ? "首轮自动对齐已完成，正在进入对照确认。"
-      : "我正在把已绑定商品的变体尝试对齐到 Tangbuy 货源 SKU，并预热货源明细。",
+      ? "自动匹配已完成，可以开始逐款核对规格绑定。"
+      : "正在把店铺每个规格和 Tangbuy 货源规格做自动匹配，并提前加载对照所需的价格信息。",
     bullets: scanTasks.map((t) => `${t.label}：${scanStatusLabel(t.status, t.resultText)}`),
-    nextAction: { label: scanDone ? "查看结果" : "直接查看当前结果", action: "view" },
+    nextAction: { label: scanDone ? "查看结果" : "先查看当前进度", action: "view" },
   };
 
   if (!authSessionReady) {
@@ -600,9 +600,9 @@ function SkuAlignContent() {
                 />
                 <InfoCard title="这一步在做什么">
                   <ul className="space-y-1.5">
-                    <li>读取已绑定商品与变体</li>
-                    <li>按 Tangbuy 货源 SKU 矩阵自动对齐（可信项落库）</li>
-                    <li>预热货源明细，进入后图 / 价即时可见</li>
+                    <li>读取你已关联货源的商品与规格</li>
+                    <li>按货源规格表自动匹配，高置信结果可直接采用</li>
+                    <li>提前加载规格与采购价，进入对照页即可查看</li>
                   </ul>
                 </InfoCard>
               </>
@@ -617,8 +617,8 @@ function SkuAlignContent() {
           {...wb.panelProps}
         >
           <ScanStage
-            heading="首轮自动整理"
-            description="系统正在自动对齐 SKU，可随时直接查看当前结果。"
+            heading="正在自动整理 SKU"
+            description="系统正在匹配店铺规格与货源规格，可随时先查看当前结果。"
             tasks={scanTasks}
             recent={scanRecent}
             done={scanDone}
@@ -657,7 +657,7 @@ function SkuAlignContent() {
               variant="secondary"
               onClick={restartScan}
               className="h-7 w-7 px-0"
-              title="重新整理（重新对齐 SKU 并预热货源明细）"
+              title="重新整理（重新自动匹配并加载货源规格）"
               aria-label="重新整理"
             >
               <RefreshCw className="h-3.5 w-3.5" />

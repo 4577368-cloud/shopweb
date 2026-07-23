@@ -29,13 +29,13 @@ import {
   enqueueSkuAlignRun,
   needsSupplementSource,
 } from "@/lib/sku-align-v1";
-import { confirmProductNeedsReview } from "@/lib/sku-align/batch-confirm";
 import type { SkuAlignProductDetail } from "@/lib/sku-align-v1/types";
 import { buildGapSummaryText } from "@/lib/sku-align/drawer-helpers";
 import { skuAlignProductWorkbenchHref } from "@/lib/sku-align/deep-link";
 import { stashSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
 import {
   deriveVariantDisplayState,
+  countActiveAuto,
   countNeedsReview,
   countUnbound,
   filterVariants,
@@ -191,7 +191,6 @@ export function SkuProductCard({
   const state = productMatchState(product);
 
   const [aligning, setAligning] = useState(false);
-  const [ackingAll, setAckingAll] = useState(false);
   const [alignError, setAlignError] = useState<string | null>(null);
   const [v1Detail, setV1Detail] = useState<SkuAlignProductDetail | null>(null);
   const [v1DetailLoading, setV1DetailLoading] = useState(false);
@@ -267,7 +266,7 @@ export function SkuProductCard({
     product.variants.find((v) => v.bound?.tangbuyProductId)?.bound?.tangbuyProductId?.trim() ||
     null;
   const canManualPick = Boolean(productDetailUrl && productTangbuyId);
-  const busy = aligning || ackingAll;
+  const busy = aligning;
 
   const runAutoAlign = async () => {
     if (busy) return;
@@ -303,29 +302,6 @@ export function SkuProductCard({
   const gapSummary = buildGapSummaryText(unboundCount, noSourceCount);
 
   const alignedPreview = buildVariantPreviewLine(visibleVariants);
-  const autoAlignedCount = visibleVariants.filter(
-    (v) => deriveVariantDisplayState(v) === "active_auto"
-  ).length;
-
-  const ackAll = async () => {
-    if (busy || pendingCount === 0) return;
-    setAckingAll(true);
-    setAlignError(null);
-    try {
-      const result = await confirmProductNeedsReview(shopName, product);
-      const confirmed = result.confirmedCount ?? 0;
-      if (confirmed <= 0) {
-        showToast("没有可确认的待确认建议");
-        return;
-      }
-      showToast(`已接受本商品 ${confirmed} 个 AI 建议`);
-      await onAligned();
-    } catch (err) {
-      setAlignError(autoAlignError(err));
-    } finally {
-      setAckingAll(false);
-    }
-  };
 
   return (
     <article
@@ -415,18 +391,6 @@ export function SkuProductCard({
               <Wand2 className="h-3.5 w-3.5" />
             )}
           </button>
-          {pendingCount > 0 ? (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => void ackAll()}
-              disabled={busy}
-              title="接受该商品下全部待确认的 AI 建议"
-            >
-              {ackingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              接受（{pendingCount}）
-            </Button>
-          ) : null}
         </div>
       </div>
 
@@ -482,7 +446,7 @@ export function SkuProductCard({
           ) : null}
           <span className="shrink-0 text-[10px] text-ink-subtle">
             {manualCount > 0
-              ? `自动 ${autoAlignedCount} · 手动 ${manualCount}`
+              ? `自动 ${countActiveAuto(product)} · 手动 ${manualCount}`
               : pendingCount > 0
                 ? `待确认 ${pendingCount}`
                 : unboundCount > 0

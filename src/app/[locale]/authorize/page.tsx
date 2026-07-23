@@ -273,6 +273,8 @@ export default function AuthorizePage() {
               content={copilot}
               suggestions={suggestions}
               suggestionsKey={phase}
+              variant="onboarding"
+              heading="接入助手"
               onNextAction={(action) => {
                 if (action === "connect") startShopifyInstall();
               }}
@@ -498,26 +500,34 @@ function buildAssistant(
   } = ctx;
 
   if (phase === "authorized") {
-    const boundText =
-      boundCount != null ? `，其中 ${boundCount} 个已关联 Tangbuy 货源` : "";
-    const syncedSummary =
-      productSyncState === "done"
-        ? productCount === 0
-          ? "Shopify 店铺暂无商品"
-          : `已同步 ${productCount} 个商品`
-        : productSyncState === "syncing"
-          ? "商品同步进行中"
-          : "商品数暂未获取";
+    const syncedLabel = formatSyncedProductLabel(productSyncState, productCount);
+    const boundLabel =
+      boundCount != null ? `${boundCount} 个` : "读取中…";
     return {
       copilot: {
         title: "接入完成",
-        summary: `已连接 ${shopName}（${shopDomain}）。${syncedSummary}${boundText}。`,
-        bullets: [
-          `授权时间：${authorizedAt || "—"}`,
-          `已同步商品：${formatSyncedProductLabel(productSyncState, productCount)}`,
-          boundCount != null ? `已关联货源：${boundCount} 个` : "已关联货源：读取中…",
+        summary: `已连接 ${shopName}（${shopDomain}）。`,
+        bullets: [],
+        metrics: [
+          { label: "授权时间", value: authorizedAt || "—" },
+          { label: "已同步商品", value: syncedLabel },
+          { label: "已关联货源", value: boundLabel },
+          {
+            label: "建议下一步",
+            value:
+              boundCount != null && boundCount > 0
+                ? "继续优化货源"
+                : "开始关联货源",
+          },
         ],
-        nextAction: { label: "进入智能选品", href: "/products" },
+        nextAction: {
+          label: "进入智能选品",
+          href: "/products",
+          description:
+            boundCount != null && boundCount > 0
+              ? `已为 ${boundCount} 个商品关联货源，可继续选品与优化。`
+              : "为在售商品图搜关联 Tangbuy 货源。",
+        },
       },
       suggestions: [
         {
@@ -525,21 +535,18 @@ function buildAssistant(
           q: "接下来做什么？",
           a:
             boundCount != null && boundCount > 0
-              ? `建议前往「智能选品」继续为在售商品关联货源，当前已关联 ${boundCount} 个。`
-              : "建议前往「智能选品」，为在售商品自动图搜关联 Tangbuy 货源。",
+              ? `点击「进入智能选品」，继续处理待确认或未关联的在售商品。当前已关联 ${boundCount} 个。`
+              : "点击「进入智能选品」，系统会为在售商品自动图搜并推荐 Tangbuy 货源。",
         },
         {
-          id: "count0",
-          q: "「暂无商品」和「暂未获取」有什么区别？",
-          a: "「暂无商品」表示已成功拉取且 Shopify 店铺确实没有商品；「暂未获取」表示同步未完成或接口异常，可点刷新重试。",
+          id: "stats",
+          q: "这些数字怎么看？",
+          a: `「已同步商品」${syncedLabel}：${productSyncState === "done" && productCount === 0 ? "店铺确实没有商品" : productSyncState === "error" || productSyncState === "idle" ? "同步未完成，可点左侧刷新" : "已从 Shopify 拉取镜像"}。「已关联货源」指已确认绑定 Tangbuy 的在售商品数。`,
         },
         {
-          id: "bound",
-          q: "“已关联货源”是什么？",
-          a:
-            boundCount != null
-              ? `指已确认绑定 Tangbuy 货源的在售商品数，当前为 ${boundCount} 个。`
-              : "指已确认绑定 Tangbuy 货源的在售商品数，正在读取。",
+          id: "refresh",
+          q: "数字不对怎么办？",
+          a: "点授权卡片标题旁的刷新按钮，重新拉取 Shopify 镜像与货源统计。若仍异常，可尝试重新授权。",
         },
       ],
     };
@@ -549,19 +556,23 @@ function buildAssistant(
     return {
       copilot: {
         title: "正在接入",
-        summary: "正在恢复授权状态并读取店铺基础数据，请稍候…",
-        bullets: ["校验 Shopify 授权", "读取店铺与已同步商品", "准备货源关联概览"],
+        summary: "正在恢复授权并读取店铺数据，请稍候。",
+        bullets: [],
+        metrics: [
+          { label: "当前步骤", value: "校验授权" },
+          { label: "预计耗时", value: "约 10 秒" },
+        ],
       },
       suggestions: [
         {
           id: "doing",
           q: "现在在做什么？",
-          a: "正在校验你的 Shopify 授权并读取店铺基础数据。",
+          a: "正在校验 Shopify 授权，并拉取店铺与商品镜像。",
         },
         {
           id: "wait",
           q: "需要我操作吗？",
-          a: "不需要，恢复完成后本页会自动展示接入摘要。",
+          a: "不需要，完成后会自动展示接入摘要。",
         },
       ],
     };
@@ -572,11 +583,11 @@ function buildAssistant(
     copilot: {
       title: "开始接入",
       summary:
-        "Hi！我是 Tangbuy Smart Match 助手。连接 Shopify 后，我会自动同步商品，并在后续为你匹配 Tangbuy 货源、优化利润。",
-      bullets: [
-        "整页跳转至 Shopify 官方授权，安全只读",
-        "授权后自动同步商品镜像",
-        "随后可在「智能选品」自动关联货源",
+        "连接 Shopify 后，我会同步商品镜像，并帮你在后续步骤匹配 Tangbuy 货源。",
+      bullets: [],
+      metrics: [
+        { label: "授权方式", value: "Shopify 官方" },
+        { label: "数据权限", value: "只读" },
       ],
       nextAction: {
         label: canConnect ? "连接 Shopify 店铺" : "填写店铺域名",
@@ -585,23 +596,26 @@ function buildAssistant(
         disabledReason: canConnect
           ? undefined
           : "请先在中间填写店铺域名，再发起授权。",
+        description: canConnect
+          ? "跳转 Shopify 确认授权，完成后自动返回。"
+          : undefined,
       },
     },
     suggestions: [
       {
         id: "how",
-        q: "如何连接店铺？",
-        a: "点击「连接 Shopify 店铺」会跳转到 Shopify 官方授权页，确认后自动返回本页。首次需填写你的 .myshopify.com 域名。",
+        q: "怎么连接店铺？",
+        a: "填写 .myshopify.com 域名，点击连接按钮，在 Shopify 官方页确认授权即可。",
       },
       {
         id: "data",
-        q: "会读取我哪些数据？",
-        a: "仅只读读取商品、库存、订单等基础数据用于分析与货源匹配，不会修改或删除你的店铺数据。",
+        q: "会读取哪些数据？",
+        a: "只读商品、库存、订单等基础数据，用于分析与货源匹配，不会修改店铺。",
       },
       {
         id: "time",
-        q: "授权要多久？",
-        a: "通常 1 分钟内完成。授权成功后系统会自动在后台同步商品镜像。",
+        q: "大概要多久？",
+        a: "授权通常 1 分钟内完成，商品镜像会在后台自动同步。",
       },
     ],
   };

@@ -345,10 +345,17 @@ export interface AiNextAction {
   description?: string;
 }
 
+export interface AiPanelMetric {
+  label: string;
+  value: string;
+}
+
 export interface AiPanelContent {
   title: string;
   summary: string;
   bullets: string[];
+  /** Compact stat grid — preferred over bullets on narrow rails (e.g. authorize). */
+  metrics?: AiPanelMetric[];
   nextAction?: AiNextAction;
   alerts?: AiAlert[];
 }

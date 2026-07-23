@@ -75,6 +75,7 @@ export interface LogisticsAgentPanelProps {
   onSetFilter?: (filterMode: string) => void;
   /** Signal in-flight batch accept to stop between chunks. */
   onCancelBatchAccept?: () => void;
+  catalogIngestingCount?: number;
 }
 
 export function LogisticsAgentPanel({
@@ -108,6 +109,7 @@ export function LogisticsAgentPanel({
   onViewIssues,
   onSetFilter,
   onCancelBatchAccept,
+  catalogIngestingCount = 0,
 }: LogisticsAgentPanelProps) {
   const [commandPlan, setCommandPlan] = useState<LogisticsCommandPlan | null>(null);
   const [commandExecuting, setCommandExecuting] = useState(false);
@@ -406,6 +408,12 @@ export function LogisticsAgentPanel({
 
   return (
     <div className="flex flex-col gap-2">
+      {catalogIngestingCount > 0 ? (
+        <p className="px-0.5 text-[11px] leading-relaxed text-sky-800">
+          {catalogIngestingCount} 个商品入库中，暂时无法获得物流预估；同步完成后可重试运费预估。
+        </p>
+      ) : null}
+
       {pipelineProgress && pipelineProgress.phase !== "idle" ? (
         <LogisticsPipelineTaskCard
           progress={pipelineProgress}

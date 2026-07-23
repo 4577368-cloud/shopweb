@@ -272,6 +272,22 @@ export function collectNeedsReviewVariantIds(
   return ids;
 }
 
+/** High-confidence auto-align rows: shown as active_auto but backend still PENDING. */
+export function collectAutoConfirmVariantIds(
+  products: SkuProductOverview[]
+): string[] {
+  const ids: string[] = [];
+  for (const p of products) {
+    for (const v of p.variants) {
+      const state = deriveVariantDisplayState(v);
+      if (state === "active_auto" && v.bound?.bindStatus === "PENDING") {
+        ids.push(v.thirdPlatformSkuId);
+      }
+    }
+  }
+  return ids;
+}
+
 export function countNeedsReviewInProducts(
   products: SkuProductOverview[]
 ): number {

@@ -28,11 +28,15 @@ export async function confirmCandidateBinding(
     auto?: boolean;
     imageScores?: Record<string, number | null>;
     titleScores?: Record<string, number>;
+    /** When false, skip Tangbuy preferred-pool ingest (binding still proceeds). */
+    allowPoolIngest?: boolean;
   }
 ): Promise<ImageBindingView> {
   const fromCandidate = identityFromSearchCandidate(candidate);
   const skipPool = Boolean(
-    candidate.catalogSource || candidate.internalGoodsId?.trim()
+    candidate.catalogSource ||
+      candidate.internalGoodsId?.trim() ||
+      opts?.allowPoolIngest === false
   );
   const resolved = await resolveIdentityWithPreferredPool({
     tangbuyProductId: candidate.internalGoodsId ?? candidate.productId,

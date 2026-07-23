@@ -7,9 +7,11 @@ import { CheckCircle2, Circle } from "lucide-react";
 import { AppLogo } from "@/components/brand/app-logo";
 import { useOnboarding } from "@/context/onboarding-context";
 import { ShopSwitcher } from "@/components/workbench/shop-switcher";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 import { cn } from "@/lib/utils";
 import type { StepStatus } from "@/lib/types";
-import type { WorkflowStepSnapshot } from "@/lib/workflow-step-snapshots";
+import type { WorkflowStepSnapshot, WorkflowStatusKey } from "@/lib/workflow-step-snapshots";
 
 function StepIndicator({
   order,
@@ -36,15 +38,17 @@ function StepIndicator({
 
 function isSnapshotInProgress(snapshot: WorkflowStepSnapshot): boolean {
   return (
-    snapshot.statusLabel === "进行中" ||
-    snapshot.statusLabel === "匹配中" ||
-    snapshot.statusLabel === "待处理" ||
-    snapshot.statusLabel === "待配置" ||
-    snapshot.statusLabel === "待报价" ||
-    snapshot.statusLabel === "可开始" ||
-    snapshot.statusLabel === "同步中" ||
-    snapshot.statusLabel === "加载中"
+    snapshot.statusKey === "in_progress" ||
+    snapshot.statusKey === "pending" ||
+    snapshot.statusKey === "loading" ||
+    snapshot.statusKey === "ready" ||
+    snapshot.statusKey === "syncing"
   );
+}
+
+/** Map a workflow step id to its localized title/description key. */
+function stepKeyFor(id: string): string {
+  return id === "sku-align" ? "sku" : id;
 }
 
 /**
@@ -52,6 +56,8 @@ function isSnapshotInProgress(snapshot: WorkflowStepSnapshot): boolean {
  */
 export function StepSidebar() {
   const pathname = usePathname();
+  const t = useT();
+  const locale = useLocale();
   const {
     steps,
     syncCompleted,
@@ -81,21 +87,22 @@ export function StepSidebar() {
     ...steps.map((s) => ({
       id: s.id,
       order: s.order,
-      title: s.title,
-      href: s.href,
+      title: t(`steps.${stepKeyFor(s.id)}.title`),
+      href: localePath(locale, s.href),
       snapshot:
         workflowStepSnapshots[s.id] ??
         ({
-          statusLabel: "待开始",
+          statusKey: "not_started" as WorkflowStatusKey,
+          statusLabel: t("status.notStarted"),
           statusTone: "text-ink-subtle",
-          description: s.description,
+          description: t(`steps.${stepKeyFor(s.id)}.desc`),
         } satisfies WorkflowStepSnapshot),
     })),
     {
       id: "sync",
       order: steps.length + 1,
-      title: "同步到店铺",
-      href: "/sync",
+      title: t("steps.sync.title"),
+      href: localePath(locale, "/sync"),
       snapshot: syncSnapshot,
     },
   ];
@@ -105,7 +112,7 @@ export function StepSidebar() {
       <div className="px-4 py-4">
         <AppLogo
           variant="sidebar"
-          href={isAuthorized ? "/" : "/authorize"}
+          href={localePath(locale, isAuthorized ? "/" : "/authorize")}
         />
       </div>
 
@@ -113,7 +120,7 @@ export function StepSidebar() {
 
       <div className="px-4 pb-3 pt-1">
         <div className="mb-1.5 flex items-center justify-between text-[11px] text-ink-muted">
-          <span>开店进度</span>
+          <span>{t("sidebar.progress")}</span>
           <span className="font-semibold tabular-nums text-ink">{progress}%</span>
         </div>
         <div className="h-1 overflow-hidden rounded-full bg-surface-muted">
@@ -124,13 +131,13 @@ export function StepSidebar() {
         </div>
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" aria-label="开店流程导航">
-        <p className="mb-2 px-1 text-[11px] font-medium text-ink-subtle">开店流程</p>
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" aria-label={t("nav.flow")}>
+        <p className="mb-2 px-1 text-[11px] font-medium text-ink-subtle">{t("nav.flow")}</p>
         <ul className="space-y-0.5">
           {navItems.map((step, index) => {
             const current = pathname === step.href;
             const snapshot = step.snapshot;
-            const completed = snapshot.statusLabel === "已完成";
+            const completed = snapshot.statusKey === "completed";
             const inProgress = isSnapshotInProgress(snapshot);
 
             return (
@@ -147,7 +154,7 @@ export function StepSidebar() {
                 <Link
                   href={step.href}
                   aria-current={current ? "page" : undefined}
-                  title={`前往：${step.title}`}
+                  title={t("sidebar.goTo", { title: step.title })}
                   className={cn(
                     "group relative z-[1] flex cursor-pointer gap-2.5 rounded-[var(--radius-control)] px-2 py-2 transition-colors",
                     current
@@ -192,10 +199,10 @@ export function StepSidebar() {
       <div className="border-t border-hairline px-4 py-3">
         <div className="flex flex-col gap-1 text-[11px] text-ink-subtle">
           <Link href="#" className="hover:text-ink-muted">
-            需要帮助？
+            {t("common.help")}
           </Link>
           <Link href="#" className="hover:text-ink-muted">
-            查看帮助文档
+            {t("common.helpDocs")}
           </Link>
         </div>
       </div>

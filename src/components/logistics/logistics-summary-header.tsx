@@ -5,19 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { cn } from "@/lib/utils";
-import { computeLogisticsPlanMetrics, type LogisticsFilterMode } from "@/lib/logistics/display";
+import {
+  buildLogisticsFilterTabs,
+  computeLogisticsPlanMetrics,
+  type LogisticsFilterMode,
+} from "@/lib/logistics/display";
 import { countryLabel } from "@/lib/logistics/markets";
 import { listTemplateCountryCodes } from "@/lib/logistics/template-params";
 import type { LogisticsAnalysis, LogisticsTemplate } from "@/lib/types";
 
-const FILTER_TABS = (
-  metrics: ReturnType<typeof computeLogisticsPlanMetrics>
-): { id: LogisticsFilterMode; label: string; count?: number }[] => [
-  { id: "pending_quote", label: "待报价", count: metrics.pendingQuoteCount },
-  { id: "pending_confirm", label: "待确认", count: metrics.pendingConfirmCount },
-  { id: "sku_unlinked", label: "SKU未关联", count: metrics.skuUnlinkedCount },
-  { id: "all", label: "全部", count: metrics.variantCount },
-];
+const FILTER_TABS = buildLogisticsFilterTabs;
 
 export function LogisticsSummaryHeader({
   analysis,

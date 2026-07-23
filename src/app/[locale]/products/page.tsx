@@ -76,6 +76,8 @@ import type {
   ShopMirrorProduct,
 } from "@/lib/types";
 import type { ScanHandoffPayload } from "@/lib/scan/handoff";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 
 type Tab = "shop" | "catalog";
 
@@ -102,6 +104,12 @@ function SelectContent() {
     useOnboarding();
   const shopName = shop.name;
   const wb = useWorkbenchPage("products");
+  const t = useT();
+  const locale = useLocale();
+  const breadcrumbs = [
+    { label: t("nav.workbench"), href: localePath(locale, "/") },
+    { label: t("products.title") },
+  ];
 
   const urlTab: Tab = searchParams.get("tab") === "catalog" ? "catalog" : "shop";
   const [tab, setTabLocal] = useState<Tab>(urlTab);
@@ -117,7 +125,7 @@ function SelectContent() {
         current === t || (t === "shop" && (current == null || current === ""));
       if (already) return;
       startTransition(() => {
-        router.replace(`/products?tab=${t}`, { scroll: false });
+        router.replace(localePath(locale, `/products?tab=${t}`), { scroll: false });
       });
     },
     [router, searchParams]
@@ -363,15 +371,21 @@ function SelectContent() {
   useEffect(() => {
     if (phase !== "result" || !isAuthorized || tab !== "shop" || batchLinkActive) return;
     if (autoLinkVisitRef.current) return;
-    if (summary == null || pageLinkableScope.ids.length === 0) return;
+    if (summary == null) return;
+
+    const newIds = pageLinkableScope.ids.filter((id) =>
+      newArrivalStats.pendingNewAnalysisIds.has(id)
+    );
+    if (newIds.length === 0) return;
 
     autoLinkVisitRef.current = true;
     setShopFilter("all");
-    fireBatchLink("auto", pageLinkableScope.ids);
+    fireBatchLink("auto", newIds);
   }, [
     batchLinkActive,
     fireBatchLink,
     isAuthorized,
+    newArrivalStats.pendingNewAnalysisIds,
     pageLinkableScope.ids,
     phase,
     summary,
@@ -1696,13 +1710,13 @@ function SelectContent() {
     return (
       <WorkbenchShell sidebar={<StepSidebar />} rail={rail} {...wb.shellProps}>
         <WorkbenchPanel
-          title="智能选品"
-          breadcrumbs={[{ label: "授权店铺", href: "/authorize" }, { label: "智能选品" }]}
+          title={t("products.title")}
+          breadcrumbs={[{ label: t("nav.authorize"), href: localePath(locale, "/authorize") }, { label: t("products.title") }]}
           {...wb.panelProps}
         >
           <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
             <Loader2 className="h-4 w-4 animate-spin text-brand" />
-            正在恢复店铺授权…
+            {t("products.restoringAuth")}
           </div>
           <TableSkeleton rows={4} />
         </WorkbenchPanel>
@@ -1719,17 +1733,17 @@ function SelectContent() {
         {...wb.shellProps}
       >
         <WorkbenchPanel
-          title="智能选品"
-          breadcrumbs={[{ label: "授权店铺", href: "/authorize" }, { label: "智能选品" }]}
+          title={t("products.title")}
+          breadcrumbs={[{ label: t("nav.authorize"), href: localePath(locale, "/authorize") }, { label: t("products.title") }]}
           {...wb.panelProps}
         >
           <EmptyState
-            title="尚未连接店铺"
-            description="完成 Shopify 授权后，此处将加载在售商品与可上架的货源商品。"
+            title={t("products.notConnectedTitle")}
+            description={t("products.notConnectedDesc")}
             action={
-              <Link href="/authorize">
+              <Link href={localePath(locale, "/authorize")}>
                 <Button size="sm" className="mt-1">
-                  去授权店铺
+                  {t("products.goAuthorize")}
                 </Button>
               </Link>
             }
@@ -1761,8 +1775,8 @@ function SelectContent() {
         {...wb.shellProps}
       >
         <WorkbenchPanel
-          title={scanDone ? "AI 已完成首轮选品分析" : "AI 正在分析你的店铺"}
-          breadcrumbs={BREADCRUMBS}
+          title={scanDone ? t("products.scanDoneTitle") : t("products.scanningTitle")}
+          breadcrumbs={breadcrumbs}
           {...wb.panelProps}
         >
           <AiCopilotScanStage
@@ -1779,8 +1793,8 @@ function SelectContent() {
   }
 
   const tabs = [
-    { id: "shop", label: "我的shopify", count: summary?.shopProducts },
-    { id: "catalog", label: "发现新品" },
+    { id: "shop", label: t("products.tabShop"), count: summary?.shopProducts },
+    { id: "catalog", label: t("products.tabDiscover") },
   ];
 
   return (
@@ -1791,7 +1805,7 @@ function SelectContent() {
     >
       <WorkbenchPanel
         title="智能选品"
-        breadcrumbs={BREADCRUMBS}
+        breadcrumbs={breadcrumbs}
         {...wb.panelProps}
         actions={
           <div className="flex items-center gap-3">
@@ -1801,7 +1815,7 @@ function SelectContent() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="搜索商品标题/SKU…"
+                placeholder={t("products.searchPlaceholder")}
                 className="h-7 w-48 rounded-[var(--radius-control)] border border-hairline bg-surface pl-7 pr-8 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft"
               />
               {searchQuery && (
@@ -1926,6 +1940,7 @@ function SelectContent() {
             <CatalogPublishPanel
               onActivity={loadSummary}
               onBindingLinked={() => bumpMirrorRefresh()}
+              onPublished={() => bumpMirrorRefresh()}
               recommendedCategories={recommendedCategories}
               filtersMountEl={filtersMountEl}
               sharedTemplate={template}

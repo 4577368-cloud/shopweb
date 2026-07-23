@@ -16,9 +16,9 @@ const TASK_IDS = { overview: "overview", align: "align", prewarm: "prewarm" } as
 
 function initialTasks(): ScanTaskView[] {
   return [
-    { id: TASK_IDS.overview, label: "读取已绑定商品", status: "pending" },
-    { id: TASK_IDS.align, label: "静默对齐 SKU（V1）", status: "pending" },
-    { id: TASK_IDS.prewarm, label: "预热 itemGet 规格表", status: "pending" },
+    { id: TASK_IDS.overview, label: "加载已关联商品", status: "pending" },
+    { id: TASK_IDS.align, label: "自动匹配店铺规格", status: "pending" },
+    { id: TASK_IDS.prewarm, label: "加载货源规格与价格", status: "pending" },
   ];
 }
 
@@ -59,7 +59,7 @@ export function useSkuAlignScan(shopName: string) {
       const variants = overview.reduce((a, p) => a + p.variants.length, 0);
       patch(TASK_IDS.overview, {
         status: "done",
-        resultText: `发现 ${overview.length} 个已绑定商品 · ${variants} 个变体`,
+        resultText: `已找到 ${overview.length} 个商品 · ${variants} 个规格`,
       });
       // Repair snapshots in the background — must not block step 2 (can take minutes for large shops).
       void api.backfillBindingSnapshots(shopName).catch(() => null);
@@ -75,7 +75,7 @@ export function useSkuAlignScan(shopName: string) {
       return;
     }
     if (overview.length === 0) {
-      patch(TASK_IDS.align, { status: "skipped", resultText: "暂无已绑定商品可对齐" });
+      patch(TASK_IDS.align, { status: "skipped", resultText: "暂无已关联商品" });
       patch(TASK_IDS.prewarm, { status: "skipped" });
       finalize();
       return;
@@ -97,17 +97,17 @@ export function useSkuAlignScan(shopName: string) {
       if (!run) {
         patch(TASK_IDS.align, {
           status: "skipped",
-          resultText: "对齐任务未受理",
+          resultText: "自动匹配未启动",
         });
       } else {
-        const summary = `建议 ${run.suggestedCount} · 未匹配 ${run.unmappedCount} · 无货源 ${run.noSourceCount}`;
+        const summary = `待确认 ${run.suggestedCount} · 未匹配 ${run.unmappedCount} · 缺货源 ${run.noSourceCount}`;
         setRecent((prev) =>
-          [`对齐完成：${summary}`, ...prev].slice(0, RECENT_MAX)
+          [`匹配完成：${summary}`, ...prev].slice(0, RECENT_MAX)
         );
         patch(TASK_IDS.align, {
           status: cancelRef.current ? "skipped" : run.runStatus === "FAILED" ? "failed" : "done",
-          resultText: `已对齐 ${run.matchedCount} 个变体 · ${summary}`,
-          error: run.runStatus === "FAILED" ? run.errorSummary ?? "对齐失败" : undefined,
+          resultText: `已匹配 ${run.matchedCount} 个规格 · ${summary}`,
+          error: run.runStatus === "FAILED" ? run.errorSummary ?? "自动匹配失败" : undefined,
         });
       }
     } catch (err) {
@@ -134,7 +134,7 @@ export function useSkuAlignScan(shopName: string) {
       );
       patch(TASK_IDS.prewarm, {
         status: "done",
-        resultText: `itemGet 规格表已预热（${detailUrls.length} 个货源）`,
+        resultText: `已加载 ${detailUrls.length} 个货源的规格与价格`,
       });
     } catch (err) {
       patch(TASK_IDS.prewarm, { status: "failed", error: readableError(err) });

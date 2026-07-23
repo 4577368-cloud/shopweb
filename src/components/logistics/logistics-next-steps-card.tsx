@@ -73,25 +73,24 @@ export function LogisticsNextStepsCard({
     });
   }
 
-  if (pendingConfirmCount > 0) {
+  if (pendingConfirmCount > 0 && onAcceptAllReady && batchAcceptCount > 0) {
+    steps.push({
+      key: "batch-accept",
+      title: `接受推荐线路（${batchAcceptCount}）`,
+      detail: "普货 SKU 将自动采纳系统推荐线路",
+      actionLabel: "一键接受",
+      primary: true,
+      onClick: onAcceptAllReady,
+      disabled: pipelineRunning,
+    });
+  } else if (pendingConfirmCount > 0) {
     steps.push({
       key: "pending-confirm",
-      title: `待确认方案（${pendingConfirmCount}）`,
-      detail: "已有线路报价，展开商品后点「确认」接受推荐线路",
-      actionLabel: "去确认",
+      title: `待核对方案（${pendingConfirmCount}）`,
+      detail: "异常品类或邮限需人工核对",
+      actionLabel: "去处理",
       onClick: onViewPendingConfirm,
     });
-    if (onAcceptAllReady && batchAcceptCount > 0) {
-      steps.push({
-        key: "batch-accept",
-        title: `批量接受（${batchAcceptCount}）`,
-        detail: "一次接受全部已有报价的方案",
-        actionLabel: "批量接受",
-        primary: true,
-        onClick: onAcceptAllReady,
-        disabled: pipelineRunning,
-      });
-    }
   }
 
   if (exceptionCount > 0) {

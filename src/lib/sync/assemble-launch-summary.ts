@@ -25,6 +25,10 @@ import type {
   ShopMirrorProduct,
 } from "@/lib/types";
 import type { SkuAlignOverview } from "@/lib/sku-align-v1/types";
+import {
+  FULFILLMENT_PREP_FOOTNOTE,
+  LAUNCH_PROGRESS_FOOTNOTE,
+} from "@/lib/sync/fulfillment-copy";
 
 function buildProductChecks(
   itemId: string,
@@ -46,7 +50,7 @@ function buildProductChecks(
     }
   }
   if (logisticsConfirmed) {
-    checks.push("物流线路已确认");
+    checks.push("物流线路已确认（本地）");
   }
   if (checks.length === 0) {
     checks.push("已纳入开店准备清单");
@@ -265,8 +269,8 @@ function buildProgressTasks(
       detail:
         logistics.variantCount > 0
           ? logistics.quotedCount > 0
-            ? `已报价 ${logistics.quotedCount} · 已确认 ${logistics.confirmedCount} / ${logistics.variantCount}`
-            : `${logistics.confirmedCount} / ${logistics.variantCount} 变体`
+            ? `已报价 ${logistics.quotedCount} · 本地确认 ${logistics.confirmedCount} / ${logistics.variantCount}`
+            : `本地确认 ${logistics.confirmedCount} / ${logistics.variantCount} 变体`
           : undefined,
       status: logisticsDone ? "done" : logisticsPartial ? "running" : "pending",
     },
@@ -470,10 +474,9 @@ export async function assembleLaunchSummary(shopName: string): Promise<LaunchSum
       titleOptimizations: 0,
       priceAdjustments: 0,
       sourceLinks: binding.confirmed + binding.pending,
-      footnote:
-        "以上数据来自店铺镜像与货源绑定记录。标题/价格优化次数需接入工作流审计后展示。",
+      footnote: "sync.shopifyFootnote",
       ctaHref: "/products",
-      ctaLabel: "查看已上架商品",
+      ctaLabel: "sync.ctaViewListed",
       showAuditGap: true,
     },
     fulfillmentPrep: {
@@ -483,9 +486,10 @@ export async function assembleLaunchSummary(shopName: string): Promise<LaunchSum
       logisticsTotal: logistics.variantCount,
       pendingReview:
         (skuOverview?.unresolvedVariantsCount ?? 0) + logistics.reviewCount,
-      footnote: "SKU 与物流配置保存在履约侧，用于后续采购和订单处理。",
+      footnote: FULFILLMENT_PREP_FOOTNOTE,
+      showLocalLogisticsGap: true,
       ctaHref: "/sku-align",
-      ctaLabel: "查看 SKU 映射详情",
+      ctaLabel: "sync.ctaViewSku",
     },
     strategy: {
       pricing: buildPricingStrategy(pricingTemplate),
@@ -496,7 +500,7 @@ export async function assembleLaunchSummary(shopName: string): Promise<LaunchSum
     progress: {
       targetPercent,
       tasks,
-      footnote: "完成度由货源关联、SKU 映射、物流确认三项真实数据加权计算。",
+      footnote: LAUNCH_PROGRESS_FOOTNOTE,
     },
     followUps,
   };
@@ -505,7 +509,7 @@ export async function assembleLaunchSummary(shopName: string): Promise<LaunchSum
 function buildPricingStrategy(template: PricingTemplate | null) {
   if (!template || template.isDefault) {
     return {
-      sourceLabel: "采购价 (CNY)",
+      sourceLabel: "sync.pricingSourceLabel",
       exchangeRate: 7.0,
       multiplier: 2.8,
       addend: 0.99,

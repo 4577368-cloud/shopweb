@@ -35,6 +35,7 @@ export type SkuRowStatus =
   | "processing"
   | "confirmed"
   | "pending_review"
+  | "ingesting"
   | "failed"
   | "pending_sku"
   | "ready";
@@ -64,11 +65,10 @@ export function computeSkuRowStatus(
     recommendedLine: quoteResult?.recommendedLine ?? variant.recommendedLine,
     quoteStatus: quoteResult?.quoteStatus ?? variant.quoteStatus,
   });
-  if (
-    quoteStatus === "FAILED" ||
-    quoteResult?.errorMessage ||
-    (quoteStatus === "INGESTING" && !quoteResult?.recommendedLine)
-  ) {
+  if (quoteStatus === "INGESTING" && !quoteResult?.recommendedLine) {
+    return "ingesting";
+  }
+  if (quoteStatus === "FAILED" || quoteResult?.errorMessage) {
     return "failed";
   }
   if (variantHasQuoteLine(variant, quoteResult)) return "pending_review";
@@ -88,6 +88,7 @@ export const SKU_ROW_STATUS_LABELS: Record<SkuRowStatus, string> = {
   processing: "正在获取运费预估",
   confirmed: "已确认",
   pending_review: "待确认",
+  ingesting: "商品入库中",
   failed: "失败",
   pending_sku: "SKU未关联",
   ready: "待报价",
@@ -105,7 +106,7 @@ export function formatVariantIssueHint(
       recommendedLine: quoteResult.recommendedLine ?? variant.recommendedLine,
       quoteStatus: quoteResult.quoteStatus ?? variant.quoteStatus,
     });
-    if (quoteStatus === "INGESTING") return null;
+    if (quoteStatus === "INGESTING") return "商品入库中";
     const msg = quoteResult.errorMessage.trim();
     return msg.length > 48 ? `${msg.slice(0, 48)}…` : msg;
   }

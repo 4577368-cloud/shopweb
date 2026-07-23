@@ -71,7 +71,8 @@
     "logisticsConfirmed": 155,
     "logisticsTotal": 169,
     "pendingReview": 16,
-    "footnote": "SKU 与物流配置保存在履约侧，用于后续采购和订单处理。",
+    "footnote": "SKU 映射已写入 Tangbuy 后端；物流线路确认与模板策略暂存于本应用，尚未同步履约系统。",
+    "showLocalLogisticsGap": true,
     "ctaHref": "/sku-align",
     "ctaLabel": "查看 SKU 映射详情"
   },
@@ -195,7 +196,7 @@
   },
   "progress": {
     "targetPercent": 68,
-    "footnote": "完成度由货源关联、SKU 映射、物流确认三项真实数据加权计算。",
+    "footnote": "完成度由货源关联、SKU 映射、本地物流确认记录加权计算；物流尚未同步履约系统。",
     "tasks": [
       {
         "id": "source-links",

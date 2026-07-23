@@ -126,10 +126,10 @@ export function ScanStage({
 
         <div className="flex items-center justify-between gap-3 border-t border-hairline px-5 py-3">
           <span className="text-[11px] text-ink-subtle">
-            {done ? "首轮自动处理已完成" : "处理中，可随时查看当前结果"}
+            {done ? "整理完成，可查看结果" : "处理中，可先查看当前结果"}
           </span>
           <Button size="sm" variant={done ? "primary" : "secondary"} onClick={onViewResult}>
-            {done ? "查看结果" : "直接查看当前结果"}
+            {done ? "查看结果" : "先查看当前结果"}
           </Button>
         </div>
       </section>
