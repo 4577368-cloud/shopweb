@@ -51,8 +51,8 @@ import type { MeasureOverride } from "@/lib/logistics/product-shell";
 /** Shared column template — header and body must use the same tracks. */
 function skuRowGridClass(showOps: boolean): string {
   return showOps
-    ? "grid-cols-[minmax(11rem,24%)_minmax(0,1fr)_5.75rem_7rem]"
-    : "grid-cols-[minmax(11rem,24%)_minmax(0,1fr)_5.75rem]";
+    ? "grid-cols-[minmax(10rem,30%)_minmax(0,1fr)_5.75rem_7rem]"
+    : "grid-cols-[minmax(10rem,30%)_minmax(0,1fr)_5.75rem]";
 }
 
 function ProductThumb({
@@ -260,7 +260,7 @@ function FulfillmentSkuRow({
           </div>
         </div>
 
-        <div className="min-w-0 self-start py-0.5">
+        <div className="ml-auto w-full max-w-[15rem] min-w-0 justify-self-end self-start py-0.5">
           {selectedLine ? (
             <>
               {lines.length > 1 && onSelectLine ? (
@@ -268,7 +268,7 @@ function FulfillmentSkuRow({
                   value={logisticsLineKey(selectedLine)}
                   onChange={(e) => onSelectLine(e.target.value)}
                   disabled={busy || accepting}
-                  className="h-8 w-full max-w-[14rem] text-[11px] font-medium"
+                  className="h-7 w-full px-2 !text-[10px] leading-tight font-normal"
                   title="选择物流线路"
                 >
                   {lines.map((line) => {
@@ -283,8 +283,8 @@ function FulfillmentSkuRow({
                   })}
                 </Select>
               ) : (
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="min-w-0 text-xs font-medium leading-snug text-ink">
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right">
+                  <span className="min-w-0 text-[10px] font-medium leading-snug text-ink">
                     {selectedLine.lineName}
                   </span>
                   <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800 ring-1 ring-emerald-200">
@@ -292,7 +292,7 @@ function FulfillmentSkuRow({
                   </span>
                 </div>
               )}
-              <p className="mt-1 text-[11px] leading-snug text-slate-600">
+              <p className="mt-1 text-right text-[10px] leading-snug text-slate-600">
                 {[
                   overtimeDays != null ? `超时时效 ${overtimeDays} 天` : null,
                   transitLabel ? `时效 ${transitLabel}` : null,
@@ -560,7 +560,7 @@ export function LogisticsProductGroup({
             aria-hidden
           >
             <span>规格</span>
-            <span>线路 · 时效</span>
+            <span className="justify-self-end text-right">线路 · 时效</span>
             <span className="text-right">运费</span>
             {showOpsColumn ? <span className="text-right">操作</span> : null}
           </div>
