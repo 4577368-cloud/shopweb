@@ -127,6 +127,11 @@ const overviewCache = new Map<
 >();
 const OVERVIEW_CACHE_MS = 10_000;
 
+/** Drop cached SKU overview so the next read reflects recent binds/replaces. */
+export function invalidateSkuOverviewCache(shop: string): void {
+  overviewCache.delete(shop);
+}
+
 function deduped<T>(key: string, run: () => Promise<T>): Promise<T> {
   const existing = inflightRequests.get(key) as Promise<T> | undefined;
   if (existing) return existing;

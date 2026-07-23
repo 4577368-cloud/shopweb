@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
@@ -12,7 +19,7 @@ import { SkuProductWorkbench } from "@/components/sku-align/sku-product-workbenc
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useOnboarding } from "@/context/onboarding-context";
-import { api, readableError } from "@/lib/api";
+import { api, invalidateSkuOverviewCache, readableError } from "@/lib/api";
 import type { DrawerPhase } from "@/lib/sku-align/drawer-helpers";
 import {
   parseSkuAlignTabParam,
@@ -48,42 +55,70 @@ function SkuAlignProductContent() {
   const [product, setProduct] = useState<SkuProductOverview | null>(null);
   const [pricingTemplate, setPricingTemplate] = useState<PricingTemplate | null>(null);
   const [v1Detail, setV1Detail] = useState<SkuAlignProductDetail | null>(null);
+  const productRef = useRef<SkuProductOverview | null>(null);
 
-  const load = useCallback(async () => {
-    if (!productId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const handed = takeSkuProductHandoff(shopName, productId);
-      const [tpl, detail] = await Promise.all([
-        api.getPricingTemplate(shopName).catch(() => null),
-        api.skuAlignV1ProductDetail(shopName, productId).catch(() => null),
-      ]);
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!productId) return;
+      const silent = opts?.silent === true;
+      if (!silent) {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        const handed = takeSkuProductHandoff(shopName, productId);
+        const [tpl, detail] = await Promise.all([
+          api.getPricingTemplate(shopName).catch(() => null),
+          api.skuAlignV1ProductDetail(shopName, productId).catch(() => null),
+        ]);
 
-      if (handed) {
-        setProduct(handed);
+        let found: SkuProductOverview | null = handed;
+        if (!found && productRef.current?.thirdPlatformItemId === productId) {
+          found = productRef.current;
+        }
+
+        if (!found || silent) {
+          invalidateSkuOverviewCache(shopName);
+          const overview = await api.getSkuOverview(shopName);
+          const fresh =
+            overview.find((p) => p.thirdPlatformItemId === productId) ?? null;
+          if (fresh) found = fresh;
+        }
+
+        if (!found) {
+          if (silent && productRef.current) {
+            showToast(t("sku.refreshOverviewFailed"));
+            setPricingTemplate(tpl);
+            setV1Detail(detail);
+            return;
+          }
+          setProduct(null);
+          productRef.current = null;
+          setError(t("sku.errNotInList"));
+          return;
+        }
+
+        setProduct(found);
+        productRef.current = found;
         setPricingTemplate(tpl);
         setV1Detail(detail);
-        return;
-      }
-
-      const overview = await api.getSkuOverview(shopName);
-      const found =
-        overview.find((p) => p.thirdPlatformItemId === productId) ?? null;
-      if (!found) {
+      } catch (err) {
+        const message = readableError(err);
+        if (silent && productRef.current) {
+          showToast(message);
+          return;
+        }
+        setError(message);
         setProduct(null);
-        setError(t("sku.errNotInList"));
-        return;
+        productRef.current = null;
+      } finally {
+        if (!silent) {
+          setLoading(false);
+        }
       }
-      setProduct(found);
-      setPricingTemplate(tpl);
-      setV1Detail(detail);
-    } catch (err) {
-      setError(readableError(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [shopName, productId, t]);
+    },
+    [shopName, productId, showToast, t]
+  );
 
   useEffect(() => {
     if (!isAuthorized || !productId) return;
@@ -207,8 +242,10 @@ function SkuAlignProductContent() {
           </div>
         ) : error || !product ? (
           <EmptyState
-            title={t("sku.errOpenWorkbench")}
-            description={error ?? t("sku.productNotFound")}
+            title={error ?? t("sku.errOpenWorkbench")}
+            description={
+              error ? t("sku.errOpenWorkbenchHint") : t("sku.productNotFound")
+            }
             action={
               <Link href={skuAlignHref()}>
                 <Button size="sm" className="mt-1">
@@ -228,7 +265,7 @@ function SkuAlignProductContent() {
             focusVariantId={focusVariantId}
             v1Detail={v1Detail}
             pricingTemplate={pricingTemplate}
-            onSaved={load}
+            onSaved={() => load({ silent: true })}
             onRefreshDetail={async () => {
               try {
                 setV1Detail(
