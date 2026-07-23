@@ -69,6 +69,10 @@ import {
   skuAlignProductWorkbenchHref,
 } from "@/lib/sku-align/deep-link";
 import { stashSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
+import {
+  peekSkuOverviewSession,
+  setSkuOverviewSession,
+} from "@/lib/sku-align/overview-session-cache";
 import type { AiPanelContent, PricingTemplate, SkuProductOverview } from "@/lib/types";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
@@ -137,19 +141,19 @@ function SkuAlignContent() {
     cancel: cancelScan,
   } = useSkuAlignScan(shopName);
 
-  const load = useCallback(async () => {
-    const silent = hasLoadedOnceRef.current;
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? hasLoadedOnceRef.current;
     if (!silent) setLoading(true);
     else setRefreshing(true);
     setError(null);
     try {
-      // Snapshot repair can take minutes — never block overview refresh on it.
       void api.backfillBindingSnapshots(shopName).catch(() => null);
       const [next, tpl] = await Promise.all([
         api.getSkuOverview(shopName),
         api.getPricingTemplate(shopName).catch(() => null),
       ]);
       setProducts(next);
+      setSkuOverviewSession(shopName, next);
       setPricingTemplate(tpl);
       hasLoadedOnceRef.current = true;
     } catch (err) {
@@ -169,7 +173,15 @@ function SkuAlignContent() {
     markScanned("sku-align", shopName);
     skipNextAutoAlignRef.current = true;
     setPhase("result");
-    void load();
+    const cached = peekSkuOverviewSession(shopName);
+    if (cached?.length) {
+      setProducts(cached);
+      setLoading(false);
+      hasLoadedOnceRef.current = true;
+      void load({ silent: true });
+    } else {
+      void load();
+    }
   }, [cancelScan, shopName, load]);
 
   // Decide once per shop: first session visit → play the scan; otherwise straight to result.
@@ -205,7 +217,15 @@ function SkuAlignContent() {
 
     if (hasScanned("sku-align", shopName)) {
       setPhase("result");
-      void load();
+      const cached = peekSkuOverviewSession(shopName);
+      if (cached?.length) {
+        setProducts(cached);
+        setLoading(false);
+        hasLoadedOnceRef.current = true;
+        void load({ silent: true });
+      } else {
+        void load();
+      }
     } else {
       scanFinishScheduledRef.current = false;
       scanFinishedRef.current = false;

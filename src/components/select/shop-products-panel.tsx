@@ -145,6 +145,7 @@ import { backfillProductSourceIdentity } from "@/lib/logistics/resolve-estimate-
 import {
   mergeIdentityIntoBinding,
   mergeStoredIdentityIntoBinding,
+  readProductSourceIdentity,
 } from "@/lib/product-source-identity";
 import { useBatchLinkQueue } from "@/hooks/use-batch-link-queue";
 import { usePublishLinkReveal } from "@/hooks/use-publish-link-reveal";
@@ -152,7 +153,7 @@ import {
   readPublishDisplaySnapshot,
   readPublishRevealQueue,
 } from "@/lib/batch-link/publish-reveal";
-import { isInternalGoodsId } from "@/lib/catalog-product-resolve";
+import { isInternalGoodsId, resolveSourceDetailHref } from "@/lib/catalog-product-resolve";
 import { resolveManualHeroImage } from "@/lib/manual-image-match";
 
 export interface AgentIntentRequest {
@@ -2101,12 +2102,26 @@ function ShopProductCard({
     marginPct: null,
   });
 
+  const storedSourceIdentity = useMemo(
+    () => readProductSourceIdentity(shopName, item.thirdPlatformItemId),
+    [shopName, item.thirdPlatformItemId]
+  );
+
+  const sourceDetailUrl = useMemo(
+    () =>
+      resolveSourceDetailHref({
+        binding,
+        candidate: current ?? null,
+        identity: binding?.sourceIdentity ?? storedSourceIdentity,
+      }),
+    [binding, current, storedSourceIdentity]
+  );
+
   const recoInventory =
     rightMode === "candidate" && current?.inventory != null
       ? String(current.inventory).trim()
       : null;
-  const detailUrl =
-    (current?.detailUrl || binding?.detailUrl || null) ?? null;
+  const detailUrl = sourceDetailUrl;
 
   const primaryLabel =
     cardState === "unbound" && !current

@@ -7,7 +7,7 @@ import {
   type ItemGetProduct,
 } from "@/lib/tangbuy-mall-gateway";
 import { buildOfferDetailUrl } from "@/lib/logistics/variant-measures";
-import type { ImageSearchProduct, ProductSourceIdentity } from "@/lib/types";
+import type { ImageBindingView, ImageSearchProduct, ProductSourceIdentity } from "@/lib/types";
 
 export type ProductSourceResolvedVia = NonNullable<
   ProductSourceIdentity["resolvedVia"]
@@ -445,5 +445,58 @@ export function resolveConfirmDetailUrl(
     identity?.offerDetailUrl?.trim() ||
     candidate.detailUrl?.trim() ||
     (offer && isOfferId1688(offer) ? buildOfferDetailUrl(offer) : null)
+  );
+}
+
+/** User-facing source detail link — Tangbuy catalog when ingested, otherwise 1688 offer URL. */
+export function resolveSourceDetailHref(input: {
+  binding?: ImageBindingView | null;
+  candidate?: Pick<
+    ImageSearchProduct,
+    | "detailUrl"
+    | "internalGoodsId"
+    | "tangbuyCatalogUrl"
+    | "catalogSource"
+    | "productId"
+    | "offerId1688"
+  > | null;
+  identity?: ProductSourceIdentity | null;
+}): string | null {
+  const identity = input.identity ?? input.binding?.sourceIdentity ?? null;
+
+  if (input.candidate) {
+    return (
+      resolveConfirmDetailUrl(input.candidate as ImageSearchProduct, identity) ??
+      input.candidate.detailUrl?.trim() ??
+      null
+    );
+  }
+
+  const internal =
+    identity?.internalGoodsId?.trim() ||
+    (input.binding?.tangbuyProductId?.trim() &&
+    isInternalGoodsId(input.binding.tangbuyProductId)
+      ? input.binding.tangbuyProductId.trim()
+      : null);
+
+  if (internal) {
+    return (
+      identity?.tangbuyCatalogUrl?.trim() ||
+      buildTangbuyProductUrl(internal, identity?.dataSource ?? "PREFERRED")
+    );
+  }
+
+  if (
+    identity?.tangbuyCatalogUrl?.trim() &&
+    (identity.poolIngestStatus === "resolved" ||
+      identity.resolvedVia === "pool_ingest_resolved")
+  ) {
+    return identity.tangbuyCatalogUrl.trim();
+  }
+
+  return (
+    input.binding?.detailUrl?.trim() ||
+    identity?.offerDetailUrl?.trim() ||
+    null
   );
 }

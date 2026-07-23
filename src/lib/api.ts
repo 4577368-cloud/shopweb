@@ -132,6 +132,15 @@ export function invalidateSkuOverviewCache(shop: string): void {
   overviewCache.delete(shop);
 }
 
+/** Read the in-memory overview cache without fetching (may be stale). */
+export function peekSkuOverviewCache(shop: string): SkuProductOverview[] | null {
+  const cached = overviewCache.get(shop);
+  if (cached && Date.now() - cached.at < OVERVIEW_CACHE_MS) {
+    return cached.data;
+  }
+  return null;
+}
+
 function deduped<T>(key: string, run: () => Promise<T>): Promise<T> {
   const existing = inflightRequests.get(key) as Promise<T> | undefined;
   if (existing) return existing;
