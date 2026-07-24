@@ -803,7 +803,7 @@ export function ProductsAgentPanel({
               </div>
               <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-brand-soft">
                 <div
-                  className="h-full rounded-full bg-brand-accent transition-all duration-300"
+                  className="h-full rounded-full bg-[#90AAFF] transition-all duration-300"
                   style={{ width: `${skillFeedback.progress}%` }}
                 />
               </div>

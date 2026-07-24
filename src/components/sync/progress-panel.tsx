@@ -13,7 +13,7 @@ function TaskIcon({ status }: { status: ProgressTask["status"] }) {
     return <Check className="h-3.5 w-3.5 text-emerald-600" />;
   }
   if (status === "running") {
-    return <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />;
+    return <Loader2 className="h-3.5 w-3.5 animate-spin text-[#325BE6]" />;
   }
   return <Circle className="h-3.5 w-3.5 text-slate-300" />;
 }
@@ -99,7 +99,7 @@ export function ProgressPanel({
 
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
           <motion.div
-            className="h-full rounded-full bg-brand"
+            className="h-full rounded-full bg-[#90AAFF]"
             animate={{ width: `${displayPercent}%` }}
             transition={{ duration: 0.25, ease: "easeOut" }}
           />
@@ -177,7 +177,7 @@ export function ProgressPanel({
 
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
         <motion.div
-          className="h-full rounded-full bg-brand"
+          className="h-full rounded-full bg-[#90AAFF]"
           animate={{ width: `${displayPercent}%` }}
           transition={{ duration: 0.25, ease: "easeOut" }}
         />

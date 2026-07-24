@@ -526,7 +526,7 @@ export function LogisticsProductGroup({
               </span>
               {catalogIngesting ? <CatalogIngestingBadge /> : null}
               {pipelineHighlighted || quotingProduct ? (
-                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-600" />
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#325BE6]" />
               ) : null}
               <span className="text-[11px] text-ink-subtle">
                 {t("logisticsProduct.skuCount", { count: meta.skuTotal })}

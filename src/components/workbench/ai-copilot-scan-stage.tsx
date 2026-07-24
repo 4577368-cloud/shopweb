@@ -57,7 +57,7 @@ function StepStatusChip({ status }: { status: ScanTaskStatus }) {
   }
   if (status === "done" || status === "skipped") {
     return (
-      <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+      <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-[#D0E7D6] bg-[#E6F7EA] px-2 py-0.5 text-[10px] font-semibold text-[#008849]">
         <CheckCircle2 className="h-3 w-3" />
         {t("workbenchScan.statusDone")}
       </span>
@@ -78,27 +78,23 @@ function StepStatusChip({ status }: { status: ScanTaskStatus }) {
 function HeroIllustration({ done }: { done: boolean }) {
   return (
     <div
-      className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-brand/15 bg-gradient-to-br from-brand-soft via-emerald-50/70 to-white"
+      className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-[#E4E3F4] bg-[#F1F0FF]"
       aria-hidden
     >
-      {/* soft glow orbs */}
-      <div className="absolute -left-3 -top-3 h-10 w-10 rounded-full bg-brand/20 blur-xl" />
-      <div className="absolute -bottom-4 -right-3 h-12 w-12 rounded-full bg-emerald-400/20 blur-xl" />
-
       {/* store node */}
-      <div className="absolute bottom-2 left-2 flex h-6 w-6 items-center justify-center rounded-lg border border-brand/20 bg-white/90 text-brand shadow-sm backdrop-blur-sm">
+      <div className="absolute bottom-2 left-2 flex h-6 w-6 items-center justify-center rounded-lg border border-[#E4E3F4] bg-white/90 text-[#325BE6] shadow-sm backdrop-blur-sm">
         <Store className="h-3.5 w-3.5" />
       </div>
 
       {/* connection */}
-      <Link2 className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 text-brand/70" />
+      <Link2 className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 text-[#325BE6]/70" />
 
       {/* AI node with pulse ring while scanning */}
       <div className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center">
         {!done ? (
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-lg bg-brand/25" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-lg bg-[#325BE6]/25" />
         ) : null}
-        <div className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-brand to-emerald-500 text-white shadow-md">
+        <div className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-[#325BE6] to-[#9C5DF4] text-white shadow-md">
           {done ? (
             <CheckCircle2 className="h-4 w-4" />
           ) : (
@@ -127,7 +123,7 @@ function WorkflowStepRow({
         <div
           className={cn(
             "absolute left-[0.9375rem] top-9 bottom-0 w-px",
-            isComplete ? "bg-brand/30" : "bg-hairline"
+            isComplete ? "bg-[#325BE6]/30" : "bg-hairline"
           )}
         />
       ) : null}
@@ -137,14 +133,14 @@ function WorkflowStepRow({
           isActive
             ? "border-brand/40 bg-brand-soft"
             : isComplete
-              ? "border-emerald-200 bg-emerald-50"
+              ? "border-[#E4E3F4] bg-[#F1F0FF]"
               : "border-hairline bg-white"
         )}
       >
         {isActive ? (
-          <Loader2 className="h-4 w-4 animate-spin text-brand" />
+          <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
         ) : isComplete ? (
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+          <CheckCircle2 className="h-4 w-4 text-[#325BE6]" />
         ) : (
           <Icon className="h-4 w-4 text-ink-subtle" />
         )}
@@ -166,7 +162,7 @@ function WorkflowStepRow({
             <p
               className={cn(
                 "shrink-0 text-[12px] font-semibold tabular-nums",
-                isActive ? "text-brand-strong" : "text-ink"
+                isActive ? "text-[#333333]" : "text-ink"
               )}
             >
               {step.resultText}
@@ -244,18 +240,14 @@ export function AiCopilotScanStage({
         </p>
       ) : null}
 
-      <section className="relative overflow-hidden rounded-2xl border border-brand/15 bg-white shadow-card">
-        {/* ambient gradient wash */}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand-soft/50 via-white to-emerald-50/30" />
-        <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-brand/10 blur-3xl" />
-
+      <section className="relative overflow-hidden rounded-2xl border border-hairline bg-white shadow-card">
         <div className="relative flex items-start gap-4 px-5 py-4">
           <HeroIllustration done={done} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-brand to-emerald-500 px-2.5 py-0.5 text-[10px] font-bold tracking-wide text-white shadow-sm">
+              <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#325BE6] to-[#9C5DF4] px-2.5 py-0.5 text-[10px] font-bold tracking-wide text-white shadow-sm">
                 <Sparkles className="h-2.5 w-2.5" />
-                Smart Match
+                Tangbuy Smart Match
               </span>
               {headline.hint ? (
                 <span className="text-[11px] font-medium text-ink-subtle">
@@ -316,7 +308,7 @@ export function AiCopilotScanStage({
                 </div>
                 <div className="relative h-2 overflow-hidden rounded-full bg-surface-muted">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-brand via-emerald-500 to-emerald-400 transition-[width] duration-700 ease-out"
+                    className="h-full rounded-full bg-[#90AAFF] transition-[width] duration-700 ease-out"
                     style={{ width: `${overallPct}%` }}
                   />
                   <div

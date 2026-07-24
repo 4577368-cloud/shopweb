@@ -279,21 +279,13 @@ export default function AuthorizePage() {
         title={t("authorize.pageTitle")}
         actions={
           isAuthorized ? (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => startShopifyInstall(shop.domain)}
-              >
-                <RefreshCw className="h-4 w-4" />
-                {t("authorize.reauthorize")}
-              </Button>
-              <Link href={localePath(locale, "/products")}>
-                <Button>
-                  {t("authorize.goProducts")}
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-            </div>
+            <Button
+              variant="secondary"
+              onClick={() => startShopifyInstall(shop.domain)}
+            >
+              <RefreshCw className="h-4 w-4" />
+              {t("authorize.reauthorize")}
+            </Button>
           ) : (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-2.5 py-1 text-[11px] font-medium text-ink-muted">
               <ShieldCheck className="h-3.5 w-3.5 text-brand" />
@@ -341,15 +333,24 @@ export default function AuthorizePage() {
               />
 
               {phase === "authorized" ? (
-                <ConnectSummary
-                  t={t}
-                  name={shop.name}
-                  domain={shop.domain}
-                  authorizedAt={shop.authorizedAt}
-                  syncedProductLabel={syncedProductLabel}
-                  boundCount={boundCount}
-                  publishedCount={publishedCount}
-                />
+                <>
+                  <ConnectSummary
+                    t={t}
+                    name={shop.name}
+                    domain={shop.domain}
+                    authorizedAt={shop.authorizedAt}
+                    syncedProductLabel={syncedProductLabel}
+                    boundCount={boundCount}
+                    publishedCount={publishedCount}
+                  />
+                  {/* Primary next-step CTA: guide the user into sourcing right under the shop info. */}
+                  <Link href={localePath(locale, "/products")} className="mt-3 block">
+                    <Button className="w-full">
+                      {t("authorize.goProducts")}
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                </>
               ) : phase === "restoring" ? (
                 <RestoringBlock t={t} />
               ) : (
@@ -448,14 +449,16 @@ export default function AuthorizePage() {
             </div>
           </section>
 
-          <section className="flex items-center justify-between gap-4 rounded-[var(--radius-card)] border border-brand-accent/20 bg-brand-soft px-4 py-3.5">
+          <section className="flex items-center justify-between gap-4 rounded-[var(--radius-card)] border border-hairline bg-surface px-3.5 py-3.5 shadow-card">
             <div className="flex items-start gap-2.5">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
+                <ShieldCheck className="h-4 w-4" />
+              </span>
               <div>
                 <p className="text-sm font-medium text-ink">
                   {t("authorize.dataUsageTitle")}
                 </p>
-                <p className="mt-0.5 text-xs leading-5 text-ink-muted">
+                <p className="mt-0.5 text-[11px] leading-4 text-ink-muted">
                   {t("authorize.dataUsageDesc")}
                 </p>
               </div>
@@ -652,7 +655,7 @@ function TwoStepProgress({
           )}
         />
         {authorized ? (
-          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 inline-flex max-w-[80%] flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-full border border-brand-accent/25 bg-brand-soft px-3 py-1 text-center text-xs font-medium leading-tight text-brand-accent shadow-card">
+          <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 inline-flex max-w-[80%] flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 rounded-full border border-[#D0E7D6] bg-[#E6F7EA] px-3 py-1 text-center text-xs font-medium leading-tight text-[#008849] shadow-card">
             <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
             <span>{t("authorize.authSuccess")}</span>
             {syncing ? (
@@ -694,7 +697,7 @@ function StepPill({
         className={cn(
           "flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold",
           done || active
-            ? "bg-brand text-white"
+            ? "bg-brand-accent text-white"
             : "border border-hairline-strong text-ink-subtle"
         )}
       >
@@ -724,7 +727,7 @@ function RestoringBlock({ t }: { t: TranslateFn }) {
   return (
     <div className="mt-5 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-4 py-4">
       <div className="flex items-center gap-2 text-sm font-medium text-ink">
-        <Loader2 className="h-4 w-4 animate-spin text-brand" />
+        <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
         {t("authorize.restoringTitle")}
       </div>
       <ul className="mt-2.5 space-y-1.5 text-xs text-ink-muted">
@@ -755,8 +758,8 @@ function ConnectSummary({
   publishedCount: number | null;
 }) {
   return (
-    <div className="mt-4 rounded-[var(--radius-control)] border border-brand-accent/20 bg-brand-soft px-3 py-2">
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs sm:grid-cols-3">
+    <div className="mt-4 rounded-[var(--radius-control)] border border-hairline/80 bg-surface-muted/50 p-2.5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <SummaryStat label={t("authorize.statShop")} value={name} />
         <SummaryStat label={t("authorize.statDomain")} value={domain} />
         <SummaryStat label={t("authorize.statAuthorizedAt")} value={authorizedAt || "—"} />
@@ -776,9 +779,9 @@ function ConnectSummary({
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 leading-tight">
-      <p className="text-[11px] text-brand/70">{label}</p>
-      <p className="truncate text-xs font-medium text-ink">{value}</p>
+    <div className="min-w-0">
+      <p className="text-[10px] text-ink-subtle">{label}</p>
+      <p className="mt-0.5 truncate text-xs font-medium text-ink">{value}</p>
     </div>
   );
 }

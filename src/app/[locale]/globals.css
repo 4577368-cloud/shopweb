@@ -61,7 +61,7 @@
 
   /* Icons & steps — §3.5 */
   --icon-muted: #666666;
-  --step-border: #999999;
+  --step-border: #E0E1E4;
 
   /* Legacy aliases (prefer semantic tokens in new code) */
   --canvas: var(--page-canvas);

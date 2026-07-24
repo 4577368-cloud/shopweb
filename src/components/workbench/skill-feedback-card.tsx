@@ -33,7 +33,7 @@ export function SkillFeedbackCard({
           </div>
           <div className="h-1 w-full overflow-hidden rounded-full bg-slate-100">
             <div
-              className="h-full bg-brand transition-all"
+              className="h-full bg-[#90AAFF] transition-all"
               style={{ width: `${feedback.progress}%` }}
             />
           </div>

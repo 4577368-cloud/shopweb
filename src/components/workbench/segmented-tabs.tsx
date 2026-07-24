@@ -20,6 +20,11 @@ interface SegmentedTabsProps {
   variant?: "solid" | "chip";
   className?: string;
   highlighted?: boolean;
+  /**
+   * chip variant only: override the active chip's classes (e.g. per-page theming).
+   * Defaults to the shared `bg-brand-soft text-brand-accent`.
+   */
+  activeChipClassName?: string;
 }
 
 export function SegmentedTabs({
@@ -29,6 +34,7 @@ export function SegmentedTabs({
   variant = "solid",
   className,
   highlighted,
+  activeChipClassName,
 }: SegmentedTabsProps) {
   if (variant === "chip") {
     return (
@@ -47,14 +53,14 @@ export function SegmentedTabs({
               className={cn(
                 "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
                 active
-                  ? "bg-brand-soft text-brand-accent"
+                  ? (activeChipClassName ?? "bg-[#333333] font-bold text-white")
                   : "bg-surface-muted text-ink-muted hover:text-ink",
                 highlighted && active && "ring-1 ring-brand-accent/50"
               )}
             >
               <span className="truncate" title={tab.label}>{tab.label}</span>
               {tab.count != null ? (
-                <span className={cn(active ? "text-brand-accent" : "text-ink-subtle")}>
+                <span className={cn(active ? "" : "text-ink-subtle")}>
                   {tab.count}
                 </span>
               ) : null}
@@ -83,7 +89,7 @@ export function SegmentedTabs({
                          className={cn(
                 "relative z-10 inline-flex min-w-0 items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-xs font-medium transition-colors",
                 active
-                  ? "bg-brand text-white shadow-card"
+                  ? "bg-white font-bold text-black shadow-card"
                   : "text-ink-muted hover:text-ink",
                 highlighted && active && "ring-1 ring-brand-accent/50"
               )}
@@ -93,7 +99,7 @@ export function SegmentedTabs({
               <span
                 className={cn(
                   "rounded-full px-1.5 text-[10px]",
-                  active ? "bg-white/20 text-white" : "bg-slate-200/70 text-ink-muted"
+                  active ? "bg-surface-muted font-medium text-ink-muted" : "bg-slate-200/70 text-ink-muted"
                 )}
               >
                 {tab.count}

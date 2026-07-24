@@ -1150,7 +1150,7 @@ function LogisticsContent() {
           {...wb.panelProps}
         >
           <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
-            <Loader2 className="h-4 w-4 animate-spin text-brand" />
+            <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
             {t("logistics.restoringAuth")}
           </div>
           <FadeSwap loading minHeightClass="min-h-[320px]" skeleton={<TableSkeleton rows={4} />}>
@@ -1444,7 +1444,7 @@ function LogisticsContent() {
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
                       <div
-                        className="h-full rounded-full bg-gradient-to-r from-brand to-emerald-500 transition-all duration-300"
+                        className="h-full rounded-full bg-[#90AAFF] transition-all duration-300"
                         style={{ width: `${Math.round(((pipeline.progress.productIndex + 1) / pipeline.progress.productTotal) * 100)}%` }}
                       />
                     </div>

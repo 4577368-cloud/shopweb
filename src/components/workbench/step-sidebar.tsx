@@ -29,11 +29,9 @@ function StepIndicator({
     <div
       className={cn(
         "relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums",
-        completed && "bg-brand-accent text-white",
-        current && !completed && "bg-brand-accent text-white",
-        !completed &&
-          !current &&
-          "border border-[var(--step-border)] bg-brand-soft text-brand-accent"
+        current
+          ? "bg-[#325BE6] text-white"
+          : "bg-[#EEF2FF] text-[#325BE6]"
       )}
     >
       {completed ? <CheckCircle2 className="h-4 w-4" /> : order}
@@ -103,7 +101,7 @@ export function StepSidebar() {
   ];
 
   return (
-    <aside className="flex h-full w-[15.5rem] shrink-0 flex-col border-r border-hairline bg-surface">
+    <aside className="flex h-full w-full shrink-0 flex-col border-r border-hairline bg-surface">
       <div className="shrink-0 px-4 pb-3 pt-4 leading-none">
         <AppLogo
           variant="sidebar"
@@ -120,7 +118,7 @@ export function StepSidebar() {
         </div>
         <div className="h-1 overflow-hidden rounded-full bg-surface-muted">
           <div
-            className="h-full rounded-full bg-brand transition-all duration-500"
+            className="h-full rounded-full bg-[#90AAFF] transition-all duration-500"
             style={{ width: `${Math.max(progress, 4)}%` }}
           />
         </div>
@@ -139,7 +137,7 @@ export function StepSidebar() {
                 {index < navItems.length - 1 ? (
                   <span
                     className={cn(
-                      "pointer-events-none absolute left-[1.34rem] top-7 z-0 h-[calc(100%-0.25rem)] w-px",
+                      "pointer-events-none absolute left-[calc(1.25rem-0.5px)] top-7 z-0 h-[calc(100%-0.25rem)] w-px",
                       completed ? "bg-brand/35" : "bg-hairline"
                     )}
                     aria-hidden
@@ -152,7 +150,7 @@ export function StepSidebar() {
                   className={cn(
                     "group relative z-[1] flex cursor-pointer gap-2.5 rounded-[var(--radius-control)] px-2 py-2 transition-colors",
                     current
-                      ? "bg-brand-soft/80 ring-1 ring-brand/10"
+                      ? "bg-brand-soft/80"
                       : "hover:bg-surface-muted/80"
                   )}
                 >

@@ -54,7 +54,7 @@ export function SmartSourcingSummaryBar({
           <div className="hidden min-w-[12rem] flex-1 overflow-hidden rounded-full bg-surface-muted sm:block">
             <div className="flex h-1.5 rounded-full">
               <div
-                className="rounded-l-full bg-brand-accent transition-all duration-500"
+                className="rounded-l-full bg-[#90AAFF] transition-all duration-500"
                 style={{ width: `${analyzed > 0 ? ((matched - pending) / analyzed) * 100 : 0}%` }}
                 title={t("sourcing.confirmedTooltip", { count: matched - pending })}
               />
@@ -107,7 +107,7 @@ export function SmartSourcingSummaryBar({
             </>
           ) : (
             <span className="inline-flex items-center gap-1.5">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#325BE6]" />
               {t("sourcing.analyzing")}
             </span>
           )}

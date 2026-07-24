@@ -49,9 +49,9 @@ function settledCount(tasks: ScanTaskView[]): number {
 
 function TaskIcon({ status }: { status: ScanTaskStatus }) {
   if (status === "running")
-    return <Loader2 className="h-4 w-4 animate-spin text-brand" />;
+    return <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />;
   if (status === "done")
-    return <CheckCircle2 className="h-4 w-4 text-brand-strong" />;
+    return <CheckCircle2 className="h-4 w-4 text-[#008849]" />;
   if (status === "failed")
     return <AlertTriangle className="h-4 w-4 text-amber-500" />;
   if (status === "skipped")
@@ -108,7 +108,7 @@ export function ScanStage({
           ) : null}
           <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-muted">
             <div
-              className="h-full rounded-full bg-brand transition-[width] duration-500 ease-out"
+              className="h-full rounded-full bg-[#90AAFF] transition-[width] duration-500 ease-out"
               style={{
                 width: `${pct}%`,
                 transitionDuration: `${SCAN_STAGE_PROGRESS_ANIMATION_MS}ms`,
@@ -148,7 +148,7 @@ export function ScanStage({
           <span className="text-[11px] text-ink-subtle">
             {done ? t("workbenchScan.doneFooter") : t("workbenchScan.runningFooter")}
           </span>
-          <Button size="sm" variant={done ? "primary" : "secondary"} onClick={onViewResult}>
+          <Button size="sm" variant="primary" onClick={onViewResult}>
             {done ? t("workbenchScan.viewResults") : t("workbenchScan.previewResults")}
           </Button>
         </div>

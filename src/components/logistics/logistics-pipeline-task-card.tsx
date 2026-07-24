@@ -64,7 +64,7 @@ export function LogisticsPipelineTaskCard({
         ) : isError ? (
           <X className="h-3.5 w-3.5 text-red-600" />
         ) : (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-[#325BE6]" />
         )}
         <span className="text-[10px] font-medium uppercase tracking-wide text-slate-600">
           {t("logisticsPipeline.title")}

@@ -73,7 +73,7 @@ export function AiTaskStatus({
       <div className="mt-3.5">
         <div className="h-2 w-full overflow-hidden rounded-full bg-surface-muted">
           <div
-            className="h-full rounded-full bg-brand transition-[width] duration-500"
+            className="h-full rounded-full bg-[#90AAFF] transition-[width] duration-500"
             style={{ width: `${ready ? pct : 0}%` }}
           />
         </div>

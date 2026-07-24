@@ -143,7 +143,7 @@ function SkuAlignProductContent() {
       <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
         <WorkbenchPanel title={panelTitle} breadcrumbs={breadcrumbs} {...wb.panelProps}>
           <div className="flex items-center gap-2 text-sm text-ink-muted">
-            <Loader2 className="h-4 w-4 animate-spin text-brand" />
+            <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
             {t("sku.restoringAuth")}
           </div>
         </WorkbenchPanel>
@@ -202,7 +202,7 @@ function SkuAlignProductContent() {
       >
         {loading ? (
           <div className="flex items-center gap-2 py-16 text-sm text-ink-muted">
-            <Loader2 className="h-4 w-4 animate-spin text-brand" />
+            <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
             {t("sku.loadingProductSpecs")}
           </div>
         ) : error || !product ? (

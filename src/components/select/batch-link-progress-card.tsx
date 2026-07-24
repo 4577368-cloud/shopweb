@@ -79,7 +79,7 @@ export function BatchLinkProgressCard({
     >
       <div className="flex items-center gap-1.5">
         {queueActive ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-[#325BE6]" />
         ) : (
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
         )}

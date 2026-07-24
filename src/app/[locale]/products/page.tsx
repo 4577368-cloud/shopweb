@@ -1802,7 +1802,7 @@ function SelectContent() {
           {...wb.panelProps}
         >
           <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
-            <Loader2 className="h-4 w-4 animate-spin text-brand" />
+            <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
             {t("products.restoringAuth")}
           </div>
           <FadeSwap loading minHeightClass="min-h-[320px]" skeleton={<TableSkeleton rows={4} />}>

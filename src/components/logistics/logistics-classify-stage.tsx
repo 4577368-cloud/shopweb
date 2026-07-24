@@ -24,7 +24,7 @@ interface StageTask {
 
 function TaskIcon({ status }: { status: StageTaskStatus }) {
   if (status === "running") {
-    return <Loader2 className="h-4 w-4 animate-spin text-brand" />;
+    return <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />;
   }
   if (status === "done") {
     return <CheckCircle2 className="h-4 w-4 text-brand-strong" />;
@@ -106,7 +106,7 @@ export function LogisticsClassifyStage({
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-surface-muted">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-brand to-emerald-500 transition-all duration-500"
+                className="h-full rounded-full bg-[#90AAFF] transition-all duration-500"
                 style={{ width: `${Math.max(8, pct)}%` }}
               />
             </div>
@@ -157,7 +157,7 @@ export function LogisticsClassifyStageCompact({
 
   return (
     <div className="flex items-center justify-center gap-2 rounded-[var(--radius-card)] border border-hairline bg-surface px-4 py-8 text-sm text-ink-subtle">
-      <Loader2 className="h-4 w-4 animate-spin text-brand" />
+      <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
       {phase === "classifying"
         ? t("logisticsClassify.compactClassifying")
         : t("logisticsClassify.compactLoading")}

@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, Bot, Lightbulb, Send } from "@/lib/ui/icons";
+import { AlertTriangle, Bot, Lightbulb, Send, Sparkles } from "@/lib/ui/icons";
 import type { AiPanelContent } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { useBackendHealth } from "@/hooks/use-backend-health";
@@ -154,7 +154,7 @@ export function CopilotCard({
       <div className="flex shrink-0 items-center justify-between border-b border-hairline px-3.5 py-2.5">
         <div className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
-            <Bot className="h-4 w-4" />
+            <Sparkles className="h-4 w-4" />
           </span>
           <span className="text-sm font-semibold text-ink">{resolvedHeading}</span>
         </div>
@@ -166,7 +166,7 @@ export function CopilotCard({
           <span
             className={cn(
               "h-1.5 w-1.5 rounded-full",
-              backendOk ? "bg-brand" : "bg-amber-400"
+              backendOk ? "bg-[#008849]" : "bg-amber-400"
             )}
           />
         </span>
@@ -285,24 +285,21 @@ export function CopilotCard({
             <div className="mt-2">
               {next.href && !next.disabled ? (
                 <Link href={next.href} className="block">
-                  <Button
-                    className="h-8 w-full text-xs"
-                    variant={onboarding ? "primary" : "secondary"}
-                  >
+                  <Button className="h-8 w-full text-xs" variant="primary">
                     {next.label}
                   </Button>
                 </Link>
               ) : next.action && onNextAction ? (
                 <Button
                   className="h-8 w-full text-xs"
-                  variant={onboarding ? "primary" : "secondary"}
+                  variant="primary"
                   disabled={next.disabled}
                   onClick={() => onNextAction(next.action!)}
                 >
                   {next.label}
                 </Button>
               ) : (
-                <Button className="h-8 w-full text-xs" variant="secondary" disabled>
+                <Button className="h-8 w-full text-xs" variant="primary" disabled>
                   {next.label}
                 </Button>
               )}
