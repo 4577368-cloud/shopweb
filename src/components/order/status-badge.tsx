@@ -12,10 +12,10 @@ import { cn } from "@/lib/utils";
 
 const TONE_CLASS: Record<BadgeTone, string> = {
   neutral: "border border-hairline bg-surface text-ink-muted",
-  info: "bg-brand-soft text-brand-accent",
-  warning: "bg-amber-100 text-amber-700",
-  success: "bg-emerald-50 text-emerald-700",
-  danger: "bg-red-50 text-red-700",
+  info: "bg-info-soft text-info",
+  warning: "bg-warning-soft text-warning",
+  success: "bg-success-soft text-success",
+  danger: "bg-destructive-soft text-destructive",
 };
 
 export function StatusBadge({ status }: { status: OrderStatus }) {

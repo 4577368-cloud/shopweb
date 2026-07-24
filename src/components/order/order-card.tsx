@@ -133,13 +133,13 @@ function StatusBody({ order, t }: { order: OrderSummary; t: TFn }) {
           <div className="flex gap-2 pt-1">
             <button
               type="button"
-              className="rounded-[var(--radius-control)] bg-brand-accent px-3 py-1.5 text-xs font-medium text-white"
+              className="rounded-[var(--radius-control)] bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover"
             >
               {t("order.card.confirmSupplement")}
             </button>
             <button
               type="button"
-              className="rounded-[var(--radius-control)] border border-hairline px-3 py-1.5 text-xs font-medium text-ink-muted"
+              className="rounded-[var(--radius-control)] border border-brand bg-surface px-3 py-1.5 text-xs font-medium text-brand hover:bg-surface-hover"
             >
               {t("order.card.cancel")}
             </button>
@@ -158,7 +158,7 @@ function StatusBody({ order, t }: { order: OrderSummary; t: TFn }) {
           <div className="flex gap-2 pt-1">
             <button
               type="button"
-              className="rounded-[var(--radius-control)] bg-brand-accent px-3 py-1.5 text-xs font-medium text-white"
+              className="rounded-[var(--radius-control)] bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover"
             >
               {t("order.card.markPaid")}
             </button>
@@ -175,13 +175,13 @@ function StatusBody({ order, t }: { order: OrderSummary; t: TFn }) {
           <div className="flex gap-2 pt-1">
             <button
               type="button"
-              className="rounded-[var(--radius-control)] border border-hairline px-3 py-1.5 text-xs font-medium text-ink-muted"
+              className="rounded-[var(--radius-control)] border border-brand bg-surface px-3 py-1.5 text-xs font-medium text-brand hover:bg-surface-hover"
             >
               {t("order.card.urge")}
             </button>
             <button
               type="button"
-              className="rounded-[var(--radius-control)] border border-hairline px-3 py-1.5 text-xs font-medium text-ink-muted"
+              className="rounded-[var(--radius-control)] border border-brand bg-surface px-3 py-1.5 text-xs font-medium text-brand hover:bg-surface-hover"
             >
               {t("order.card.cancel")}
             </button>
@@ -197,7 +197,7 @@ function StatusBody({ order, t }: { order: OrderSummary; t: TFn }) {
           <div className="flex gap-2 pt-1">
             <button
               type="button"
-              className="rounded-[var(--radius-control)] border border-hairline px-3 py-1.5 text-xs font-medium text-ink-muted"
+              className="rounded-[var(--radius-control)] border border-brand bg-surface px-3 py-1.5 text-xs font-medium text-brand hover:bg-surface-hover"
             >
               {t("order.card.viewDomestic")}
             </button>
@@ -218,13 +218,13 @@ function StatusBody({ order, t }: { order: OrderSummary; t: TFn }) {
           <div className="flex gap-2 pt-1">
             <button
               type="button"
-              className="rounded-[var(--radius-control)] border border-hairline px-3 py-1.5 text-xs font-medium text-ink-muted"
+              className="rounded-[var(--radius-control)] border border-brand bg-surface px-3 py-1.5 text-xs font-medium text-brand hover:bg-surface-hover"
             >
               {t("order.card.viewIntl")}
             </button>
             <button
               type="button"
-              className="rounded-[var(--radius-control)] border border-hairline px-3 py-1.5 text-xs font-medium text-ink-muted"
+              className="rounded-[var(--radius-control)] border border-brand bg-surface px-3 py-1.5 text-xs font-medium text-brand hover:bg-surface-hover"
             >
               {t("order.card.handleException")}
             </button>
@@ -243,7 +243,7 @@ function StatusBody({ order, t }: { order: OrderSummary; t: TFn }) {
           <div className="flex gap-2 pt-1">
             <button
               type="button"
-              className="rounded-[var(--radius-control)] border border-hairline px-3 py-1.5 text-xs font-medium text-ink-muted"
+              className="rounded-[var(--radius-control)] border border-brand bg-surface px-3 py-1.5 text-xs font-medium text-brand hover:bg-surface-hover"
             >
               {t("order.card.archive")}
             </button>

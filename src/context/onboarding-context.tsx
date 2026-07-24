@@ -5,66 +5,21 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import {
   defaultLogisticsForm,
   initialSteps,
   mockProductMatches,
-  mockShop,
   mockSkuAlignments,
 } from "@/data/mock";
 import { buildDashboardActivities } from "@/lib/dashboard/activities";
-import {
-  buildOverviewMetrics,
-  EMPTY_OVERVIEW,
-} from "@/lib/dashboard/overview";
-import {
-  computeShopProductStatusSummary,
-  type ShopStatusSummary,
-} from "@/lib/dashboard/shop-status";
+import { EMPTY_OVERVIEW } from "@/lib/dashboard/overview";
 import { useT } from "@/i18n/LocaleProvider";
-import { api } from "@/lib/api";
-import {
-  evaluateLogisticsCompletionGate,
-  deriveLogisticsStepSnapshot,
-} from "@/lib/logistics/completion-gate";
-import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
-import { computeLogisticsPlanMetrics } from "@/lib/logistics/display";
-import {
-  mergeQuoteResultsIntoAnalysis,
-  readQuoteCache,
-} from "@/lib/logistics/quote-cache";
-import { buildLogisticsTemplateScopeKey } from "@/lib/logistics/template-scope-key";
-import { listTemplateCountryCodes } from "@/lib/logistics/template-params";
-import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
-import type { LogisticsStepSnapshot } from "@/lib/logistics/completion-gate";
-import type { LogisticsPlanMetrics } from "@/lib/logistics/display";
-import {
-  computeWorkflowBindingProgress,
-  computeWorkflowSkuProgress,
-  deriveLogisticsStepStatus,
-  deriveProductsStepStatus,
-  deriveSkuStepStatus,
-  isProductsStepComplete,
-  isSkuStepComplete,
-  type WorkflowBindingProgress,
-  type WorkflowSkuProgress,
-} from "@/lib/workflow-progress";
-import {
-  computeWorkflowPercent,
-  snapshotAuthorizeStep,
-  snapshotLogisticsStep,
-  snapshotProductsStep,
-  snapshotSkuStep,
-  snapshotSyncStep,
-  type WorkflowStepSnapshot,
-} from "@/lib/workflow-step-snapshots";
+import { useOnboardingShopAuth } from "@/hooks/use-onboarding-shop-auth";
+import { useOnboardingWorkflowProgress } from "@/hooks/use-onboarding-workflow-progress";
 import type {
   ActivityItem,
   AuthStatus,
@@ -80,30 +35,14 @@ import type {
   StepId,
   SyncPhase,
 } from "@/lib/types";
-import {
-  clearAuthVerified,
-  fetchRestoredShopAuth,
-  markAuthVerified,
-  readAuthLocalOk,
-  readAuthSessionOk,
-  readStoredShopDomain,
-  resolveShopDomainToRestore,
-  shopDisplayNameFromDomain,
-} from "@/lib/restore-shop-auth";
-
-/** Client: do not block workbench on background /status — only SSR may gate briefly. */
-function subscribeAuthSessionReady(): () => void {
-  return () => {};
-}
-
-function getAuthSessionReadySnapshot(): boolean {
-  if (typeof window === "undefined") return false;
-  const domain = readStoredShopDomain();
-  if (!domain) return true;
-  if (readAuthSessionOk(domain) || readAuthLocalOk(domain)) return true;
-  // Remembered shop in localStorage — optimistic UI; cold verify runs in useEffect.
-  return true;
-}
+import type { LogisticsStepSnapshot } from "@/lib/logistics/completion-gate";
+import type { LogisticsPlanMetrics } from "@/lib/logistics/display";
+import type {
+  WorkflowBindingProgress,
+  WorkflowSkuProgress,
+} from "@/lib/workflow-progress";
+import type { WorkflowStepSnapshot } from "@/lib/workflow-step-snapshots";
+import type { ShopStatusSummary } from "@/lib/dashboard/shop-status";
 
 interface OnboardingState {
   steps: OnboardingStep[];
@@ -135,14 +74,11 @@ interface OnboardingState {
   setSelectedLogisticsPlanId: (id: string) => void;
   saveLogistics: () => void;
   startSync: (options?: { force?: boolean }) => void;
-  /** Mark sync step completed after launch ceremony finishes. */
   completeSyncCeremony: () => void;
   clearToast: () => void;
   showToast: (message: string) => void;
   isAuthorized: boolean;
-  /** False until the cold-load auth restore pass finishes (localStorage + /status). */
   authSessionReady: boolean;
-  /** True while restore is in flight — show loading, not「未连接」empty state. */
   authBootstrapping: boolean;
   productsReadyForNext: boolean;
   skuReadyForNext: boolean;
@@ -187,15 +123,6 @@ export function isSkuResolved(row: SkuAlignment | SkuAlignStatus) {
 export function OnboardingProvider({ children }: { children: ReactNode }) {
   const t = useT();
   const [steps, setSteps] = useState(initialSteps);
-  const [shop, setShop] = useState<ShopInfo>(() => ({
-    ...mockShop,
-    domain: "",
-    name: "",
-    productCount: 0,
-    authorizedAt: undefined,
-  }));
-  const [authStatus, setAuthStatus] = useState<AuthStatus>("waiting_input");
-  const [shopDomainInput, setShopDomainInput] = useState("");
   const [overview, setOverview] = useState(EMPTY_OVERVIEW);
   const [productMatches, setProductMatches] = useState(mockProductMatches);
   const [skuAlignments, setSkuAlignments] = useState(mockSkuAlignments);
@@ -204,27 +131,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [logisticsCompleted, setLogisticsCompleted] = useState(false);
   const [syncPhase, setSyncPhase] = useState<SyncPhase>("blocked");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const authSessionReady = useSyncExternalStore(
-    subscribeAuthSessionReady,
-    getAuthSessionReadySnapshot,
-    () => true
-  );
-  const [workflowBinding, setWorkflowBinding] =
-    useState<WorkflowBindingProgress | null>(null);
-  const [workflowSku, setWorkflowSku] = useState<WorkflowSkuProgress | null>(
-    null
-  );
-  const [logisticsStepSnapshot, setLogisticsStepSnapshot] =
-    useState<LogisticsStepSnapshot | null>(null);
-  const [logisticsPipelineActive, setLogisticsPipelineActive] = useState(false);
-  const [workflowLogistics, setWorkflowLogistics] =
-    useState<LogisticsPlanMetrics | null>(null);
-  const [hasLogisticsTemplate, setHasLogisticsTemplate] = useState(false);
-  const [shopStatusSummary, setShopStatusSummary] =
-    useState<ShopStatusSummary | null>(null);
-  const [dashboardRefreshedAt, setDashboardRefreshedAt] = useState<string | null>(
-    null
-  );
+
   const updateStepStatus = useCallback(
     (id: StepId, status: OnboardingStep["status"]) => {
       setSteps((prev) =>
@@ -234,128 +141,47 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const handleSetDomain = useCallback(
-    (v: string) => {
-      setShopDomainInput(v);
-      setAuthStatus((prev) => {
-        if (prev === "authorized" || prev === "authorizing") return prev;
-        return v.trim() ? "ready_to_authorize" : "waiting_input";
-      });
-    },
-    []
-  );
+  const {
+    shop,
+    setShop,
+    authStatus,
+    shopDomainInput,
+    setShopDomainInput,
+    connectShop,
+    hydrateAuthorizedShop,
+    isAuthorized,
+    authSessionReady,
+    authBootstrapping,
+  } = useOnboardingShopAuth({ updateStepStatus, setOverview });
 
-  const connectShop = useCallback(() => {
-    if (!shopDomainInput.trim()) {
-      setAuthStatus("waiting_input");
-      return;
-    }
-    setAuthStatus("authorizing");
-    window.setTimeout(() => {
-      const domain = shopDomainInput.trim().replace(/^https?:\/\//, "");
-      setAuthStatus("authorized");
-      setShop((prev) => ({
-        ...prev,
-        domain,
-        name:
-          domain
-            .split(".")[0]
-            ?.split("-")
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(" ") || prev.name,
-        authorizedAt: new Date()
-          .toLocaleString("zh-CN", { hour12: false })
-          .replace(/\//g, "-"),
-      }));
-      setOverview(buildOverviewMetrics("authorized", null, null));
-      updateStepStatus("authorize", "completed");
-      updateStepStatus("products", "pending_confirm");
-    }, 900);
-  }, [shopDomainInput, updateStepStatus]);
-
-  // Restore authorized state from the real backend after the OAuth redirect (Step M0-4).
-  // Only fills auth-related fields; other onboarding data stays as-is.
-  const hydrateAuthorizedShop = useCallback(
-    (info: {
-      name: string;
-      domain: string;
-      authorizedAt: string;
-      productCount: number;
-    }) => {
-      setAuthStatus("authorized");
-      setShop((prev) => ({
-        ...prev,
-        name: info.name,
-        domain: info.domain,
-        authorizedAt: info.authorizedAt,
-        productCount: info.productCount,
-      }));
-      setOverview(buildOverviewMetrics("authorized", null, null));
-      updateStepStatus("authorize", "completed");
-      updateStepStatus("products", "pending_confirm");
-      markAuthVerified(info.domain);
-    },
-    [updateStepStatus]
-  );
-
-  // Client-only: SSR leaves authSessionReady false — hydrate from localStorage before paint.
-  useLayoutEffect(() => {
-    const domain = readStoredShopDomain();
-    if (!domain) return;
-    setShopDomainInput(domain);
-    setShop((prev) => ({
-      ...prev,
-      domain,
-      name: shopDisplayNameFromDomain(domain),
-    }));
-    setAuthStatus("authorized");
-  }, []);
-
-  // Cold load: restore authorized shop from localStorage / ?shop / backend list on every page.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const shopToRestore = await resolveShopDomainToRestore();
-        if (cancelled) return;
-
-        if (shopToRestore) {
-          setShopDomainInput(shopToRestore);
-          setShop((prev) => ({
-            ...prev,
-            domain: shopToRestore,
-            name: shopDisplayNameFromDomain(shopToRestore),
-          }));
-        }
-
-        if (!shopToRestore) {
-          return;
-        }
-
-        const restored = await fetchRestoredShopAuth(shopToRestore);
-        if (cancelled) return;
-
-        if (restored) {
-          hydrateAuthorizedShop(restored);
-          markAuthVerified(restored.domain);
-          return;
-        }
-
-        clearAuthVerified();
-        setAuthStatus("ready_to_authorize");
-      } catch {
-        // Keep optimistic session from localStorage; user can retry authorize.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only restore
-  }, []);
+  const {
+    workflowBinding,
+    workflowSku,
+    workflowLogistics,
+    logisticsStepSnapshot,
+    publishLogisticsStepSnapshot,
+    publishLogisticsPipelineActive,
+    shopStatusSummary,
+    dashboardRefreshedAt,
+    productsReadyForNext,
+    skuReadyForNext,
+    workflowStepSnapshots,
+    workflowProgressPercent,
+    refreshWorkflowProgress,
+    syncCompleted,
+  } = useOnboardingWorkflowProgress({
+    shop,
+    setShop,
+    authStatus,
+    isAuthorized,
+    authSessionReady,
+    setOverview,
+    logisticsCompleted,
+    setLogisticsCompleted,
+    syncPhase,
+    setSyncPhase,
+    updateStepStatus,
+  });
 
   const updateProductStatus = useCallback((id: string, status: ProductMatchStatus) => {
     setProductMatches((prev) =>
@@ -465,182 +291,11 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setToastMessage(message);
   }, []);
 
-  const publishLogisticsStepSnapshot = useCallback(
-    (snapshot: LogisticsStepSnapshot | null) => {
-      setLogisticsStepSnapshot(snapshot);
-    },
-    []
-  );
-
-  const publishLogisticsPipelineActive = useCallback((active: boolean) => {
-    setLogisticsPipelineActive(active);
-  }, []);
-
-  const isAuthorized = authStatus === "authorized";
-  const authBootstrapping = !authSessionReady;
-
-  const shopApiName = resolveShopApiName(shop);
-
-  const workflowRefreshAtRef = useRef(0);
-
-  const refreshWorkflowProgress = useCallback(async (opts?: { force?: boolean }) => {
-    if (!isAuthorized || !shopApiName) return;
-    const now = Date.now();
-    if (!opts?.force && now - workflowRefreshAtRef.current < 20_000) {
-      return;
-    }
-    workflowRefreshAtRef.current = now;
-    try {
-      const [
-        products,
-        bindings,
-        skuOverview,
-        logisticsAnalysis,
-        logisticsTemplates,
-      ] = await Promise.all([
-        api.getShopProducts(shopApiName),
-        api.listImageBindings(shopApiName).catch(() => []),
-        api.getSkuOverview(shopApiName).catch(() => []),
-        api.getLogisticsAnalysis(shopApiName).catch(() => null),
-        api.listLogisticsTemplates(shopApiName).catch(() => []),
-      ]);
-
-      const bindingProgress = computeWorkflowBindingProgress(products, bindings);
-      const skuProgress = computeWorkflowSkuProgress(skuOverview);
-
-      setWorkflowBinding(bindingProgress);
-      setWorkflowSku(skuProgress);
-      setShopStatusSummary(computeShopProductStatusSummary(products));
-      setShop((prev) => ({
-        ...prev,
-        productCount: products.length,
-      }));
-      setOverview(buildOverviewMetrics(authStatus, bindingProgress, skuProgress));
-
-      const activeTemplate = logisticsTemplates[0] ?? null;
-      const templateSaved = hasSavedLogisticsTemplate(logisticsTemplates);
-      setHasLogisticsTemplate(templateSaved);
-
-      const scopeKey = buildLogisticsTemplateScopeKey(activeTemplate);
-      const quoteResults =
-        scopeKey && typeof window !== "undefined"
-          ? readQuoteCache(shopApiName, scopeKey)
-          : new Map();
-      const mergedAnalysis =
-        logisticsAnalysis && quoteResults.size > 0
-          ? mergeQuoteResultsIntoAnalysis(logisticsAnalysis, quoteResults)
-          : logisticsAnalysis;
-
-      const metrics = computeLogisticsPlanMetrics(mergedAnalysis, quoteResults);
-      setWorkflowLogistics(metrics);
-      setDashboardRefreshedAt(new Date().toISOString());
-
-      const templateMarketsConfigured =
-        listTemplateCountryCodes(activeTemplate).length > 0;
-      const gate = evaluateLogisticsCompletionGate(
-        {
-          hasSavedTemplate: templateSaved,
-          pipelineActive: false,
-          analysis: mergedAnalysis,
-          quoteResults,
-          templateMarketsConfigured,
-        },
-        t
-      );
-      const gateSnapshot = deriveLogisticsStepSnapshot(
-        {
-          skuReady: isSkuStepComplete(computeWorkflowSkuProgress(skuOverview)),
-          pipelineActive: false,
-          gate,
-          logisticsCompleted:
-            metrics.variantCount > 0 &&
-            metrics.confirmedCount >= metrics.variantCount,
-        },
-        t
-      );
-      setLogisticsStepSnapshot(gateSnapshot);
-    } catch {
-      // Keep the last known snapshot on transient API errors.
-    }
-  }, [authStatus, isAuthorized, shopApiName, t]);
-
-  useEffect(() => {
-    if (!isAuthorized || !authSessionReady) return;
-    const boot = window.setTimeout(() => {
-      void refreshWorkflowProgress({ force: true });
-    }, 2_000);
-    const timer = window.setInterval(() => {
-      void refreshWorkflowProgress();
-    }, 180_000);
-    return () => {
-      window.clearTimeout(boot);
-      window.clearInterval(timer);
-    };
-  }, [isAuthorized, authSessionReady, shopApiName, refreshWorkflowProgress]);
-
-  const productsReadyForNext = isProductsStepComplete(workflowBinding);
-  const skuReadyForNext = isSkuStepComplete(workflowSku);
-
-  useEffect(() => {
-    if (!isAuthorized) return;
-
-    updateStepStatus("authorize", "completed");
-
-    const productsStatus = deriveProductsStepStatus(isAuthorized, workflowBinding);
-    updateStepStatus("products", productsStatus);
-
-    const productsComplete = productsStatus === "completed";
-    const skuStatus = deriveSkuStepStatus(
-      isAuthorized,
-      productsComplete,
-      workflowSku
-    );
-    updateStepStatus("sku-align", skuStatus);
-
-    const skuComplete = skuStatus === "completed";
-    const logisticsDone =
-      workflowLogistics != null &&
-      workflowLogistics.variantCount > 0 &&
-      workflowLogistics.confirmedCount >= workflowLogistics.variantCount;
-    updateStepStatus(
-      "logistics",
-      deriveLogisticsStepStatus(
-        isAuthorized,
-        skuComplete,
-        logisticsCompleted || logisticsDone,
-        workflowSku
-      )
-    );
-  }, [
-    isAuthorized,
-    workflowBinding,
-    workflowSku,
-    workflowLogistics,
-    logisticsCompleted,
-    updateStepStatus,
-  ]);
-
   useEffect(() => {
     if (!toastMessage) return;
-    const t = window.setTimeout(() => setToastMessage(null), 2800);
-    return () => window.clearTimeout(t);
+    const timer = window.setTimeout(() => setToastMessage(null), 2800);
+    return () => window.clearTimeout(timer);
   }, [toastMessage]);
-
-  // 根据后端 workflowLogistics 数据恢复物流完成状态
-  useEffect(() => {
-    if (!workflowLogistics) return;
-    const logisticsDone =
-      workflowLogistics.variantCount > 0 &&
-      workflowLogistics.confirmedCount >= workflowLogistics.variantCount;
-    if (logisticsDone && !logisticsCompleted) {
-      setLogisticsCompleted(true);
-    }
-    if (logisticsDone && syncPhase === "blocked") {
-      setSyncPhase("ready");
-    }
-  }, [workflowLogistics, logisticsCompleted, syncPhase]);
-
-  const syncCompleted = syncPhase === "completed";
 
   const dashboardActivities = useMemo(
     () =>
@@ -670,69 +325,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     ]
   );
 
-  const productsComplete = isProductsStepComplete(workflowBinding);
-  const logisticsReadyForSync =
-    logisticsCompleted ||
-    (workflowLogistics != null &&
-      workflowLogistics.variantCount > 0 &&
-      workflowLogistics.confirmedCount >= workflowLogistics.variantCount);
-
-  const workflowStepSnapshots = useMemo(() => {
-    const authorize = snapshotAuthorizeStep(t, isAuthorized, shopApiName || shop.domain);
-    const products = snapshotProductsStep(t, isAuthorized, workflowBinding);
-    const sku = snapshotSkuStep(t, isAuthorized, productsComplete, workflowSku);
-
-    const logistics = snapshotLogisticsStep(t, {
-      authorized: isAuthorized,
-      skuReady: skuReadyForNext || Boolean(workflowSku && workflowSku.productCount > 0),
-      metrics: workflowLogistics,
-      pipelineActive: logisticsPipelineActive,
-      hasTemplate: hasLogisticsTemplate,
-    });
-
-    const sync = snapshotSyncStep(t, {
-      syncCompleted,
-      syncPhase,
-      logisticsReady: logisticsReadyForSync,
-    });
-
-    return {
-      authorize,
-      products,
-      "sku-align": sku,
-      logistics,
-      sync,
-    } satisfies Record<string, WorkflowStepSnapshot>;
-  }, [
-    t,
-    isAuthorized,
-    shopApiName,
-    shop.domain,
-    workflowBinding,
-    productsComplete,
-    workflowSku,
-    skuReadyForNext,
-    workflowLogistics,
-    logisticsPipelineActive,
-    hasLogisticsTemplate,
-    logisticsStepSnapshot,
-    syncCompleted,
-    syncPhase,
-    logisticsReadyForSync,
-  ]);
-
-  const workflowProgressPercent = useMemo(
-    () =>
-      computeWorkflowPercent({
-        authorized: isAuthorized,
-        syncCompleted,
-        binding: workflowBinding,
-        sku: workflowSku,
-        logistics: workflowLogistics,
-      }),
-    [isAuthorized, syncCompleted, workflowBinding, workflowSku, workflowLogistics]
-  );
-
   const value = useMemo(
     () => ({
       steps,
@@ -747,7 +339,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       logisticsCompleted,
       syncPhase,
       toastMessage,
-      setShopDomainInput: handleSetDomain,
+      setShopDomainInput,
       connectShop,
       hydrateAuthorizedShop,
       updateProductStatus,
@@ -793,7 +385,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       logisticsCompleted,
       syncPhase,
       toastMessage,
-      handleSetDomain,
+      setShopDomainInput,
       connectShop,
       hydrateAuthorizedShop,
       updateProductStatus,

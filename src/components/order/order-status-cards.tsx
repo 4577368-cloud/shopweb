@@ -32,10 +32,10 @@ interface CardSpec {
 
 const TONE: Record<Tone, string> = {
   brand: "bg-brand-soft text-brand-accent",
-  info: "bg-sky-50 text-sky-600",
-  warning: "bg-amber-50 text-amber-600",
-  neutral: "bg-slate-100 text-slate-500",
-  success: "bg-emerald-50 text-emerald-600",
+  info: "bg-info-soft text-info",
+  warning: "bg-warning-soft text-warning",
+  neutral: "bg-muted text-ink-muted",
+  success: "bg-success-soft text-success",
 };
 
 const CARDS: CardSpec[] = [
@@ -85,7 +85,7 @@ export function OrderStatusCards({
             className={cn(
               "flex items-center gap-2 rounded-[var(--radius-card)] border bg-surface px-2.5 py-2 text-left transition-colors",
               isActive
-                ? "border-brand-accent ring-1 ring-brand-ring"
+                ? "border-brand ring-1 ring-brand-ring"
                 : "border-hairline hover:border-brand/40"
             )}
           >
@@ -109,7 +109,7 @@ export function OrderStatusCards({
                   <span
                     className={cn(
                       "inline-flex items-center gap-px rounded-full px-1 py-0.5 text-[10px] font-medium tabular-nums leading-none",
-                      up ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
+                      up ? "bg-success-soft text-success" : "bg-destructive-soft text-destructive"
                     )}
                   >
                     {up ? (

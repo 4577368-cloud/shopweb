@@ -24,6 +24,7 @@ import {
 } from "@/components/order/order-filter-bar";
 import { OrderTable } from "@/components/order/order-table";
 import { OrderAgentPanel, type OrderAgentHandlers, type OrderAgentContext } from "@/components/order/order-agent-panel";
+import { Button } from "@/components/ui/button";
 import { Download, Plus } from "@/lib/ui/icons";
 
 type TabKey = OrderStatus | "all";
@@ -220,20 +221,14 @@ function OrderCenterContent() {
         breadcrumbs={breadcrumbs}
         actions={
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-md border border-hairline bg-surface px-3 py-1.5 text-xs font-medium text-ink-muted hover:border-brand/40 hover:text-ink"
-            >
+            <Button variant="secondary" size="sm">
               <Download className="h-3.5 w-3.5" />
               {t("order.header.exportBtn")}
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-md bg-brand-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-accent-hover"
-            >
+            </Button>
+            <Button variant="primary" size="sm">
               <Plus className="h-3.5 w-3.5" />
               {t("order.header.createBtn")}
-            </button>
+            </Button>
           </div>
         }
         {...wb.panelProps}
@@ -244,14 +239,14 @@ function OrderCenterContent() {
           {loading ? (
             <span className="text-ink-subtle">{t("order.loading")}</span>
           ) : (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-0.5",
-                source === "real"
-                  ? "bg-emerald-50 text-emerald-600"
-                  : "bg-slate-100 text-slate-500"
-              )}
-            >
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5",
+                  source === "real"
+                    ? "bg-success-soft text-success"
+                    : "bg-muted text-ink-muted"
+                )}
+              >
               <span className="h-1.5 w-1.5 rounded-full bg-current" />
               {SOURCE_LABEL[locale]?.[source] ?? (source === "real" ? "Live" : "Sample")}
             </span>
@@ -345,7 +340,7 @@ function TabPill({
       className={cn(
         "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors",
         active
-          ? "bg-brand-accent text-white"
+          ? "bg-brand text-white"
           : "border border-hairline bg-surface text-ink-muted hover:border-brand/40 hover:text-ink"
       )}
     >
