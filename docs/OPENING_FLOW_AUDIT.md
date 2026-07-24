@@ -101,7 +101,7 @@
 |------|------|------|
 | **A · 清理** | 删 §2 三个 dead 组件；清开店相关 unused export | tsc | ✅ 2026-07-24 |
 | **B · 安全** | HTML sanitize；梳理 logistics API shop 校验（前后端对齐） | 手工 + plugin 确认 | ✅ sanitize 已做；API 待 plugin |
-| **C · 拆页** | products 先抽「catalog tab 编排」+「shop tab 编排」两个容器 | tsc + 选品页回归 |
+| **C · 拆页** | products Step 1：常量/Tab hook/扫描视图外置 | tsc + 选品页回归 | ✅ Step 1（2026-07-24） |
 | **D · 拆页** | logistics 按 workflow step 拆 page 编排 | tsc + 物流三步回归 |
 | **E · Context** | onboarding 拆 shop/progress  hook | tsc + 各步进度条一致 |
 | **F · UI 统一** | 首页是否迁 Workbench（产品决策） | 目视 |
@@ -131,4 +131,10 @@
 
 ---
 
-*下一动建议：从 **批次 A（删 3 个 dead 文件）** 或 **批次 B（HTML sanitize）** 选一开工；订单线完全后置。*
+## 9. 变更记录
+
+提交后的开店改动见 **[OPENING_FLOW_UPDATES.md](./OPENING_FLOW_UPDATES.md)**（含 commit、路径、是否改行为、revert 提示）。
+
+---
+
+*下一动：产品页 **Step 2**（shop tab 壳）；订单线后置。*

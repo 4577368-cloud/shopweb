@@ -8,10 +8,10 @@ import { ArrowRight, Loader2, Search, X } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
-import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
-import { AiCopilotScanStage } from "@/components/workbench/ai-copilot-scan-stage";
-import { SCAN_STAGE_PROGRESS_ANIMATION_MS } from "@/components/workbench/scan-stage";
+import { AssistantRail } from "@/components/workbench/assistant-rail";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
+import { ProductsScanView } from "@/components/select/products-page/products-scan-view";
+import { useProductsPageTab } from "@/hooks/use-products-page-tab";
 import { useProductsScan } from "@/hooks/use-products-scan";
 import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
 import { consumeScanHandoff, markScanHandoff } from "@/lib/scan/handoff";
@@ -43,6 +43,12 @@ import {
 import { formatNewArrivalAnalysisSummary } from "@/lib/new-arrival-analysis-result";
 import { mergeProductBaseline } from "@/lib/shop-product-mirror-baseline";
 import { clearMirrorCache, isMirrorCacheFresh, peekMirrorCache, productsMirrorShopKey, setMirrorCache } from "@/lib/products/mirror-cache";
+import {
+  productsEntryShouldSkipCeremony,
+  SCAN_FINISH_DELAY_MS,
+  type ProductsPageTab,
+  type ProductsSummary,
+} from "@/lib/products/page-constants";
 import { assembleLaunchSummaryFastFromMirror } from "@/lib/sync/assemble-launch-summary";
 import { setLaunchSummaryCacheIfNotFull } from "@/lib/sync/launch-summary-cache";
 import { warmLaunchSummaryPartial } from "@/lib/sync/warm-launch-summary-partial";
@@ -104,33 +110,12 @@ const PricingTemplateDrawer = dynamic(() => import("@/components/select/pricing-
 const ProductsAgentPanel = dynamic(() => import("@/components/select/products-agent-panel").then((m) => ({ default: m.ProductsAgentPanel })), { ssr: false });
 const CatalogPublishPanel = dynamic(() => import("@/components/select/catalog-publish-panel").then((m) => ({ default: m.CatalogPublishPanel })), { ssr: false });
 
-type Tab = "shop" | "catalog";
-
 function resolveTitleCopyStyle(
   copyAction: "translate" | "rewrite" | "optimize",
   copyStyle?: "amazon" | "literal"
 ): "amazon" | "literal" {
   if (copyStyle === "amazon" || copyStyle === "literal") return copyStyle;
   return copyAction === "translate" ? "amazon" : "literal";
-}
-
-interface ProductsSummary {
-  shopProducts: number;
-  confirmedProducts: number;
-  pendingProducts: number;
-}
-
-const SCAN_COMPLETION_DWELL_MS = 450;
-const SCAN_FINISH_DELAY_MS =
-  SCAN_STAGE_PROGRESS_ANIMATION_MS + SCAN_COMPLETION_DWELL_MS;
-
-function productsEntryShouldSkipCeremony(
-  shopMirrorKey: string,
-  legacyShopName: string
-): boolean {
-  if (hasScanned("products", shopMirrorKey)) return true;
-  if (legacyShopName && hasScanned("products", legacyShopName)) return true;
-  return Boolean(peekMirrorCache(shopMirrorKey)?.items?.length);
 }
 
 function SelectContent() {
@@ -143,6 +128,7 @@ function SelectContent() {
   const wb = useWorkbenchPage("products");
   const t = useT();
   const locale = useLocale();
+  const { tab, setTab } = useProductsPageTab(locale);
   const breadcrumbs = [
     { label: t("nav.workbench"), href: localePath(locale, "/") },
     { label: t("products.title") },
@@ -188,26 +174,6 @@ function SelectContent() {
             minutes: Math.ceil(estimatedSeconds / 60),
           }),
     [t]
-  );
-
-  const urlTab: Tab = searchParams.get("tab") === "catalog" ? "catalog" : "shop";
-  const [tab, setTabLocal] = useState<Tab>(urlTab);
-  useEffect(() => {
-    setTabLocal(urlTab);
-  }, [urlTab]);
-
-  const setTab = useCallback(
-    (t: Tab) => {
-      setTabLocal(t);
-      const current = searchParams.get("tab");
-      const already =
-        current === t || (t === "shop" && (current == null || current === ""));
-      if (already) return;
-      startTransition(() => {
-        router.replace(localePath(locale, `/products?tab=${t}`), { scroll: false });
-      });
-    },
-    [router, searchParams]
   );
 
   const [shopFilter, setShopFilter] = useState<ShopFilter>("all");
@@ -2137,40 +2103,19 @@ function SelectContent() {
 
   if (phase === "scan") {
     return (
-      <WorkbenchShell
-        sidebar={<HubAwareSidebar />}
-        rail={
-          <AssistantRail
-            assistantContent={
-              <>
-                <CopilotCard
-                  content={scanCopilot}
-                  onNextAction={(a) => {
-                    if (a === "view" && scanDone) void finishToResult();
-                  }}
-                />
-              </>
-            }
-          />
-        }
-        {...wb.shellProps}
-      >
-        <WorkbenchPanel
-          title={scanDone ? t("products.scanDoneTitle") : t("products.scanningTitle")}
-          breadcrumbs={breadcrumbs}
-          {...wb.panelProps}
-        >
-          <AiCopilotScanStage
-            tasks={scanTasks}
-            stats={scanStats}
-            progressPercent={scanProgressPercent}
-            done={scanDone}
-            onViewResult={() => void finishToResult()}
-            onSkip={exitScanToProducts}
-          />
-        </WorkbenchPanel>
-        {pricingDrawer}
-      </WorkbenchShell>
+      <ProductsScanView
+        breadcrumbs={breadcrumbs}
+        scanCopilot={scanCopilot}
+        scanDone={scanDone}
+        scanTasks={scanTasks}
+        scanStats={scanStats}
+        scanProgressPercent={scanProgressPercent}
+        onFinishToResult={finishToResult}
+        onExitScan={exitScanToProducts}
+        shellProps={wb.shellProps}
+        panelProps={wb.panelProps}
+        pricingDrawer={pricingDrawer}
+      />
     );
   }
 
@@ -2269,7 +2214,7 @@ function SelectContent() {
             variant="solid"
             tabs={tabs}
             value={tab}
-            onValueChange={(id) => setTab(id as Tab)}
+            onValueChange={(id) => setTab(id as ProductsPageTab)}
           />
 
           {/* 2) Tab context: Shopify summary vs Discover filters */}
