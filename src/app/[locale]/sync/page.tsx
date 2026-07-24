@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Loader2, RefreshCw } from "@/lib/ui/icons";
 import { motion } from "framer-motion";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { StepSidebar } from "@/components/workbench/step-sidebar";
+import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { CompletionScreen } from "@/components/sync/completion-screen";
 import { FollowUpList } from "@/components/sync/follow-up-list";
@@ -177,7 +177,7 @@ export default function SyncPage() {
 
   if (phase === "complete" && summary) {
     return (
-      <WorkbenchShell sidebar={<StepSidebar />}>
+      <WorkbenchShell sidebar={<HubAwareSidebar />}>
         <div className="flex min-h-[calc(100vh-48px)] items-center justify-center px-[var(--wb-gutter)] py-8">
           <CompletionScreen
             shopDomain={summary.meta.shopDomain || summary.meta.shopName}
@@ -191,7 +191,7 @@ export default function SyncPage() {
 
   if (phase === "loading" || !summary) {
     return (
-      <WorkbenchShell sidebar={<StepSidebar />}>
+      <WorkbenchShell sidebar={<HubAwareSidebar />}>
         <WorkbenchPanel
           title={t("sync.title")}
           breadcrumbs={[
@@ -225,7 +225,7 @@ export default function SyncPage() {
   }
 
   return (
-    <WorkbenchShell sidebar={<StepSidebar />}>
+    <WorkbenchShell sidebar={<HubAwareSidebar />}>
         <WorkbenchPanel
           title={t("sync.title")}
           description={

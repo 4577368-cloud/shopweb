@@ -19,6 +19,13 @@ export const LOGISTICS_COMMAND_UI_CONFIG: Record<
     renderMode: "generic",
     direct: true,
   },
+  start_estimate: {
+    id: "start_estimate",
+    sensitivity: "low",
+    requiresPreview: false,
+    renderMode: "generic",
+    direct: true,
+  },
   open_template: {
     id: "open_template",
     sensitivity: "low",

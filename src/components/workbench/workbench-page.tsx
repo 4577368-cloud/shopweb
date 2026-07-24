@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { StepSidebar } from "@/components/workbench/step-sidebar";
+import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { useWorkspaceAssistant } from "@/hooks/use-workspace-assistant";
 
@@ -82,7 +82,7 @@ export function WorkbenchPageFrame({
 
   return (
     <WorkbenchShell
-      sidebar={<StepSidebar />}
+      sidebar={<HubAwareSidebar />}
       rail={rail}
       {...(hasRail ? wb.shellProps : {})}
     >

@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Loader2 } from "@/lib/ui/icons";
+import { Loader2, RefreshCw } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { StepSidebar } from "@/components/workbench/step-sidebar";
+import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { AssistantRail } from "@/components/workbench/assistant-rail";
@@ -20,10 +20,23 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { useLogisticsIncrementalPipeline } from "@/hooks/use-logistics-incremental-pipeline";
 import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
+import {
+  clearLogisticsMirrorCache,
+  getLogisticsMirrorCache,
+  setLogisticsMirrorCache,
+  isLogisticsMirrorCacheFresh,
+} from "@/lib/logistics/logistics-mirror-cache";
+import {
+  clearLogisticsSession,
+  peekLogisticsSession,
+  setLogisticsSession,
+} from "@/lib/logistics/logistics-session-cache";
+import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
 import { api, readableError, type LogisticsAcceptDecisionRequest, type LogisticsEstimateResult } from "@/lib/api";
 import type { LogisticsFilterMode, PostalLimitFilter } from "@/lib/logistics/display";
 import {
   coerceLogisticsFilterMode,
+  decisionStatusToFilterMode,
   normalizeLogisticsFilterMode,
 } from "@/lib/logistics/display";
 import {
@@ -47,12 +60,21 @@ import {
 import { deriveLogisticsWorkbenchState } from "@/lib/logistics/workbench-state";
 import {
   mergeQuoteResultsIntoAnalysis,
+  applyCatalogIngestQuoteReset,
   readQuoteCache,
   writeQuoteCache,
 } from "@/lib/logistics/quote-cache";
 import { enrichVariantsWithMeasures } from "@/lib/logistics/variant-measures";
-import { GOODS_INGESTING_MESSAGE } from "@/lib/logistics/estimate-goods-block";
-import { enrichVariantsWithEstimateGoodsIds } from "@/lib/logistics/resolve-estimate-goods-id";
+import {
+  GOODS_INGESTING_MESSAGE,
+  isGoodsSourceQuoteFailure,
+  userFacingQuoteErrorMessage,
+} from "@/lib/logistics/estimate-goods-block";
+import {
+  enrichVariantsWithEstimateGoodsIds,
+  ingestProductSourceForLogistics,
+} from "@/lib/logistics/resolve-estimate-goods-id";
+import { chunkEstimateVariants, ESTIMATE_CHUNK_CONCURRENCY, mapWithConcurrency } from "@/lib/logistics/estimate-batch";
 import { quoteStatusForGoodsBlock } from "@/lib/logistics/estimate-goods-block";
 import { countCatalogIngestingProducts } from "@/lib/tangbuy/catalog-ingest-display";
 import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
@@ -63,6 +85,7 @@ import type {
   LogisticsTemplate,
   LogisticsTypeCode,
   PricingTemplate,
+  ProductLogisticsProfile,
   VariantLogisticsDecision,
 } from "@/lib/types";
 import type { LogisticsFocusTarget, MeasureOverride } from "@/components/logistics/logistics-decision-list";
@@ -91,7 +114,7 @@ const DEFAULT_TEMPLATE = (shopName: string, name = "Default template"): Logistic
 
 function LogisticsContent() {
   const router = useRouter();
-  const { shop, isAuthorized, authSessionReady, saveLogistics, showToast, skuReadyForNext, workflowSku, logisticsCompleted, publishLogisticsStepSnapshot, publishLogisticsPipelineActive } =
+  const { shop, isAuthorized, authBootstrapping, saveLogistics, showToast, skuReadyForNext, workflowSku, logisticsCompleted, publishLogisticsStepSnapshot, publishLogisticsPipelineActive } =
     useOnboarding();
   const shopName = shop.name?.trim() || shop.domain?.trim() || "";
   const wb = useWorkbenchPage("logistics");
@@ -134,6 +157,11 @@ function LogisticsContent() {
   >(new Map());
   const [quoting, setQuoting] = useState(false);
   const [quotingProductId, setQuotingProductId] = useState<string | null>(null);
+  const [ingestingProductId, setIngestingProductId] = useState<string | null>(null);
+  const [quotingVariantId, setQuotingVariantId] = useState<string | null>(null);
+  const [quoteRevealVariantIds, setQuoteRevealVariantIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [accepting, setAccepting] = useState(false);
   const [batchFailedVariantIds, setBatchFailedVariantIds] = useState<string[]>([]);
   const [focusTarget, setFocusTarget] = useState<LogisticsFocusTarget | null>(
@@ -166,7 +194,7 @@ function LogisticsContent() {
   }, []);
 
   const handleViewPendingConfirm = useCallback(() => {
-    setFilterMode("pending");
+    setFilterMode("pending_confirm");
     setFocusTarget(null);
     scrollToLogisticsList();
   }, [scrollToLogisticsList]);
@@ -272,12 +300,71 @@ function LogisticsContent() {
     if (shopName) writeMeasureOverrides(shopName, measureOverrides);
   }, [shopName, measureOverrides]);
 
+  const applyLogisticsPayload = useCallback(
+    (
+      a: LogisticsAnalysis,
+      ts: LogisticsTemplate[],
+      pt: PricingTemplate | null
+    ) => {
+      setAnalysis(a);
+      setTemplates(ts);
+      setPricingTemplate(pt);
+      if (ts.length > 0) {
+        setActiveTemplate(ts[0]);
+      } else {
+        setActiveTemplate(
+          DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName"))
+        );
+      }
+    },
+    [shopName, t]
+  );
+
   const load = useCallback(
-    async (forceClassify: boolean) => {
-      setLoading(true);
+    async (
+      forceClassify: boolean,
+      opts?: { skipCache?: boolean; silent?: boolean }
+    ) => {
+      const silent = opts?.silent ?? false;
+      const skipEntryCeremony =
+        !forceClassify && hasScanned("logistics", shopName);
+
+      const hydrateFromCache = (
+        cached: NonNullable<ReturnType<typeof getLogisticsMirrorCache>>
+      ) => {
+        applyLogisticsPayload(
+          cached.analysis!,
+          cached.templates,
+          cached.pricingTemplate
+        );
+      };
+
+      if (!forceClassify && !opts?.skipCache && isLogisticsMirrorCacheFresh(shopName)) {
+        const cached = getLogisticsMirrorCache(shopName);
+        if (cached?.analysis) {
+          hydrateFromCache(cached);
+          setLoading(false);
+          void load(false, { skipCache: true, silent: true });
+          return;
+        }
+      }
+
+      if (!forceClassify && !opts?.skipCache) {
+        const session = peekLogisticsSession(shopName);
+        if (session?.analysis) {
+          hydrateFromCache(session);
+          setLoading(false);
+          void load(false, { skipCache: true, silent: true });
+          return;
+        }
+      }
+
+      if (!silent) {
+        setLoading(true);
+        setClassifying(!skipEntryCeremony);
+      }
       setError(null);
       try {
-        setClassifying(true);
         const [a, ts, pt] = await Promise.all([
           forceClassify
             ? api.analyzeLogistics(shopName, true)
@@ -285,25 +372,26 @@ function LogisticsContent() {
           api.listLogisticsTemplates(shopName),
           api.getPricingTemplate(shopName),
         ]);
-        setAnalysis(a);
-        setTemplates(ts);
-        setPricingTemplate(pt);
-        if (ts.length > 0) {
-          setActiveTemplate(ts[0]);
-        } else {
-          setActiveTemplate(DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName")));
-        }
+        applyLogisticsPayload(a, ts, pt);
+        const payload = { analysis: a, templates: ts, pricingTemplate: pt };
+        setLogisticsMirrorCache(shopName, payload);
+        setLogisticsSession(shopName, payload);
+        markScanned("logistics", shopName);
       } catch (err) {
         setError(readableError(err));
         const ts = await api.listLogisticsTemplates(shopName).catch(() => []);
         setTemplates(ts);
-        setActiveTemplate(ts.length > 0 ? ts[0] : DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName")));
+        setActiveTemplate(
+          ts.length > 0
+            ? ts[0]
+            : DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName"))
+        );
       } finally {
         setClassifying(false);
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
-    [shopName]
+    [shopName, t, applyLogisticsPayload]
   );
 
   useEffect(() => {
@@ -523,7 +611,7 @@ function LogisticsContent() {
     async (
       variantIds?: string[],
       overrides?: Map<string, MeasureOverride> | AbortSignal,
-      opts?: { includeExceptions?: boolean; signal?: AbortSignal }
+      opts?: { includeExceptions?: boolean; signal?: AbortSignal; bulkMode?: boolean }
     ) => {
       const signal =
         overrides instanceof AbortSignal
@@ -569,7 +657,9 @@ function LogisticsContent() {
       if (signal?.aborted) return null;
       const resolvedVariants = await enrichVariantsWithEstimateGoodsIds(
         payloadVariants,
-        shopName
+        shopName,
+        undefined,
+        opts?.bulkMode ? { bulkMode: true } : undefined
       );
       if (signal?.aborted) return null;
 
@@ -615,41 +705,64 @@ function LogisticsContent() {
       }
 
       if (quotableVariants.length > 0) {
-        const response = await api.estimateLogistics(
-          {
-            shopName,
-            countryCode: params.countryCode,
-            countryId: params.countryId,
-            shippingOption: params.shippingOption,
-            packaging: params.packaging,
-            quoteCurrency: pricingTemplate?.targetCurrency?.trim().toUpperCase() || "USD",
-            variants: quotableVariants.map(
-              ({
-                estimateGoodsId,
-                estimateGoodsError: _err,
-                titleHint: _title,
-                thirdPlatformItemId: _itemId,
-                sourceIdentity: _identity,
-                ...variant
-              }) => ({
-                ...variant,
-                tangbuyGoodsId: estimateGoodsId ?? variant.tangbuyGoodsId,
-              })
-            ),
-            needOtherLine: true,
-            needMeasure: quotableVariants.some(
-              (v) =>
-                v.weightG == null ||
-                v.lengthCm == null ||
-                v.widthCm == null ||
-                v.heightCm == null
-            ),
+        type QuotableVariant = (typeof quotableVariants)[number];
+        const toEstimatePayload = ({
+          estimateGoodsId,
+          estimateGoodsError: _err,
+          titleHint: _title,
+          thirdPlatformItemId: _itemId,
+          sourceIdentity: _identity,
+          ...variant
+        }: QuotableVariant) => ({
+          ...variant,
+          tangbuyGoodsId: estimateGoodsId ?? variant.tangbuyGoodsId,
+        });
+
+        const chunks = chunkEstimateVariants(quotableVariants);
+        await mapWithConcurrency(
+          chunks,
+          ESTIMATE_CHUNK_CONCURRENCY,
+          async (chunk) => {
+            if (signal?.aborted) return;
+            try {
+              const response = await api.estimateLogistics(
+                {
+                  shopName,
+                  countryCode: params.countryCode,
+                  countryId: params.countryId,
+                  shippingOption: params.shippingOption,
+                  packaging: params.packaging,
+                  quoteCurrency:
+                    pricingTemplate?.targetCurrency?.trim().toUpperCase() || "USD",
+                  variants: chunk.map(toEstimatePayload),
+                  needOtherLine: true,
+                  needMeasure: chunk.some(
+                    (v) =>
+                      v.weightG == null ||
+                      v.lengthCm == null ||
+                      v.widthCm == null ||
+                      v.heightCm == null
+                  ),
+                },
+                signal
+              );
+              for (const r of response.results) {
+                resultsMap.set(r.thirdPlatformSkuId, r);
+              }
+            } catch (err) {
+              if (signal?.aborted) return;
+              const message = readableError(err);
+              for (const variant of chunk) {
+                resultsMap.set(variant.thirdPlatformSkuId, {
+                  thirdPlatformSkuId: variant.thirdPlatformSkuId,
+                  quoteStatus: "FAILED",
+                  errorMessage: message,
+                });
+              }
+            }
           },
-          signal
+          () => signal?.aborted === true
         );
-        for (const r of response.results) {
-          resultsMap.set(r.thirdPlatformSkuId, r);
-        }
       }
       setQuoteResults((prev) => {
         const next = new Map(prev);
@@ -660,6 +773,18 @@ function LogisticsContent() {
           writeQuoteCache(shopName, templateScopeKey, next);
         }
         return next;
+      });
+      setBatchFailedVariantIds((prev) => {
+        if (prev.length === 0) return prev;
+        return prev.filter((id) => {
+          const fresh = resultsMap.get(id);
+          if (!fresh) return true;
+          const hasLine = Boolean(
+            fresh.recommendedLine?.lineName?.trim() ||
+              fresh.recommendedLine?.lineCode?.trim()
+          );
+          return !hasLine;
+        });
       });
       setAnalysis((prev) =>
         prev ? mergeQuoteResultsIntoAnalysis(prev, resultsMap) : prev
@@ -701,10 +826,15 @@ function LogisticsContent() {
   );
 
   const fetchQuotesForPipeline = useCallback(
-    (variantIds?: string[], signal?: AbortSignal) =>
+    (
+      variantIds?: string[],
+      signal?: AbortSignal,
+      options?: { bulkMode?: boolean }
+    ) =>
       fetchQuotesForVariants(variantIds, measureOverrides, {
         includeExceptions: true,
         signal,
+        bulkMode: options?.bulkMode !== false,
       }),
     [fetchQuotesForVariants, measureOverrides]
   );
@@ -837,7 +967,10 @@ function LogisticsContent() {
         };
       });
     }
-    void handleFetchQuotes([variant.thirdPlatformSkuId], override);
+    setQuotingVariantId(variant.thirdPlatformSkuId);
+    void handleFetchQuotes([variant.thirdPlatformSkuId], override).finally(() => {
+      setQuotingVariantId(null);
+    });
   };
 
   const handleFetchQuotesForProduct = (
@@ -856,6 +989,64 @@ function LogisticsContent() {
     setQuotingProductId(_productId);
     void handleFetchQuotes(ids).finally(() => setQuotingProductId(null));
   };
+
+  const handleIngestProductSource = (
+    productId: string,
+    profile: ProductLogisticsProfile
+  ) => {
+    if (!shopName?.trim()) {
+      showToast(t("logistics.tokenMissing"));
+      return;
+    }
+    setIngestingProductId(productId);
+    void (async () => {
+      try {
+        const { ready, ingesting } = await ingestProductSourceForLogistics({
+          shopName,
+          profile,
+        });
+        if (ready) {
+          setQuoteResults((prevQuotes) => {
+            const { analysis: nextAnalysis, quoteResults: nextQuotes } =
+              applyCatalogIngestQuoteReset(analysis, productId, prevQuotes);
+            setAnalysis(nextAnalysis ?? analysis);
+            if (shopName && templateScopeKey) {
+              writeQuoteCache(shopName, templateScopeKey, nextQuotes);
+            }
+            return nextQuotes;
+          });
+          showToast(t("logistics.toastIngestSuccess"));
+        } else if (ingesting) {
+          showToast(t("logistics.toastIngestPending"));
+        } else {
+          showToast(t("logistics.toastIngestFailed"));
+        }
+      } catch {
+        showToast(t("logistics.toastIngestFailed"));
+      } finally {
+        setIngestingProductId(null);
+      }
+    })();
+  };
+
+  const handleCatalogIngestComplete = useCallback(
+    (profile: ProductLogisticsProfile) => {
+      const title =
+        profile.title?.trim() || profile.thirdPlatformItemId;
+      const productId = profile.thirdPlatformItemId;
+      setQuoteResults((prevQuotes) => {
+        const { analysis: nextAnalysis, quoteResults: nextQuotes } =
+          applyCatalogIngestQuoteReset(analysis, productId, prevQuotes);
+        setAnalysis(nextAnalysis ?? analysis);
+        if (shopName && templateScopeKey) {
+          writeQuoteCache(shopName, templateScopeKey, nextQuotes);
+        }
+        return nextQuotes;
+      });
+      showToast(t("logistics.toastIngestReadyForProduct", { title }));
+    },
+    [analysis, shopName, templateScopeKey, showToast, t]
+  );
 
   const fetchQuotesForReady = useCallback(async () => {
     const readyIds = collectReadyVariants().map((v) => v.thirdPlatformSkuId);
@@ -893,10 +1084,26 @@ function LogisticsContent() {
           ? t("logistics.toastRoutesFetched", { withLine, total: resultsMap.size, country: params?.countryCode ?? "", speed: params?.shippingOption ?? "" })
           : ingestingCount > 0
             ? GOODS_INGESTING_MESSAGE
-            : results.find((r) => r.errorMessage)?.errorMessage ||
+            : userFacingQuoteErrorMessage(
+                results.find((r) => r.errorMessage)?.errorMessage
+              ) ||
               t("logistics.toastNoRoutesReturned", { total: resultsMap.size, country: params?.countryCode ?? "" })
       );
-      setFilterMode("all");
+      const quotedIds =
+        variantIds?.filter((id) => resultsMap.get(id)?.recommendedLine) ?? [];
+      if (quotedIds.length > 0) {
+        setQuoteRevealVariantIds((prev) => new Set([...prev, ...quotedIds]));
+        window.setTimeout(() => {
+          setQuoteRevealVariantIds((prev) => {
+            const next = new Set(prev);
+            for (const id of quotedIds) next.delete(id);
+            return next;
+          });
+        }, 1000);
+      }
+      if (!variantIds?.length || variantIds.length > 1) {
+        setFilterMode("all");
+      }
     } catch (err) {
       showToast(readableError(err));
     } finally {
@@ -977,6 +1184,7 @@ function LogisticsContent() {
       const CHUNK_SIZE = 10;
       let acceptedTotal = 0;
       let failedTotal = 0;
+      let skippedNoQuote = 0;
 
       for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
         if (opts?.isCancelled?.()) {
@@ -1000,6 +1208,7 @@ function LogisticsContent() {
         const variantIds = chunk
           .map((v) => v.thirdPlatformSkuId)
           .filter((id) => quotes[id]);
+        skippedNoQuote += chunk.length - variantIds.length;
         if (variantIds.length === 0) continue;
 
         try {
@@ -1031,6 +1240,10 @@ function LogisticsContent() {
       setBatchFailedVariantIds(failedIds);
       setFilterMode("all");
       if (opts?.isCancelled?.()) return;
+      if (acceptedTotal === 0 && failedTotal === 0 && skippedNoQuote > 0) {
+        showToast(t("logistics.toastAcceptMissingQuoteLines"));
+        return;
+      }
       showToast(
         acceptedTotal > 0
           ? t("logistics.toastBatchAccepted", { accepted: acceptedTotal })
@@ -1046,11 +1259,7 @@ function LogisticsContent() {
   };
 
   const handleFocusStatus = (status: LogisticsDecisionStatus) => {
-    if (status === "pending_sku") {
-      setFilterMode("needs_attention");
-    } else {
-      setFilterMode("pending");
-    }
+    setFilterMode(decisionStatusToFilterMode(status));
     setFocusTarget({ status });
   };
 
@@ -1080,11 +1289,11 @@ function LogisticsContent() {
     (step: LogisticsWorkflowStep) => {
       setWorkflowStep(step);
       if (step === "estimate") {
-        setFilterMode("pending");
+        setFilterMode("pending_quote");
         scrollToLogisticsList();
       } else if (step === "confirm") {
         const attention = planMetrics.exceptionCount + planMetrics.skuUnlinkedCount;
-        setFilterMode(attention > 0 ? "needs_attention" : "pending");
+        setFilterMode(attention > 0 ? "needs_attention" : "pending_confirm");
         scrollToLogisticsList();
       } else {
         setFilterMode("all");
@@ -1141,9 +1350,9 @@ function LogisticsContent() {
     [handleAcceptAllReady]
   );
 
-  if (!authSessionReady) {
+  if (authBootstrapping) {
     return (
-      <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
+      <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
         <WorkbenchPanel
           title={t("logistics.pageTitle")}
           breadcrumbs={breadcrumbs}
@@ -1164,7 +1373,7 @@ function LogisticsContent() {
   if (!isAuthorized) {
     return (
       <WorkbenchShell
-        sidebar={<StepSidebar />}
+        sidebar={<HubAwareSidebar />}
         rail={
           <AssistantRail
             assistantContent={
@@ -1197,7 +1406,7 @@ function LogisticsContent() {
 
   return (
     <WorkbenchShell
-      sidebar={<StepSidebar />}
+      sidebar={<HubAwareSidebar />}
       rail={
         <AssistantRail
           assistantContent={
@@ -1253,17 +1462,22 @@ function LogisticsContent() {
               <Button
                 size="sm"
                 variant="secondary"
+                className="h-7 w-7 px-0"
                 onClick={() => {
+                  clearScanned("logistics", shopName);
+                  clearLogisticsMirrorCache(shopName);
+                  clearLogisticsSession(shopName);
                   void load(true);
-                  showToast(t("logistics.actionReanalyze"));
                 }}
                 disabled={loading || classifying}
-                title={t("logistics.actionReanalyze")}
+                title={t("logistics.refreshWorkflowTitle")}
+                aria-label={t("logistics.refreshWorkflowAria")}
               >
                 {classifying ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : null}
-                {t("logistics.actionReanalyze")}
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
               </Button>
               <Button
                 size="sm"
@@ -1276,7 +1490,7 @@ function LogisticsContent() {
                 title={
                   planMetrics.pendingQuoteCount > 0
                     ? t("logistics.estimateTitle", { count: planMetrics.pendingQuoteCount })
-                    : t("logistics.estimateNone")
+                    : t("logistics.estimatePipelineHint")
                 }
               >
                 {pipeline.pipelineRunning ? (
@@ -1296,14 +1510,14 @@ function LogisticsContent() {
                     void handleAcceptAllReady({ onlyVariantIds: batchFailedVariantIds })
                   }
                   disabled={accepting}
-                  title={t("logistics.actionRetryFailed", {
+                  title={t("logistics.actionRetryAccept", {
                     count: batchFailedVariantIds.length,
                   })}
                 >
                   {accepting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : null}
-                  {t("logistics.actionRetryFailed", {
+                  {t("logistics.actionRetryAccept", {
                     count: batchFailedVariantIds.length,
                   })}
                 </Button>
@@ -1380,10 +1594,20 @@ function LogisticsContent() {
           ) : null}
 
           {loading && !analysis ? (
-            <LogisticsClassifyStage
-              phase={classifying ? "classifying" : "loading"}
-              productCount={workflowSku?.productCount}
-            />
+            hasScanned("logistics", shopName) && !classifying ? (
+              <FadeSwap
+                loading
+                minHeightClass="min-h-[320px]"
+                skeleton={<TableSkeleton rows={4} />}
+              >
+                <div />
+              </FadeSwap>
+            ) : (
+              <LogisticsClassifyStage
+                phase={classifying ? "classifying" : "loading"}
+                productCount={workflowSku?.productCount}
+              />
+            )
           ) : error && !analysis ? (
             <div className="rounded-[var(--radius-card)] border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
               {error}
@@ -1420,6 +1644,11 @@ function LogisticsContent() {
                 onFetchProductQuotes={(productId, variants) =>
                   handleFetchQuotesForProduct(productId, variants)
                 }
+                onIngestProductSource={handleIngestProductSource}
+                onCatalogIngestComplete={handleCatalogIngestComplete}
+                onFetchVariantQuote={(variant, override) =>
+                  handleFetchQuoteForVariant(variant, override)
+                }
                 onMeasureOverride={(variantId, next) => {
                   setMeasureOverrides((prev) => {
                     const map = new Map(prev);
@@ -1429,6 +1658,9 @@ function LogisticsContent() {
                 }}
                 accepting={accepting}
                 quotingProductId={quotingProductId}
+                ingestingProductId={ingestingProductId}
+                quotingVariantId={quotingVariantId}
+                quoteRevealVariantIds={quoteRevealVariantIds}
                 onClearFocus={() => setFocusTarget(null)}
                 pricing={pricingTemplate}
                 pipelineActive={pipeline.pipelineActive}
@@ -1445,12 +1677,12 @@ function LogisticsContent() {
                     <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
                       <div
                         className="h-full rounded-full bg-[#90AAFF] transition-all duration-300"
-                        style={{ width: `${Math.round(((pipeline.progress.productIndex + 1) / pipeline.progress.productTotal) * 100)}%` }}
+                        style={{ width: `${Math.round((pipeline.progress.productIndex / pipeline.progress.productTotal) * 100)}%` }}
                       />
                     </div>
                     <div className="text-center text-xs text-ink-subtle">
                       {t("logistics.pipelineRunningProgress", {
-                        current: pipeline.progress.productIndex + 1,
+                        current: pipeline.progress.productIndex,
                         total: pipeline.progress.productTotal,
                         title: pipeline.progress.currentProductTitle ?? "",
                       })}

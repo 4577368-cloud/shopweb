@@ -18,12 +18,15 @@ export type SuggestedActionKind =
   | "open_candidate_search"
   | "rematch_unbound"
   | "apply_filter_preset"
+  | "batch_ack_pending"
   | "none";
 
 export interface AgentFilterPreset {
   categoryId?: string;
   categoryName?: string;
   keywords?: string;
+  sourceFilter?: "all" | "tangbuy" | "1688";
+  priceMaxUsd?: number;
   label: string;
 }
 

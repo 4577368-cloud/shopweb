@@ -38,6 +38,14 @@ export function writeProductSourceIdentity(
         resolvedAt: identity.resolvedAt ?? new Date().toISOString(),
       })
     );
+    window.dispatchEvent(
+      new CustomEvent("product-source-identity-updated", {
+        detail: {
+          shopName: shopName.trim(),
+          thirdPlatformItemId: thirdPlatformItemId.trim(),
+        },
+      })
+    );
   } catch {
     // ignore quota / private mode
   }

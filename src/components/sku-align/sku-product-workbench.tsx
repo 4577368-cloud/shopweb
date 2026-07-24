@@ -1,7 +1,7 @@
 "use client";
 
 import { ThumbImage } from "@/components/ui/thumb-image";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { api, readableError } from "@/lib/api";
+import { resolve1688ProductTitle, resolveImageSearchDisplayTitle } from "@/lib/batch-link/1688-title-locale";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
 import {
   identityFromSearchCandidate,
@@ -30,16 +31,23 @@ import { mapSkuAlignError } from "@/lib/sku-align/errors";
 import { mapImageMatchConfirmError } from "@/lib/batch-link/match-errors";
 import { writeProductSourceIdentity } from "@/lib/product-source-identity";
 import {
+  ensureOfferPoolFor1688Candidate,
+  resolveIdentityWithPreferredPool,
+} from "@/lib/tangbuy/preferred-pool";
+import {
   buildAutoSuggestions,
+  buildPreviewMatches,
   COVERAGE_MATCH_THRESHOLD,
   type DrawerPhase,
   autoAssignSupplementGaps,
+  assignSupplementMerchantToVariants,
   filterSupplementCandidates,
   rankCandidatesByCoverage,
   resolveCandidateOfferId,
   supplementGapVariantsFromOverview,
   type RankedCoverageCandidate,
 } from "@/lib/sku-align/drawer-helpers";
+import { rankImageSearchBySkuMapping } from "@/lib/sku-align/image-search-sku-rank";
 import { loadSupplementManualProduct } from "@/lib/sku-align/supplement-manual-add";
 import { filterAvailableSupplementCandidates } from "@/lib/sku-align/supplement-candidate-availability";
 import { manualBindWithFallback } from "@/lib/sku-align-v1/compat";
@@ -64,7 +72,8 @@ import {
   displayStateLabel,
   type SkuVariantDisplayState,
 } from "@/lib/sku-align/display";
-import { useT } from "@/i18n/LocaleProvider";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import type { Locale } from "@/i18n/config";
 import {
   formatShopListingPrice,
   formatSourceCostInShopCurrency,
@@ -80,6 +89,10 @@ const COMPARE_SELECT_CLASS =
 const COMPARE_MAP_PANEL_CLASS =
   "min-w-0 rounded-md border border-slate-200 bg-white p-2.5 shadow-sm";
 
+/** Side-by-side compare preview — large enough to judge color / shape. */
+const COMPARE_THUMB_CLASS = "h-28 w-28";
+const COMPARE_THUMB_PX = 224;
+
 /* ------------------------------------------------------------------ */
 /*  Helper components                                                   */
 /* ------------------------------------------------------------------ */
@@ -88,11 +101,14 @@ function VariantThumb({
   src,
   alt,
   className,
+  pixelWidth = 80,
 }: {
   src?: string | null;
   alt: string;
   className?: string;
+  pixelWidth?: number;
 }) {
+  const sizeLabel = `${Math.max(40, Math.round(pixelWidth / 2))}px`;
   return (
     <div
       className={cn(
@@ -105,16 +121,84 @@ function VariantThumb({
           src={src}
           alt={alt}
           fill
-          sizes="40px"
-          pixelWidth={80}
+          sizes={sizeLabel}
+          pixelWidth={pixelWidth}
           className="object-cover"
           referrerPolicy="no-referrer"
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-ink-subtle">
-          <ImageOff className="h-3.5 w-3.5" />
+          <ImageOff className="h-5 w-5" />
         </div>
       )}
+    </div>
+  );
+}
+
+function CompareImageColumn({
+  src,
+  alt,
+  title,
+  subtitle,
+  badge,
+  emptyHint,
+}: {
+  src?: string | null;
+  alt: string;
+  title: string;
+  subtitle?: string;
+  badge?: ReactNode;
+  emptyHint?: string;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
+      <VariantThumb
+        src={src}
+        alt={alt}
+        className={COMPARE_THUMB_CLASS}
+        pixelWidth={COMPARE_THUMB_PX}
+      />
+      <div className="min-w-0 w-full space-y-1">
+        {badge ? <div className="flex flex-wrap justify-center gap-1">{badge}</div> : null}
+        <p className="line-clamp-2 text-xs font-medium leading-snug text-ink">{title}</p>
+        {subtitle ? (
+          <p className="text-[11px] leading-snug text-ink-muted">{subtitle}</p>
+        ) : emptyHint ? (
+          <p className="text-[11px] leading-snug text-ink-subtle">{emptyHint}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function CompareVisualPair({
+  left,
+  right,
+}: {
+  left: {
+    src?: string | null;
+    alt: string;
+    title: string;
+    subtitle?: string;
+    badge?: ReactNode;
+    emptyHint?: string;
+  };
+  right: {
+    src?: string | null;
+    alt: string;
+    title: string;
+    subtitle?: string;
+    badge?: ReactNode;
+    emptyHint?: string;
+  };
+}) {
+  return (
+    <div className="flex items-start gap-3 sm:gap-5">
+      <CompareImageColumn {...left} />
+      <div className="flex shrink-0 self-center pt-12 text-ink-subtle">
+        <ArrowLeftRight className="h-5 w-5" />
+      </div>
+      <CompareImageColumn {...right} />
     </div>
   );
 }
@@ -199,6 +283,7 @@ export function SkuProductWorkbench({
   showToast,
 }: SkuProductWorkbenchProps) {
   const t = useT();
+  const locale = useLocale();
   /* ---------- state ---------- */
   const [sourceOverride, setSourceOverride] = useState<PrimarySourceOverride | null>(null);
   const [sourceRevision, setSourceRevision] = useState(0);
@@ -208,6 +293,13 @@ export function SkuProductWorkbench({
   const [selections, setSelections] = useState<Record<string, string>>({});
   /** 灰区 LLM 复核置信度（pairKey→0-1）。 */
   const [llmScores, setLlmScores] = useState<Record<string, number>>({});
+  const [matchAnimating, setMatchAnimating] = useState(false);
+  const [matchProgress, setMatchProgress] = useState({ done: 0, total: 0 });
+  const matchAnimTokenRef = useRef(0);
+  /** 用户主动触发匹配/改选后才展示保存按钮。 */
+  const [primaryMappingDirty, setPrimaryMappingDirty] = useState(false);
+  /** 用户搜索/分配补充映射后才展示保存按钮。 */
+  const [supplementMappingDirty, setSupplementMappingDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -223,11 +315,15 @@ export function SkuProductWorkbench({
     new Map()
   );
   const [gapAssignments, setGapAssignments] = useState<Record<string, GapAssignment>>({});
+  /** Sticky default merchant for supplement — first pick applies to all unassigned rows. */
+  const [defaultSupplementMerchantKey, setDefaultSupplementMerchantKey] = useState<string | null>(
+    null
+  );
   const [registering, setRegistering] = useState(false);
 
   const [replaceSearchLoading, setReplaceSearchLoading] = useState(false);
   const [replaceSearchError, setReplaceSearchError] = useState<string | null>(null);
-  const [replaceCandidates, setReplaceCandidates] = useState<ImageSearchProduct[]>([]);
+  const [replaceCandidates, setReplaceCandidates] = useState<RankedCoverageCandidate[]>([]);
   const [replacingPrimary, setReplacingPrimary] = useState(false);
 
   const focusRef = useRef<HTMLDivElement>(null);
@@ -244,11 +340,21 @@ export function SkuProductWorkbench({
     () => supplementGapVariantsFromOverview(product.variants, matrix, v1Detail),
     [product.variants, matrix, v1Detail]
   );
+  /** 补充 Tab 列出全部规格，用户可自由为任意行指定补充货源。 */
+  const supplementPanelVariants = product.variants;
 
   const autoSuggestions = useMemo(
     () => buildAutoSuggestions(product.variants, matrix, selections, llmScores),
     [product.variants, matrix, selections, llmScores]
   );
+
+  const previewMatches = useMemo(
+    () => buildPreviewMatches(product.variants, matrix, llmScores),
+    [product.variants, matrix, llmScores]
+  );
+
+  const suggestCount = Object.keys(autoSuggestions).length;
+  const previewCount = Object.keys(previewMatches).length;
 
   const alignedCount = useMemo(
     () =>
@@ -352,7 +458,7 @@ export function SkuProductWorkbench({
         return rows;
       } catch (err) {
         setMatrix([]);
-        setLoadError(readableError(err));
+        setLoadError(mapSkuAlignError(err, t));
         return [];
       } finally {
         setLoading(false);
@@ -377,7 +483,8 @@ export function SkuProductWorkbench({
           title: product.title,
           primaryImageUrl: product.imageUrl,
         },
-        5
+        5,
+        { locale }
       );
       if (pipeline.error) {
         setSearchError(pipeline.error);
@@ -435,8 +542,27 @@ export function SkuProductWorkbench({
           autoAssignSupplementGaps(supplementGaps, key, matrix)
         );
       }
+
+      const topKey = previewRanked[0]
+        ? candidateKeyOf(previewRanked[0].candidate)
+        : null;
+      if (topKey) {
+        setDefaultSupplementMerchantKey(topKey);
+        const topMatrix = matrices.get(topKey) ?? [];
+        const unassigned = supplementPanelVariants.filter(
+          (v) => !autoAssignments[v.thirdPlatformSkuId]?.candidateKey?.trim()
+        );
+        if (topMatrix.length && unassigned.length > 0) {
+          Object.assign(
+            autoAssignments,
+            assignSupplementMerchantToVariants(unassigned, topKey, topMatrix)
+          );
+        }
+      }
+
       if (Object.keys(autoAssignments).length > 0) {
         setGapAssignments(autoAssignments);
+        setSupplementMappingDirty(true);
       }
 
       if (rejectedCount > 0) {
@@ -448,15 +574,20 @@ export function SkuProductWorkbench({
       setSearchLoading(false);
       setMatrixLoading(false);
     }
-  }, [shopName, product, supplementGaps, tangbuyProductId, detailUrl, v1Detail, showToast, t]);
+  }, [shopName, product, supplementGaps, supplementPanelVariants, tangbuyProductId, detailUrl, v1Detail, showToast, t, locale]);
 
   const clearSupplementWorkspace = useCallback(() => {
     setCandidates([]);
     setCandidateMatrices(new Map());
     setGapAssignments({});
+    setDefaultSupplementMerchantKey(null);
+    setSupplementMappingDirty(false);
     setSearchError(null);
     setManualAddInput("");
     setManualAddError(null);
+    setMatchAnimating(false);
+    setMatchProgress({ done: 0, total: 0 });
+    matchAnimTokenRef.current += 1;
   }, []);
 
   const supplementExcludeCtx = useMemo(
@@ -516,23 +647,35 @@ export function SkuProductWorkbench({
       });
 
       const auto = autoAssignSupplementGaps(supplementGaps, acceptedKey, matrixRows);
-      const autoCount = Object.keys(auto).length;
-      if (autoCount > 0) {
-        setGapAssignments((prev) => {
-          const next = { ...prev };
-          for (const [variantId, assignment] of Object.entries(auto)) {
-            const existing = next[variantId];
-            if (existing?.candidateKey && existing?.skuId) continue;
-            next[variantId] = assignment;
-          }
-          return next;
-        });
-      }
+      let appliedCount = 0;
+      setDefaultSupplementMerchantKey((prev) => prev ?? acceptedKey);
+      setGapAssignments((prev) => {
+        const next = { ...prev };
+        for (const [variantId, assignment] of Object.entries(auto)) {
+          const existing = next[variantId];
+          if (existing?.candidateKey && existing?.skuId) continue;
+          next[variantId] = assignment;
+        }
+        const unassigned = supplementPanelVariants.filter(
+          (v) => !next[v.thirdPlatformSkuId]?.candidateKey?.trim()
+        );
+        if (unassigned.length > 0) {
+          Object.assign(
+            next,
+            assignSupplementMerchantToVariants(unassigned, acceptedKey, matrixRows)
+          );
+        }
+        appliedCount = supplementPanelVariants.filter(
+          (v) => next[v.thirdPlatformSkuId]?.candidateKey?.trim()
+        ).length;
+        return next;
+      });
+      if (appliedCount > 0) setSupplementMappingDirty(true);
 
       setManualAddInput("");
       showToast(
-        autoCount > 0
-          ? t("skuWorkbench.toastAddedWithAuto", { count: autoCount })
+        appliedCount > 0
+          ? t("skuWorkbench.toastAddedWithAuto", { count: appliedCount })
           : t("skuWorkbench.toastAddedManual")
       );
     } catch (err) {
@@ -544,6 +687,7 @@ export function SkuProductWorkbench({
     manualAddInput,
     supplementExcludeCtx,
     supplementGaps,
+    supplementPanelVariants,
     candidates,
     showToast,
     t,
@@ -561,7 +705,8 @@ export function SkuProductWorkbench({
           title: product.title,
           primaryImageUrl: product.imageUrl,
         },
-        6
+        6,
+        { locale }
       );
       if (pipeline.error) {
         setReplaceSearchError(pipeline.error);
@@ -571,29 +716,70 @@ export function SkuProductWorkbench({
         setReplaceSearchError(t("skuWorkbench.errNoReplaceCandidates"));
         return;
       }
-      setReplaceCandidates(pipeline.rankedItems.slice(0, 6));
+      const { ranked, rejectedCount } = await rankImageSearchBySkuMapping(
+        pipeline.rankedItems.slice(0, 6),
+        product.variants,
+        pipeline.imageScores
+      );
+      if (!ranked.length) {
+        setReplaceSearchError(
+          rejectedCount > 0
+            ? t("skuWorkbench.errAllCandidatesInvalid")
+            : t("skuWorkbench.errNoReplaceCandidates")
+        );
+        return;
+      }
+      setReplaceCandidates(ranked);
+      if (rejectedCount > 0) {
+        showToast(t("skuWorkbench.toastFilteredInvalid", { count: rejectedCount }));
+      }
     } catch (err) {
       setReplaceSearchError(readableError(err));
     } finally {
       setReplaceSearchLoading(false);
     }
-  }, [shopName, product, t]);
+  }, [shopName, product, showToast, t, locale]);
 
   const applyReplacePrimary = async (candidate: ImageSearchProduct) => {
     if (replacingPrimary) return;
     setReplacingPrimary(true);
     setSaveError(null);
     try {
-      const fromCandidate = identityFromSearchCandidate(candidate);
-      const offerProductId = resolveConfirmOfferProductId(candidate, fromCandidate);
+      const skipPool = Boolean(
+        candidate.catalogSource || candidate.internalGoodsId?.trim()
+      );
+      const resolved = await resolveIdentityWithPreferredPool({
+        tangbuyProductId: candidate.internalGoodsId ?? candidate.productId,
+        tangbuySkuId: candidate.skuId,
+        detailUrl: candidate.detailUrl,
+        titleHint: product.title ?? candidate.title,
+        shopName,
+        skipPoolIngest: skipPool,
+      });
+      const mergedIdentity = {
+        ...identityFromSearchCandidate(candidate),
+        ...resolved,
+        tangbuySkuId: candidate.skuId ?? resolved.tangbuySkuId,
+      };
+      const offerProductId = resolveConfirmOfferProductId(candidate, mergedIdentity);
       const confirmDetailUrl = resolveConfirmDetailUrl(
         candidate,
-        fromCandidate,
+        mergedIdentity,
         offerProductId
       );
       if (!confirmDetailUrl?.trim()) {
         throw new Error(t("skuWorkbench.errCannotParseDetailUrl"));
       }
+      const localizedTitle =
+        resolve1688ProductTitle({
+          locale,
+          title: candidate.title,
+          titleTrans: candidate.titleTrans,
+          subject: candidate.subject,
+          subjectTrans: candidate.subjectTrans,
+          englishTitle: candidate.englishTitle,
+        })?.trim() || null;
+
       await api.confirmImageMatch({
         shopName,
         thirdPlatformItemId: product.thirdPlatformItemId,
@@ -606,14 +792,14 @@ export function SkuProductWorkbench({
         appliedQuery: "sku_replace_primary",
         offerImageUrl: candidate.imageUrl,
         offerPrice: candidate.price,
-        offerTitle: candidate.title?.trim() || null,
+        offerTitle: localizedTitle,
         auto: false,
       });
-      writeProductSourceIdentity(shopName, product.thirdPlatformItemId, fromCandidate);
+      writeProductSourceIdentity(shopName, product.thirdPlatformItemId, mergedIdentity);
       setSourceOverride({
         detailUrl: confirmDetailUrl.trim(),
         tangbuyProductId: offerProductId,
-        title: candidate.title?.trim() || t("skuWorkbench.newPrimarySource"),
+        title: localizedTitle || t("skuWorkbench.newPrimarySource"),
         imageUrl: candidate.imageUrl ?? null,
       });
       setSourceRevision((n) => n + 1);
@@ -654,6 +840,7 @@ export function SkuProductWorkbench({
       if (id) init[v.thirdPlatformSkuId] = id;
     }
     setSelections(init);
+    setPrimaryMappingDirty(false);
     void loadMatrix();
     return () => {
       reset();
@@ -668,6 +855,7 @@ export function SkuProductWorkbench({
       if (id) init[v.thirdPlatformSkuId] = id;
     }
     setSelections(init);
+    setPrimaryMappingDirty(false);
   }, [product.variants]);
 
   /** 替换主货源后：加载新规格表 + 把自动对齐/高置信建议填入下拉。 */
@@ -758,62 +946,81 @@ export function SkuProductWorkbench({
     return changes;
   }, [product.variants, selections, matrix]);
 
-  const [bindingVariantId, setBindingVariantId] = useState<string | null>(null);
-
-  const handleSelect = async (variantId: string, skuId: string) => {
-    setSelections((prev) => ({ ...prev, [variantId]: skuId }));
-    const trimmed = skuId.trim();
-    if (!trimmed || !canPick || !effectiveTangbuyId) return;
-
+  const handleSelect = (variantId: string, skuId: string) => {
     const variant = product.variants.find((v) => v.thirdPlatformSkuId === variantId);
     if (!variant) return;
     const current = variant.bound?.tangbuySkuId?.trim() ?? "";
-    if (trimmed === current) return;
-
-    const row = findSourceSkuRow(matrix, trimmed);
-    if (!row) return;
-
-    setBindingVariantId(variantId);
-    try {
-      await manualBindWithFallback(
-        variantId,
-        {
-          shopName,
-          thirdPlatformItemId: product.thirdPlatformItemId,
-          offerId: effectiveTangbuyId,
-          offerSkuId: trimmed,
-          reason: row.specLabel,
-          detailUrl: effectiveDetailUrl ?? undefined,
-          sourceRole: "PRIMARY",
-          matchSource: isSemanticLlmBoost(llmScores[pairKey(variant.optionLabel, row.specLabel)])
-            ? "SEMANTIC"
-            : undefined,
-        },
-        { detailUrl: effectiveDetailUrl ?? undefined }
-      );
-      recordBinding(variant.optionLabel, row.specLabel, { shopName });
-      showToast(t("skuWorkbench.toastBound", { spec: row.specLabel }));
-      await onSaved();
-    } catch (err) {
-      showToast(readableError(err));
-      setSelections((prev) => ({
-        ...prev,
-        [variantId]: current,
-      }));
-    } finally {
-      setBindingVariantId(null);
+    const trimmed = skuId.trim();
+    setSelections((prev) => ({ ...prev, [variantId]: skuId }));
+    if (trimmed && trimmed !== current) {
+      setPrimaryMappingDirty(true);
     }
   };
 
-  const applyAllSuggestions = () => {
-    const count = Object.keys(autoSuggestions).length;
+  const runMatchPreview = useCallback(async () => {
+    if (matchAnimating || !matrix.length) return;
+    const assignments =
+      suggestCount > 0 ? autoSuggestions : previewMatches;
+    const count = Object.keys(assignments).length;
     if (count === 0) {
       showToast(t("skuWorkbench.toastNoSuggestions"));
       return;
     }
-    setSelections((prev) => ({ ...prev, ...autoSuggestions }));
-    showToast(t("skuWorkbench.toastAppliedSuggestions", { count }));
-  };
+
+    const variantOrder = product.variants
+      .filter((v) => assignments[v.thirdPlatformSkuId])
+      .map((v) => v.thirdPlatformSkuId);
+
+    const token = ++matchAnimTokenRef.current;
+    setMatchAnimating(true);
+    setMatchProgress({ done: 0, total: variantOrder.length });
+
+    if (suggestCount === 0) {
+      const baseline: Record<string, string> = {};
+      for (const v of product.variants) {
+        const bound = v.bound?.tangbuySkuId?.trim();
+        if (bound) baseline[v.thirdPlatformSkuId] = bound;
+      }
+      setSelections({ ...baseline });
+      await new Promise((r) => window.setTimeout(r, 120));
+    }
+
+    const stepMs = Math.min(
+      120,
+      Math.max(35, Math.floor(2200 / Math.max(variantOrder.length, 1)))
+    );
+
+    for (let i = 0; i < variantOrder.length; i++) {
+      const variantId = variantOrder[i]!;
+      if (matchAnimTokenRef.current !== token) break;
+      const skuId = assignments[variantId]!;
+      setSelections((prev) => ({ ...prev, [variantId]: skuId }));
+      setMatchProgress({ done: i + 1, total: variantOrder.length });
+      if (i < variantOrder.length - 1) {
+        await new Promise((r) => window.setTimeout(r, stepMs));
+      }
+    }
+
+    if (matchAnimTokenRef.current === token) {
+      setMatchAnimating(false);
+      setMatchProgress({ done: 0, total: 0 });
+      setPrimaryMappingDirty(true);
+      showToast(
+        suggestCount > 0
+          ? t("skuWorkbench.toastAppliedSuggestions", { count })
+          : t("skuWorkbench.toastMatchPreviewDone", { count })
+      );
+    }
+  }, [
+    matchAnimating,
+    matrix.length,
+    suggestCount,
+    autoSuggestions,
+    previewMatches,
+    product.variants,
+    showToast,
+    t,
+  ]);
 
   const setGapMerchant = useCallback(
     async (variant: SkuVariant, candidateKey: string) => {
@@ -824,6 +1031,7 @@ export function SkuProductWorkbench({
         }));
         return;
       }
+      setSupplementMappingDirty(true);
 
       let matrix = candidateMatricesRef.current.get(candidateKey);
       if (!matrix) {
@@ -855,22 +1063,35 @@ export function SkuProductWorkbench({
         }
       }
 
-      const top = rankSourceSkuRows(matrix ?? [], variant.optionLabel, {
-        variantPrice: variant.price,
-        variantImageUrl: variant.imageUrl,
-      })[0];
-      setGapAssignments((prev) => ({
-        ...prev,
-        [variant.thirdPlatformSkuId]: {
+      const establishingDefault = defaultSupplementMerchantKey === null;
+      if (establishingDefault) {
+        setDefaultSupplementMerchantKey(candidateKey);
+      }
+
+      setGapAssignments((prev) => {
+        const variantsToFill = establishingDefault
+          ? supplementPanelVariants.filter(
+              (v) => !prev[v.thirdPlatformSkuId]?.candidateKey?.trim()
+            )
+          : [variant];
+        const bulk = assignSupplementMerchantToVariants(
+          variantsToFill,
           candidateKey,
-          skuId: top?.skuId ?? "",
-        },
-      }));
+          matrix ?? []
+        );
+        return { ...prev, ...bulk };
+      });
     },
-    [candidateByKey, supplementGaps]
+    [
+      candidateByKey,
+      supplementGaps,
+      supplementPanelVariants,
+      defaultSupplementMerchantKey,
+    ]
   );
 
   const setGapSku = (variantId: string, skuId: string) => {
+    setSupplementMappingDirty(true);
     setGapAssignments((prev) => ({
       ...prev,
       [variantId]: { candidateKey: prev[variantId]?.candidateKey ?? "", skuId },
@@ -880,10 +1101,6 @@ export function SkuProductWorkbench({
   const savePrimary = async () => {
     if (saving || !canPick || !effectiveTangbuyId) return;
     if (pendingChanges.length === 0) {
-      if (supplementGaps.length > 0) {
-        onPhaseChange("supplement");
-        return;
-      }
       showToast(t("skuWorkbench.toastNothingToSave"));
       onBack();
       return;
@@ -912,12 +1129,9 @@ export function SkuProductWorkbench({
         recordBinding(variant.optionLabel, specLabel, { shopName });
       }
       showToast(t("skuWorkbench.toastSavedMappings", { count: pendingChanges.length }));
+      setPrimaryMappingDirty(false);
       await onSaved();
-      if (supplementGaps.length > 0) {
-        onPhaseChange("supplement");
-      } else {
-        onBack();
-      }
+      onBack();
     } catch (err) {
       setSaveError(mapSkuAlignError(err, t));
     } finally {
@@ -952,6 +1166,11 @@ export function SkuProductWorkbench({
       for (const key of distinctKeys) {
         const cand = candidateByKey.get(key);
         if (!cand) continue;
+        await ensureOfferPoolFor1688Candidate({
+          shopName,
+          candidate: cand.candidate,
+          titleHint: product.title,
+        });
         const offerId = resolveCandidateOfferId(cand.candidate);
         try {
           const accepted = await api.skuAlignV1AddSupplementSource(
@@ -999,6 +1218,7 @@ export function SkuProductWorkbench({
           recordBinding(variantLabel, row.specLabel, { shopName });
       }
       showToast(t("skuWorkbench.toastSavedSupplement", { count: entries.length }));
+      setSupplementMappingDirty(false);
       onBack();
       await onSaved();
     } catch (err) {
@@ -1008,14 +1228,13 @@ export function SkuProductWorkbench({
     }
   };
 
-  const suggestCount = Object.keys(autoSuggestions).length;
   const assignedGapCount = useMemo(
     () =>
-      supplementGaps.filter((v) => {
+      supplementPanelVariants.filter((v) => {
         const a = gapAssignments[v.thirdPlatformSkuId];
         return a?.candidateKey && a?.skuId;
       }).length,
-    [supplementGaps, gapAssignments]
+    [supplementPanelVariants, gapAssignments]
   );
   const merchantCount = candidates.length;
 
@@ -1032,12 +1251,12 @@ export function SkuProductWorkbench({
       {
         id: "supplement",
         label:
-          supplementGaps.length > 0
-            ? t("skuWorkbench.tabSupplementCount", { count: supplementGaps.length })
+          unboundCount > 0
+            ? t("skuWorkbench.tabSupplementCount", { count: unboundCount })
             : t("skuWorkbench.tabSupplement"),
       },
     ],
-    [product.variants.length, supplementGaps.length, t]
+    [product.variants.length, unboundCount, t]
   );
 
   /* ---------- render ---------- */
@@ -1114,11 +1333,13 @@ export function SkuProductWorkbench({
             loadError={loadError}
             canPick={canPick}
             selections={selections}
-            bindingVariantId={bindingVariantId}
             merchantTitle={currentMerchantTitle}
             merchantImage={currentMerchantImage}
             currentSourceLabel={t("skuWorkbench.currentSource")}
             suggestCount={suggestCount}
+            previewCount={previewCount}
+            matchAnimating={matchAnimating}
+            matchProgress={matchProgress}
             supplementGaps={supplementGaps}
             focusVariantId={focusVariantId ?? null}
             focusRef={focusRef}
@@ -1126,7 +1347,10 @@ export function SkuProductWorkbench({
             pricingTemplate={pricingTemplate}
             onRetryMatrix={() => void loadMatrix()}
             onSelectSku={handleSelect}
-            onApplySuggestions={applyAllSuggestions}
+            onRunMatchPreview={() => void runMatchPreview()}
+            onSave={() => void savePrimary()}
+            showSave={primaryMappingDirty && pendingChanges.length > 0}
+            saving={saving}
             onGoSupplement={() => onPhaseChange("supplement")}
           />
         ) : phase === "replace" ? (
@@ -1137,13 +1361,14 @@ export function SkuProductWorkbench({
             error={replaceSearchError}
             candidates={replaceCandidates}
             replacing={replacingPrimary}
+            locale={locale}
             onSearch={() => void runReplacePrimarySearch()}
-            onApply={(c) => void applyReplacePrimary(c)}
+            onApply={(c) => void applyReplacePrimary(c.candidate)}
           />
         ) : (
           <SupplementPanel
             className="flex-1 min-h-0"
-            supplementGaps={supplementGaps}
+            supplementGaps={supplementPanelVariants}
             searchLoading={searchLoading}
             matrixLoading={matrixLoading}
             searchError={searchError}
@@ -1157,6 +1382,7 @@ export function SkuProductWorkbench({
             hasSupplementOffer={hasSupplementOffer}
             shopCurrency={product.currency}
             pricingTemplate={pricingTemplate}
+            locale={locale}
             onSearch={() => void runSupplementSearch()}
             onManualAddInputChange={setManualAddInput}
             onManualAdd={() => void runManualSupplementAdd()}
@@ -1168,6 +1394,13 @@ export function SkuProductWorkbench({
             onSetMerchant={(variant, key) => void setGapMerchant(variant, key)}
             onSetSku={setGapSku}
             matrixFetchingKey={matrixFetchingKey}
+            showSave={
+              supplementMappingDirty &&
+              assignedGapCount > 0 &&
+              candidates.length > 0
+            }
+            onSave={() => void registerSupplement()}
+            registering={registering}
           />
         )}
       </div>
@@ -1184,24 +1417,15 @@ export function SkuProductWorkbench({
                 : t("skuWorkbench.footerPrimaryHint")
               : phase === "replace"
                 ? t("skuWorkbench.footerReplaceHint")
-                : supplementGaps.length > 0
+                : supplementPanelVariants.length > 0
                   ? t("skuWorkbench.footerSupplementProgress", {
                       assigned: assignedGapCount,
-                      total: supplementGaps.length,
+                      total: supplementPanelVariants.length,
                     })
                   : t("skuWorkbench.footerNoSupplementNeeded")}
           </p>
           <div className="flex items-center gap-2">
-            {phase === "primary" ? (
-              <Button
-                size="sm"
-                onClick={() => void savePrimary()}
-                disabled={saving || !canPick || loading}
-              >
-                {saving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-                {t("skuWorkbench.saveMappings")}
-              </Button>
-            ) : phase === "replace" ? (
+            {phase === "replace" ? (
               <Button
                 size="sm"
                 variant="secondary"
@@ -1210,26 +1434,16 @@ export function SkuProductWorkbench({
               >
                 {t("skuWorkbench.backToCompare")}
               </Button>
-            ) : (
-              <>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => onPhaseChange("primary")}
-                  disabled={registering}
-                >
-                  {t("skuWorkbench.backToCompare")}
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => void registerSupplement()}
-                  disabled={registering || assignedGapCount === 0 || supplementGaps.length === 0}
-                >
-                  {registering ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-                  {t("skuWorkbench.saveSupplement")}
-                </Button>
-              </>
-            )}
+            ) : phase === "supplement" ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => onPhaseChange("primary")}
+                disabled={registering}
+              >
+                {t("skuWorkbench.backToCompare")}
+              </Button>
+            ) : null}
           </div>
         </div>
       </footer>
@@ -1248,11 +1462,13 @@ function PrimaryComparePanel({
   loadError,
   canPick,
   selections,
-  bindingVariantId,
   merchantTitle,
   merchantImage,
   currentSourceLabel,
   suggestCount,
+  previewCount,
+  matchAnimating,
+  matchProgress,
   supplementGaps,
   focusVariantId,
   focusRef,
@@ -1260,7 +1476,10 @@ function PrimaryComparePanel({
   pricingTemplate,
   onRetryMatrix,
   onSelectSku,
-  onApplySuggestions,
+  onRunMatchPreview,
+  onSave,
+  showSave,
+  saving,
   onGoSupplement,
 }: {
   product: SkuProductOverview;
@@ -1269,11 +1488,13 @@ function PrimaryComparePanel({
   loadError: string | null;
   canPick: boolean;
   selections: Record<string, string>;
-  bindingVariantId: string | null;
   merchantTitle: string;
   merchantImage: string | null;
   currentSourceLabel: string;
   suggestCount: number;
+  previewCount: number;
+  matchAnimating: boolean;
+  matchProgress: { done: number; total: number };
   supplementGaps: SkuVariant[];
   focusVariantId: string | null;
   focusRef: React.Ref<HTMLDivElement>;
@@ -1281,7 +1502,10 @@ function PrimaryComparePanel({
   pricingTemplate?: PricingTemplate | null;
   onRetryMatrix: () => void;
   onSelectSku: (variantId: string, skuId: string) => void;
-  onApplySuggestions: () => void;
+  onRunMatchPreview: () => void;
+  onSave: () => void;
+  showSave: boolean;
+  saving: boolean;
   onGoSupplement: () => void;
 }) {
   const t = useT();
@@ -1305,28 +1529,73 @@ function PrimaryComparePanel({
               <p className="line-clamp-1 text-xs font-medium text-ink">{merchantTitle}</p>
             </div>
           </div>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-8 shrink-0 gap-1 text-[11px]"
-            onClick={onApplySuggestions}
-            disabled={suggestCount === 0}
-            title={t("skuWorkbench.applySuggestionsTitle")}
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            {suggestCount > 0
-              ? t("skuWorkbench.applySuggestions", { count: suggestCount })
-              : t("skuWorkbench.suggestionsApplied")}
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 gap-1 text-[11px]"
+              onClick={onRunMatchPreview}
+              disabled={matchAnimating || previewCount === 0 || !canPick || loading}
+              title={
+                suggestCount > 0
+                  ? t("skuWorkbench.applySuggestionsTitle")
+                  : t("skuWorkbench.replayMatchTitle")
+              }
+            >
+              {matchAnimating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              {matchAnimating
+                ? t("skuWorkbench.matchingPreview")
+                : suggestCount > 0
+                  ? t("skuWorkbench.applySuggestions", { count: suggestCount })
+                  : t("skuWorkbench.replayMatch")}
+            </Button>
+            {showSave ? (
+              <Button
+                size="sm"
+                className="h-8 gap-1 text-[11px]"
+                onClick={onSave}
+                disabled={saving || !canPick || loading || matchAnimating}
+              >
+                {saving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                {t("skuWorkbench.saveMappings")}
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
 
+      {matchAnimating && matchProgress.total > 0 ? (
+        <div className="shrink-0 border-b border-hairline bg-canvas/30 px-5 py-2.5">
+          <div className="flex items-center gap-3">
+            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-muted">
+              <div
+                className="h-full rounded-full bg-brand transition-[width] duration-150 ease-out"
+                style={{
+                  width: `${Math.round((matchProgress.done / matchProgress.total) * 100)}%`,
+                }}
+              />
+            </div>
+            <span className="shrink-0 text-[11px] tabular-nums text-ink-muted">
+              {t("skuWorkbench.matchProgress", {
+                done: matchProgress.done,
+                total: matchProgress.total,
+              })}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
       {/* 列表头 */}
       <div className="shrink-0 border-b border-hairline bg-canvas/40 px-5 py-1.5">
-        <div className="grid grid-cols-[minmax(0,1fr)_40px_minmax(0,1.25fr)] items-center gap-4 text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
-          <span>{t("skuWorkbench.colShopVariant")}</span>
-          <span />
-          <span>
+        <div className="grid grid-cols-2 gap-6 text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
+          <span className="text-center">{t("skuWorkbench.colShopVariant")}</span>
+          <span className="text-center">
             {t("skuWorkbench.colSourceMapping", {
               scope:
                 merchantTitle === currentSourceLabel
@@ -1375,7 +1644,6 @@ function PrimaryComparePanel({
                 value={selections[variant.thirdPlatformSkuId] ?? ""}
                 isGap={gapIds.has(variant.thirdPlatformSkuId)}
                 highlighted={focusVariantId === variant.thirdPlatformSkuId}
-                binding={bindingVariantId === variant.thirdPlatformSkuId}
                 rowRef={
                   focusVariantId === variant.thirdPlatformSkuId ? focusRef : undefined
                 }
@@ -1413,7 +1681,6 @@ function PrimaryCompareRow({
   value,
   isGap,
   highlighted,
-  binding,
   rowRef,
   onSelect,
   onGoSupplement,
@@ -1426,7 +1693,6 @@ function PrimaryCompareRow({
   value: string;
   isGap: boolean;
   highlighted: boolean;
-  binding?: boolean;
   rowRef?: React.Ref<HTMLDivElement>;
   onSelect: (skuId: string) => void;
   onGoSupplement: () => void;
@@ -1446,13 +1712,20 @@ function PrimaryCompareRow({
   const effectiveSkuId = value || variant.bound?.tangbuySkuId?.trim() || "";
   const row = effectiveSkuId ? findSourceSkuRow(matrix, effectiveSkuId) : undefined;
   const matched = Boolean(row);
+  const listingPriceLabel = `${t("skuWorkbench.listingPrice")} ${formatShopListingPrice(variant.price, shopCurrency)}`;
+  const sourceTitle =
+    row?.specLabel?.trim() ||
+    (effectiveSkuId ? effectiveSkuId : t("skuWorkbench.pickSpec"));
+  const sourceSubtitle = row
+    ? formatOptionPrice(row.procurementPrice, shopCurrency, pricingTemplate)
+    : undefined;
 
   return (
     <div
       ref={rowRef}
       id={`sku-compare-row-${variant.thirdPlatformSkuId}`}
       className={cn(
-        "grid grid-cols-[minmax(0,1fr)_40px_minmax(0,1.25fr)] items-center gap-4 rounded-[var(--radius-control)] border px-4 py-3.5 transition-colors",
+        "space-y-3 rounded-[var(--radius-control)] border px-4 py-4 transition-colors",
         highlighted
           ? "border-brand bg-brand/5"
           : matched
@@ -1462,12 +1735,13 @@ function PrimaryCompareRow({
               : "border-hairline bg-surface"
       )}
     >
-      {/* 左：店铺变体 */}
-      <div className="flex min-w-0 items-center gap-2.5">
-        <VariantThumb src={variant.imageUrl} alt={variant.optionLabel} className="h-11 w-11" />
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <p className="truncate text-xs font-medium text-ink">{variant.optionLabel}</p>
+      <CompareVisualPair
+        left={{
+          src: variant.imageUrl,
+          alt: variant.optionLabel,
+          title: variant.optionLabel,
+          subtitle: listingPriceLabel,
+          badge: (
             <span
               className={cn(
                 "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
@@ -1476,23 +1750,18 @@ function PrimaryCompareRow({
             >
               {displayStateLabel(t, displayState)}
             </span>
-            {binding ? (
-              <Loader2 className="h-3 w-3 shrink-0 animate-spin text-ink-subtle" aria-label={t("skuWorkbench.savingAria")} />
-            ) : null}
-          </div>
-          <p className="mt-0.5 text-[11px] text-ink-muted">
-            {t("skuWorkbench.listingPrice")}{" "}
-            {formatShopListingPrice(variant.price, shopCurrency)}
-          </p>
-        </div>
-      </div>
+          ),
+        }}
+        right={{
+          src: row?.imageUrl,
+          alt: sourceTitle,
+          title: sourceTitle,
+          subtitle: sourceSubtitle,
+          emptyHint: effectiveSkuId ? undefined : t("skuWorkbench.pickSpec"),
+        }}
+      />
 
-      {/* 中：对照箭头 */}
-      <div className="flex justify-center text-ink-subtle">
-        <ArrowLeftRight className="h-4 w-4" />
-      </div>
-
-      {/* 右：货源映射 — 始终下拉，支持手工调整 */}
+      {/* 货源映射 — 下拉 + 补充入口 */}
       <div className={COMPARE_MAP_PANEL_CLASS}>
         {matrix.length === 0 ? (
           <p className="text-[11px] text-ink-muted">
@@ -1505,7 +1774,6 @@ function PrimaryCompareRow({
             <Select
               value={effectiveSkuId}
               onChange={(e) => onSelect(e.target.value)}
-              disabled={binding}
               className={COMPARE_SELECT_CLASS}
             >
               <option value="">
@@ -1520,15 +1788,10 @@ function PrimaryCompareRow({
                 </option>
               ))}
             </Select>
-            {matched && row ? (
-              <p className="truncate text-[10px] text-ink-subtle">
-                {t("skuWorkbench.currentSpec", {
-                  spec: row.specLabel,
-                  price: formatOptionPrice(row.procurementPrice, shopCurrency, pricingTemplate),
-                })}
-              </p>
-            ) : null}
-            {(isGap || bestScore < COVERAGE_MATCH_THRESHOLD) && !effectiveSkuId ? (
+            {(displayState === "unbound" ||
+              displayState === "needs_review" ||
+              isGap ||
+              bestScore < COVERAGE_MATCH_THRESHOLD) && (
               <button
                 type="button"
                 onClick={onGoSupplement}
@@ -1537,7 +1800,7 @@ function PrimaryCompareRow({
                 <Plus className="h-3 w-3" />
                 {t("skuWorkbench.goSupplement")}
               </button>
-            ) : null}
+            )}
           </div>
         )}
       </div>
@@ -1556,6 +1819,7 @@ function ReplacePrimaryPanel({
   error,
   candidates,
   replacing,
+  locale,
   onSearch,
   onApply,
 }: {
@@ -1563,10 +1827,11 @@ function ReplacePrimaryPanel({
   currentImage?: string | null;
   loading: boolean;
   error: string | null;
-  candidates: ImageSearchProduct[];
+  candidates: RankedCoverageCandidate[];
   replacing: boolean;
+  locale: Locale;
   onSearch: () => void;
-  onApply: (candidate: ImageSearchProduct) => void;
+  onApply: (candidate: RankedCoverageCandidate) => void;
 }) {
   const t = useT();
   const unknownSource = t("skuWorkbench.unknownSource");
@@ -1628,33 +1893,56 @@ function ReplacePrimaryPanel({
           </p>
         ) : (
           <div className="space-y-2">
-            {candidates.map((candidate) => {
+            {candidates.map((entry, index) => {
+              const candidate = entry.candidate;
               const key = candidateKeyOf(candidate);
+              const displayTitle =
+                resolveImageSearchDisplayTitle(candidate, locale) ||
+                t("skuWorkbench.unnamedSource");
+              const isRecommended = index === 0 && entry.coverage > 0;
               return (
                 <div
                   key={key}
-                  className="flex items-center gap-3 rounded-[var(--radius-control)] border border-hairline px-3 py-2.5"
+                  className={cn(
+                    "flex items-center gap-3 rounded-[var(--radius-control)] border px-3 py-2.5",
+                    isRecommended
+                      ? "border-brand-accent/40 bg-brand-soft/20"
+                      : "border-hairline"
+                  )}
                 >
                   <VariantThumb
                     src={candidate.imageUrl}
-                    alt={candidate.title}
+                    alt={displayTitle}
                     className="h-12 w-12"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 text-xs font-medium text-ink">
-                      {candidate.title?.trim() || t("skuWorkbench.unnamedSource")}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="line-clamp-2 text-xs font-medium text-ink">
+                        {displayTitle}
+                      </p>
+                      {isRecommended ? (
+                        <Badge variant="brand" className="shrink-0 text-[10px]">
+                          {t("skuWorkbench.recommendedSource")}
+                        </Badge>
+                      ) : null}
+                    </div>
                     <p className="mt-0.5 text-[11px] text-ink-muted">
                       {candidate.price ? `¥${candidate.price}` : t("skuWorkbench.priceUnknown")}
                       {candidate.soldCount != null
                         ? t("skuWorkbench.monthlySales", { count: candidate.soldCount })
+                        : ""}
+                      {entry.total > 0
+                        ? t("skuWorkbench.specMappingCoverage", {
+                            coverage: entry.coverage,
+                            total: entry.total,
+                          })
                         : ""}
                     </p>
                   </div>
                   <Button
                     size="sm"
                     className="h-8 shrink-0 text-[11px]"
-                    onClick={() => onApply(candidate)}
+                    onClick={() => onApply(entry)}
                     disabled={replacing}
                   >
                     {replacing ? (
@@ -1700,7 +1988,11 @@ function SupplementPanel({
   onSetMerchant,
   onSetSku,
   matrixFetchingKey,
+  showSave,
+  onSave,
+  registering,
   className,
+  locale,
 }: {
   supplementGaps: SkuVariant[];
   searchLoading: boolean;
@@ -1716,6 +2008,7 @@ function SupplementPanel({
   hasSupplementOffer: boolean;
   shopCurrency?: string | null;
   pricingTemplate?: PricingTemplate | null;
+  locale: Locale;
   onSearch: () => void;
   onManualAddInputChange: (value: string) => void;
   onManualAdd: () => void;
@@ -1724,6 +2017,9 @@ function SupplementPanel({
   onSetMerchant: (variant: SkuVariant, candidateKey: string) => void;
   onSetSku: (variantId: string, skuId: string) => void;
   matrixFetchingKey?: string | null;
+  showSave: boolean;
+  onSave: () => void;
+  registering: boolean;
   className?: string;
 }) {
   const t = useT();
@@ -1787,20 +2083,22 @@ function SupplementPanel({
                 </Button>
               ) : null}
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-8 shrink-0 gap-1 text-[11px]"
-              onClick={onManualAdd}
-              disabled={busy || !manualAddInput.trim()}
-            >
-              {manualAddLoading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Plus className="h-3.5 w-3.5" />
-              )}
-              {t("skuWorkbench.manualAdd")}
-            </Button>
+            {manualAddInput.trim() ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-8 shrink-0 gap-1 text-[11px]"
+                onClick={onManualAdd}
+                disabled={busy}
+              >
+                {manualAddLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5" />
+                )}
+                {t("skuWorkbench.manualAdd")}
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="secondary"
@@ -1815,6 +2113,19 @@ function SupplementPanel({
               )}
               {t("skuWorkbench.aiImageSearch")}
             </Button>
+            {showSave ? (
+              <Button
+                size="sm"
+                className="h-8 shrink-0 gap-1 text-[11px]"
+                onClick={onSave}
+                disabled={registering || busy}
+              >
+                {registering ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                {t("skuWorkbench.saveSupplement")}
+              </Button>
+            ) : null}
           </div>
         </div>
         {manualAddError ? (
@@ -1857,6 +2168,7 @@ function SupplementPanel({
                 shopCurrency={shopCurrency}
                 pricingTemplate={pricingTemplate}
                 matrixFetchingKey={matrixFetchingKey}
+                locale={locale}
                 onSetMerchant={(key) => onSetMerchant(variant, key)}
                 onSetSku={(skuId) => onSetSku(variant.thirdPlatformSkuId, skuId)}
               />
@@ -1877,6 +2189,7 @@ function SupplementGapRow({
   shopCurrency,
   pricingTemplate,
   matrixFetchingKey,
+  locale,
   onSetMerchant,
   onSetSku,
 }: {
@@ -1887,6 +2200,7 @@ function SupplementGapRow({
   shopCurrency?: string | null;
   pricingTemplate?: PricingTemplate | null;
   matrixFetchingKey?: string | null;
+  locale: Locale;
   onSetMerchant: (candidateKey: string) => void;
   onSetSku: (skuId: string) => void;
 }) {
@@ -1914,32 +2228,52 @@ function SupplementGapRow({
   const resolved = Boolean(chosenRow && candidateKey);
   const fetchingSpecs =
     Boolean(candidateKey) && matrixFetchingKey === candidateKey;
+  const listingPriceLabel = `${t("skuWorkbench.listingPrice")} ${formatShopListingPrice(variant.price, shopCurrency)}`;
+  const sourcePreviewImage =
+    chosenRow?.imageUrl?.trim() ||
+    chosenCandidate?.candidate.imageUrl ||
+    null;
+  const sourceTitle =
+    chosenRow?.specLabel?.trim() ||
+    (candidateKey
+      ? truncateMerchant(
+          chosenCandidate
+            ? resolveImageSearchDisplayTitle(chosenCandidate.candidate, locale)
+            : null,
+          unknownSource,
+          32
+        )
+      : t("skuWorkbench.pickSpec"));
+  const sourceSubtitle = chosenRow
+    ? formatOptionPrice(chosenRow.procurementPrice, shopCurrency, pricingTemplate)
+    : candidateKey
+      ? t("skuWorkbench.pickSpec")
+      : t("skuWorkbench.pickMerchantFirst");
 
   return (
     <div
       className={cn(
-        "grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1.5fr)] items-center gap-3 rounded-[var(--radius-control)] border px-3 py-3.5 transition-colors",
+        "space-y-3 rounded-[var(--radius-control)] border px-4 py-4 transition-colors",
         resolved ? "border-emerald-200/80 bg-emerald-50/50" : "border-amber-200/80 bg-amber-50/40"
       )}
     >
-      {/* 左：店铺变体 */}
-      <div className="flex min-w-0 items-center gap-2.5">
-        <VariantThumb src={variant.imageUrl} alt={variant.optionLabel} className="h-11 w-11" />
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-ink">{variant.optionLabel}</p>
-          <p className="mt-0.5 text-[11px] text-ink-muted">
-            {t("skuWorkbench.listingPrice")}{" "}
-            {formatShopListingPrice(variant.price, shopCurrency)}
-          </p>
-        </div>
-      </div>
+      <CompareVisualPair
+        left={{
+          src: variant.imageUrl,
+          alt: variant.optionLabel,
+          title: variant.optionLabel,
+          subtitle: listingPriceLabel,
+        }}
+        right={{
+          src: sourcePreviewImage,
+          alt: sourceTitle,
+          title: sourceTitle,
+          subtitle: sourceSubtitle,
+          emptyHint: candidateKey ? t("skuWorkbench.pickSpec") : t("skuWorkbench.pickMerchantFirst"),
+        }}
+      />
 
-      {/* 中 */}
-      <div className="flex justify-center text-ink-subtle">
-        <ArrowLeftRight className="h-4 w-4" />
-      </div>
-
-      {/* 右：商家 + 货源 SKU */}
+      {/* 商家 + 货源 SKU */}
       <div className={cn(COMPARE_MAP_PANEL_CLASS, "space-y-2.5")}>
         <div className="space-y-1">
           <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
@@ -1956,7 +2290,11 @@ function SupplementGapRow({
               const matrixLoaded = candidateMatrices.has(key);
               return (
                 <option key={key} value={key}>
-                  {truncateMerchant(c.candidate.title, unknownSource, 28)}
+                  {truncateMerchant(
+                    resolveImageSearchDisplayTitle(c.candidate, locale),
+                    unknownSource,
+                    28
+                  )}
                   {matrixLoaded && c.total > 0
                     ? t("skuWorkbench.coverage", {
                         coverage: c.coverage,
@@ -1997,21 +2335,22 @@ function SupplementGapRow({
         </div>
         {resolved ? (
           <div className="flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/80 px-2.5 py-2">
-            <VariantThumb
-              src={chosenRow?.imageUrl?.trim() || chosenCandidate?.candidate.imageUrl || null}
-              alt={chosenRow?.specLabel ?? ""}
-              className="h-6 w-6"
-            />
-            <span className="min-w-0 flex-1 truncate text-[10px] text-ink">
-              <span className="text-emerald-700">
-                <Check className="mr-0.5 inline h-3 w-3" />
-              </span>
+            <span className="min-w-0 flex-1 text-[11px] leading-snug text-ink">
+              <Check className="mr-1 inline h-3.5 w-3.5 text-emerald-700" />
               {t("skuWorkbench.providedBy", {
-                merchant: truncateMerchant(chosenCandidate?.candidate.title, unknownSource),
+                merchant: truncateMerchant(
+                  chosenCandidate
+                    ? resolveImageSearchDisplayTitle(
+                        chosenCandidate.candidate,
+                        locale
+                      )
+                    : null,
+                  unknownSource
+                ),
                 spec: chosenRow?.specLabel ?? "",
               })}
             </span>
-            <span className="shrink-0 text-[10px] font-medium text-ink-subtle">
+            <span className="shrink-0 text-[11px] font-medium text-ink-subtle">
               {formatOptionPrice(chosenRow?.procurementPrice, shopCurrency, pricingTemplate)}
             </span>
           </div>

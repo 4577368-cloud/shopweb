@@ -298,6 +298,185 @@ const FILTER_RULES: {
   },
 ];
 
+function parseChineseOrdinal(raw: string): number | null {
+  const t = raw.trim();
+  if (/^\d+$/.test(t)) {
+    const n = Number(t);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  const map: Record<string, number> = {
+    一: 1,
+    二: 2,
+    两: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+    十: 10,
+  };
+  if (t.length === 1 && map[t] != null) return map[t];
+  if (t.startsWith("十")) {
+    const rest = t.slice(1);
+    return 10 + (map[rest] ?? 0);
+  }
+  if (t.endsWith("十")) {
+    const head = t.slice(0, -1);
+    return (map[head] ?? 0) * 10 || 10;
+  }
+  const tenIdx = t.indexOf("十");
+  if (tenIdx > 0) {
+    const tens = map[t.slice(0, tenIdx)] ?? 0;
+    const ones = map[t.slice(tenIdx + 1)] ?? 0;
+    const n = tens * 10 + ones;
+    return n > 0 ? n : null;
+  }
+  return null;
+}
+
+const EN_ORDINAL_WORDS: Record<string, number> = {
+  first: 1,
+  second: 2,
+  third: 3,
+  fourth: 4,
+  fifth: 5,
+  sixth: 6,
+  seventh: 7,
+  eighth: 8,
+  ninth: 9,
+  tenth: 10,
+};
+
+function tryPublishListIndex(text: string): number | null {
+  const patterns: RegExp[] = [
+    /(?:上架|发布|publish|list|publier|publicar)\s*(?:item\s*)?#?\s*(\d+)\s*(?:个)?/i,
+    /(?:上架|发布|publish|list)\s*(?:第)?\s*([一二三四五六七八九十两\d]+)\s*个?/i,
+    /第?\s*(\d+)\s*个.*(?:上架|发布|publish|list)/i,
+    /(?:the\s+)?(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+(?:one|item)/i,
+    /(?:le|la)\s+(premier|première|deuxième|troisième|quatrième|cinquième)/i,
+    /(?:el|la)\s+(primer|primera|segundo|segunda|tercer|tercera)\s+(?:artículo|producto)?/i,
+  ];
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (!m) continue;
+    const raw = m[1];
+    if (/^\d+$/.test(raw)) {
+      const n = Number(raw);
+      if (n > 0) return n;
+    }
+    const cn = parseChineseOrdinal(raw);
+    if (cn != null) return cn;
+    const en = EN_ORDINAL_WORDS[raw.toLowerCase()];
+    if (en != null) return en;
+    const frMap: Record<string, number> = {
+      premier: 1,
+      première: 1,
+      deuxième: 2,
+      troisième: 3,
+      quatrième: 4,
+      cinquième: 5,
+    };
+    if (frMap[raw.toLowerCase()]) return frMap[raw.toLowerCase()];
+    const esMap: Record<string, number> = {
+      primer: 1,
+      primera: 1,
+      segundo: 2,
+      segunda: 2,
+      tercer: 3,
+      tercera: 3,
+    };
+    if (esMap[raw.toLowerCase()]) return esMap[raw.toLowerCase()];
+  }
+  return null;
+}
+
+function trySourcingCommand(text: string): ProductCommandDraft | null {
+  const publishIndex = tryPublishListIndex(text);
+  if (publishIndex != null) {
+    return draft(
+      "publish_sourcing_item",
+      { sourcingListIndex: publishIndex },
+      { targetScope: "none", confirmationRequired: true }
+    );
+  }
+
+  if (/^(上架|发布|publish|list)\s*(这个|这款|它|this|it)?[。.!]?$/i.test(text.trim())) {
+    return draft(
+      "publish_sourcing_item",
+      {},
+      { targetScope: "current", confirmationRequired: true }
+    );
+  }
+
+  const budgetMatch =
+    text.match(
+      /(?:预算|价格|不超过|以内|under|max|moins\s+de|menos\s+de)\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:美元|美金|usd|\$)?/i
+    ) ??
+    text.match(/(\d+(?:\.\d+)?)\s*(?:美元|美金|usd|\$)\s*(?:以内|以下|under|max)/i);
+  const only1688 =
+    /只看.*1688|只要.*1688|only\s*1688|1688\s*only|solo\s*1688|uniquement\s*1688/i.test(
+      text
+    );
+  const onlyTangbuy =
+    /只看.*tangbuy|只要tangbuy|only\s*tangbuy|solo\s*tangbuy|uniquement\s*tangbuy/i.test(
+      text
+    );
+  if (budgetMatch || only1688 || onlyTangbuy) {
+    const params: ProductCommandParams = {};
+    if (budgetMatch) {
+      params.sourcingPriceMaxUsd = Number(budgetMatch[1]);
+    }
+    if (only1688) params.sourcingSourceFilter = "1688";
+    if (onlyTangbuy) params.sourcingSourceFilter = "tangbuy";
+    return draft("set_sourcing_filters", params, {
+      targetScope: "none",
+      confirmationRequired: false,
+    });
+  }
+
+  const implicit1688 = text.match(
+    /^(?:在)?1688\s*(?:上|里|的)?\s*(?:找|搜|搜索)?\s*(.+)/i
+  );
+  if (implicit1688) {
+    const kw = implicit1688[1].replace(/[。.!？?]+$/, "").trim();
+    if (kw.length >= 2) {
+      return draft(
+        "search_sourcing",
+        { sourcingKeywords: kw, sourcingSourceFilter: "1688" },
+        { targetScope: "none", confirmationRequired: false }
+      );
+    }
+  }
+
+  const searchMatch =
+    text.match(/(?:帮我)?(?:找|搜索|寻)\s*(.+)/) ??
+    text.match(
+      /(?:look\s*for|search\s*for|find|buscar|chercher|trouver)\s+(.+)/i
+    );
+  if (
+    searchMatch &&
+    !/(待确认|未匹配|店铺商品|shop\s*product|produit.*boutique)/i.test(text)
+  ) {
+    let kw = searchMatch[1].replace(/[。.!？?]+$/, "").trim();
+    kw = kw.replace(/^1688\s*(上|的|里)?\s*/i, "").trim();
+    kw = kw.replace(/^(on|from)\s+1688\s*/i, "").trim();
+    if (kw.length >= 2) {
+      const params: ProductCommandParams = { sourcingKeywords: kw };
+      if (/1688/i.test(text) && !/tangbuy/i.test(text)) {
+        params.sourcingSourceFilter = "1688";
+      }
+      return draft("search_sourcing", params, {
+        targetScope: "none",
+        confirmationRequired: false,
+      });
+    }
+  }
+
+  return null;
+}
+
 export function classifyProductCommandByRules(
   raw: string
 ): ProductCommandClassifyResult {
@@ -344,6 +523,11 @@ export function classifyProductCommandByRules(
   const statusCmd = tryProductStatusCommand(text);
   if (statusCmd) {
     return { confidence: "high", source: "rules", draft: statusCmd };
+  }
+
+  const sourcingCmd = trySourcingCommand(text);
+  if (sourcingCmd) {
+    return { confidence: "high", source: "rules", draft: sourcingCmd };
   }
 
   // 未命中快速操作，交给 LLM 判断
@@ -549,6 +733,9 @@ ${langBlock}
 8. "Is this reliable" / "any risks" → explain_product_match (matchExplain=risk)
 9. "Move to draft" → draft_product or batch_draft_products
 10. "Archive" / "delist" → archive_product or batch_archive_products
+11. Discover sourcing — "find red dress" / "search phone cases on 1688" → search_sourcing (params.sourcingKeywords, optional sourcingSourceFilter)
+12. "List item 2" / "publish the second one" → publish_sourcing_item (params.sourcingListIndex)
+13. "Under $15" / "Tangbuy only" / "1688 only" on discover → set_sourcing_filters
 
 [Output format]
 - JSON only: {"intent":"...","targetScope":"current|explicit|none|all","productId":null,"params":{},"confirmationRequired":false}

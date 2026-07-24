@@ -7,7 +7,6 @@ import {
   Link2,
   Loader2,
   Package,
-  PieChart,
   ShoppingBag,
   Sparkles,
   Store,
@@ -35,6 +34,8 @@ interface AiCopilotScanStageProps {
   progressPercent?: number;
   done: boolean;
   onViewResult: () => void;
+  /** Leave ceremony — list loads immediately; scan may continue on server. */
+  onSkip?: () => void;
 }
 
 const STEP_ICON_MAP: Record<CopilotWorkflowStepId, ComponentType<{ className?: string }>> = {
@@ -42,7 +43,6 @@ const STEP_ICON_MAP: Record<CopilotWorkflowStepId, ComponentType<{ className?: s
   features: Package,
   match: Truck,
   orders: ShoppingBag,
-  profit: PieChart,
 };
 
 function StepStatusChip({ status }: { status: ScanTaskStatus }) {
@@ -215,6 +215,7 @@ export function AiCopilotScanStage({
   progressPercent = 0,
   done,
   onViewResult,
+  onSkip,
 }: AiCopilotScanStageProps) {
   const t = useT();
   const steps = useMemo(
@@ -236,7 +237,7 @@ export function AiCopilotScanStage({
       {!done ? (
         <p className="inline-flex items-center gap-1.5 text-xs text-ink-subtle">
           <Clock className="h-3.5 w-3.5" />
-          {t("workbenchScan.eta")}
+          {t("workbenchScan.eta", { overallPct })}
         </p>
       ) : null}
 
@@ -320,6 +321,19 @@ export function AiCopilotScanStage({
                   <p className="text-[11px] text-ink-subtle">
                     {t("workbenchScan.executingStep")}<span className="font-medium text-ink-muted">{active.title}</span>
                   </p>
+                ) : null}
+                {onSkip ? (
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-8"
+                      onClick={onSkip}
+                    >
+                      {t("workbenchScan.skipToProducts")}
+                    </Button>
+                  </div>
                 ) : null}
               </div>
             )}

@@ -155,7 +155,8 @@ export function LogisticsAgentPanel({
       examples.push(t("logisticsAgent.exampleBatchAccept"));
     }
     examples.push(
-      t("logisticsAgent.exampleFullEstimate"),
+      t("logisticsAgent.exampleSmartEstimate"),
+      t("logisticsAgent.exampleRefreshQuotes"),
       t("logisticsAgent.exampleAdjustTemplate"),
       t("logisticsAgent.exampleViewIssues")
     );
@@ -181,7 +182,8 @@ export function LogisticsAgentPanel({
     confirmedCount,
     highRiskTypes: activeRiskAlerts.map((a) => a.type),
     readyVariantIds: [],
-  }), [batchAcceptCount, pendingQuoteCount, exceptionCount, confirmedCount, activeRiskAlerts]);
+    pipelineRunning,
+  }), [batchAcceptCount, pendingQuoteCount, exceptionCount, confirmedCount, activeRiskAlerts, pipelineRunning]);
 
   const savings = useMemo(() => {
     const tips: string[] = [];
@@ -205,8 +207,11 @@ export function LogisticsAgentPanel({
           break;
         }
         case "fetch_quotes": {
-          // 明确为「全量刷新报价」，避免与顶部按钮的增量管线混淆（Agent 语义透明）
           onFetchQuotes();
+          break;
+        }
+        case "start_estimate": {
+          onStartEstimate?.();
           break;
         }
         case "open_template": {
@@ -227,7 +232,7 @@ export function LogisticsAgentPanel({
         }
       }
     },
-    [onAcceptAllReady, onFetchQuotes, onOpenTemplate, onFocusStatus, onRetryPipeline, onSetFilter]
+    [onAcceptAllReady, onFetchQuotes, onOpenTemplate, onFocusStatus, onSetFilter, onStartEstimate]
   );
 
   const executeCommand = useCallback(

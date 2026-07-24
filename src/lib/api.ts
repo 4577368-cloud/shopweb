@@ -127,6 +127,20 @@ const overviewCache = new Map<
 >();
 const OVERVIEW_CACHE_MS = 10_000;
 
+/** Drop cached SKU overview so the next read reflects recent binds/replaces. */
+export function invalidateSkuOverviewCache(shop: string): void {
+  overviewCache.delete(shop);
+}
+
+/** Read the in-memory overview cache without fetching (may be stale). */
+export function peekSkuOverviewCache(shop: string): SkuProductOverview[] | null {
+  const cached = overviewCache.get(shop);
+  if (cached && Date.now() - cached.at < OVERVIEW_CACHE_MS) {
+    return cached.data;
+  }
+  return null;
+}
+
 function deduped<T>(key: string, run: () => Promise<T>): Promise<T> {
   const existing = inflightRequests.get(key) as Promise<T> | undefined;
   if (existing) return existing;
@@ -439,11 +453,21 @@ export const api = {
    * (original image → title → LLM) and returns candidates (top-1 first) plus how it resolved them.
    * No persistence. Defaults to 4 candidates. The UI never sends a query (backend-driven).
    */
-  imageSearch: (shopName: string, thirdPlatformItemId: string, limit = 4) =>
+  imageSearch: (
+    shopName: string,
+    thirdPlatformItemId: string,
+    limit = 4,
+    opts?: { country?: string }
+  ) =>
     request<ImageSearchResult>("/api/plugin/match/image-search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ shopName, thirdPlatformItemId, limit }),
+      body: JSON.stringify({
+        shopName,
+        thirdPlatformItemId,
+        limit,
+        ...(opts?.country ? { country: opts.country } : {}),
+      }),
     }),
 
   /**
@@ -706,6 +730,36 @@ export const api = {
         offerId
       )}&country=${encodeURIComponent(country)}`
     ),
+
+  /** 1688 keyword-assisted image search (discover tab dual-source). */
+  search1688Offers: (opts: {
+    keyword: string;
+    imageUrl: string;
+    country?: string;
+    page?: number;
+    size?: number;
+  }) => {
+    const params = new URLSearchParams();
+    params.set("keyword", opts.keyword);
+    params.set("imageUrl", opts.imageUrl);
+    if (opts.country) params.set("country", opts.country);
+    if (opts.page != null) params.set("page", String(opts.page));
+    if (opts.size != null) params.set("size", String(opts.size));
+    return request<{
+      items?: Array<{
+        offerId?: string | null;
+        subject?: string | null;
+        subjectTrans?: string | null;
+        imageUrl?: string | null;
+        price?: string | null;
+        consignPrice?: string | null;
+        promotionPrice?: string | null;
+        companyName?: string | null;
+        detailUrl?: string | null;
+      }>;
+      totalRecords?: number | null;
+    }>(`/api/plugin/match/image-aop/search?${params.toString()}`);
+  },
 
   /** List the shop's mirrored on-sale products (read-only; path A display). */
   getShopProducts: (shop: string) =>

@@ -1,4 +1,7 @@
 import type { LogisticsEstimateResult } from "@/lib/api";
+import type {
+  PipelineFailureBuckets,
+} from "@/lib/logistics/pipeline-diagnostics";
 import { isVariantException } from "@/lib/logistics/display";
 import type {
   LogisticsAnalysis,
@@ -17,17 +20,28 @@ export type ProductPipelineWork = {
 
 export type LogisticsPipelineProgress = {
   phase: "idle" | "waiting" | "running" | "done" | "error";
+  /** Products finished (quote + accept) in the current pipeline run. */
   productIndex: number;
   productTotal: number;
   currentProductId: string | null;
   currentProductTitle: string | null;
+  /** Products currently in flight when running in parallel. */
+  activeProductIds?: string[];
   currentSkuStep: PipelineSkuStep | null;
   stats: {
     autoAccepted: number;
     pendingReview: number;
     failed: number;
     skipped: number;
+    ingestingRetry?: number;
+    failureBuckets?: PipelineFailureBuckets;
   };
+  /** Human-readable stage within quote/accept (e.g. resolving goods id). */
+  currentDetail?: string | null;
+  /** SKU progress for the product currently being quoted. */
+  skuProgress?: { done: number; total: number } | null;
+  /** Titles of products currently in flight. */
+  activeProductTitles?: string[];
   error: string | null;
 };
 
@@ -147,4 +161,14 @@ export function countPipelineSkippedVariants(
     }
   }
   return count;
+}
+
+export function isPipelineProductActive(
+  progress: LogisticsPipelineProgress | null | undefined,
+  productId: string,
+  pipelineActive?: boolean
+): boolean {
+  if (!pipelineActive || progress?.phase !== "running") return false;
+  if (progress.activeProductIds?.includes(productId)) return true;
+  return progress.currentProductId === productId;
 }

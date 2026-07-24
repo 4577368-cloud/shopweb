@@ -5,7 +5,9 @@ import {
   resolveConfirmOfferProductId,
 } from "@/lib/catalog-product-resolve";
 import { candidateStorageKey } from "@/lib/batch-link/image-match";
+import { resolve1688ProductTitle } from "@/lib/batch-link/1688-title-locale";
 import { mergeConfirmedBindingView } from "@/lib/batch-link/source-display-title";
+import type { Locale } from "@/i18n/config";
 import {
   mergeIdentityIntoBinding,
   writeProductSourceIdentity,
@@ -30,6 +32,7 @@ export async function confirmCandidateBinding(
     titleScores?: Record<string, number>;
     /** When false, skip Tangbuy preferred-pool ingest (binding still proceeds). */
     allowPoolIngest?: boolean;
+    locale?: Locale;
   }
 ): Promise<ImageBindingView> {
   const fromCandidate = identityFromSearchCandidate(candidate);
@@ -86,6 +89,17 @@ export async function confirmCandidateBinding(
     (imageScore != null && imageScore > 0 ? imageScore / 100 : null) ??
     (titleScore != null && titleScore > 0 ? titleScore / 100 : null);
 
+  const locale = opts?.locale ?? "zh";
+  const offerTitle =
+    resolve1688ProductTitle({
+      locale,
+      title: candidate.title,
+      titleTrans: candidate.titleTrans,
+      subject: candidate.subject,
+      subjectTrans: candidate.subjectTrans,
+      englishTitle: candidate.englishTitle,
+    })?.trim() || null;
+
   const view = await api.confirmImageMatch({
     shopName,
     thirdPlatformItemId: item.thirdPlatformItemId,
@@ -98,7 +112,7 @@ export async function confirmCandidateBinding(
     appliedQuery: result.appliedQuery,
     offerImageUrl: candidate.imageUrl,
     offerPrice: candidate.price,
-    offerTitle: candidate.title?.trim() || null,
+    offerTitle,
     auto: opts?.auto ?? false,
   });
 
@@ -106,6 +120,7 @@ export async function confirmCandidateBinding(
 
   return mergeConfirmedBindingView(
     mergeIdentityIntoBinding(view, mergedIdentity),
-    candidate
+    candidate,
+    locale
   );
 }

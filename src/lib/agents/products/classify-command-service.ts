@@ -63,10 +63,6 @@ export async function classifyProductCommand(
 ): Promise<ProductCommandClassifyResult> {
   const t = createTranslator(locale);
   const text = raw.trim().slice(0, PRODUCTS_SHORT_INPUT_MAX);
-  const byRules = classifyProductCommandByRules(text);
-  if (byRules.confidence === "high" && byRules.draft) {
-    return { ...byRules, draft: coerceProductCommandDraft(text, byRules.draft) };
-  }
 
   try {
     const content = await chatCompletionJson({
@@ -101,6 +97,11 @@ export async function classifyProductCommand(
         err instanceof Error ? err.message : err
       );
     }
+  }
+
+  const byRules = classifyProductCommandByRules(text);
+  if (byRules.confidence === "high" && byRules.draft) {
+    return { ...byRules, draft: coerceProductCommandDraft(text, byRules.draft) };
   }
 
   return {

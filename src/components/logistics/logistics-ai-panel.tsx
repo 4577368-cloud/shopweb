@@ -187,6 +187,7 @@ export function LogisticsAiPanel({
             className="h-8 justify-start text-xs"
             disabled={metrics.aiAutoCount === 0 || quoting}
             onClick={onFetchQuotes}
+            title={t("logistics.refreshQuotesHint")}
           >
             {quoting ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />

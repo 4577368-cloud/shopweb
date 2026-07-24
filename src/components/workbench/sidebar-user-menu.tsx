@@ -10,6 +10,7 @@ import {
 } from "@/lib/ui/icons";
 import { useOnboarding } from "@/context/onboarding-context";
 import { useT } from "@/i18n/LocaleProvider";
+import { useHubMode } from "@/lib/hub/hub-mode";
 import { cn } from "@/lib/utils";
 
 const FAKE_ACCOUNT_EMAIL = "admin@tangbuy.net";
@@ -28,6 +29,7 @@ const MENU_ITEMS: { id: Exclude<UserMenuAction, "signOut">; icon: typeof ArrowLe
 export function SidebarUserMenu({ className }: { className?: string }) {
   const t = useT();
   const { showToast } = useOnboarding();
+  const { available, enabled, toggle } = useHubMode();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -84,6 +86,28 @@ export function SidebarUserMenu({ className }: { className?: string }) {
           role="menu"
           className="absolute bottom-full left-0 right-0 z-40 mb-1 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface py-1 shadow-card"
         >
+          {available ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={toggle}
+              className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[11px] text-ink transition-colors hover:bg-surface-muted/80"
+            >
+              <span className="flex items-center gap-2">
+                <ArrowLeftRight className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
+                {t("userMenu.hubMode")}
+              </span>
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                  enabled ? "bg-brand-accent text-white" : "bg-surface-muted text-ink-muted"
+                )}
+              >
+                {enabled ? t("userMenu.on") : t("userMenu.off")}
+              </span>
+            </button>
+          ) : null}
+
           {MENU_ITEMS.map(({ id, icon: Icon }) => (
             <button
               key={id}

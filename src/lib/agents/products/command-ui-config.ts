@@ -135,6 +135,30 @@ export const COMMAND_UI_CONFIG: Record<string, CommandUIConfig> = {
     confirmLabel: "开始批量下架",
     executingLabel: "批量执行中…",
   },
+  search_sourcing: {
+    id: "search_sourcing",
+    sensitivity: "low",
+    requiresPreview: false,
+    renderMode: "generic",
+    direct: true,
+  },
+  set_sourcing_filters: {
+    id: "set_sourcing_filters",
+    sensitivity: "low",
+    requiresPreview: false,
+    renderMode: "generic",
+    direct: true,
+  },
+  publish_sourcing_item: {
+    id: "publish_sourcing_item",
+    sensitivity: "high",
+    requiresPreview: true,
+    renderMode: "generic",
+    theme: "sky",
+    headerLabel: "上架货源确认",
+    confirmLabel: "确认上架",
+    executingLabel: "上架中…",
+  },
 };
 
 export function getCommandUIConfig(intent: string): CommandUIConfig | null {

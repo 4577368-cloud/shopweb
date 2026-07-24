@@ -14,6 +14,14 @@ export function stashSkuProductHandoff(
   handoff.set(key(shop, product.thirdPlatformItemId), product);
 }
 
+/** Read handoff without consuming — safe for instant first paint. */
+export function peekSkuProductHandoff(
+  shop: string,
+  productId: string
+): SkuProductOverview | null {
+  return handoff.get(key(shop, productId)) ?? null;
+}
+
 /** 工作台首屏读取并消费 handoff（一次性）。 */
 export function takeSkuProductHandoff(
   shop: string,

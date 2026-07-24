@@ -206,6 +206,25 @@ export function SmartSourcingFilters({
           </div>
         </div>
 
+        <div className="w-[108px]">
+          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">
+            {t("sourcing.sourceFilter")}
+          </label>
+          <Select
+            className="h-8 text-xs"
+            value={filters.sourceFilter ?? "all"}
+            onChange={(e) =>
+              patch({
+                sourceFilter: e.target.value as CatalogFilterState["sourceFilter"],
+              })
+            }
+          >
+            <option value="all">{t("sourcing.sourceAll")}</option>
+            <option value="tangbuy">{t("sourcing.sourceTangbuy")}</option>
+            <option value="1688">{t("sourcing.source1688")}</option>
+          </Select>
+        </div>
+
         <div className="w-[84px]">
           <label className="mb-1 block text-[10px] font-medium text-ink-subtle">
             {t("sourcing.priceMin")}

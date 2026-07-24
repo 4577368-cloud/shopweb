@@ -65,7 +65,7 @@ const fetchQuotesSkill: LogisticsSkill = {
   id: "fetch_quotes",
   name: "获取报价",
   description: "从 Tangbuy 获取线路报价",
-  commandIds: ["fetch_quotes"],
+  commandIds: ["start_estimate", "fetch_quotes"],
 
   isActive: () => true,
 
@@ -149,6 +149,10 @@ export function buildLogisticsSkillFeedback(
     }
     case "fetch_quotes": {
       detailLines.push("已刷新线路报价");
+      break;
+    }
+    case "start_estimate": {
+      detailLines.push("已启动智能预估管线");
       break;
     }
     case "open_template": {

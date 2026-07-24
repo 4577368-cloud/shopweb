@@ -82,3 +82,28 @@ export function countCatalogIngestingProducts(input: {
   }
   return count;
 }
+
+/** Logistics CTA: not started vs pool/quote in flight vs catalog id ready. */
+export type ProductSourceIngestPhase =
+  | "not_in_catalog"
+  | "in_progress"
+  | "ready";
+
+export function productSourceIngestPhase(input: {
+  shopName?: string;
+  thirdPlatformItemId?: string;
+  variants: VariantLogisticsDecision[];
+  quoteResults: Map<string, LogisticsEstimateResult>;
+}): ProductSourceIngestPhase {
+  const shop = input.shopName?.trim();
+  const itemId = input.thirdPlatformItemId?.trim();
+  if (shop && itemId) {
+    const identity = readProductSourceIdentity(shop, itemId);
+    if (identity?.internalGoodsId?.trim()) return "ready";
+    if (isCatalogIngesting(identity)) return "in_progress";
+  }
+  if (isProductQuoteIngesting(input.variants, input.quoteResults)) {
+    return "in_progress";
+  }
+  return "not_in_catalog";
+}

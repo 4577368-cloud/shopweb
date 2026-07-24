@@ -1,6 +1,9 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { Lightbulb } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 
 export type InfoCardTone = "default" | "brand" | "warning";
 
@@ -64,10 +67,11 @@ interface TipCardProps {
 }
 
 /** Preset InfoCard for the recurring 💡 "小贴士" pattern. */
-export function TipCard({ title = "小贴士", tips, footer, className }: TipCardProps) {
+export function TipCard({ title, tips, footer, className }: TipCardProps) {
+  const t = useT();
   return (
     <InfoCard
-      title={title}
+      title={title ?? t("common.tips")}
       icon={<Lightbulb className="h-3.5 w-3.5 text-amber-500" />}
       footer={footer}
       className={className}

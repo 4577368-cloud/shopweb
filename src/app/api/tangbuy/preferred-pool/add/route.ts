@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { fetchTangbuyAdmin } from "@/lib/tangbuy/admin-http";
 import {
   getPreferredPoolServerConfig,
   isPreferredPoolConfigured,
   isPreferredPoolDuplicateMessage,
+  isPreferredPoolUpstreamBusinessError,
+  isPreferredPoolUpstreamSuccess,
 } from "@/lib/tangbuy/preferred-pool-config";
 
 export const runtime = "nodejs";
@@ -40,7 +43,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { baseUrl, token, defaults } = getPreferredPoolServerConfig();
+  const { defaults } = getPreferredPoolServerConfig();
 
   // categoryId 非 OpenAPI 必填项 — 默认不传，由 admin 根据 1688 商品信息自动映射类目。
   // 仅当显式配置 TANGBUY_POOL_CATEGORY_ID 时才覆盖传入。
@@ -51,9 +54,9 @@ export async function POST(request: Request) {
     level: defaults.level,
     suitableCountryList: defaults.suitableCountryList,
     labelIdList: defaults.labelIdList,
-    operateUserId: defaults.operateUserId || undefined,
+    operateUserId: defaults.operateUserId,
     operateUserName: defaults.operateUserName,
-    operateDept: defaults.operateDept || undefined,
+    operateDept: defaults.operateDept,
     ownerSource: defaults.ownerSource,
   };
   if (defaults.categoryId) {
@@ -62,15 +65,12 @@ export async function POST(request: Request) {
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${baseUrl}/product-mall/admin/preferred/pool/add`, {
+    upstream = await fetchTangbuyAdmin("/product-mall/admin/preferred/pool/add", {
       method: "POST",
       headers: {
-        Authorization: token,
-        Accept: "application/json, text/plain, */*",
-        "Content-Type": "application/json;charset=UTF-8",
         Referer: "https://admin.tangbuy.cc/goods/shop/pool",
       },
-      body: JSON.stringify(payload),
+      jsonBody: payload,
     });
   } catch (e) {
     return NextResponse.json(
@@ -98,14 +98,16 @@ export async function POST(request: Request) {
       ok: true,
       status: "already_exists",
       msg: msg || "已在商品库",
+      code,
     });
   }
 
-  if (upstream.ok && (code === 200 || code === undefined)) {
+  if (isPreferredPoolUpstreamSuccess(upstream.ok, code, msg)) {
     return NextResponse.json({
       ok: true,
       status: "submitted",
       msg: msg || "成功",
+      code,
     });
   }
 
@@ -114,15 +116,41 @@ export async function POST(request: Request) {
     msg.includes("认证失败") ||
     msg.toLowerCase().includes("unauthorized");
 
+  if (isAuthFailure) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "TANGBUY_ADMIN_TOKEN 无效或已过期，请从 admin.tangbuy.cc 重新复制 Bearer token",
+        upstreamStatus: upstream.status,
+        code,
+      },
+      { status: 401 }
+    );
+  }
+
+  // Admin 业务拒绝（如「获取不到该商品信息」）— 关联仍可成功，勿用 HTTP 502 吓用户。
+  if (isPreferredPoolUpstreamBusinessError(code, msg)) {
+    return NextResponse.json({
+      ok: false,
+      status: "upstream_rejected",
+      error: msg || `商品库登记失败（code ${code ?? "unknown"}）`,
+      upstreamStatus: upstream.status,
+      code,
+    });
+  }
+
   return NextResponse.json(
     {
       ok: false,
-      error: isAuthFailure
-        ? "TANGBUY_ADMIN_TOKEN 无效或已过期，请从 admin.tangbuy.cc 重新复制 Bearer token"
-        : msg || `商品库登记失败（${upstream.status}）`,
+      error:
+        msg.includes("I/O error") || msg.includes("fetch failed")
+          ? `${msg}（云端无法访问 admin.tangbuy.cc，请在 Vercel 配置 NEXT_PUBLIC_TANGBUY_ADMIN_BROWSER_TOKEN 由浏览器直连）`
+          : msg || `商品库登记失败（HTTP ${upstream.status}）`,
       upstreamStatus: upstream.status,
       code,
+      upstreamBody: parsed ? undefined : text.slice(0, 500) || undefined,
     },
-    { status: isAuthFailure ? 401 : 502 }
+    { status: upstream.ok ? 200 : 502 }
   );
 }

@@ -1,3 +1,5 @@
+import type { Locale } from "@/i18n/config";
+import { resolve1688ProductTitle } from "@/lib/batch-link/1688-title-locale";
 import type { ImageBindingView, ImageSearchProduct } from "@/lib/types";
 
 /** SKU matrix labels like "Black / S" — not a product headline on the card. */
@@ -18,9 +20,20 @@ export function snapTitleNeedsItemGetFallback(
 
 export function mergeConfirmedBindingView(
   view: ImageBindingView,
-  candidate: Pick<ImageSearchProduct, "title" | "imageUrl" | "price">
+  candidate: Pick<
+    ImageSearchProduct,
+    "title" | "titleTrans" | "subject" | "subjectTrans" | "englishTitle" | "imageUrl" | "price"
+  >,
+  locale: Locale = "zh"
 ): ImageBindingView {
-  const productTitle = candidate.title?.trim() || null;
+  const productTitle = resolve1688ProductTitle({
+    locale,
+    title: candidate.title,
+    titleTrans: candidate.titleTrans,
+    subject: candidate.subject,
+    subjectTrans: candidate.subjectTrans,
+    englishTitle: candidate.englishTitle,
+  });
   const viewTitle = view.offerTitle?.trim() || null;
   return {
     ...view,
@@ -35,19 +48,50 @@ export function mergeConfirmedBindingView(
 }
 
 export function resolveBoundSourceDisplayTitle(input: {
+  locale?: Locale;
   snapTitle?: string | null;
   itemGetTitle?: string | null;
   offerSubjectTrans?: string | null;
   offerSubject?: string | null;
   candidateTitle?: string | null;
+  candidateTitleTrans?: string | null;
+  candidateEnglishTitle?: string | null;
 }): string | null {
+  const locale = input.locale ?? "zh";
   const {
     snapTitle,
     itemGetTitle,
     offerSubjectTrans,
     offerSubject,
     candidateTitle,
+    candidateTitleTrans,
+    candidateEnglishTitle,
   } = input;
+
+  if (locale !== "zh") {
+    const localized = resolve1688ProductTitle({
+      locale,
+      title: candidateTitle,
+      titleTrans: candidateTitleTrans,
+      subject: offerSubject,
+      subjectTrans: offerSubjectTrans,
+      englishTitle: candidateEnglishTitle,
+    });
+    if (localized) return localized;
+
+    const fromItemGet = itemGetTitle?.trim() || null;
+    if (fromItemGet) return fromItemGet;
+
+    const snap = snapTitle?.trim() || null;
+    if (snap && !isLikelySkuSpecLabel(snap)) return snap;
+
+    return (
+      candidateTitle?.trim() ||
+      offerSubject?.trim() ||
+      snap ||
+      null
+    );
+  }
 
   const fromCandidate = candidateTitle?.trim() || null;
   if (fromCandidate) return fromCandidate;
@@ -59,7 +103,7 @@ export function resolveBoundSourceDisplayTitle(input: {
   if (fromItemGet) return fromItemGet;
 
   const fromOffer =
-    offerSubjectTrans?.trim() || offerSubject?.trim() || null;
+    offerSubject?.trim() || offerSubjectTrans?.trim() || null;
   if (fromOffer) return fromOffer;
 
   return snap;

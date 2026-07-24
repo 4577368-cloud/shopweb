@@ -8,7 +8,14 @@ import {
   type LogisticsTranslate,
   variantHasQuoteLine,
 } from "@/lib/logistics/display";
-import type { LogisticsPipelineProgress } from "@/lib/logistics/incremental-pipeline";
+import {
+  isGoodsSourceQuoteFailure,
+  userFacingQuoteErrorMessage,
+} from "@/lib/logistics/estimate-goods-block";
+import {
+  isPipelineProductActive,
+  type LogisticsPipelineProgress,
+} from "@/lib/logistics/incremental-pipeline";
 import type {
   PricingTemplate,
   ProductLogisticsProfile,
@@ -62,17 +69,18 @@ export function computeSkuRowStatus(
     return "confirmed";
   }
   if (isVariantUnidentified(variant)) return "pending_sku";
+  const hasLine = variantHasQuoteLine(variant, quoteResult);
   const quoteStatus = effectiveQuoteStatus({
     recommendedLine: quoteResult?.recommendedLine ?? variant.recommendedLine,
     quoteStatus: quoteResult?.quoteStatus ?? variant.quoteStatus,
   });
-  if (quoteStatus === "INGESTING" && !quoteResult?.recommendedLine) {
+  if (quoteStatus === "INGESTING" && !hasLine) {
     return "ingesting";
   }
+  if (hasLine) return "pending_review";
   if (quoteStatus === "FAILED" || quoteResult?.errorMessage) {
     return "failed";
   }
-  if (variantHasQuoteLine(variant, quoteResult)) return "pending_review";
   if (isVariantException(variant)) return "pending_review";
   if (variant.decisionStatus === "ready_for_quote") return "ready";
   if (
@@ -111,7 +119,10 @@ export function formatVariantIssueHint(
   if (isVariantUnidentified(variant)) {
     return t("logisticsDisplay.issueHint.skuAlignRequired");
   }
-  if (quoteResult?.errorMessage?.trim()) {
+  if (
+    !variantHasQuoteLine(variant, quoteResult) &&
+    quoteResult?.errorMessage?.trim()
+  ) {
     const quoteStatus = effectiveQuoteStatus({
       recommendedLine: quoteResult.recommendedLine ?? variant.recommendedLine,
       quoteStatus: quoteResult.quoteStatus ?? variant.quoteStatus,
@@ -119,7 +130,12 @@ export function formatVariantIssueHint(
     if (quoteStatus === "INGESTING") {
       return t("logisticsDisplay.issueHint.ingesting");
     }
-    const msg = quoteResult.errorMessage.trim();
+    if (isGoodsSourceQuoteFailure(quoteResult)) {
+      return t("logisticsDisplay.issueHint.sourceNotInCatalog");
+    }
+    const msg =
+      userFacingQuoteErrorMessage(quoteResult.errorMessage.trim()) ??
+      quoteResult.errorMessage.trim();
     return msg.length > 48 ? `${msg.slice(0, 48)}…` : msg;
   }
   const status = effectiveQuoteStatus({
@@ -172,8 +188,11 @@ export function computeProductShellMeta(
   let minFee: number | null = null;
   let minFeeLabel: string | null = null;
 
-  const isProcessing =
-    Boolean(pipelineActive && pipeline?.currentProductId === profile.thirdPlatformItemId);
+  const isProcessing = isPipelineProductActive(
+    pipeline ?? null,
+    profile.thirdPlatformItemId,
+    pipelineActive
+  );
 
   for (const variant of variants) {
     const quote = quoteResults.get(variant.thirdPlatformSkuId);

@@ -6,10 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { ArrowRight, Loader2, Search, X } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { StepSidebar } from "@/components/workbench/step-sidebar";
+import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
 import { AiCopilotScanStage } from "@/components/workbench/ai-copilot-scan-stage";
+import { SCAN_STAGE_PROGRESS_ANIMATION_MS } from "@/components/workbench/scan-stage";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { useProductsScan } from "@/hooks/use-products-scan";
 import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
@@ -24,6 +25,11 @@ import {
   type AiFieldId,
 } from "@/lib/ai-field-edit-feedback";
 import {
+  applyBatchAckToBindings,
+  batchAckPendingBindings,
+  listPendingAckProductIds,
+} from "@/lib/batch-link/batch-ack-pending";
+import {
   computeShopProductBindingStats,
   indexImageBindings,
 } from "@/lib/shop-product-binding-stats";
@@ -36,6 +42,8 @@ import {
 } from "@/lib/shop-product-mirror-baseline";
 import { formatNewArrivalAnalysisSummary } from "@/lib/new-arrival-analysis-result";
 import { mergeProductBaseline } from "@/lib/shop-product-mirror-baseline";
+import { clearMirrorCache, peekMirrorCache, productsMirrorShopKey, setMirrorCache } from "@/lib/products/mirror-cache";
+import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import { formatBatchLinkSummary } from "@/lib/batch-link/types";
 import type { BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
 import { buildNewArrivalResultFromBatch } from "@/lib/batch-link/build-new-arrival-result";
@@ -66,7 +74,10 @@ import {
 } from "@/lib/agents/products/product-focus-snapshot";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { AgentResponse } from "@/lib/agents/types";
-import { deriveRecommendedCategories } from "@/lib/recommended-categories";
+import {
+  deriveRecommendedCategories,
+  localizeRecommendedCategoryName,
+} from "@/lib/recommended-categories";
 import type {
   AiPanelContent,
   ImageBindingView,
@@ -76,6 +87,13 @@ import type {
 import type { ScanHandoffPayload } from "@/lib/scan/handoff";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
+import { publishSourcingHit } from "@/lib/sourcing/publish-sourcing-hit";
+import {
+  getSourcingSession,
+  resolveHitByListIndex,
+} from "@/lib/sourcing/session";
+import { markCatalogPublished } from "@/lib/batch-link/publish-source";
+import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
 
 const SmartSourcingSummaryBar = dynamic(() => import("@/components/select/smart-sourcing-summary-bar").then((m) => ({ default: m.SmartSourcingSummaryBar })), { ssr: false });
 const PricingTemplateDrawer = dynamic(() => import("@/components/select/pricing-template-drawer").then((m) => ({ default: m.PricingTemplateDrawer })), { ssr: false });
@@ -98,12 +116,26 @@ interface ProductsSummary {
   pendingProducts: number;
 }
 
+const SCAN_COMPLETION_DWELL_MS = 450;
+const SCAN_FINISH_DELAY_MS =
+  SCAN_STAGE_PROGRESS_ANIMATION_MS + SCAN_COMPLETION_DWELL_MS;
+
+function productsEntryShouldSkipCeremony(
+  shopMirrorKey: string,
+  legacyShopName: string
+): boolean {
+  if (hasScanned("products", shopMirrorKey)) return true;
+  if (legacyShopName && hasScanned("products", legacyShopName)) return true;
+  return Boolean(peekMirrorCache(shopMirrorKey)?.items?.length);
+}
+
 function SelectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, isAuthorized, authSessionReady, showToast, refreshWorkflowProgress } =
+  const { shop, isAuthorized, authBootstrapping, showToast, refreshWorkflowProgress } =
     useOnboarding();
-  const shopName = shop.name;
+  const shopName = resolveShopApiName(shop);
+  const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
   const wb = useWorkbenchPage("products");
   const t = useT();
   const locale = useLocale();
@@ -230,6 +262,8 @@ function SelectContent() {
   const [filterPresetRequest, setFilterPresetRequest] = useState<{
     categoryName?: string;
     keywords?: string;
+    sourceFilter?: "all" | "tangbuy" | "1688";
+    priceMaxUsd?: number;
   } | null>(null);
 
   const {
@@ -239,6 +273,7 @@ function SelectContent() {
     done: scanDone,
     start: startScan,
     resumeActiveJob,
+    pollActiveMatchJobInBackground,
     cancel: cancelScan,
   } = useProductsScan(shopName);
 
@@ -252,7 +287,7 @@ function SelectContent() {
       products: ShopMirrorProduct[],
       bindings: Record<string, ImageBindingView>
     ) => {
-      if (!hasScanned("products", shopName)) {
+      if (!hasScanned("products", shopMirrorKey)) {
         setNewArrivalStats(emptyNewArrivals);
         return;
       }
@@ -277,43 +312,85 @@ function SelectContent() {
     [shopName, emptyNewArrivals]
   );
 
-  const loadSummary = useCallback(async () => {
-    void api.backfillPublishedBindings(shopName).catch(() => null);
-    const [products, bindings, tpl] = await Promise.all([
-      api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
-      api.listImageBindings(shopName).catch(() => []),
-      api.getPricingTemplate(shopName).catch(() => null),
-    ]);
-    const map = indexImageBindings(bindings);
-    const stats = computeShopProductBindingStats(products, map);
-    const merged = applyTitleEditsToProducts(
-      applyListingEditsToProducts(products, aiFieldEditsRef.current),
-      aiFieldEditsRef.current
-    );
-    setBindingsMap(map);
-    setShopProducts(merged);
-    setTemplate(tpl);
-    setSummary({
-      shopProducts: stats.analyzed,
-      confirmedProducts: stats.confirmed,
-      pendingProducts: stats.pending,
-    });
-    refreshNewArrivalAwareness(merged, map);
-    void refreshWorkflowProgress();
-    return { products: merged, bindings: map };
-  }, [shopName, refreshNewArrivalAwareness, refreshWorkflowProgress]);
+  const loadSummary = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = opts?.silent ?? false;
+      if (!silent) {
+        const cached = peekMirrorCache(shopMirrorKey);
+        if (cached) {
+          const merged = applyTitleEditsToProducts(
+            applyListingEditsToProducts(cached.items, aiFieldEditsRef.current),
+            aiFieldEditsRef.current
+          );
+          const stats = computeShopProductBindingStats(cached.items, cached.bindings);
+          setBindingsMap(cached.bindings);
+          setShopProducts(merged);
+          setSummary({
+            shopProducts: stats.analyzed,
+            confirmedProducts: stats.confirmed,
+            pendingProducts: stats.pending,
+          });
+          refreshNewArrivalAwareness(merged, cached.bindings);
+          void loadSummary({ silent: true });
+          return { products: merged, bindings: cached.bindings };
+        }
+      }
+
+      void api.backfillPublishedBindings(shopName).catch(() => null);
+      const [products, bindings, tpl] = await Promise.all([
+        api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
+        api.listImageBindings(shopName).catch(() => []),
+        api.getPricingTemplate(shopName).catch(() => null),
+      ]);
+      const map = indexImageBindings(bindings);
+      const stats = computeShopProductBindingStats(products, map);
+      const merged = applyTitleEditsToProducts(
+        applyListingEditsToProducts(products, aiFieldEditsRef.current),
+        aiFieldEditsRef.current
+      );
+      setBindingsMap(map);
+      setShopProducts(merged);
+      setTemplate(tpl);
+      setSummary({
+        shopProducts: stats.analyzed,
+        confirmedProducts: stats.confirmed,
+        pendingProducts: stats.pending,
+      });
+      setMirrorCache(shopMirrorKey, { items: products, bindings: map });
+      refreshNewArrivalAwareness(merged, map);
+      void refreshWorkflowProgress();
+      return { products: merged, bindings: map };
+    },
+    [shopName, shopMirrorKey, refreshNewArrivalAwareness, refreshWorkflowProgress]
+  );
 
   const finishedRef = useRef(false);
+  const scanFinishScheduledRef = useRef(false);
   const finishToResult = useCallback(async () => {
     if (finishedRef.current) return;
     finishedRef.current = true;
     cancelScan();
-    markScanned("products", shopName);
+    markScanned("products", shopMirrorKey);
     markScanHandoff(shopName, scanStats);
     const { products } = await loadSummary();
     if (products) commitAnalysisBaseline(products);
     setPhase("result");
-  }, [cancelScan, shopName, loadSummary, scanStats, commitAnalysisBaseline]);
+  }, [cancelScan, shopName, shopMirrorKey, loadSummary, scanStats, commitAnalysisBaseline]);
+
+  const exitScanToProducts = useCallback(() => {
+    cancelScan();
+    markScanned("products", shopMirrorKey);
+    finishedRef.current = true;
+    scanFinishScheduledRef.current = true;
+    setPhase("result");
+    void loadSummary();
+    void pollActiveMatchJobInBackground();
+  }, [
+    cancelScan,
+    shopMirrorKey,
+    loadSummary,
+    pollActiveMatchJobInBackground,
+  ]);
 
   const startedForShopRef = useRef<string | null>(null);
   useEffect(() => {
@@ -321,21 +398,41 @@ function SelectContent() {
     if (startedForShopRef.current === shopName) return;
     startedForShopRef.current = shopName;
     finishedRef.current = false;
+    scanFinishScheduledRef.current = false;
     void (async () => {
+      if (productsEntryShouldSkipCeremony(shopMirrorKey, shopName)) {
+        markScanned("products", shopMirrorKey);
+        setPhase("result");
+        void loadSummary();
+        void pollActiveMatchJobInBackground();
+        return;
+      }
       const resumed = await resumeActiveJob();
       if (resumed) {
         setPhase("scan");
         return;
       }
-      if (hasScanned("products", shopName)) {
-        setPhase("result");
-        void loadSummary();
-        return;
-      }
       setPhase("scan");
       await startScan();
     })();
-  }, [isAuthorized, shopName, loadSummary, startScan, resumeActiveJob, finishToResult]);
+  }, [
+    isAuthorized,
+    shopName,
+    shopMirrorKey,
+    loadSummary,
+    startScan,
+    resumeActiveJob,
+    pollActiveMatchJobInBackground,
+  ]);
+
+  useEffect(() => {
+    if (phase !== "scan" || !scanDone || scanFinishScheduledRef.current) return;
+    scanFinishScheduledRef.current = true;
+    const timer = window.setTimeout(() => {
+      void finishToResult();
+    }, SCAN_FINISH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [phase, scanDone, finishToResult]);
 
   useEffect(() => {
     if (phase !== "result" || !isAuthorized) return;
@@ -438,17 +535,41 @@ function SelectContent() {
 
   const restartScan = useCallback(() => {
     finishedRef.current = false;
-    clearScanned("products", shopName);
+    scanFinishScheduledRef.current = false;
+    clearScanned("products", shopMirrorKey);
+    clearMirrorCache(shopMirrorKey);
     setPhase("scan");
     void startScan();
   }, [shopName, startScan]);
 
-  const pendingCount = summary?.pendingProducts ?? 0;
-  const analyzed = summary?.shopProducts ?? 0;
-  const matched = summary != null ? summary.confirmedProducts + summary.pendingProducts : 0;
-  const unbound = summary != null ? Math.max(analyzed - matched, 0) : 0;
+  const mirrorSnapshot = useMemo(
+    () => peekMirrorCache(shopMirrorKey),
+    [shopMirrorKey]
+  );
 
-  const analysisReady = phase === "result" && summary != null;
+  const displaySummary = useMemo((): ProductsSummary | null => {
+    if (summary) return summary;
+    if (!mirrorSnapshot) return null;
+    const stats = computeShopProductBindingStats(
+      mirrorSnapshot.items,
+      mirrorSnapshot.bindings
+    );
+    return {
+      shopProducts: stats.analyzed,
+      confirmedProducts: stats.confirmed,
+      pendingProducts: stats.pending,
+    };
+  }, [summary, mirrorSnapshot]);
+
+  const pendingCount = displaySummary?.pendingProducts ?? 0;
+  const analyzed = displaySummary?.shopProducts ?? 0;
+  const matched =
+    displaySummary != null
+      ? displaySummary.confirmedProducts + displaySummary.pendingProducts
+      : 0;
+  const unbound = displaySummary != null ? Math.max(analyzed - matched, 0) : 0;
+
+  const analysisReady = phase === "result" && displaySummary != null;
   const previewPricingGuide = searchParams.get("previewPricingGuide") === "1";
 
   const shopCurrencyHint = shopProducts[0]?.currency ?? null;
@@ -497,12 +618,14 @@ function SelectContent() {
         shopFilter,
         authorized: isAuthorized,
         shopName,
-        analyzedCount: summary?.shopProducts ?? 0,
+        analyzedCount: displaySummary?.shopProducts ?? 0,
         matchedCount: matched,
         pendingCount,
         unboundCount: unbound,
         analysisReady,
-        recommendedCategoryNames: recommendedCategories.map((c) => c.name),
+        recommendedCategoryNames: recommendedCategories.map((c) =>
+          localizeRecommendedCategoryName(t, c.id, c.name)
+        ),
         filterSummary,
         template,
         focusProductId,
@@ -520,7 +643,7 @@ function SelectContent() {
       shopFilter,
       isAuthorized,
       shopName,
-      summary?.shopProducts,
+      displaySummary?.shopProducts,
       matched,
       pendingCount,
       unbound,
@@ -653,6 +776,42 @@ function SelectContent() {
         setTab(action.tab);
         highlight("tabs");
       }
+      if (action.kind === "batch_ack_pending") {
+        if (action.tab) setTab(action.tab);
+        if (action.shopFilter) {
+          setShopFilter(action.shopFilter);
+          highlight("filters");
+        }
+        void (async () => {
+          const ids = listPendingAckProductIds(shopProducts, bindingsMap);
+          if (ids.length === 0) {
+            showToast(t("shopProducts.toastNoPending"));
+            return;
+          }
+          try {
+            const result = await batchAckPendingBindings(shopName, ids);
+            const nextBindings = applyBatchAckToBindings(
+              bindingsMap,
+              ids,
+              result.failed
+            );
+            syncSummaryFromShopData(shopProducts, nextBindings);
+            bumpMirrorRefresh();
+            await loadSummary();
+            showToast(
+              result.failed.length > 0
+                ? t("shopProducts.toastBatchAckPartial", {
+                    ok: result.ok,
+                    failed: result.failed.length,
+                  })
+                : t("shopProducts.toastBatchAckDone", { ok: result.ok })
+            );
+          } catch (err) {
+            showToast(readableError(err));
+          }
+        })();
+        return;
+      }
       if (action.kind === "set_shop_filter") {
         if (action.tab) setTab(action.tab);
         if (action.shopFilter) setShopFilter(action.shopFilter);
@@ -681,10 +840,12 @@ function SelectContent() {
         setFilterPresetRequest({
           categoryName: action.filterPreset?.categoryName,
           keywords: action.filterPreset?.keywords,
+          sourceFilter: action.filterPreset?.sourceFilter,
+          priceMaxUsd: action.filterPreset?.priceMaxUsd,
         });
       }
     },
-    [openPricingDrawer, setTab, focusProduct, pendingMinis, unboundMinis]
+    [openPricingDrawer, setTab, focusProduct, pendingMinis, unboundMinis, shopProducts, bindingsMap, shopName, syncSummaryFromShopData, bumpMirrorRefresh, loadSummary, showToast, t, highlight]
   );
 
   const clearAiFieldEdit = useCallback((productId: string, field: AiFieldId) => {
@@ -1495,8 +1656,72 @@ function SelectContent() {
           },
         };
       },
+      publish_sourcing_item: async (plan: any) => {
+        const hitId = plan.draft.params.sourcingItemHint as string | undefined;
+        const index = plan.draft.params.sourcingListIndex as number | undefined;
+        const session = getSourcingSession(shopName);
+        const hit =
+          (hitId ? session?.hits.find((h) => h.hitId === hitId) : null) ??
+          (index != null ? resolveHitByListIndex(shopName, index) : null);
+        if (!hit) throw new Error(t("agentProducts.clarifySourcingPublishTarget"));
+
+        const currency =
+          (plan.draft.params.sourcingCurrency as string | undefined) ?? "USD";
+        const procurement = plan.draft.params.sourcingProcurementUsd as
+          | number
+          | null
+          | undefined;
+        const display = plan.draft.params.sourcingDisplayUsd as
+          | number
+          | null
+          | undefined;
+
+        const fmt = (n: number | null | undefined) =>
+          n != null ? `${currency} ${n.toFixed(2)}` : "—";
+
+        return {
+          sections: [
+            {
+              title: hit.title,
+              rows: [
+                {
+                  label: t("agentProducts.detailSourcingSource", {
+                    source: hit.source,
+                  }),
+                  before: "",
+                  after: hit.source === "1688" ? "1688" : "Tangbuy",
+                },
+                {
+                  label: t("catalogCard.purchaseCost", {
+                    price: fmt(procurement),
+                  }),
+                  before: "",
+                  after: fmt(procurement),
+                },
+                {
+                  label: t("catalogCard.suggestedPrice", {
+                    price: fmt(display),
+                  }),
+                  before: "",
+                  after: `${fmt(display)} (${hit.displayMultiplier}×)`,
+                },
+              ],
+            },
+          ],
+          impact: {
+            scope: t("agentProducts.opPublishSourcing"),
+            durationHint: hit.source === "1688" ? "30–90s" : "10–30s",
+            reversible: false,
+            riskNote:
+              hit.source === "1688"
+                ? t("agentProducts.detailPoolWillIngest")
+                : undefined,
+          },
+          payload: { hitId: hit.hitId },
+        };
+      },
     }),
-    [t, copyActionLabel, previewFieldLabel, previewModeNote, previewDurationHint]
+    [t, copyActionLabel, previewFieldLabel, previewModeNote, previewDurationHint, shopName]
   );
 
   const commandExecutors = useMemo(
@@ -1613,6 +1838,32 @@ function SelectContent() {
           onProgress: p.onProgress,
         });
       },
+      publish_sourcing_item: async (payload: Record<string, unknown>) => {
+        const p = payload as { hitId: string };
+        const session = getSourcingSession(shopName);
+        const hit = session?.hits.find((h) => h.hitId === p.hitId);
+        if (!hit) {
+          throw new Error(t("agentProducts.clarifySourcingPublishTarget"));
+        }
+        const tpl = template ?? (await api.getPricingTemplate(shopName));
+        const outcome = await publishSourcingHit({
+          hit,
+          shopName,
+          template: tpl,
+        });
+        if (!outcome.ok || !outcome.result) {
+          throw new Error(outcome.error ?? t("catalogPublish.publishFailed"));
+        }
+        if (
+          outcome.result.publishStatus === "PUBLISHED" &&
+          outcome.result.shopifyProductId?.trim() &&
+          outcome.catalogItem
+        ) {
+          const productId = outcome.result.shopifyProductId.trim();
+          markCatalogPublished(shopName, productId);
+          queuePublishReveal(shopName, productId, outcome.catalogItem);
+        }
+      },
     }),
     [
       executeListingPriceUpdate,
@@ -1621,6 +1872,9 @@ function SelectContent() {
       executeBatchListingPriceUpdate,
       executeProductStatusUpdate,
       executeBatchProductStatusUpdate,
+      shopName,
+      template,
+      t,
     ]
   );
 
@@ -1793,9 +2047,9 @@ function SelectContent() {
     />
   );
 
-  if (!authSessionReady) {
+  if (authBootstrapping) {
     return (
-      <WorkbenchShell sidebar={<StepSidebar />} rail={rail} {...wb.shellProps}>
+      <WorkbenchShell sidebar={<HubAwareSidebar />} rail={rail} {...wb.shellProps}>
         <WorkbenchPanel
           title={t("products.title")}
           breadcrumbs={[{ label: t("nav.authorize"), href: localePath(locale, "/authorize") }, { label: t("products.title") }]}
@@ -1817,7 +2071,7 @@ function SelectContent() {
   if (!isAuthorized) {
     return (
       <WorkbenchShell
-        sidebar={<StepSidebar />}
+        sidebar={<HubAwareSidebar />}
         rail={rail}
         {...wb.shellProps}
       >
@@ -1846,7 +2100,7 @@ function SelectContent() {
   if (phase === "scan") {
     return (
       <WorkbenchShell
-        sidebar={<StepSidebar />}
+        sidebar={<HubAwareSidebar />}
         rail={
           <AssistantRail
             assistantContent={
@@ -1874,6 +2128,7 @@ function SelectContent() {
             progressPercent={scanProgressPercent}
             done={scanDone}
             onViewResult={() => void finishToResult()}
+            onSkip={exitScanToProducts}
           />
         </WorkbenchPanel>
         {pricingDrawer}
@@ -1882,13 +2137,13 @@ function SelectContent() {
   }
 
   const tabs = [
-    { id: "shop", label: t("products.tabShop"), count: summary?.shopProducts },
+    { id: "shop", label: t("products.tabShop"), count: displaySummary?.shopProducts },
     { id: "catalog", label: t("products.tabDiscover") },
   ];
 
   return (
     <WorkbenchShell
-      sidebar={<StepSidebar />}
+      sidebar={<HubAwareSidebar />}
       rail={rail}
       {...wb.shellProps}
     >
@@ -1952,8 +2207,8 @@ function SelectContent() {
           <div className="min-h-0">
             {tab === "shop" ? (
               <SmartSourcingSummaryBar
-                ready={summary != null}
-                analyzed={summary?.shopProducts ?? 0}
+                ready={displaySummary != null}
+                analyzed={displaySummary?.shopProducts ?? 0}
                 matched={matched}
                 pending={pendingCount}
                 unbound={unbound}
@@ -2049,7 +2304,7 @@ function SelectContent() {
 function ProductsPageFallback() {
   const t = useT();
   return (
-    <WorkbenchShell sidebar={<StepSidebar />}>
+    <WorkbenchShell sidebar={<HubAwareSidebar />}>
       <WorkbenchPanel title={t("products.title")}>{null}</WorkbenchPanel>
     </WorkbenchShell>
   );

@@ -22,7 +22,7 @@ export function routeProductsIntent(
 ): AgentResponse {
   const def = intentDef(intent);
   if (def.agent === "pricing_strategist") {
-    return handlePricingStrategist(intent, ctx);
+    return handlePricingStrategist(intent, ctx, t);
   }
   return handleSourcingAdvisor(intent, ctx, t);
 }

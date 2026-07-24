@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildSkuCommandClassifySystemPrompt, parseSkuCommandDraft, classifySkuCommandByRules, type SkuCommandClassifyContext } from "@/lib/agents/sku-align/classify-command";
+import { buildSkuCommandClassifySystemPrompt, parseSkuCommandResponse, classifySkuCommandByRules, type SkuCommandClassifyContext } from "@/lib/agents/sku-align/classify-command";
 import { buildResponseLanguageRule } from "@/lib/agents/runtime/response-language";
 import type { SkuCommandClassifyResult } from "@/lib/agents/sku-align/command-schema";
 import { chatCompletionJson } from "@/lib/agents/llm/openai-compatible";
@@ -21,11 +21,10 @@ export async function POST(req: Request) {
       );
     }
 
+    // LLM-first: the model is the authority for natural-language mapping.
+    // Deterministic rules are kept only as an offline fallback when the LLM
+    // is unavailable, so the rail still works during outages.
     const local = classifySkuCommandByRules(text);
-    if (local.confidence === "high" && local.draft) {
-      return NextResponse.json(local);
-    }
-
     try {
       const prompt = buildSkuCommandClassifySystemPrompt(
         context,
@@ -39,15 +38,34 @@ export async function POST(req: Request) {
         temperature: 0.1,
       });
 
-      const draft = parseSkuCommandDraft(llmResult);
-      if (draft) {
+      const parsed = parseSkuCommandResponse(llmResult);
+      if (parsed?.kind === "draft") {
         return NextResponse.json({
           confidence: "high" as const,
           source: "llm" as const,
-          draft,
+          draft: parsed.draft,
+        } as SkuCommandClassifyResult);
+      }
+      if (parsed?.kind === "steps") {
+        return NextResponse.json({
+          confidence: "high" as const,
+          source: "llm" as const,
+          steps: parsed.steps,
+        } as SkuCommandClassifyResult);
+      }
+      if (parsed?.kind === "clarify") {
+        // LLM reachable but the instruction is ambiguous: return a structured
+        // clarification with candidate intents instead of a plain error.
+        return NextResponse.json({
+          confidence: "none" as const,
+          source: "llm" as const,
+          clarify: parsed.clarify,
         } as SkuCommandClassifyResult);
       }
 
+      // LLM reachable but could not map to a known intent: surface its
+      // "cannot understand" answer instead of silently falling back to rules
+      // (which would otherwise misclassify free-form text as a rule match).
       return NextResponse.json({
         confidence: "none" as const,
         source: "llm" as const,

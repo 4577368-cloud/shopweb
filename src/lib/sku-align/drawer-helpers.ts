@@ -40,7 +40,7 @@ export function supplementGapVariantsFromOverview(
     if (v1GapIds.has(v.thirdPlatformSkuId)) return true;
     const state = deriveVariantDisplayState(v);
     if (state !== "unbound" && state !== "needs_review") return false;
-    if (!matrix.length) return false;
+    if (!matrix.length) return true;
     const ranked = rankSourceSkuRows(matrix, v.optionLabel, {
       variantPrice: v.price,
       variantImageUrl: v.imageUrl,
@@ -91,6 +91,26 @@ export function buildAutoSuggestions(
   return out;
 }
 
+/** Best matrix SKU per variant — used for match replay / demo. */
+export function buildPreviewMatches(
+  variants: SkuVariant[],
+  matrix: SourceSkuRow[],
+  llmByKey?: Record<string, number>
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!matrix.length) return out;
+  for (const variant of variants) {
+    let ranked = rankSourceSkuRows(matrix, variant.optionLabel, {
+      variantPrice: variant.price,
+      variantImageUrl: variant.imageUrl,
+    });
+    if (llmByKey) ranked = applyLlmToRanked(variant.optionLabel, ranked, llmByKey);
+    const top = ranked[0];
+    if (top?.skuId) out[variant.thirdPlatformSkuId] = top.skuId;
+  }
+  return out;
+}
+
 export function countHighConfidenceSuggestions(
   suggestions: Record<string, string>
 ): number {
@@ -118,6 +138,15 @@ export function coverageCount(hits: VariantSkuHit[]): number {
   return hits.filter((h) => h.hit != null).length;
 }
 
+/** Mean match score among mapped hits (0 when none). */
+export function meanMatchScore(hits: VariantSkuHit[]): number {
+  const scores = hits
+    .map((h) => h.hit?.matchScore)
+    .filter((s): s is number => s != null && s > 0);
+  if (!scores.length) return 0;
+  return scores.reduce((sum, s) => sum + s, 0) / scores.length;
+}
+
 /** Auto-pick supplement SKU per gap variant when matrix is already loaded. */
 export function autoAssignSupplementGaps(
   gaps: SkuVariant[],
@@ -137,11 +166,31 @@ export function autoAssignSupplementGaps(
   return out;
 }
 
+/** Apply one supplement merchant to variants — best-effort SKU per row (no score cutoff). */
+export function assignSupplementMerchantToVariants(
+  variants: SkuVariant[],
+  candidateKey: string,
+  matrix: SourceSkuRow[]
+): Record<string, { candidateKey: string; skuId: string }> {
+  const out: Record<string, { candidateKey: string; skuId: string }> = {};
+  const key = candidateKey.trim();
+  if (!key || !matrix.length) return out;
+  for (const variant of variants) {
+    const top = rankSourceSkuRows(matrix, variant.optionLabel, {
+      variantPrice: variant.price,
+      variantImageUrl: variant.imageUrl,
+    })[0];
+    out[variant.thirdPlatformSkuId] = { candidateKey: key, skuId: top?.skuId ?? "" };
+  }
+  return out;
+}
+
 export interface RankedCoverageCandidate {
   candidate: ImageSearchProduct;
   hits: VariantSkuHit[];
   coverage: number;
   total: number;
+  meanScore: number;
   imageScore: number;
 }
 
@@ -269,12 +318,14 @@ export function rankCandidatesByCoverage(
       hits,
       coverage,
       total: gapVariants.length,
+      meanScore: meanMatchScore(hits),
       imageScore,
     };
   });
 
   return ranked.sort((a, b) => {
     if (b.coverage !== a.coverage) return b.coverage - a.coverage;
+    if (b.meanScore !== a.meanScore) return b.meanScore - a.meanScore;
     return b.imageScore - a.imageScore;
   });
 }

@@ -247,14 +247,21 @@ export function LogisticsPlanStatusCard({
             />
 
             <div
-              className="grid min-h-[3.75rem] flex-1 grid-cols-3 divide-x divide-hairline"
+              className="grid min-h-[3.75rem] flex-1 grid-cols-2 divide-x divide-y divide-hairline sm:grid-cols-4 sm:divide-y-0"
               aria-label={t("logisticsUi.quoteStatsAria")}
             >
               <StatCell
-                label={t("logisticsUi.filterPending")}
-                value={pendingWorkCount(metrics)}
+                label={t("logisticsUi.filterPendingQuote")}
+                value={metrics.pendingQuoteCount}
                 valueClassName={
-                  pendingWorkCount(metrics) > 0 ? "text-amber-600" : undefined
+                  metrics.pendingQuoteCount > 0 ? "text-amber-600" : undefined
+                }
+              />
+              <StatCell
+                label={t("logisticsUi.filterPendingConfirm")}
+                value={metrics.pendingConfirmCount}
+                valueClassName={
+                  metrics.pendingConfirmCount > 0 ? "text-sky-700" : undefined
                 }
               />
               <StatCell

@@ -30,8 +30,9 @@ export function getPreferredPoolServerConfig() {
     }
   }
 
-  const operateUserId = Number(process.env.TANGBUY_POOL_OPERATE_USER_ID ?? "0") || 0;
-  const operateDept = process.env.TANGBUY_POOL_OPERATE_DEPT?.trim() ?? "";
+  const operateUserId =
+    Number(process.env.TANGBUY_POOL_OPERATE_USER_ID ?? "1") || 1;
+  const operateDept = process.env.TANGBUY_POOL_OPERATE_DEPT?.trim() || "100";
 
   return {
     baseUrl: base.replace(/\/$/, ""),
@@ -62,15 +63,35 @@ export function isPreferredPoolDuplicateMessage(msg: string): boolean {
     m.includes("已存在") ||
     m.includes("已在") ||
     m.includes("重复") ||
-    m.includes("商品池") && m.includes("存在") ||
+    (m.includes("商品池") && m.includes("存在")) ||
     m.includes("already") ||
     m.includes("exist") ||
     m.includes("duplicate")
   );
 }
 
+/** RuoYi-style admin API: HTTP 200 with code 200 or 0 means success. */
+export function isPreferredPoolUpstreamSuccess(
+  upstreamOk: boolean,
+  code?: number,
+  msg?: string
+): boolean {
+  if (msg && isPreferredPoolDuplicateMessage(msg)) return true;
+  if (!upstreamOk) return false;
+  if (code === undefined || code === null) return true;
+  return code === 200 || code === 0;
+}
+
+/** Upstream rejected the offer (auth/config/network are handled separately). */
+export function isPreferredPoolUpstreamBusinessError(code?: number, msg?: string): boolean {
+  if (code === 401) return false;
+  if (code === 200 || code === 0) return false;
+  if (msg && isPreferredPoolDuplicateMessage(msg)) return false;
+  return code != null || Boolean(msg?.trim());
+}
+
 /** Any pool-add outcome that means the offer is (or will be) in catalog — proceed. */
 export function isPreferredPoolPassThrough(msg: string, code?: number): boolean {
   if (isPreferredPoolDuplicateMessage(msg)) return true;
-  return code === 200 || code === undefined;
+  return code === 200 || code === 0 || code === undefined;
 }

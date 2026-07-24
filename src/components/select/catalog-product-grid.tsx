@@ -6,10 +6,12 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FadeSwap } from "@/components/ui/fade-swap";
 import { TableSkeleton } from "@/components/ui/skeleton";
+import { useT } from "@/i18n/LocaleProvider";
 import {
   CatalogProductCard,
   type PublishCellState,
 } from "@/components/select/catalog-product-card";
+import type { SourcingSource } from "@/lib/sourcing/types";
 import type { CatalogRecommendation } from "@/lib/types";
 
 export interface CatalogProductGridProps {
@@ -21,6 +23,14 @@ export interface CatalogProductGridProps {
   hasNextPage: boolean;
   /** Map candidateId → purchase price in target currency (USD). */
   purchasePriceById: Record<string, number | null>;
+  sourcingMetaById?: Record<
+    string,
+    {
+      source: SourcingSource;
+      listIndex?: number;
+      detailUrl?: string | null;
+    }
+  >;
   targetCurrency: string;
   publishState: Record<string, PublishCellState>;
   onPublish: (item: CatalogRecommendation) => void;
@@ -36,6 +46,7 @@ export function CatalogProductGrid({
   pageTurning,
   hasNextPage,
   purchasePriceById,
+  sourcingMetaById = {},
   targetCurrency,
   publishState,
   onPublish,
@@ -43,6 +54,7 @@ export function CatalogProductGrid({
   onPrevPage,
   onNextPage,
 }: CatalogProductGridProps) {
+  const t = useT();
   return (
     <FadeSwap
       loading={pageLoading}
@@ -55,8 +67,8 @@ export function CatalogProductGrid({
     >
       {items.length === 0 && !pageTurning ? (
         <EmptyState
-          title="暂无可上架的货源商品"
-          description="尝试调整关键词或类目筛选，或清空条件后重试。"
+          title={t("catalogGrid.emptyTitle")}
+          description={t("catalogGrid.emptyDesc")}
         />
       ) : (
         <>
@@ -72,6 +84,9 @@ export function CatalogProductGrid({
                 key={item.candidateId}
                 item={item}
                 purchasePriceUsd={purchasePriceById[item.candidateId]}
+                sourcingSource={sourcingMetaById[item.candidateId]?.source}
+                listIndex={sourcingMetaById[item.candidateId]?.listIndex}
+                sourceDetailUrl={sourcingMetaById[item.candidateId]?.detailUrl}
                 targetCurrency={targetCurrency}
                 state={publishState[item.candidateId]}
                 onPublish={() => onPublish(item)}
@@ -88,10 +103,10 @@ export function CatalogProductGrid({
               disabled={page <= 1 || pageTurning}
             >
               <ChevronLeft className="h-4 w-4" />
-              上一页
+              {t("catalogGrid.prevPage")}
             </Button>
             <span className="min-w-[4.5rem] text-center text-xs text-ink-subtle">
-              {pageTurning ? "加载中…" : `第 ${page} 页`}
+              {pageTurning ? t("catalogGrid.pageLoading") : t("catalogGrid.pageNumber", { page })}
             </span>
             <Button
               variant="secondary"
@@ -99,7 +114,7 @@ export function CatalogProductGrid({
               onClick={onNextPage}
               disabled={!hasNextPage || pageTurning}
             >
-              下一页
+              {t("catalogGrid.nextPage")}
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

@@ -3,13 +3,22 @@ import {
   invalidateCatalogOfferMapCache,
   isInternalGoodsId,
   isOfferId1688,
+  resolveCatalogMatchViaAdminApi,
+  resolveInternalGoodsIdByOffer,
   resolveInternalGoodsIdByOfferSku,
   resolveProductSourceIdentity,
   type ResolveProductSourceInput,
 } from "@/lib/catalog-product-resolve";
 import { buildOfferDetailUrl } from "@/lib/logistics/variant-measures";
+import { isTerminalPoolIngestStatus } from "@/lib/logistics/estimate-goods-block";
+import {
+  isAdminBrowserIngestConfigured,
+  submitPreferredPoolAddFromBrowser,
+} from "@/lib/tangbuy/admin-browser";
 import { buildTangbuyProductUrl } from "@/lib/tangbuy-mall-gateway";
 import type { PoolIngestStatus, ProductSourceIdentity } from "@/lib/types";
+import type { ImageSearchProduct } from "@/lib/types";
+import { writeProductSourceIdentity } from "@/lib/product-source-identity";
 
 /** 入池后反查 goodsId：首次等待 2s，避免索引尚未就绪 */
 const POLL_DELAYS_MS = [2000, 4000, 6000, 8000];
@@ -26,21 +35,120 @@ export interface PreferredPoolAddResult {
   skipped?: boolean;
 }
 
+const poolAddLogKeys = new Set<string>();
+
+/** Allow one fresh diagnostic when the user explicitly retries pool ingest. */
+export function clearPoolAddDiagnostic(offerId1688: string): void {
+  const prefix = `${offerId1688.trim()}:`;
+  for (const key of poolAddLogKeys) {
+    if (key.startsWith(prefix)) poolAddLogKeys.delete(key);
+  }
+}
+
+function logPoolAddDiagnostic(
+  offerId1688: string,
+  detail: {
+    skipped?: boolean;
+    error?: string;
+    httpStatus?: number;
+  }
+): void {
+  if (typeof console === "undefined") return;
+  const error =
+    detail.error?.trim() ||
+    (detail.skipped ? "未配置 TANGBUY_ADMIN_TOKEN" : "登记失败");
+  const key = `${offerId1688}:${detail.skipped ? "skipped" : error}`;
+  if (poolAddLogKeys.has(key)) return;
+  poolAddLogKeys.add(key);
+
+  const payload = {
+    offerId1688,
+    error,
+    ...(detail.httpStatus != null ? { httpStatus: detail.httpStatus } : {}),
+    ...(detail.skipped ? { skipped: true } : {}),
+  };
+
+  const isExpected =
+    detail.skipped ||
+    /TANGBUY_ADMIN|未配置|认证失败|token|unauthorized/i.test(error) ||
+    /获取不到该商品信息|商品信息|not found|invalid offer/i.test(error) ||
+    /I\/O error|admin\.tangbuy\.cc.*不可达|NEXT_PUBLIC_TANGBUY_ADMIN_BROWSER_TOKEN/i.test(
+      error
+    );
+  if (isExpected) {
+    console.warn(`[tangbuy/preferred-pool/add] ${offerId1688}: ${error}`, payload);
+  } else {
+    console.error(`[tangbuy/preferred-pool/add] ${offerId1688}: ${error}`, payload);
+  }
+}
+
 async function submitPreferredPoolAdd(
   offerId1688: string
 ): Promise<PreferredPoolAddResult> {
+  const offerId = offerId1688.trim();
+  if (!offerId) {
+    return { ok: false, status: "failed", error: "缺少 1688 offerId" };
+  }
+  if (!isOfferId1688(offerId)) {
+    logPoolAddDiagnostic(offerId, {
+      skipped: true,
+      error: "非 1688 offerId，跳过商品库登记",
+    });
+    return {
+      ok: false,
+      status: "skipped",
+      error: "非 1688 offerId，跳过商品库登记",
+      skipped: true,
+    };
+  }
+
+  if (isAdminBrowserIngestConfigured()) {
+    const browser = await submitPreferredPoolAddFromBrowser(offerId);
+    if (browser.ok) {
+      return {
+        ok: true,
+        status:
+          browser.status === "already_exists" ? "already_exists" : "submitted",
+        msg: browser.msg,
+      };
+    }
+    if (browser.status === "upstream_rejected") {
+      logPoolAddDiagnostic(offerId, {
+        error: browser.error,
+        httpStatus: browser.httpStatus,
+      });
+      return { ok: false, status: "failed", error: browser.error };
+    }
+    if (browser.error && !/未配置/i.test(browser.error)) {
+      logPoolAddDiagnostic(offerId, {
+        error: browser.error,
+        httpStatus: browser.httpStatus,
+      });
+      return { ok: false, status: "failed", error: browser.error };
+    }
+  }
+
   try {
     const res = await fetch("/api/tangbuy/preferred-pool/add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        providerItemId: offerId1688,
+        providerItemId: offerId,
         providerType: "alibaba",
       }),
     });
-    const body = (await res.json()) as PreferredPoolAddResult & {
-      status?: string;
-    };
+
+    let body: PreferredPoolAddResult & { status?: string };
+    try {
+      const parsed = await res.json();
+      body =
+        parsed && typeof parsed === "object"
+          ? (parsed as PreferredPoolAddResult)
+          : { ok: false, status: "failed", error: `HTTP ${res.status}` };
+    } catch {
+      body = { ok: false, status: "failed", error: `HTTP ${res.status}（非 JSON 响应）` };
+    }
+
     if (body.ok) {
       return {
         ok: true,
@@ -50,14 +158,23 @@ async function submitPreferredPoolAdd(
       };
     }
     if (body.skipped) {
+      logPoolAddDiagnostic(offerId, {
+        skipped: true,
+        error: body.error,
+        httpStatus: res.status,
+      });
       return { ok: false, status: "skipped", error: body.error, skipped: true };
     }
-    return { ok: false, status: "failed", error: body.error ?? "登记失败" };
+    const error = body.error?.trim() || `登记失败（HTTP ${res.status}）`;
+    logPoolAddDiagnostic(offerId, { error, httpStatus: res.status });
+    return { ok: false, status: "failed", error };
   } catch (e) {
+    const error = e instanceof Error ? e.message : "登记请求失败";
+    logPoolAddDiagnostic(offerId, { error });
     return {
       ok: false,
       status: "failed",
-      error: e instanceof Error ? e.message : "登记请求失败",
+      error,
     };
   }
 }
@@ -73,10 +190,16 @@ export async function pollResolveGoodsIdAfterPool(input: {
   const sku = input.tangbuySkuId?.trim();
   if (!offerId) return null;
 
+  const adminImmediate = await resolveCatalogMatchViaAdminApi({
+    offerId1688: offerId,
+    tangbuySkuId: input.tangbuySkuId,
+  });
+  if (adminImmediate) return adminImmediate;
+
   for (const delay of POLL_DELAYS_MS) {
     if (delay > 0) await sleep(delay);
-    if (sku) {
-      try {
+    try {
+      if (sku) {
         const match = await resolveInternalGoodsIdByOfferSku({
           offerId1688: offerId,
           tangbuySkuId: sku,
@@ -84,9 +207,16 @@ export async function pollResolveGoodsIdAfterPool(input: {
           shopName: input.shopName,
         });
         if (match) return match;
-      } catch {
-        // Gateway offline / CORS — stop polling this round quietly.
       }
+      const byOffer = await resolveInternalGoodsIdByOffer({
+        offerId1688: offerId,
+        tangbuySkuId: sku,
+        titleHint: input.titleHint,
+        shopName: input.shopName,
+      });
+      if (byOffer) return byOffer;
+    } catch {
+      // Gateway offline / CORS — stop polling this round quietly.
     }
   }
   return null;
@@ -143,7 +273,7 @@ export async function resolveIdentityWithPreferredPool(
     poolIngestStatus: pool.ok ? "pending_resolve" : pool.skipped ? "skipped" : "failed",
   };
 
-  if (!pool.ok && pool.status !== "skipped") {
+  if (!pool.ok) {
     return withPoolMeta;
   }
 
@@ -177,6 +307,10 @@ export async function ensurePoolIngestForLogistics(input: {
   titleHint?: string | null;
   shopName?: string | null;
   existingIdentity?: ProductSourceIdentity | null;
+  /** Re-submit after failed/skipped (user refresh, logistics, SKU bind). */
+  retryPoolSubmit?: boolean;
+  /** Bulk smart-estimate: submit pool but do not poll (saves ~20s/SKU). */
+  skipPoolPoll?: boolean;
 }): Promise<ProductSourceIdentity> {
   const offerId = input.offerId1688.trim();
   const now = new Date().toISOString();
@@ -193,11 +327,36 @@ export async function ensurePoolIngestForLogistics(input: {
   }
 
   const pending = input.existingIdentity?.poolIngestStatus;
-  const needsSubmit = !pending || pending === "failed";
+  if (isTerminalPoolIngestStatus(pending) && !input.retryPoolSubmit) {
+    return {
+      ...(input.existingIdentity ?? base),
+      poolIngestStatus: pending,
+    };
+  }
 
+  const needsSubmit =
+    !pending || (input.retryPoolSubmit && isTerminalPoolIngestStatus(pending));
   let withPool = input.existingIdentity ?? base;
 
   if (needsSubmit) {
+    if (input.retryPoolSubmit) clearPoolAddDiagnostic(offerId);
+    if (input.retryPoolSubmit) {
+      const adminEarly = await resolveCatalogMatchViaAdminApi({
+        offerId1688: offerId,
+        tangbuySkuId: input.tangbuySkuId,
+      });
+      if (adminEarly) {
+        return mergePoolResolvedIdentity(
+          {
+            ...base,
+            poolIngestStatus: "already_exists",
+            poolIngestedAt: now,
+          },
+          adminEarly,
+          "already_exists"
+        );
+      }
+    }
     const pool = await submitPreferredPoolAdd(offerId);
     withPool = {
       ...base,
@@ -208,12 +367,31 @@ export async function ensurePoolIngestForLogistics(input: {
           ? "skipped"
           : "failed",
     };
-    if (!pool.ok && !pool.skipped) return withPool;
+    if (!pool.ok) {
+      const adminHit = await resolveCatalogMatchViaAdminApi({
+        offerId1688: offerId,
+        tangbuySkuId: input.tangbuySkuId,
+      });
+      if (adminHit) {
+        return mergePoolResolvedIdentity(
+          {
+            ...withPool,
+            poolIngestStatus: "already_exists",
+            poolIngestedAt: withPool.poolIngestedAt ?? now,
+          },
+          adminHit,
+          "already_exists"
+        );
+      }
+      return withPool;
+    }
     if (input.shopName?.trim()) {
       invalidateCatalogOfferMapCache(input.shopName);
     }
-  } else if (pending === "skipped") {
-    return { ...withPool, poolIngestStatus: "skipped" };
+  }
+
+  if (input.skipPoolPoll) {
+    return { ...withPool, poolIngestStatus: withPool.poolIngestStatus ?? "pending_resolve" };
   }
 
   const match = await pollResolveGoodsIdAfterPool({
@@ -225,6 +403,14 @@ export async function ensurePoolIngestForLogistics(input: {
 
   if (match) {
     return mergePoolResolvedIdentity(withPool, match, "resolved");
+  }
+
+  const adminLate = await resolveCatalogMatchViaAdminApi({
+    offerId1688: offerId,
+    tangbuySkuId: input.tangbuySkuId,
+  });
+  if (adminLate) {
+    return mergePoolResolvedIdentity(withPool, adminLate, "already_exists");
   }
 
   return { ...withPool, poolIngestStatus: "pending_resolve" };
@@ -271,6 +457,49 @@ export async function retryPendingPoolResolve(
 
 export function catalogUrlFromGoodsId(goodsId: string): string {
   return buildTangbuyProductUrl(goodsId, "PREFERRED");
+}
+
+/** Best-effort pool ingest when binding a 1688 offer (SKU replace / supplement). */
+export async function ensureOfferPoolFor1688Candidate(input: {
+  shopName: string;
+  candidate: Pick<
+    import("@/lib/types").ImageSearchProduct,
+    | "productId"
+    | "detailUrl"
+    | "offerId1688"
+    | "internalGoodsId"
+    | "catalogSource"
+    | "skuId"
+    | "title"
+  >;
+  titleHint?: string | null;
+}): Promise<void> {
+  if (input.candidate.catalogSource || input.candidate.internalGoodsId?.trim()) {
+    return;
+  }
+  const offerId =
+    input.candidate.offerId1688?.trim() ||
+    extractOfferIdFromUrl(input.candidate.detailUrl) ||
+    (isOfferId1688(input.candidate.productId) ? input.candidate.productId.trim() : null);
+  if (!offerId) return;
+
+  try {
+    await ensurePoolIngestForLogistics({
+      offerId1688: offerId,
+      tangbuySkuId: input.candidate.skuId,
+      titleHint: input.titleHint ?? input.candidate.title,
+      shopName: input.shopName,
+      retryPoolSubmit: true,
+    });
+  } catch (err) {
+    if (typeof console !== "undefined") {
+      console.error("[tangbuy/preferred-pool/sku]", {
+        offerId,
+        shopName: input.shopName,
+        error: err instanceof Error ? err.message : err,
+      });
+    }
+  }
 }
 
 export { isInternalGoodsId, isOfferId1688 };

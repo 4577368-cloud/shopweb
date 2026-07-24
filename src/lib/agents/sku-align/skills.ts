@@ -104,7 +104,48 @@ const autoAlignSkill: SkuSkill = {
   },
 };
 
-export const SKU_SKILLS: SkuSkill[] = [confirmPendingSkill, autoAlignSkill];
+const bindingOpsSkill: SkuSkill = {
+  id: "binding_ops",
+  name: "绑定与货源操作",
+  description: "解绑、换货源、加补充货源、忽略匹配、手动绑定等变体级操作",
+  commandIds: [
+    "bind_variant",
+    "unbind",
+    "change_source",
+    "add_supplement_source",
+    "ignore_match",
+    "set_manual",
+    "tune_threshold",
+  ],
+
+  isActive: (ctx) => {
+    const hasMutable = ctx.productCatalog.some((p) =>
+      p.variants.some(
+        (v) => v.bound?.bindStatus === "PENDING" || v.bound?.bindStatus === "ACTIVE" || !v.bound
+      )
+    );
+    return hasMutable;
+  },
+
+  progress: () => null,
+
+  nextSteps: (ctx) => {
+    const steps: SkillNextStep[] = [];
+    const target = ctx.productCatalog.find((p) =>
+      p.variants.some((v) => v.bound?.bindStatus === "PENDING" || !v.bound)
+    );
+    if (target) {
+      steps.push({
+        label: `打开「${target.title}」工作台处理变体`,
+        kind: "focus_product",
+        productId: target.thirdPlatformItemId,
+      });
+    }
+    return steps;
+  },
+};
+
+export const SKU_SKILLS: SkuSkill[] = [confirmPendingSkill, autoAlignSkill, bindingOpsSkill];
 
 export const SKU_SKILL_MAP = new Map<string, SkuSkill>();
 for (const skill of SKU_SKILLS) {

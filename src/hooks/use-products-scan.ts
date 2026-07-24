@@ -18,8 +18,7 @@ const POLL_MS = 1200;
 /** Minimum visible dwell between workflow phases (UI pacing, not fake data). */
 const DWELL_AFTER_SYNC_MS = 700;
 const DWELL_AFTER_LOAD_MS = 900;
-const DWELL_PROFIT_MS = 1400;
-const DWELL_BEFORE_DONE_MS = 1000;
+const DWELL_BEFORE_DONE_MS = 600;
 
 const EMPTY_STATS: ScanSummaryStats = {
   productCount: 0,
@@ -56,7 +55,6 @@ const TASK_IDS = {
   load: "load",
   orders: "orders",
   match: "match",
-  profit: "profit",
 } as const;
 
 function sleep(ms: number) {
@@ -74,7 +72,6 @@ function initialTasks(): ScanTaskView[] {
     { id: TASK_IDS.load, label: "读取在售商品与货源关联", status: "pending" },
     { id: TASK_IDS.orders, label: "读取店铺订单", status: "pending" },
     { id: TASK_IDS.match, label: "自动图搜关联剩余商品", status: "pending" },
-    { id: TASK_IDS.profit, label: "分析利润空间", status: "pending" },
   ];
 }
 
@@ -225,7 +222,6 @@ export function useProductsScan(shopName: string) {
       patch(TASK_IDS.load, { status: "failed", error: readableError(err) });
       patch(TASK_IDS.orders, { status: "skipped" });
       patch(TASK_IDS.match, { status: "skipped" });
-      patch(TASK_IDS.profit, { status: "skipped" });
       return finalize();
     }
     if (cancelRef.current) return void finalize();
@@ -254,10 +250,6 @@ export function useProductsScan(shopName: string) {
     }
     if (cancelRef.current) return void finalize();
     await refreshBindingStats();
-
-    patch(TASK_IDS.profit, { status: "running" });
-    await sleep(DWELL_PROFIT_MS);
-    patch(TASK_IDS.profit, { status: "done" });
     await sleep(DWELL_BEFORE_DONE_MS);
     await finalize();
   }, [shopName, patch, runMatchQueue, refreshBindingStats]);
@@ -310,15 +302,26 @@ export function useProductsScan(shopName: string) {
       patch(TASK_IDS.match, { status: "failed", error: readableError(err) });
     }
     await refreshBindingStats();
-    patch(TASK_IDS.profit, { status: "running" });
-    await sleep(DWELL_PROFIT_MS);
-    patch(TASK_IDS.profit, { status: "done" });
     await sleep(DWELL_BEFORE_DONE_MS);
     await refreshBindingStats();
     setRunning(false);
     setDone(true);
     return true;
   }, [shopName, patch, applyJobProgress, pollJob, refreshBindingStats]);
+
+  const pollActiveMatchJobInBackground = useCallback(async () => {
+    try {
+      const active = (await api.getActiveMatchJob(shopName)) ?? null;
+      if (!active || !isJobActive(active.jobStatus)) return;
+      while (!cancelRef.current) {
+        const job = await api.getMatchJob(active.jobId);
+        if (!isJobActive(job.jobStatus)) break;
+        await sleep(POLL_MS);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }, [shopName]);
 
   const cancel = useCallback(() => {
     cancelRef.current = true;
@@ -333,6 +336,7 @@ export function useProductsScan(shopName: string) {
     done,
     start,
     resumeActiveJob,
+    pollActiveMatchJobInBackground,
     cancel,
   };
 }

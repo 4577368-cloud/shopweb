@@ -16,7 +16,7 @@ import {
   X,
 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { StepSidebar } from "@/components/workbench/step-sidebar";
+import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import {
@@ -50,6 +50,7 @@ import {
 import {
   confirmPageNeedsReview,
 } from "@/lib/sku-align/batch-confirm";
+import { unbindWithFallback } from "@/lib/sku-align-v1/compat";
 import {
   autoAlignUnboundProducts,
   autoConfirmPendingVariants,
@@ -58,6 +59,12 @@ import type { SkuPageContext } from "@/lib/agents/sku-align/plan-command";
 import type { SkuCommandPlan } from "@/lib/agents/sku-align/command-schema";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
+import {
+  clearSkuAlignMirrorCache,
+  getSkuAlignMirrorCache,
+  setSkuAlignMirrorCache,
+  isSkuAlignMirrorCacheFresh,
+} from "@/lib/sku-align/sku-align-mirror-cache";
 import {
   parseSkuAlignFilterParam,
   parseSkuAlignTabParam,
@@ -69,6 +76,11 @@ import {
   skuAlignProductWorkbenchHref,
 } from "@/lib/sku-align/deep-link";
 import { stashSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
+import {
+  clearSkuOverviewSession,
+  peekSkuOverviewSession,
+  setSkuOverviewSession,
+} from "@/lib/sku-align/overview-session-cache";
 import type { AiPanelContent, PricingTemplate, SkuProductOverview } from "@/lib/types";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
@@ -86,7 +98,7 @@ type FilterId = SkuFilterMode;
 function SkuAlignContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, showToast, isAuthorized, authSessionReady, refreshWorkflowProgress } =
+  const { shop, showToast, isAuthorized, authBootstrapping, refreshWorkflowProgress } =
     useOnboarding();
   const shopName = shop.name;
   const wb = useWorkbenchPage("sku-align");
@@ -137,28 +149,47 @@ function SkuAlignContent() {
     cancel: cancelScan,
   } = useSkuAlignScan(shopName);
 
-  const load = useCallback(async () => {
-    const silent = hasLoadedOnceRef.current;
-    if (!silent) setLoading(true);
-    else setRefreshing(true);
-    setError(null);
-    try {
-      // Snapshot repair can take minutes — never block overview refresh on it.
-      void api.backfillBindingSnapshots(shopName).catch(() => null);
-      const [next, tpl] = await Promise.all([
-        api.getSkuOverview(shopName),
-        api.getPricingTemplate(shopName).catch(() => null),
-      ]);
-      setProducts(next);
-      setPricingTemplate(tpl);
-      hasLoadedOnceRef.current = true;
-    } catch (err) {
-      setError(readableError(err));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [shopName]);
+  const load = useCallback(
+    async (opts?: { silent?: boolean; skipCache?: boolean }) => {
+      // 命中镜像缓存且非静默主动加载 → 直接 hydrate，不 loading、不 fetch；
+      // 后台静默刷新（skipCache）写回最新数据。
+      if (!opts?.silent && !opts?.skipCache && isSkuAlignMirrorCacheFresh(shopName)) {
+        const cached = getSkuAlignMirrorCache(shopName);
+        if (cached) {
+          setProducts(cached.overview);
+          setPricingTemplate(cached.pricingTemplate);
+          hasLoadedOnceRef.current = true;
+          void load({ silent: true, skipCache: true });
+          return;
+        }
+      }
+      const silent = opts?.silent ?? hasLoadedOnceRef.current;
+      if (!silent) setLoading(true);
+      else setRefreshing(true);
+      setError(null);
+      try {
+        void api.backfillBindingSnapshots(shopName).catch(() => null);
+        const [next, tpl] = await Promise.all([
+          api.getSkuOverview(shopName),
+          api.getPricingTemplate(shopName).catch(() => null),
+        ]);
+        setProducts(next);
+        setSkuOverviewSession(shopName, next);
+        setPricingTemplate(tpl);
+        setSkuAlignMirrorCache(shopName, {
+          overview: next,
+          pricingTemplate: tpl,
+        });
+        hasLoadedOnceRef.current = true;
+      } catch (err) {
+        setError(readableError(err));
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [shopName]
+  );
 
   // Move to the result view once (guarded), pulling the freshly-aligned overview. Non-blocking:
   // callable while the scan is still running ("直接查看当前结果") — cancels remaining work first.
@@ -169,7 +200,15 @@ function SkuAlignContent() {
     markScanned("sku-align", shopName);
     skipNextAutoAlignRef.current = true;
     setPhase("result");
-    void load();
+    const cached = peekSkuOverviewSession(shopName);
+    if (cached?.length) {
+      setProducts(cached);
+      setLoading(false);
+      hasLoadedOnceRef.current = true;
+      void load({ silent: true });
+    } else {
+      void load();
+    }
   }, [cancelScan, shopName, load]);
 
   // Decide once per shop: first session visit → play the scan; otherwise straight to result.
@@ -203,9 +242,23 @@ function SkuAlignContent() {
       return;
     }
 
-    if (hasScanned("sku-align", shopName)) {
+    const cachedOverview = peekSkuOverviewSession(shopName);
+    const skipScan =
+      hasScanned("sku-align", shopName) || (cachedOverview?.length ?? 0) > 0;
+
+    if (skipScan) {
+      if (!hasScanned("sku-align", shopName)) {
+        markScanned("sku-align", shopName);
+      }
       setPhase("result");
-      void load();
+      if (cachedOverview?.length) {
+        setProducts(cachedOverview);
+        setLoading(false);
+        hasLoadedOnceRef.current = true;
+        void load({ silent: true });
+      } else {
+        void load();
+      }
     } else {
       scanFinishScheduledRef.current = false;
       scanFinishedRef.current = false;
@@ -280,6 +333,8 @@ function SkuAlignContent() {
   const restartScan = useCallback(() => {
     autoAlignStartedRef.current = null;
     clearScanned("sku-align", shopName);
+    clearSkuAlignMirrorCache(shopName);
+    clearSkuOverviewSession(shopName);
     scanFinishScheduledRef.current = false;
     scanFinishedRef.current = false;
     setPhase("scan");
@@ -478,6 +533,52 @@ function SkuAlignContent() {
           },
         };
       },
+      unbind: async (plan: SkuCommandPlan, shopName: string) => {
+        const productId = plan.draft.productId;
+        const product = products.find((p) => p.thirdPlatformItemId === productId);
+        if (!product) throw new Error(t("sku.confirmNoProducts"));
+        const variants = product.variants ?? [];
+        let variant: { id: string; label: string } | null = null;
+        const idx = plan.draft.params.variantIndex;
+        if (idx != null && idx >= 1 && idx <= variants.length) {
+          const v = variants[idx - 1];
+          variant = { id: v.thirdPlatformSkuId, label: v.optionLabel };
+        } else {
+          const spec = plan.draft.params.variantSpec?.trim();
+          if (spec) {
+            const matches = variants.filter((v) =>
+              v.optionLabel?.toLowerCase().includes(spec.toLowerCase())
+            );
+            if (matches.length === 1) {
+              variant = { id: matches[0].thirdPlatformSkuId, label: matches[0].optionLabel };
+            }
+          }
+        }
+        if (!variant) throw new Error(t("agentSku.clarifyVariantNeeded"));
+        return {
+          sections: [
+            {
+              title: t("agentSku.opUnbind"),
+              rows: [
+                {
+                  label: product.title ?? t("sku.confirmUnknownProduct"),
+                  before: variant.label,
+                  after: t("sku.confirmAfter"),
+                },
+              ],
+            },
+          ],
+          impact: {
+            scope: t("agentSku.detailUnbind", {
+              variantLabel: variant.label,
+              title: product.title ?? "",
+            }),
+            durationHint: t("sku.confirmDuration", { seconds: 3 }),
+            reversible: true,
+          },
+          payload: { productId, variantId: variant.id, variantLabel: variant.label },
+        };
+      },
     }),
     [products, t]
   );
@@ -516,6 +617,12 @@ function SkuAlignContent() {
         await load();
         showToast(t("sku.confirmDone", { success, failed }));
       },
+      unbind: async (payload: Record<string, unknown>) => {
+        const p = payload as { productId: string; variantId: string; variantLabel?: string };
+        await unbindWithFallback(shopName, p.variantId, p.productId);
+        await load();
+        showToast(t("sku.unbindDone", { variant: p.variantLabel ?? "" }));
+      },
     }),
     [products, shopName, load, showToast]
   );
@@ -534,6 +641,7 @@ function SkuAlignContent() {
                   (p) => p.thirdPlatformItemId === productId
                 );
                 if (found) stashSkuProductHandoff(shopName, found);
+                markScanned("sku-align", shopName);
                 router.push(skuAlignProductWorkbenchHref(productId));
               }}
               onSetFilter={setFilter}
@@ -563,9 +671,9 @@ function SkuAlignContent() {
     },
   };
 
-  if (!authSessionReady) {
+  if (authBootstrapping) {
     return (
-      <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
+      <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
         <WorkbenchPanel
           title={t("sku.title")}
           breadcrumbs={notAuthBreadcrumbs}
@@ -586,7 +694,7 @@ function SkuAlignContent() {
   if (!isAuthorized) {
     return (
       <WorkbenchShell
-        sidebar={<StepSidebar />}
+        sidebar={<HubAwareSidebar />}
         rail={
           <AssistantRail
             assistantContent={<CopilotCard content={copilot} />}
@@ -618,7 +726,7 @@ function SkuAlignContent() {
   if (phase === "scan") {
     return (
       <WorkbenchShell
-        sidebar={<StepSidebar />}
+        sidebar={<HubAwareSidebar />}
         rail={
           <AssistantRail
             assistantContent={
@@ -662,7 +770,7 @@ function SkuAlignContent() {
   }
 
   return (
-    <WorkbenchShell sidebar={<StepSidebar />} rail={rail} {...wb.shellProps}>
+    <WorkbenchShell sidebar={<HubAwareSidebar />} rail={rail} {...wb.shellProps}>
       <WorkbenchPanel
         title={t("sku.title")}
         breadcrumbs={breadcrumbs}
@@ -825,7 +933,7 @@ export default function SkuAlignPage() {
   return (
     <Suspense
       fallback={
-        <WorkbenchShell sidebar={<StepSidebar />}>
+        <WorkbenchShell sidebar={<HubAwareSidebar />}>
           <WorkbenchPanel title={t("sku.title")}>
             <TableSkeleton rows={5} />
           </WorkbenchPanel>

@@ -6,8 +6,9 @@ import {
   rowToCatalogBase,
   type ItemGetProduct,
 } from "@/lib/tangbuy-mall-gateway";
+import { resolveOfferViaAdminFromBrowser } from "@/lib/tangbuy/admin-browser";
 import { buildOfferDetailUrl } from "@/lib/logistics/variant-measures";
-import type { ImageSearchProduct, ProductSourceIdentity } from "@/lib/types";
+import type { ImageBindingView, ImageSearchProduct, ProductSourceIdentity } from "@/lib/types";
 
 export type ProductSourceResolvedVia = NonNullable<
   ProductSourceIdentity["resolvedVia"]
@@ -122,6 +123,191 @@ function catalogUrlForItemId(itemId: string): string {
   return buildTangbuyProductUrl(itemId, "PREFERRED");
 }
 
+function pickCatalogSku(
+  detail: ItemGetProduct,
+  preferred?: string | null
+): string | null {
+  const want = preferred?.trim();
+  if (want && detail.productSkus?.some((s) => String(s.skuId) === want)) {
+    return want;
+  }
+  const first = detail.productSkus?.[0]?.skuId;
+  return first != null ? String(first) : null;
+}
+
+/**
+ * After preferred-pool ingest, admin ES `providerItemId` is the reliable lookup
+ * (mall gateway keyword search often returns 0 rows for the same offer).
+ */
+export async function resolveCatalogMatchViaAdminApi(input: {
+  offerId1688: string;
+  tangbuySkuId?: string | null;
+}): Promise<CatalogGoodsIdMatch | null> {
+  const offerId = input.offerId1688.trim();
+  if (!offerId || typeof fetch === "undefined") return null;
+
+  const browserHit = await resolveOfferViaAdminFromBrowser(offerId);
+  if (browserHit) {
+    const goodsId = browserHit.internalGoodsId.trim();
+    const url = browserHit.tangbuyCatalogUrl.trim();
+    let sku: string | null = input.tangbuySkuId?.trim() || null;
+    if (isMallGatewayConfigured()) {
+      const detail = await fetchItemDetail(url);
+      if (detail) {
+        sku = pickCatalogSku(detail, input.tangbuySkuId) ?? sku;
+      }
+    }
+    if (!sku) return null;
+    return {
+      internalGoodsId: goodsId,
+      catalogItemId: goodsId,
+      tangbuyCatalogUrl: url,
+      tangbuySkuId: sku,
+      offerId1688: offerId,
+      dataSource: "PREFERRED",
+      resolvedVia: "catalog_match",
+    };
+  }
+
+  try {
+    const res = await fetch("/api/tangbuy/catalog/resolve-offer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ offerId1688: offerId }),
+    });
+    const body = (await res.json()) as {
+      ok?: boolean;
+      internalGoodsId?: string;
+      tangbuyCatalogUrl?: string;
+    };
+    if (!body.ok || !body.internalGoodsId?.trim()) return null;
+
+    const goodsId = body.internalGoodsId.trim();
+    const url = body.tangbuyCatalogUrl?.trim() || catalogUrlForItemId(goodsId);
+    let sku: string | null = input.tangbuySkuId?.trim() || null;
+    if (isMallGatewayConfigured()) {
+      const detail = await fetchItemDetail(url);
+      if (detail) {
+        sku = pickCatalogSku(detail, input.tangbuySkuId) ?? sku;
+      }
+    }
+    if (!sku) return null;
+
+    return {
+      internalGoodsId: goodsId,
+      catalogItemId: goodsId,
+      tangbuyCatalogUrl: url,
+      tangbuySkuId: sku,
+      offerId1688: offerId,
+      dataSource: "PREFERRED",
+      resolvedVia: "catalog_match",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function detailUrlMatchesOffer(
+  detailUrl: string | null | undefined,
+  offerId: string
+): boolean {
+  const raw = detailUrl?.trim() ?? "";
+  if (!raw) return false;
+  return raw.includes(offerId) || raw.includes(`offer/${offerId}`);
+}
+
+/** Resolve internal goodsId after pool ingest when SKU match is not required yet. */
+export async function resolveInternalGoodsIdByOffer(input: {
+  offerId1688: string;
+  tangbuySkuId?: string | null;
+  titleHint?: string | null;
+  shopName?: string | null;
+}): Promise<CatalogGoodsIdMatch | null> {
+  if (!isMallGatewayConfigured()) return null;
+
+  const offerId = input.offerId1688.trim();
+  if (!offerId) return null;
+
+  const pickSku = (
+    detail: ItemGetProduct,
+    preferred?: string | null
+  ): string | null => pickCatalogSku(detail, preferred);
+
+  try {
+    const adminHit = await resolveCatalogMatchViaAdminApi({
+      offerId1688: offerId,
+      tangbuySkuId: input.tangbuySkuId,
+    });
+    if (adminHit) return adminHit;
+
+    if (input.shopName?.trim()) {
+      const fromRecs = await loadRecommendationsOfferMap(input.shopName);
+      const goodsId = fromRecs.get(offerId);
+      if (goodsId && isInternalGoodsId(goodsId)) {
+        const url = catalogUrlForItemId(goodsId);
+        const detail = await fetchItemDetail(url);
+        const sku = detail ? pickSku(detail, input.tangbuySkuId) : null;
+        if (sku) {
+          return {
+            internalGoodsId: goodsId,
+            catalogItemId: goodsId,
+            tangbuyCatalogUrl: url,
+            tangbuySkuId: sku,
+            offerId1688: offerId,
+            dataSource: detail?.dataSource ?? "PREFERRED",
+            resolvedVia: "catalog_match",
+          };
+        }
+      }
+    }
+
+    const searchTerms = [
+      offerId,
+      ...extractCatalogSearchTerms(input.titleHint ?? ""),
+    ].filter(Boolean);
+
+    const rowById = new Map<
+      string,
+      { itemId: string; detailUrl?: string | null }
+    >();
+
+    for (const kw of searchTerms) {
+      const { rows } = await fetchMallPage(1, 25, kw);
+      for (const row of rows) {
+        if (row.itemId == null) continue;
+        const id = String(row.itemId).trim();
+        if (!isInternalGoodsId(id)) continue;
+        const detailUrl = row.detailUrl?.trim() || null;
+        if (!detailUrlMatchesOffer(detailUrl, offerId)) continue;
+        if (!rowById.has(id)) {
+          rowById.set(id, { itemId: id, detailUrl });
+        }
+      }
+    }
+
+    for (const row of rowById.values()) {
+      const url = row.detailUrl?.trim() || catalogUrlForItemId(row.itemId);
+      const detail = await fetchItemDetail(url);
+      if (!detail?.productSkus?.length) continue;
+      const sku = pickSku(detail, input.tangbuySkuId);
+      if (!sku) continue;
+      return {
+        internalGoodsId: row.itemId,
+        catalogItemId: row.itemId,
+        tangbuyCatalogUrl: url,
+        tangbuySkuId: sku,
+        offerId1688: offerId,
+        dataSource: detail.dataSource ?? "PREFERRED",
+        resolvedVia: "offer_sku_lookup",
+      };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Match catalog PREFERRED item by tangbuySkuId (offerId → goodsId 双保险 #2). */
 export async function resolveInternalGoodsIdByOfferSku(input: {
   offerId1688: string;
@@ -136,6 +322,12 @@ export async function resolveInternalGoodsIdByOfferSku(input: {
   if (!offerId || !sku) return null;
 
   try {
+    const adminHit = await resolveCatalogMatchViaAdminApi({
+      offerId1688: offerId,
+      tangbuySkuId: sku,
+    });
+    if (adminHit) return adminHit;
+
   if (input.shopName?.trim()) {
     const fromRecs = await loadRecommendationsOfferMap(input.shopName);
     const goodsId = fromRecs.get(offerId);
@@ -445,5 +637,58 @@ export function resolveConfirmDetailUrl(
     identity?.offerDetailUrl?.trim() ||
     candidate.detailUrl?.trim() ||
     (offer && isOfferId1688(offer) ? buildOfferDetailUrl(offer) : null)
+  );
+}
+
+/** User-facing source detail link — Tangbuy catalog when ingested, otherwise 1688 offer URL. */
+export function resolveSourceDetailHref(input: {
+  binding?: ImageBindingView | null;
+  candidate?: Pick<
+    ImageSearchProduct,
+    | "detailUrl"
+    | "internalGoodsId"
+    | "tangbuyCatalogUrl"
+    | "catalogSource"
+    | "productId"
+    | "offerId1688"
+  > | null;
+  identity?: ProductSourceIdentity | null;
+}): string | null {
+  const identity = input.identity ?? input.binding?.sourceIdentity ?? null;
+
+  if (input.candidate) {
+    return (
+      resolveConfirmDetailUrl(input.candidate as ImageSearchProduct, identity) ??
+      input.candidate.detailUrl?.trim() ??
+      null
+    );
+  }
+
+  const internal =
+    identity?.internalGoodsId?.trim() ||
+    (input.binding?.tangbuyProductId?.trim() &&
+    isInternalGoodsId(input.binding.tangbuyProductId)
+      ? input.binding.tangbuyProductId.trim()
+      : null);
+
+  if (internal) {
+    return (
+      identity?.tangbuyCatalogUrl?.trim() ||
+      buildTangbuyProductUrl(internal, identity?.dataSource ?? "PREFERRED")
+    );
+  }
+
+  if (
+    identity?.tangbuyCatalogUrl?.trim() &&
+    (identity.poolIngestStatus === "resolved" ||
+      identity.resolvedVia === "pool_ingest_resolved")
+  ) {
+    return identity.tangbuyCatalogUrl.trim();
+  }
+
+  return (
+    input.binding?.detailUrl?.trim() ||
+    identity?.offerDetailUrl?.trim() ||
+    null
   );
 }

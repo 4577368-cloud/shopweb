@@ -1,5 +1,9 @@
 /** Shared types for Tangbuy catalog smart-sourcing (path B) filters & saved searches. */
 
+import type { SourcingSourceFilter } from "@/lib/sourcing/types";
+
+export type { SourcingSourceFilter };
+
 export type CatalogSort =
   | "recommended"
   | "price_asc"
@@ -24,6 +28,8 @@ export interface CatalogFilterState {
   /** Reserved for Tangbuy labelIdList when backend is wired. */
   labelIds: string[];
   sort: CatalogSort;
+  /** Dual-source discover filter — Tangbuy mall vs 1688 offers. */
+  sourceFilter: SourcingSourceFilter;
 }
 
 export interface SavedCatalogSearch {
@@ -40,6 +46,7 @@ export const DEFAULT_CATALOG_FILTERS: CatalogFilterState = {
   categoryIds: [],
   labelIds: [],
   sort: "recommended",
+  sourceFilter: "all",
 };
 
 export const CURRENCY_OPTIONS = ["CNY", "USD", "EUR", "GBP"] as const;

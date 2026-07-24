@@ -16,6 +16,14 @@ import {
   listingStatusLabel,
   normalizeShopStatus,
 } from "@/lib/shop-product-status";
+import {
+  sourcingDisplayPrice,
+  sourcingProcurementDisplay,
+} from "@/lib/sourcing/display-pricing";
+import {
+  getSourcingSession,
+  resolveHitByListIndex,
+} from "@/lib/sourcing/session";
 
 function filterLabel(t: TranslateFn, filter: ProductCommandShopFilter): string {
   const keys: Record<ProductCommandShopFilter, string> = {
@@ -751,6 +759,124 @@ export function planProductCommand(
         "ARCHIVED",
         t("agentProducts.opBatchArchive")
       );
+    case "search_sourcing": {
+      const kw = draft.params.sourcingKeywords?.trim();
+      if (!kw) {
+        return {
+          draft,
+          operation: t("agentProducts.opSearchSourcing"),
+          targetLabel: "",
+          detailLines: [],
+          executable: false,
+          clarify: t("agentProducts.clarifySourcingKeywords"),
+        };
+      }
+      const source = draft.params.sourcingSourceFilter ?? "all";
+      return {
+        draft,
+        operation: t("agentProducts.opSearchSourcing"),
+        targetLabel: kw,
+        detailLines: [
+          t("agentProducts.detailSourcingKeywords", { keywords: kw }),
+          source !== "all"
+            ? t("agentProducts.detailSourcingSource", { source })
+            : t("agentProducts.detailSourcingSourceAll"),
+        ],
+        executable: true,
+      };
+    }
+    case "set_sourcing_filters": {
+      const lines: string[] = [];
+      if (draft.params.sourcingSourceFilter) {
+        lines.push(
+          t("agentProducts.detailSourcingSource", {
+            source: draft.params.sourcingSourceFilter,
+          })
+        );
+      }
+      if (draft.params.sourcingPriceMaxUsd != null) {
+        lines.push(
+          t("agentProducts.detailSourcingBudget", {
+            max: draft.params.sourcingPriceMaxUsd,
+          })
+        );
+      }
+      return {
+        draft,
+        operation: t("agentProducts.opSetSourcingFilters"),
+        targetLabel: t("agentProducts.targetDiscoverTab"),
+        detailLines: lines.length
+          ? lines
+          : [t("agentProducts.detailSourcingFiltersDefault")],
+        executable: true,
+      };
+    }
+    case "publish_sourcing_item": {
+      const session = getSourcingSession(ctx.shopName);
+      const index = draft.params.sourcingListIndex;
+      const hit =
+        (index != null ? resolveHitByListIndex(ctx.shopName, index) : null) ??
+        (index == null && session?.hits.length === 1
+          ? session.hits[0]
+          : null);
+      if (!hit) {
+        return {
+          draft,
+          operation: t("agentProducts.opPublishSourcing"),
+          targetLabel: "",
+          detailLines: [],
+          executable: false,
+          clarify: t("agentProducts.clarifySourcingPublishTarget"),
+        };
+      }
+      const rate = ctx.pricing.exchangeRate ?? 7;
+      const currency = (ctx.pricing.targetCurrency ?? "USD").toUpperCase();
+      const procurement = sourcingProcurementDisplay(hit.costCny, {
+        exchangeRate: rate,
+        targetCurrency: currency,
+      } as import("@/lib/types").PricingTemplate);
+      const display = sourcingDisplayPrice(hit.costCny, {
+        exchangeRate: rate,
+        targetCurrency: currency,
+      } as import("@/lib/types").PricingTemplate, hit.displayMultiplier);
+      return {
+        draft: {
+          ...draft,
+          params: {
+            ...draft.params,
+            sourcingItemHint: hit.hitId,
+            sourcingShopName: ctx.shopName,
+            sourcingListIndex: index ?? hit.listIndex,
+            sourcingProcurementUsd: procurement,
+            sourcingDisplayUsd: display,
+            sourcingCurrency: currency,
+          },
+          confirmationRequired: true,
+        },
+        operation: t("agentProducts.opPublishSourcing"),
+        targetLabel: hit.title,
+        detailLines: [
+          t("agentProducts.detailSourcingSource", { source: hit.source }),
+          t("agentProducts.detailSourcingProcurement", {
+            price: procurement ?? "—",
+            currency,
+          }),
+          t("agentProducts.detailSourcingDisplayPrice", {
+            price: display ?? "—",
+            currency,
+            multiplier: hit.displayMultiplier,
+          }),
+          hit.poolIngestStatus
+            ? t("agentProducts.detailPoolStatus", {
+                status: hit.poolIngestStatus,
+              })
+            : hit.source === "1688"
+              ? t("agentProducts.detailPoolWillIngest")
+              : "",
+        ].filter(Boolean),
+        executable: true,
+      };
+    }
     default:
       return {
         draft,
@@ -918,6 +1044,74 @@ export function resolveCommandExecution(
         filterLabel: plan.targetLabel,
       };
     }
+    case "search_sourcing": {
+      const kw = draft.params.sourcingKeywords?.trim();
+      if (!kw) return null;
+      return {
+        type: "agent_action",
+        action: {
+          kind: "apply_filter_preset",
+          tab: "catalog",
+          filterPreset: {
+            keywords: kw,
+            sourceFilter: draft.params.sourcingSourceFilter ?? "all",
+            label: kw,
+          },
+        },
+      };
+    }
+    case "set_sourcing_filters": {
+      return {
+        type: "agent_action",
+        action: {
+          kind: "apply_filter_preset",
+          tab: "catalog",
+          filterPreset: {
+            keywords: draft.params.sourcingKeywords,
+            sourceFilter: draft.params.sourcingSourceFilter ?? "all",
+            priceMaxUsd: draft.params.sourcingPriceMaxUsd,
+            label: t("agentProducts.opSetSourcingFilters"),
+          },
+        },
+      };
+    }
+    case "publish_sourcing_item": {
+      const shopName = draft.params.sourcingShopName?.trim();
+      const index = draft.params.sourcingListIndex;
+      const hitId = draft.params.sourcingItemHint?.trim();
+      if (!shopName) return null;
+      const session = getSourcingSession(shopName);
+      const resolved =
+        (hitId ? session?.hits.find((h) => h.hitId === hitId) : null) ??
+        (index != null ? resolveHitByListIndex(shopName, index) : null) ??
+        (session?.hits.length === 1 ? session.hits[0] : null);
+      if (!resolved) return null;
+      const currency =
+        draft.params.sourcingCurrency?.toUpperCase() ?? "USD";
+      const procurement =
+        draft.params.sourcingProcurementUsd ??
+        sourcingProcurementDisplay(resolved.costCny, {
+          exchangeRate: 7,
+          targetCurrency: currency,
+        } as import("@/lib/types").PricingTemplate);
+      const display =
+        draft.params.sourcingDisplayUsd ??
+        sourcingDisplayPrice(
+          resolved.costCny,
+          { exchangeRate: 7, targetCurrency: currency } as import("@/lib/types").PricingTemplate,
+          resolved.displayMultiplier
+        );
+      return {
+        type: "sourcing_publish",
+        hitId: resolved.hitId,
+        productTitle: resolved.title,
+        source: resolved.source,
+        displayPrice: display,
+        procurementDisplay: procurement,
+        currency,
+        poolStatus: resolved.poolIngestStatus ?? null,
+      };
+    }
     default:
       return null;
   }
@@ -933,7 +1127,8 @@ export function commandRequiresConfirmation(plan: ProductCommandPlan): boolean {
     plan.draft.intent === "draft_product" ||
     plan.draft.intent === "archive_product" ||
     plan.draft.intent === "batch_draft_products" ||
-    plan.draft.intent === "batch_archive_products"
+    plan.draft.intent === "batch_archive_products" ||
+    plan.draft.intent === "publish_sourcing_item"
   );
 }
 
@@ -968,6 +1163,12 @@ function commandOperationLabel(
       return t("agentProducts.opBatchDraft");
     case "batch_archive_products":
       return t("agentProducts.opBatchArchive");
+    case "search_sourcing":
+      return t("agentProducts.opSearchSourcing");
+    case "set_sourcing_filters":
+      return t("agentProducts.opSetSourcingFilters");
+    case "publish_sourcing_item":
+      return t("agentProducts.opPublishSourcing");
     default:
       return t("agentProducts.opExecute");
   }

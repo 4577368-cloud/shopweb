@@ -15,10 +15,18 @@ function sleep(ms: number) {
 /** Poll a V1 alignment run until terminal status. */
 export async function pollSkuAlignRun(
   shopName: string,
-  runId: number
+  runId: number,
+  opts?: {
+    onProgress?: (status: SkuAlignRunStatus) => void;
+    shouldAbort?: () => boolean;
+  }
 ): Promise<SkuAlignRunStatus> {
   for (let i = 0; i < RUN_POLL_MAX; i++) {
+    if (opts?.shouldAbort?.()) {
+      throw new Error("对齐任务已取消");
+    }
     const status = await api.skuAlignV1RunStatus(shopName, runId);
+    opts?.onProgress?.(status);
     if (status.runStatus !== "QUEUED" && status.runStatus !== "RUNNING") {
       return status;
     }
@@ -71,14 +79,15 @@ async function legacyAutoAlignBatch(
 export async function enqueueSkuAlignRun(
   shopName: string,
   body: Omit<SkuAlignRunRequest, "shopName">,
-  shouldAbort?: () => boolean
+  shouldAbort?: () => boolean,
+  onProgress?: (status: SkuAlignRunStatus) => void
 ): Promise<SkuAlignRunStatus | null> {
   try {
     const accepted = await api.skuAlignV1EnqueueRun({ shopName, ...body });
     if (!accepted.accepted || !accepted.runId) {
       return null;
     }
-    return pollSkuAlignRun(shopName, accepted.runId);
+    return pollSkuAlignRun(shopName, accepted.runId, { onProgress, shouldAbort });
   } catch (err) {
     if (!shouldFallbackToLegacyAlign(err)) throw err;
     if (!body.scopeIds?.length) return null;

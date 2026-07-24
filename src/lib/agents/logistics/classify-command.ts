@@ -23,7 +23,10 @@ export function classifyLogisticsCommandByRules(
 ): LogisticsCommandClassifyResult {
   const lower = text.toLowerCase().trim();
 
-  if (lower.includes("确认") && lower.includes("全部") || lower.includes("accept all")) {
+  if (
+    (lower.includes("确认") && lower.includes("全部")) ||
+    lower.includes("accept all")
+  ) {
     return {
       confidence: "high",
       source: "rules",
@@ -31,7 +34,13 @@ export function classifyLogisticsCommandByRules(
     };
   }
 
-  if (lower.includes("批量接受") || lower.includes("批量确认") || lower.includes("一键确认") || lower.includes("batch accept") || lower.includes("accept all ready")) {
+  if (
+    lower.includes("批量接受") ||
+    lower.includes("批量确认") ||
+    lower.includes("一键确认") ||
+    lower.includes("batch accept") ||
+    lower.includes("accept all ready")
+  ) {
     return {
       confidence: "high",
       source: "rules",
@@ -39,7 +48,17 @@ export function classifyLogisticsCommandByRules(
     };
   }
 
-  if (lower.includes("一键预估") || lower.includes("运费预估") || lower.includes("estimate shipping") || lower.includes("get quotes")) {
+  if (
+    lower.includes("全量刷新") ||
+    (lower.includes("刷新") &&
+      (lower.includes("报价") || lower.includes("线路"))) ||
+    lower.includes("refresh quotes") ||
+    lower.includes("refresh shipping") ||
+    lower.includes("fetch quotes") ||
+    lower.includes("fetch shipping") ||
+    (lower.includes("拉取") &&
+      (lower.includes("报价") || lower.includes("线路")))
+  ) {
     return {
       confidence: "high",
       source: "rules",
@@ -47,23 +66,31 @@ export function classifyLogisticsCommandByRules(
     };
   }
 
-  if (lower.includes("刷新") && (lower.includes("报价") || lower.includes("线路")) || lower.includes("refresh quotes") || lower.includes("refresh shipping")) {
+  if (
+    lower.includes("一键预估") ||
+    lower.includes("智能预估") ||
+    lower.includes("开始预估") ||
+    lower.includes("开始智能预估") ||
+    lower.includes("运费预估") ||
+    lower.includes("estimate shipping") ||
+    lower.includes("smart estimate") ||
+    lower.includes("start estimate")
+  ) {
     return {
       confidence: "high",
       source: "rules",
-      draft: buildDraft("fetch_quotes", "all"),
+      draft: buildDraft("start_estimate", "all"),
     };
   }
 
-  if (lower.includes("拉取") && (lower.includes("报价") || lower.includes("线路")) || lower.includes("fetch quotes") || lower.includes("fetch shipping")) {
-    return {
-      confidence: "high",
-      source: "rules",
-      draft: buildDraft("fetch_quotes", "all"),
-    };
-  }
-
-  if (lower.includes("模板") && (lower.includes("配置") || lower.includes("调整")) || lower.includes("template") && (lower.includes("config") || lower.includes("adjust") || lower.includes("settings"))) {
+  if (
+    (lower.includes("模板") &&
+      (lower.includes("配置") || lower.includes("调整"))) ||
+    (lower.includes("template") &&
+      (lower.includes("config") ||
+        lower.includes("adjust") ||
+        lower.includes("settings")))
+  ) {
     return {
       confidence: "high",
       source: "rules",
@@ -71,7 +98,13 @@ export function classifyLogisticsCommandByRules(
     };
   }
 
-  if (lower.includes("查看") && (lower.includes("问题") || lower.includes("待确认")) || lower.includes("view") && (lower.includes("issues") || lower.includes("pending"))) {
+  if (
+    (lower.includes("查看") &&
+      (lower.includes("问题") || lower.includes("异常"))) ||
+    (lower.includes("view") && lower.includes("issues")) ||
+    (lower.includes("只看") && lower.includes("异常")) ||
+    (lower.includes("only") && lower.includes("issues"))
+  ) {
     return {
       confidence: "high",
       source: "rules",
@@ -79,15 +112,36 @@ export function classifyLogisticsCommandByRules(
     };
   }
 
-  if (lower.includes("只看") && lower.includes("异常") || lower.includes("only") && lower.includes("issues")) {
+  if (
+    (lower.includes("查看") && lower.includes("待确认")) ||
+    lower.includes("pending confirm") ||
+    lower.includes("pending_confirm")
+  ) {
     return {
       confidence: "high",
       source: "rules",
-      draft: buildDraft("focus_issues", "all", { filterMode: "issues" }),
+      draft: buildDraft("focus_status", "all", {
+        listFilter: "pending_confirm",
+      }),
     };
   }
 
-  if (lower.includes("应用") && lower.includes("模板") || lower.includes("apply") && lower.includes("template")) {
+  if (
+    (lower.includes("查看") && lower.includes("待报价")) ||
+    lower.includes("pending quote") ||
+    lower.includes("pending_quote")
+  ) {
+    return {
+      confidence: "high",
+      source: "rules",
+      draft: buildDraft("focus_status", "all", { listFilter: "pending_quote" }),
+    };
+  }
+
+  if (
+    (lower.includes("应用") && lower.includes("模板")) ||
+    (lower.includes("apply") && lower.includes("template"))
+  ) {
     return {
       confidence: "high",
       source: "rules",
@@ -95,16 +149,21 @@ export function classifyLogisticsCommandByRules(
     };
   }
 
-  if (lower.includes("打开") && lower.includes("模板") || lower.includes("open") && lower.includes("template")) {
+  if (
+    (lower.includes("打开") && lower.includes("模板")) ||
+    (lower.includes("open") && lower.includes("template"))
+  ) {
     return {
       confidence: "high",
       source: "rules",
-      draft: buildDraft("apply_template", "none"),
+      draft: buildDraft("open_template", "none"),
     };
   }
 
-  const statusMap: Record<string, LogisticsDecisionStatus> = {
+  const statusKeywords: Record<string, LogisticsDecisionStatus> = {
     pending_sku: "pending_sku",
+    待绑: "pending_sku",
+    未绑: "pending_sku",
     pending_postal_meta: "pending_postal_meta",
     ready_for_quote: "ready_for_quote",
     confirmed: "confirmed",
@@ -112,7 +171,7 @@ export function classifyLogisticsCommandByRules(
     needs_review: "needs_review",
   };
 
-  for (const [keyword, status] of Object.entries(statusMap)) {
+  for (const [keyword, status] of Object.entries(statusKeywords)) {
     if (lower.includes(keyword)) {
       return {
         confidence: "high",
@@ -125,7 +184,8 @@ export function classifyLogisticsCommandByRules(
   return {
     confidence: "none",
     source: "default",
-    clarify: "无法理解您的命令，请试试：运费预估、批量接受、调整模板、查看问题",
+    clarify:
+      "无法理解您的命令，请试试：开始智能预估、全量刷新报价、批量接受、调整模板、查看问题",
   };
 }
 
@@ -168,7 +228,10 @@ export function parseLogisticsCommandDraft(raw: string): LogisticsCommandDraft |
         ? (obj.params as LogisticsCommandParams)
         : {};
     const targetScope =
-      obj.targetScope === "explicit" || obj.targetScope === "current" || obj.targetScope === "none" || obj.targetScope === "all"
+      obj.targetScope === "explicit" ||
+      obj.targetScope === "current" ||
+      obj.targetScope === "none" ||
+      obj.targetScope === "all"
         ? obj.targetScope
         : "current";
     return {
@@ -214,6 +277,7 @@ export function buildLogisticsClassifyPrompt(
   const commandList = `
 ${t("agentLogistics.promptAvailableCommands")}:
 - accept_all_ready: ${t("agentLogistics.promptCmdAcceptAllReady")}
+- start_estimate: ${t("agentLogistics.promptCmdStartEstimate")}
 - fetch_quotes: ${t("agentLogistics.promptCmdFetchQuotes")}
 - open_template: ${t("agentLogistics.promptCmdOpenTemplate")}
 - focus_issues: ${t("agentLogistics.promptCmdFocusIssues")}

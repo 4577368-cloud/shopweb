@@ -13,8 +13,16 @@ export const IMAGE_MATCH_AUTO_MIN = 85;
 /** When shop/candidate image URLs are identical, floor the image score. */
 export const IMAGE_URL_MATCH_FLOOR = 80;
 
+/** Auto-bind floor when image search ranked first but scores are still pending. */
+export const IMAGE_SEARCH_RANK_AUTO_FLOOR = HIGH_MATCH_THRESHOLD;
+
 export function candidateStorageKey(c: Pick<ImageSearchProduct, "productId" | "internalGoodsId">): string {
   return c.internalGoodsId || c.productId;
+}
+
+/** True when visual similarity has not arrived yet (slow API / vision path). */
+export function isImageScorePending(imageScore: number | null | undefined): boolean {
+  return imageScore == null;
 }
 
 export function normalizeComparableImageUrl(url: string | null | undefined): string {
@@ -37,21 +45,26 @@ export function exactImageUrlMatch(
   return Boolean(a && b && a === b);
 }
 
+/** Recommend / 首推: pending scores trust image-search rank; only explicit low scores block. */
 export function passesImageRecommendGate(imageScore: number | null | undefined): boolean {
-  return imageScore != null && imageScore >= IMAGE_MATCH_RECOMMEND_MIN;
+  if (isImageScorePending(imageScore)) return true;
+  return (imageScore as number) >= IMAGE_MATCH_RECOMMEND_MIN;
 }
 
+/** Auto-bind: pending scores do not cap title — image-search ordering is the primary signal. */
 export function passesImageAutoGate(imageScore: number | null | undefined): boolean {
-  return imageScore != null && imageScore >= IMAGE_MATCH_AUTO_MIN;
+  if (isImageScorePending(imageScore)) return true;
+  return (imageScore as number) >= IMAGE_MATCH_AUTO_MIN;
 }
 
-/** Cap title score for auto-bind when image gate fails. */
+/** Cap title score for auto-bind only when a verified image score fails the gate. */
 export function effectiveAutoBindTitleScore(
   titleScore: number | null | undefined,
   imageScore: number | null | undefined
 ): number | null {
   if (titleScore == null || Number.isNaN(titleScore)) return null;
   const title = Math.max(1, Math.min(100, Math.round(titleScore)));
+  if (isImageScorePending(imageScore)) return title;
   if (!passesImageAutoGate(imageScore)) {
     return Math.min(title, HIGH_MATCH_THRESHOLD - 1);
   }
@@ -70,9 +83,27 @@ export function applyImageUrlMatchFloor(
     prev == null ? IMAGE_URL_MATCH_FLOOR : Math.max(prev, IMAGE_URL_MATCH_FLOOR);
 }
 
+function parseRepurchase(raw?: string | null): number {
+  if (!raw) return 0;
+  const n = Number.parseFloat(String(raw).replace("%", "").trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
 /**
- * Rank: image-gate pass first, then image score, then title score.
- * Blocked candidates sink to the tail.
+ * Sort priority for ranking:
+ * 2 = verified pass or pending (trust search rank)
+ * 1 = verified fail — sink to tail
+ */
+function imageGateSortTier(imageScore: number | null | undefined): number {
+  if (isImageScorePending(imageScore)) return 2;
+  return passesImageRecommendGate(imageScore) ? 2 : 1;
+}
+
+/**
+ * Rank candidates for auto-bind:
+ * - Pending image scores keep image-search order (not sunk as "unverified")
+ * - Verified low scores sink
+ * - Tie-break: image score → title → monthly sold → repurchase → search index
  */
 export function rankCandidatesWithImageGate(
   items: ImageSearchProduct[],
@@ -88,9 +119,9 @@ export function rankCandidatesWithImageGate(
       const keyB = candidateStorageKey(b.item);
       const imageA = imageScores[keyA];
       const imageB = imageScores[keyB];
-      const gateA = passesImageRecommendGate(imageA) ? 1 : 0;
-      const gateB = passesImageRecommendGate(imageB) ? 1 : 0;
-      if (gateA !== gateB) return gateB - gateA;
+      const tierA = imageGateSortTier(imageA);
+      const tierB = imageGateSortTier(imageB);
+      if (tierA !== tierB) return tierB - tierA;
 
       const imgA = imageA ?? -1;
       const imgB = imageB ?? -1;
@@ -99,6 +130,14 @@ export function rankCandidatesWithImageGate(
       const titleA = titleScores[keyA] ?? 0;
       const titleB = titleScores[keyB] ?? 0;
       if (titleA !== titleB) return titleB - titleA;
+
+      const soldA = a.item.soldCount ?? 0;
+      const soldB = b.item.soldCount ?? 0;
+      if (soldA !== soldB) return soldB - soldA;
+
+      const repA = parseRepurchase(a.item.repurchaseRate);
+      const repB = parseRepurchase(b.item.repurchaseRate);
+      if (repA !== repB) return repB - repA;
 
       return a.index - b.index;
     })
@@ -116,7 +155,11 @@ export function resolveTopAutoBindScore(
   const title =
     titleScores[key] ?? normalizeMatchScore(top.similarityScore) ?? null;
   const image = imageScores[key] ?? null;
-  return effectiveAutoBindTitleScore(title, image);
+  const effective = effectiveAutoBindTitleScore(title, image);
+  if (isImageScorePending(image)) {
+    return Math.max(effective ?? 0, IMAGE_SEARCH_RANK_AUTO_FLOOR);
+  }
+  return effective;
 }
 
 type MatchLabelTranslate = (
@@ -140,11 +183,12 @@ export function formatImageMatchLabel(
   return t("batchLink.imageScore", { score: Math.round(score) });
 }
 
+/** Only block UI when a verified score exists and is below threshold. */
 export function imageGateBlockedHint(
   t: MatchLabelTranslate,
   imageScore: number | null | undefined
 ): string | null {
   if (passesImageRecommendGate(imageScore)) return null;
-  if (imageScore == null) return t("batchLink.imageUnverified");
-  return t("batchLink.imageBelowGate", { score: Math.round(imageScore) });
+  if (isImageScorePending(imageScore)) return null;
+  return t("batchLink.imageBelowGate", { score: Math.round(imageScore!) });
 }

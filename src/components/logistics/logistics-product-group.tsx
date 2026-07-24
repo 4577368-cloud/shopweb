@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   Loader2,
+  Package,
   RefreshCw,
 } from "@/lib/ui/icons";
 import type { LogisticsEstimateResult } from "@/lib/api";
@@ -19,8 +20,8 @@ import {
   computeOvertimeCompensationDays,
   isVariantException,
   logisticsLineKey,
-  productQuoteActionLabel,
   collectProductQuotableVariantIds,
+  resolveProductQuotePrimaryAction,
   resolveSelectedLogisticsLine,
   shouldShowManualAcceptAction,
   variantCardTone,
@@ -42,6 +43,8 @@ import { CatalogIngestingBadge } from "@/components/ui/catalog-ingesting-badge";
 import { Select } from "@/components/ui/select";
 import { useT } from "@/i18n/LocaleProvider";
 import { useCatalogIngestStatus } from "@/hooks/use-catalog-ingest-status";
+import { useProductSourceIdentityVersion } from "@/hooks/use-product-source-identity-version";
+import { readProductSourceIdentity } from "@/lib/product-source-identity";
 import { isProductQuoteIngesting } from "@/lib/tangbuy/catalog-ingest-display";
 import { cn } from "@/lib/utils";
 import type {
@@ -104,6 +107,8 @@ function FulfillmentSkuRow({
   busy,
   accepting,
   quotingThis,
+  quotingThisVariant,
+  quoteReveal,
   pipelineActive,
   pipelineProcessing,
   measureOverride,
@@ -126,6 +131,8 @@ function FulfillmentSkuRow({
   busy: boolean;
   accepting?: boolean;
   quotingThis?: boolean;
+  quotingThisVariant?: boolean;
+  quoteReveal?: boolean;
   pipelineActive?: boolean;
   pipelineProcessing?: boolean;
   measureOverride?: MeasureOverride;
@@ -201,7 +208,7 @@ function FulfillmentSkuRow({
         size="sm"
         className="h-7 min-w-[4rem]"
         onClick={onAcceptAi}
-        disabled={busy || accepting || quotingThis}
+        disabled={busy || accepting || quotingThis || quotingThisVariant}
       >
         {accepting ? (
           <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -227,7 +234,8 @@ function FulfillmentSkuRow({
         "border-t border-hairline/80 px-4 py-3 first:border-t-0",
         rowStatus === "failed" && "bg-red-50/30",
         rowStatus === "ingesting" && "bg-sky-50/25",
-        rowStatus === "pending_review" && "bg-amber-50/20"
+        rowStatus === "pending_review" && "bg-amber-50/20",
+        quoteReveal && "sku-map-match-shimmer border-emerald-300/80"
       )}
     >
       <div
@@ -391,10 +399,16 @@ export function LogisticsProductGroup({
   onSaveMeasures,
   onAcceptAi,
   onFetchProductQuotes,
+  onIngestProductSource,
+  onCatalogIngestComplete,
+  onFetchVariantQuote,
   onCorrect,
   onMeasureOverride,
   renderMeasureEditPanel,
   quotingProduct = false,
+  ingestingProduct = false,
+  quotingVariantId = null,
+  quoteRevealVariantIds,
   selectedLineByVariant,
   onSelectLine,
   shopName = "",
@@ -416,9 +430,18 @@ export function LogisticsProductGroup({
   onSaveMeasures: (variantId: string, next: MeasureOverride) => void;
   onAcceptAi: (variant: VariantLogisticsDecision) => void;
   onFetchProductQuotes: () => void;
+  onIngestProductSource?: () => void;
+  onCatalogIngestComplete?: (profile: ProductLogisticsProfile) => void;
+  onFetchVariantQuote?: (
+    variant: VariantLogisticsDecision,
+    override?: MeasureOverride
+  ) => void;
   onCorrect: (type: LogisticsTypeCode) => void;
   onMeasureOverride?: (variantId: string, next: MeasureOverride) => void;
   quotingProduct?: boolean;
+  ingestingProduct?: boolean;
+  quotingVariantId?: string | null;
+  quoteRevealVariantIds?: Set<string>;
   shopName?: string;
   selectedLineByVariant?: Map<string, string>;
   onSelectLine?: (variantId: string, lineKey: string) => void;
@@ -431,6 +454,17 @@ export function LogisticsProductGroup({
 }) {
   const t = useT();
   const variants = profile.variantDecisions ?? [];
+  const identityVersion = useProductSourceIdentityVersion(
+    shopName,
+    profile.thirdPlatformItemId
+  );
+  const storedInternalGoodsId = useMemo(() => {
+    if (!shopName.trim() || !profile.thirdPlatformItemId.trim()) return null;
+    return (
+      readProductSourceIdentity(shopName, profile.thirdPlatformItemId)
+        ?.internalGoodsId?.trim() || null
+    );
+  }, [shopName, profile.thirdPlatformItemId, identityVersion]);
   const identityIngesting = useCatalogIngestStatus(
     shopName,
     profile.thirdPlatformItemId,
@@ -438,18 +472,31 @@ export function LogisticsProductGroup({
     {
       poll: true,
       titleHint: profile.title,
+      onIngestComplete: onCatalogIngestComplete
+        ? () => onCatalogIngestComplete(profile)
+        : undefined,
     }
   );
   const quoteIngesting = useMemo(
     () => isProductQuoteIngesting(variants, quoteResults),
     [variants, quoteResults]
   );
-  const catalogIngesting = identityIngesting || quoteIngesting;
+  const catalogIngesting = useMemo(() => {
+    if (storedInternalGoodsId) return false;
+    return identityIngesting || quoteIngesting;
+  }, [storedInternalGoodsId, identityIngesting, quoteIngesting]);
   const busy = correctingId === profile.thirdPlatformItemId;
-  const productQuoteLabel = useMemo(
-    () => productQuoteActionLabel(t, variants, quoteResults, pipelineActive),
-    [t, variants, quoteResults, pipelineActive]
+  const productQuoteAction = useMemo(
+    () =>
+      resolveProductQuotePrimaryAction(t, variants, quoteResults, {
+        pipelineActive,
+        shopName,
+        thirdPlatformItemId: profile.thirdPlatformItemId,
+      }),
+    [t, variants, quoteResults, pipelineActive, shopName, profile.thirdPlatformItemId, identityIngesting, catalogIngesting, identityVersion, storedInternalGoodsId]
   );
+  const productQuoteLabel =
+    productQuoteAction?.kind === "wait" ? null : productQuoteAction?.label ?? null;
   const quotableSkuCount = useMemo(
     () =>
       collectProductQuotableVariantIds(variants, quoteResults, pipelineActive)
@@ -525,7 +572,7 @@ export function LogisticsProductGroup({
                 {productShellStatusLabel(t, meta.status)}
               </span>
               {catalogIngesting ? <CatalogIngestingBadge /> : null}
-              {pipelineHighlighted || quotingProduct ? (
+              {pipelineHighlighted || quotingProduct || ingestingProduct ? (
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#325BE6]" />
               ) : null}
               <span className="text-[11px] text-ink-subtle">
@@ -556,17 +603,31 @@ export function LogisticsProductGroup({
             className="h-7 shrink-0"
             onClick={(e) => {
               e.stopPropagation();
-              onFetchProductQuotes();
+              if (productQuoteAction?.kind === "ingest") {
+                onIngestProductSource?.();
+              } else {
+                onFetchProductQuotes();
+              }
             }}
-            disabled={busy || quotingProduct || pipelineHighlighted}
+            disabled={
+              busy ||
+              quotingProduct ||
+              ingestingProduct ||
+              pipelineHighlighted ||
+              (productQuoteAction?.kind === "ingest" && !onIngestProductSource)
+            }
             title={
-              meta.status === "failed"
-                ? t("logisticsProduct.retryQuoteTitle", { count: quotableSkuCount })
-                : t("logisticsProduct.estimateQuoteTitle", { count: quotableSkuCount })
+              productQuoteAction?.kind === "ingest"
+                ? t("logisticsProduct.ingestSourceTitle")
+                : meta.status === "failed"
+                  ? t("logisticsProduct.retryQuoteTitle", { count: quotableSkuCount })
+                  : t("logisticsProduct.estimateQuoteTitle", { count: quotableSkuCount })
             }
           >
-            {quotingProduct ? (
+            {quotingProduct || ingestingProduct ? (
               <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : productQuoteAction?.kind === "ingest" ? (
+              <Package className="mr-1 h-3.5 w-3.5" />
             ) : (
               <RefreshCw className="mr-1 h-3.5 w-3.5" />
             )}
@@ -621,8 +682,14 @@ export function LogisticsProductGroup({
                 busy={busy}
                 accepting={accepting}
                 quotingThis={quotingProduct}
+                quotingThisVariant={quotingVariantId === variantId}
+                quoteReveal={quoteRevealVariantIds?.has(variantId)}
                 pipelineActive={pipelineActive}
-                pipelineProcessing={pipelineHighlighted || quotingProduct}
+                pipelineProcessing={
+                  pipelineHighlighted ||
+                  quotingProduct ||
+                  quotingVariantId === variantId
+                }
                 measureOverride={measureOverrides.get(variantId)}
                 onToggleEdit={() => onToggleEdit(variantId)}
                 onSaveMeasures={(next) => onSaveMeasures(variantId, next)}
@@ -643,7 +710,7 @@ export function LogisticsProductGroup({
                     onMeasureOverride?.(variantId, next);
                     onSaveMeasures(variantId, next);
                     onToggleEdit(variantId);
-                    onFetchProductQuotes();
+                    onFetchVariantQuote?.(variant, next);
                   },
                   () => onToggleEdit(variantId)
                 )}

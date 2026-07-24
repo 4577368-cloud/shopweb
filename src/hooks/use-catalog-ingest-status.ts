@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   isCatalogIngesting,
   resolveMergedSourceIdentity,
@@ -13,9 +13,15 @@ export function useCatalogIngestStatus(
   shopName: string,
   thirdPlatformItemId: string | undefined,
   binding?: ImageBindingView | null,
-  options?: { poll?: boolean; titleHint?: string | null; tangbuySkuId?: string | null }
+  options?: {
+    poll?: boolean;
+    titleHint?: string | null;
+    tangbuySkuId?: string | null;
+    onIngestComplete?: () => void;
+  }
 ): boolean {
   const [ingesting, setIngesting] = useState(false);
+  const wasIngestingRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!shopName.trim() || !thirdPlatformItemId?.trim()) {
@@ -41,7 +47,13 @@ export function useCatalogIngestStatus(
       }
     }
 
-    setIngesting(isCatalogIngesting(identity));
+    const ingestingNow = isCatalogIngesting(identity);
+    const readyNow = Boolean(identity?.internalGoodsId?.trim());
+    if (wasIngestingRef.current && readyNow && options?.onIngestComplete) {
+      options.onIngestComplete();
+    }
+    wasIngestingRef.current = ingestingNow;
+    setIngesting(ingestingNow);
   }, [
     shopName,
     thirdPlatformItemId,
@@ -49,6 +61,7 @@ export function useCatalogIngestStatus(
     options?.poll,
     options?.titleHint,
     options?.tangbuySkuId,
+    options?.onIngestComplete,
   ]);
 
   useEffect(() => {

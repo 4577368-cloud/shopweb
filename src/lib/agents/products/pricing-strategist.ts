@@ -1,4 +1,5 @@
 import type { AgentResponse } from "@/lib/agents/types";
+import type { TranslateFn } from "@/i18n/server";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
 
@@ -8,7 +9,8 @@ import type { ProductsPageContext } from "@/lib/agents/products/page-context";
  */
 export function handlePricingStrategist(
   intent: ProductsIntentId,
-  ctx: ProductsPageContext
+  ctx: ProductsPageContext,
+  t: TranslateFn
 ): AgentResponse {
   const { pricing } = ctx;
 
@@ -17,15 +19,15 @@ export function handlePricingStrategist(
       return {
         agentId: "pricing_strategist",
         intent,
-        summary: "定价已配置，可按需微调",
-        explanation: [
-          pricing.summaryLine,
-          "建议售价会按当前模板计算；改参数后会即时反映在发现新品与上架预览中。",
+        summary: t("productsPricing.configuredSummary"),
+        explanation: [pricing.summaryLine, t("productsPricing.configuredExpl")],
+        nextSteps: [
+          t("productsPricing.stepOpenPricingSidebar"),
+          t("productsPricing.stepSaveThenContinue"),
         ],
-        nextSteps: ["打开定价侧栏调整汇率、倍率或加价", "保存后继续选品或上架"],
         suggestedAction: {
           kind: "open_pricing_drawer",
-          label: "调整定价",
+          label: t("productsPricing.btnAdjustPricing"),
         },
         openDrawer: "pricing",
         highlightArea: "pricing_card",
@@ -35,15 +37,18 @@ export function handlePricingStrategist(
     return {
       agentId: "pricing_strategist",
       intent,
-      summary: "建议先配置定价策略",
+      summary: t("productsPricing.notConfiguredSummary"),
       explanation: [
-        "当前仍是系统默认模板，建议售价可能不符合你的利润预期。",
-        "配置目标币种、汇率与倍率后，发现新品与上架预览才会按你的规则出价。",
+        t("productsPricing.defaultTemplateExpl1"),
+        t("productsPricing.defaultTemplateExpl2"),
       ],
-      nextSteps: ["打开右侧定价侧栏", "填写汇率与倍率后保存"],
+      nextSteps: [
+        t("productsPricing.stepOpenRightSidebar"),
+        t("productsPricing.stepFillRateSave"),
+      ],
       suggestedAction: {
         kind: "open_pricing_drawer",
-        label: "立即配置",
+        label: t("productsPricing.btnConfigureNow"),
       },
       openDrawer: "pricing",
       highlightArea: "pricing_card",
@@ -56,12 +61,12 @@ export function handlePricingStrategist(
     return {
       agentId: "pricing_strategist",
       intent: "explain_pricing",
-      summary: "授权后再配置店铺定价",
+      summary: t("productsPricing.unauthorizedSummary"),
       explanation: [
-        "定价模板按店铺生效：目标币种、汇率、倍率决定建议售价。",
-        "请先完成店铺授权，再回到本页配置。",
+        t("productsPricing.unauthorizedExpl1"),
+        t("productsPricing.unauthorizedExpl2"),
       ],
-      nextSteps: ["前往授权店铺"],
+      nextSteps: [t("productsPricing.stepGoAuthorize")],
       suggestedAction: { kind: "none" },
       openDrawer: null,
       highlightArea: null,
@@ -73,21 +78,21 @@ export function handlePricingStrategist(
     return {
       agentId: "pricing_strategist",
       intent: "explain_pricing",
-      summary: "定价已就绪",
+      summary: t("productsPricing.readySummary"),
       explanation: [
         pricing.summaryLine,
-        "上架定价路径：采购价（RMB）→ 乘汇率 → 乘倍率 → 加固定加价 → 取整（仅用于发现新品建议售价）。",
-        "已配置时，我的 Shopify 采购成本展示与上架定价共用同一汇率（不含倍率加价）。",
-        "右侧策略卡可随时调整；主区继续负责选品与上架执行。",
+        t("productsPricing.readyExplPath"),
+        t("productsPricing.readyExplShared"),
+        t("productsPricing.readyExplSidebar"),
       ],
       nextSteps: [
         ctx.pendingCount > 0
-          ? "优先处理待确认关联"
-          : "可在「发现新品」按建议售价筛选上架",
+          ? t("productsPricing.nextPendingOrFilter")
+          : t("productsPricing.nextFilterDiscover"),
       ],
       suggestedAction: {
         kind: "open_pricing_drawer",
-        label: "查看/调整定价",
+        label: t("productsPricing.btnViewPricing"),
       },
       openDrawer: "pricing",
       highlightArea: "pricing_card",
@@ -98,17 +103,20 @@ export function handlePricingStrategist(
   return {
     agentId: "pricing_strategist",
     intent: "explain_pricing",
-    summary: "为什么要先配定价",
+    summary: t("productsPricing.whySummary"),
     explanation: [
-      "未配置有效定价时，系统只能用默认汇率与倍率估算发现新品售价，容易偏离你的目标毛利。",
+      t("productsPricing.whyExpl"),
       pricing.summaryLine,
       ctx.purchaseDisplay.summaryLine,
-      "先配好上架定价模板，再去做发现新品筛选；已关联商品的采购价展示不受此模板倍率影响。",
+      t("productsPricing.whyExplTemplate"),
     ],
-    nextSteps: ["点击下方「去配置定价」或策略卡「立即配置」", "保存模板后再继续选品"],
+    nextSteps: [
+      t("productsPricing.stepClickConfigure"),
+      t("productsPricing.stepSaveTemplate"),
+    ],
     suggestedAction: {
       kind: "open_pricing_drawer",
-      label: "去配置定价",
+      label: t("productsPricing.btnGoConfigure"),
     },
     openDrawer: "pricing",
     highlightArea: "pricing_card",

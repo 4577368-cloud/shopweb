@@ -59,10 +59,12 @@ export function computeActiveTask(
       reason: t("productsActiveTask.confirmPendingReason"),
       intent: "go_pending",
       action: {
-        kind: "set_shop_filter",
+        kind: "batch_ack_pending",
         tab: "shop",
         shopFilter: "pending",
-        label: t("productsActiveTask.confirmPendingAction"),
+        label: t("productsActiveTask.confirmPendingAction", {
+          count: ctx.pendingCount,
+        }),
       },
     };
   }

@@ -1,5 +1,17 @@
-import type { ShopMirrorProduct } from "@/lib/types";
 import type { RecommendedCategory } from "@/lib/catalog-sourcing-types";
+import type { TranslateFn } from "@/i18n/server";
+import type { ShopMirrorProduct } from "@/lib/types";
+
+export function localizeRecommendedCategoryName(
+  t: TranslateFn,
+  id: string,
+  fallback?: string
+): string {
+  const key = `recommendedCategories.${id.replace(/-/g, "_")}`;
+  const label = t(key);
+  if (label !== key) return label;
+  return fallback?.trim() || id;
+}
 
 /**
  * Heuristic category buckets derived from shop product titles.

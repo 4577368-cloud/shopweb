@@ -2,6 +2,7 @@
 
 import type { SavedCatalogSearch } from "@/lib/catalog-sourcing-types";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 
 export interface SavedSearchChipsProps {
   searches: SavedCatalogSearch[];
@@ -18,11 +19,12 @@ export function SavedSearchChips({
   onRemove,
   className,
 }: SavedSearchChipsProps) {
+  const t = useT();
   if (!searches.length) return null;
 
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      <span className="text-[11px] text-ink-subtle">已保存</span>
+      <span className="text-[11px] text-ink-subtle">{t("sourcing.savedLabel")}</span>
       {searches.map((s) => {
         const active = s.id === activeId;
         return (
@@ -46,7 +48,7 @@ export function SavedSearchChips({
               type="button"
               onClick={() => onRemove(s.id)}
               className="ml-0.5 text-ink-subtle hover:text-red-600"
-              aria-label={`删除搜索 ${s.name}`}
+              aria-label={t("sourcing.removeSearchAria", { name: s.name })}
             >
               ×
             </button>

@@ -12,6 +12,11 @@ import type {
   VariantLogisticsDecision,
 } from "@/lib/types";
 import type { LogisticsEstimateResult } from "@/lib/api";
+import {
+  isGoodsSourceQuoteFailure,
+  userFacingQuoteErrorMessage,
+} from "@/lib/logistics/estimate-goods-block";
+import { productSourceIngestPhase } from "@/lib/tangbuy/catalog-ingest-display";
 import { codesFromSelections, singleCountryCodeFromMarkets } from "@/components/logistics/market-multi-select";
 import type { Locale } from "@/i18n/config";
 import { localizedCountryLabel } from "@/lib/logistics/markets";
@@ -32,11 +37,13 @@ export function normalizeLogisticsFilterMode(
   mode: string | null | undefined
 ): LogisticsFilterMode {
   switch (mode) {
-    case "pending":
     case "pending_quote":
-    case "ready":
+      return "pending_quote";
     case "pending_confirm":
-      return "pending";
+      return "pending_confirm";
+    case "pending":
+    case "ready":
+      return "pending_quote";
     case "needs_attention":
     case "issues":
     case "sku_unlinked":
@@ -44,6 +51,27 @@ export function normalizeLogisticsFilterMode(
     case "exceptions":
       return "needs_attention";
     case "quoted":
+      return "all";
+    case "all":
+      return "all";
+    default:
+      return "all";
+  }
+}
+
+/** Map variant decision status to the closest list filter tab. */
+export function decisionStatusToFilterMode(
+  status: LogisticsDecisionStatus
+): LogisticsFilterMode {
+  switch (status) {
+    case "pending_sku":
+    case "pending_postal_meta":
+    case "needs_review":
+    case "restricted":
+      return "needs_attention";
+    case "ready_for_quote":
+      return "pending_quote";
+    case "confirmed":
       return "all";
     default:
       return "all";
@@ -249,7 +277,8 @@ export function availableLogisticsFilterModes(
   metrics: LogisticsPlanMetrics
 ): LogisticsFilterMode[] {
   const modes: LogisticsFilterMode[] = ["all"];
-  if (pendingWorkCount(metrics) > 0) modes.push("pending");
+  if (metrics.pendingQuoteCount > 0) modes.push("pending_quote");
+  if (metrics.pendingConfirmCount > 0) modes.push("pending_confirm");
   if (needsAttentionCount(metrics) > 0) modes.push("needs_attention");
   return modes;
 }
@@ -262,9 +291,19 @@ export function buildLogisticsFilterTabs(
   const tabs: { id: LogisticsFilterMode; label: string; count?: number }[] = [
     { id: "all", label: t("logisticsUi.filterAll"), count: metrics.variantCount },
   ];
-  const pending = pendingWorkCount(metrics);
-  if (pending > 0) {
-    tabs.push({ id: "pending", label: t("logisticsUi.filterPending"), count: pending });
+  if (metrics.pendingQuoteCount > 0) {
+    tabs.push({
+      id: "pending_quote",
+      label: t("logisticsUi.filterPendingQuote"),
+      count: metrics.pendingQuoteCount,
+    });
+  }
+  if (metrics.pendingConfirmCount > 0) {
+    tabs.push({
+      id: "pending_confirm",
+      label: t("logisticsUi.filterPendingConfirm"),
+      count: metrics.pendingConfirmCount,
+    });
   }
   const attention = needsAttentionCount(metrics);
   if (attention > 0) {
@@ -285,12 +324,19 @@ export function coerceLogisticsFilterMode(
   const resolved = normalizeLogisticsFilterMode(mode);
   const available = new Set(availableLogisticsFilterModes(metrics));
   if (available.has(resolved)) return resolved;
+  if (resolved === "pending_quote" && available.has("pending_confirm")) {
+    return "pending_confirm";
+  }
+  if (resolved === "pending_confirm" && available.has("pending_quote")) {
+    return "pending_quote";
+  }
   return "all";
 }
 
 export function logisticsFilterExpandsProducts(mode: LogisticsFilterMode): boolean {
   switch (normalizeLogisticsFilterMode(mode)) {
-    case "pending":
+    case "pending_quote":
+    case "pending_confirm":
     case "needs_attention":
       return true;
     default:
@@ -540,7 +586,11 @@ export function shouldDefaultExpand(
   mode: LogisticsFilterMode
 ): boolean {
   const resolved = normalizeLogisticsFilterMode(mode);
-  if (resolved === "pending" || resolved === "needs_attention") {
+  if (
+    resolved === "pending_quote" ||
+    resolved === "pending_confirm" ||
+    resolved === "needs_attention"
+  ) {
     return true;
   }
   if (mode === "all") return hasIssues(profile);
@@ -652,31 +702,91 @@ export function collectProductQuotableVariantIds(
   return ids;
 }
 
+export type ProductQuotePrimaryKind = "ingest" | "quote" | "wait";
+
+export interface ProductQuotePrimaryAction {
+  kind: ProductQuotePrimaryKind;
+  label: string;
+}
+
 export function productQuoteActionLabel(
   t: LogisticsTranslate,
   variants: VariantLogisticsDecision[],
   quoteResults: Map<string, LogisticsEstimateResult>,
   pipelineActive?: boolean
 ): string | null {
+  const action = resolveProductQuotePrimaryAction(
+    t,
+    variants,
+    quoteResults,
+    { pipelineActive }
+  );
+  if (!action || action.kind === "wait") return null;
+  return action.label;
+}
+
+export function resolveProductQuotePrimaryAction(
+  t: LogisticsTranslate,
+  variants: VariantLogisticsDecision[],
+  quoteResults: Map<string, LogisticsEstimateResult>,
+  opts?: {
+    pipelineActive?: boolean;
+    shopName?: string;
+    thirdPlatformItemId?: string;
+  }
+): ProductQuotePrimaryAction | null {
   const targets = collectProductQuotableVariantIds(
     variants,
     quoteResults,
-    pipelineActive
+    opts?.pipelineActive
   );
   if (targets.length === 0) return null;
 
   const decisions = variants.filter((v) =>
     targets.includes(v.thirdPlatformSkuId)
   );
+
+  const anyNonGoodsFailure = decisions.some((v) => {
+    const quoteResult = quoteResults.get(v.thirdPlatformSkuId);
+    if (!isVariantQuoteFailed(v, quoteResult)) return false;
+    return !isGoodsSourceQuoteFailure(quoteResult);
+  });
+  const anyGoodsBlock = decisions.some((v) =>
+    isGoodsSourceQuoteFailure(quoteResults.get(v.thirdPlatformSkuId))
+  );
+
+  if (anyGoodsBlock && !anyNonGoodsFailure) {
+    const phase = productSourceIngestPhase({
+      shopName: opts?.shopName,
+      thirdPlatformItemId: opts?.thirdPlatformItemId,
+      variants: decisions,
+      quoteResults,
+    });
+    if (phase === "ready") {
+      return {
+        kind: "quote",
+        label: t("logisticsDisplay.quoteAction.regenerate"),
+      };
+    }
+    if (phase === "in_progress") {
+      return { kind: "wait", label: "" };
+    }
+    return { kind: "ingest", label: t("logisticsDisplay.quoteAction.ingest") };
+  }
+
   const anyFailed = decisions.some((v) =>
     isVariantQuoteFailed(v, quoteResults.get(v.thirdPlatformSkuId))
   );
   const anyQuoted = decisions.some((v) =>
     variantHasQuoteLine(v, quoteResults.get(v.thirdPlatformSkuId))
   );
-  if (anyFailed) return t("logisticsDisplay.quoteAction.retry");
-  if (!anyQuoted) return t("logisticsDisplay.quoteAction.estimate");
-  return t("logisticsDisplay.quoteAction.reestimate");
+  if (anyFailed) {
+    return { kind: "quote", label: t("logisticsDisplay.quoteAction.retry") };
+  }
+  if (!anyQuoted) {
+    return { kind: "quote", label: t("logisticsDisplay.quoteAction.estimate") };
+  }
+  return { kind: "quote", label: t("logisticsDisplay.quoteAction.reestimate") };
 }
 
 export function isVariantQuoteFailed(
@@ -1078,10 +1188,13 @@ export function buildAcceptQuotePayload(
   if (!selected) return undefined;
   const key = logisticsLineKey(selected);
   const alternatives = lines.filter((line) => logisticsLineKey(line) !== key);
+  const rawStatus = quoteResult?.quoteStatus ?? variant.quoteStatus;
+  const quoteStatus =
+    rawStatus === "FAILED" || rawStatus === "INGESTING" ? "SUCCESS" : rawStatus;
   return {
     recommendedLine: selected,
     alternativeLines: alternatives,
-    quoteStatus: quoteResult?.quoteStatus ?? variant.quoteStatus,
+    quoteStatus,
   };
 }
 
@@ -1209,7 +1322,8 @@ export function buildQuoteColumn(
       if (quoteStatus === "FAILED") {
         return {
           primary: t("logisticsDisplay.quoteColumn.quoteFailed"),
-          secondary: quoteResult?.errorMessage?.trim() || undefined,
+          secondary:
+            userFacingQuoteErrorMessage(quoteResult?.errorMessage) || undefined,
         };
       }
       if (!recommended) {

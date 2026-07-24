@@ -1,6 +1,23 @@
 import { api } from "@/lib/api";
 import { SHOP_STORAGE_KEY } from "@/lib/shopify-install";
 
+/** Synchronous read of remembered shop (client-only). */
+export function readStoredShopDomain(): string | null {
+  if (typeof window === "undefined") return null;
+  const v = window.localStorage.getItem(SHOP_STORAGE_KEY)?.trim();
+  return v || null;
+}
+
+export function shopDisplayNameFromDomain(domain: string): string {
+  return (
+    domain
+      .split(".")[0]
+      ?.split("-")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ") || domain
+  );
+}
+
 export interface RestoredShopAuth {
   name: string;
   domain: string;

@@ -21,10 +21,25 @@ export function loadSavedSearches(shopName: string): SavedCatalogSearch[] {
     const raw = window.localStorage.getItem(storageKey(shopName));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as SavedCatalogSearch[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((s) => ({
+      ...s,
+      filters: normalizeCatalogFilters(s.filters),
+    }));
   } catch {
     return [];
   }
+}
+
+/** Backfill new filter fields for saved searches created before dual-source. */
+export function normalizeCatalogFilters(
+  filters: Partial<CatalogFilterState> | null | undefined
+): CatalogFilterState {
+  return {
+    ...DEFAULT_CATALOG_FILTERS,
+    ...filters,
+    sourceFilter: filters?.sourceFilter ?? DEFAULT_CATALOG_FILTERS.sourceFilter,
+  };
 }
 
 export function persistSavedSearches(
@@ -78,6 +93,9 @@ export function summarizeFilters(
       newest: "最新",
     };
     chips.push(labels[filters.sort] ?? filters.sort);
+  }
+  if (filters.sourceFilter && filters.sourceFilter !== "all") {
+    chips.push(filters.sourceFilter === "1688" ? "1688" : "Tangbuy");
   }
   return chips;
 }

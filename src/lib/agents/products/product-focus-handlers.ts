@@ -1,4 +1,5 @@
 import type { AgentResponse } from "@/lib/agents/types";
+import type { TranslateFn } from "@/i18n/server";
 import type { ProductsIntentId } from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
 import {
@@ -6,15 +7,13 @@ import {
   type CandidateSummary,
 } from "@/lib/agents/products/product-focus-snapshot";
 
-function noFocusResponse(intent: ProductsIntentId): AgentResponse {
+function noFocusResponse(intent: ProductsIntentId, t: TranslateFn): AgentResponse {
   return {
     agentId: "sourcing_advisor",
     intent,
-    summary: "请先选择商品",
-    explanation: [
-      "在「我的 Shopify」中点击一个商品卡片，再问我为什么推荐、哪里不确定，或要找更多候选。",
-    ],
-    nextSteps: ["在商品列表中选中要解释的商品"],
+    summary: t("productsFocus.noFocusSummary"),
+    explanation: [t("productsFocus.noFocusExpl")],
+    nextSteps: [t("productsFocus.noFocusNext")],
     suggestedAction: { kind: "none" },
     targetTab: "shop",
     highlightArea: "shop_list",
@@ -25,7 +24,8 @@ function noFocusResponse(intent: ProductsIntentId): AgentResponse {
 export function handleProductFocusIntent(
   intent: ProductsIntentId,
   ctx: ProductsPageContext,
-  candidates: CandidateSummary[] = []
+  candidates: CandidateSummary[] = [],
+  t: TranslateFn = (k: string) => k
 ): AgentResponse | null {
   const focus = ctx.focusProduct;
   const needsFocus =
@@ -34,22 +34,22 @@ export function handleProductFocusIntent(
     intent === "compare_current_candidate";
 
   if (needsFocus && !focus) {
-    return noFocusResponse(intent);
+    return noFocusResponse(intent, t);
   }
 
   if (intent === "propose_candidate_search" && ctx.focusProductId && focus) {
-    return proposeProductSearch(ctx, focus);
+    return proposeProductSearch(ctx, focus, t);
   }
 
   if (!focus) return null;
 
   switch (intent) {
     case "explain_match_reason":
-      return explainMatchReason(ctx, focus);
+      return explainMatchReason(ctx, focus, t);
     case "explain_match_risk":
-      return explainMatchRisk(ctx, focus);
+      return explainMatchRisk(ctx, focus, t);
     case "compare_current_candidate":
-      return compareCandidate(ctx, focus, candidates);
+      return compareCandidate(ctx, focus, candidates, t);
     default:
       return null;
   }
@@ -57,43 +57,47 @@ export function handleProductFocusIntent(
 
 function explainMatchReason(
   ctx: ProductsPageContext,
-  focus: NonNullable<ProductsPageContext["focusProduct"]>
+  focus: NonNullable<ProductsPageContext["focusProduct"]>,
+  t: TranslateFn
 ): AgentResponse {
   const explanation = [
-    `商品：${focus.title}`,
+    t("productsFocus.productLabel", { title: focus.title }),
     ...focus.rankingReasons,
     ctx.pricing.configured
-      ? `定价策略（${ctx.pricing.targetCurrency} · 汇率 ${ctx.pricing.exchangeRate}）与采购成本展示共用汇率；倍率加价仅用于发现新品建议售价。`
-      : "尚未配置定价策略：采购成本按店铺币种默认汇率展示；发现新品建议售价需先配定价。",
+      ? t("productsFocus.focusRateShared", {
+          currency: ctx.pricing.targetCurrency ?? "—",
+          rate: ctx.pricing.exchangeRate ?? "—",
+        })
+      : t("productsFocus.focusNoPricing"),
   ];
   if (focus.bindState === "unbound") {
-    explanation.push("当前未绑定货源，可先图搜查找候选。");
+    explanation.push(t("productsFocus.focusUnboundHint"));
   }
 
   return {
     agentId: "sourcing_advisor",
     intent: "explain_match_reason",
-    summary: "为什么推荐这个货源",
+    summary: t("productsFocus.reasonSummary"),
     explanation,
     nextSteps:
       focus.bindState === "pending"
-        ? ["确认关联", "或打开候选对比后改绑"]
+        ? [t("productsFocus.nextConfirmOrRebind"), t("productsFocus.nextOrOpenCompare")]
         : focus.bindState === "confirmed"
-          ? ["如需更换货源可重新匹配"]
-          : ["打开图搜查找候选"],
+          ? [t("productsFocus.nextRematch"), t("productsFocus.nextOpenSearch")]
+          : [t("productsFocus.nextOpenSearch")],
     suggestedAction:
       focus.bindState === "unbound"
         ? {
             kind: "open_candidate_search",
             productId: focus.productId,
             tab: "shop",
-            label: "查找候选",
+            label: t("productsFocus.nextOpenSearch"),
           }
         : {
             kind: "focus_product",
             productId: focus.productId,
             tab: "shop",
-            label: "查看商品",
+            label: t("productsFocus.focusViewProduct"),
           },
     targetTab: "shop",
     highlightArea: "shop_list",
@@ -103,44 +107,45 @@ function explainMatchReason(
 
 function explainMatchRisk(
   ctx: ProductsPageContext,
-  focus: NonNullable<ProductsPageContext["focusProduct"]>
+  focus: NonNullable<ProductsPageContext["focusProduct"]>,
+  t: TranslateFn
 ): AgentResponse {
   const explanation =
     focus.riskFlags.length > 0
       ? [...focus.riskFlags]
-      : ["暂无明显风险标记；若仍有疑虑可打开候选托盘对比或驳回重搜。"];
+      : [t("productsFocus.riskEmpty")];
 
   if (focus.profitPerOrder != null && focus.profitPerOrder < 0) {
     explanation.push(
-      `按 Shopify 售价与采购成本估算每单约 ${focus.profitLabel}，利润空间偏紧`
+      t("productsFocus.riskTightMargin", { profit: focus.profitLabel ?? "—" })
     );
   }
   if (ctx.tab === "catalog" && !ctx.pricing.configured) {
-    explanation.push("你在发现新品 Tab：上架建议售价需先配置定价策略再判断。");
+    explanation.push(t("productsFocus.riskCatalogTip"));
   }
 
   return {
     agentId: "sourcing_advisor",
     intent: "explain_match_risk",
-    summary: "匹配不确定点",
+    summary: t("productsFocus.riskSummary"),
     explanation,
     nextSteps:
       focus.bindState === "pending"
-        ? ["逐条确认或驳回", "驳回后将重新图搜匹配"]
-        : ["打开候选对比", "或重新匹配"],
+        ? [t("productsFocus.nextConfirmRejectEach"), t("productsFocus.nextRejectResearch")]
+        : [t("productsFocus.nextOpenCompare"), t("productsFocus.nextRematchAgain")],
     suggestedAction:
       focus.bindState === "pending"
         ? {
             kind: "set_shop_filter",
             shopFilter: "pending",
             tab: "shop",
-            label: "看待确认",
+            label: t("productsSourcing.btnViewPending"),
           }
         : {
             kind: "open_candidate_search",
             productId: focus.productId,
             tab: "shop",
-            label: "查看候选",
+            label: t("productsFocus.compareOpenTray"),
           },
     targetTab: "shop",
     highlightArea: "shop_list",
@@ -151,7 +156,8 @@ function explainMatchRisk(
 function compareCandidate(
   ctx: ProductsPageContext,
   focus: NonNullable<ProductsPageContext["focusProduct"]>,
-  candidates: CandidateSummary[]
+  candidates: CandidateSummary[],
+  t: TranslateFn
 ): AgentResponse {
   const lines = buildCandidateCompareLines(
     focus,
@@ -162,18 +168,18 @@ function compareCandidate(
   return {
     agentId: "sourcing_advisor",
     intent: "compare_current_candidate",
-    summary: "候选对比",
+    summary: t("productsFocus.compareSummary"),
     explanation: lines,
     nextSteps: [
       candidates.length > 0
-        ? "在候选托盘中改绑更合适的货源"
-        : "先打开图搜查看多个候选",
+        ? t("productsFocus.nextRebindTray")
+        : t("productsFocus.nextOpenSearchMulti"),
     ],
     suggestedAction: {
       kind: "open_candidate_search",
       productId: focus.productId,
       tab: "shop",
-      label: candidates.length > 0 ? "打开候选托盘" : "查找候选",
+      label: candidates.length > 0 ? t("productsFocus.compareOpenTray") : t("productsFocus.nextOpenSearch"),
     },
     targetTab: "shop",
     highlightArea: "shop_list",
@@ -183,22 +189,26 @@ function compareCandidate(
 
 function proposeProductSearch(
   ctx: ProductsPageContext,
-  focus: NonNullable<ProductsPageContext["focusProduct"]>
+  focus: NonNullable<ProductsPageContext["focusProduct"]>,
+  t: TranslateFn
 ): AgentResponse {
   return {
     agentId: "sourcing_advisor",
     intent: "propose_candidate_search",
-    summary: "为这个商品找更多候选",
+    summary: t("productsFocus.searchSummary"),
     explanation: [
-      `将对「${focus.title}」重新图搜 Tangbuy 货源（最多展示 5 个候选）。`,
-      "不会自动改绑已确认的关联；待确认项可先驳回再重搜。",
+      t("productsFocus.searchExpl", { title: focus.title }),
+      t("productsFocus.searchKeepBound"),
     ],
-    nextSteps: ["打开图搜托盘", "对比后确认或改绑"],
+    nextSteps: [
+      t("productsFocus.nextOpenSearchTray"),
+      t("productsFocus.nextCompareConfirm"),
+    ],
     suggestedAction: {
       kind: "open_candidate_search",
       productId: focus.productId,
       tab: "shop",
-      label: "查找候选",
+      label: t("productsFocus.nextOpenSearch"),
     },
     targetTab: "shop",
     highlightArea: "shop_list",
