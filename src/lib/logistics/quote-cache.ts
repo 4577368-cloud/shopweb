@@ -1,5 +1,6 @@
 import type { LogisticsEstimateResult } from "@/lib/api";
-import type { LogisticsAnalysis } from "@/lib/types";
+import { isGoodsSourceQuoteFailure } from "@/lib/logistics/estimate-goods-block";
+import type { LogisticsAnalysis, VariantLogisticsDecision } from "@/lib/types";
 
 const PREFIX = "logistics-quotes:v2:";
 
@@ -48,6 +49,64 @@ export function writeQuoteCache(
   } catch {
     // ignore quota / private mode
   }
+}
+
+function variantLooksGoodsQuoteBlocked(
+  variant: VariantLogisticsDecision,
+  quote?: LogisticsEstimateResult
+): boolean {
+  if (quote && isGoodsSourceQuoteFailure(quote)) return true;
+  if (quote) return false;
+  if (variant.quoteStatus === "INGESTING") return true;
+  if (variant.quoteStatus === "FAILED") {
+    const hasLine = Boolean(
+      variant.recommendedLine?.lineName?.trim() ||
+        variant.recommendedLine?.lineCode?.trim()
+    );
+    return !hasLine;
+  }
+  return false;
+}
+
+/** After catalog ingest, drop stale goods-block quotes and FAILED flags merged into analysis. */
+export function applyCatalogIngestQuoteReset(
+  analysis: LogisticsAnalysis | null | undefined,
+  productId: string,
+  quoteResults: Map<string, LogisticsEstimateResult>
+): {
+  analysis: LogisticsAnalysis | null | undefined;
+  quoteResults: Map<string, LogisticsEstimateResult>;
+} {
+  const pid = productId.trim();
+  const nextQuotes = new Map(quoteResults);
+  if (!analysis?.productProfiles?.length || !pid) {
+    return { analysis, quoteResults: nextQuotes };
+  }
+
+  const nextAnalysis: LogisticsAnalysis = {
+    ...analysis,
+    productProfiles: analysis.productProfiles.map((product) => {
+      if (product.thirdPlatformItemId !== pid) return product;
+      return {
+        ...product,
+        variantDecisions: (product.variantDecisions ?? []).map((variant) => {
+          const quote = nextQuotes.get(variant.thirdPlatformSkuId);
+          if (!variantLooksGoodsQuoteBlocked(variant, quote)) {
+            return variant;
+          }
+          nextQuotes.delete(variant.thirdPlatformSkuId);
+          return {
+            ...variant,
+            quoteStatus: "NOT_REQUESTED",
+            recommendedLine: undefined,
+            alternativeLines: undefined,
+          };
+        }),
+      };
+    }),
+  };
+
+  return { analysis: nextAnalysis, quoteResults: nextQuotes };
 }
 
 export function mergeQuoteResultsIntoAnalysis(

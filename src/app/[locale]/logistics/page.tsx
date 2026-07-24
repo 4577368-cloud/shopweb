@@ -60,6 +60,7 @@ import {
 import { deriveLogisticsWorkbenchState } from "@/lib/logistics/workbench-state";
 import {
   mergeQuoteResultsIntoAnalysis,
+  applyCatalogIngestQuoteReset,
   readQuoteCache,
   writeQuoteCache,
 } from "@/lib/logistics/quote-cache";
@@ -1005,16 +1006,14 @@ function LogisticsContent() {
           profile,
         });
         if (ready) {
-          setQuoteResults((prev) => {
-            const next = new Map(prev);
-            for (const variant of profile.variantDecisions ?? []) {
-              const id = variant.thirdPlatformSkuId;
-              const qr = next.get(id);
-              if (qr && isGoodsSourceQuoteFailure(qr)) {
-                next.delete(id);
-              }
+          setQuoteResults((prevQuotes) => {
+            const { analysis: nextAnalysis, quoteResults: nextQuotes } =
+              applyCatalogIngestQuoteReset(analysis, productId, prevQuotes);
+            setAnalysis(nextAnalysis ?? analysis);
+            if (shopName && templateScopeKey) {
+              writeQuoteCache(shopName, templateScopeKey, nextQuotes);
             }
-            return next;
+            return nextQuotes;
           });
           showToast(t("logistics.toastIngestSuccess"));
         } else if (ingesting) {
@@ -1034,20 +1033,19 @@ function LogisticsContent() {
     (profile: ProductLogisticsProfile) => {
       const title =
         profile.title?.trim() || profile.thirdPlatformItemId;
-      setQuoteResults((prev) => {
-        const next = new Map(prev);
-        for (const variant of profile.variantDecisions ?? []) {
-          const id = variant.thirdPlatformSkuId;
-          const qr = next.get(id);
-          if (qr && isGoodsSourceQuoteFailure(qr)) {
-            next.delete(id);
-          }
+      const productId = profile.thirdPlatformItemId;
+      setQuoteResults((prevQuotes) => {
+        const { analysis: nextAnalysis, quoteResults: nextQuotes } =
+          applyCatalogIngestQuoteReset(analysis, productId, prevQuotes);
+        setAnalysis(nextAnalysis ?? analysis);
+        if (shopName && templateScopeKey) {
+          writeQuoteCache(shopName, templateScopeKey, nextQuotes);
         }
-        return next;
+        return nextQuotes;
       });
       showToast(t("logistics.toastIngestReadyForProduct", { title }));
     },
-    [showToast, t]
+    [analysis, shopName, templateScopeKey, showToast, t]
   );
 
   const fetchQuotesForReady = useCallback(async () => {
