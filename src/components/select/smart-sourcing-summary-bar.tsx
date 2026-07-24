@@ -18,6 +18,8 @@ export interface SmartSourcingSummaryBarProps {
   onRefresh?: () => void;
   onViewDetails?: () => void;
   onViewNewArrivals?: () => void;
+  /** Manual batch link for new arrivals only (no auto-run). */
+  onBatchLinkNewArrivals?: () => void;
   batchLinkBusy?: boolean;
   className?: string;
   searchQuery?: string;
@@ -35,6 +37,7 @@ export function SmartSourcingSummaryBar({
   onRefresh,
   onViewDetails,
   onViewNewArrivals,
+  onBatchLinkNewArrivals,
   batchLinkBusy = false,
   className,
   searchQuery = "",
@@ -173,6 +176,19 @@ export function SmartSourcingSummaryBar({
             {t("sourcing.newArrivalsBanner", { count: pendingNewAnalysis })}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
+            {onBatchLinkNewArrivals ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={onBatchLinkNewArrivals}
+                disabled={batchLinkBusy}
+              >
+                {batchLinkBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                {t("productsPage.batchLinkNewArrivals", { count: pendingNewAnalysis })}
+              </Button>
+            ) : null}
             {onViewNewArrivals ? (
               <button
                 type="button"

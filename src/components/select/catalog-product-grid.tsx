@@ -27,7 +27,6 @@ export interface CatalogProductGridProps {
     string,
     {
       source: SourcingSource;
-      listIndex?: number;
       detailUrl?: string | null;
     }
   >;
@@ -85,7 +84,6 @@ export function CatalogProductGrid({
                 item={item}
                 purchasePriceUsd={purchasePriceById[item.candidateId]}
                 sourcingSource={sourcingMetaById[item.candidateId]?.source}
-                listIndex={sourcingMetaById[item.candidateId]?.listIndex}
                 sourceDetailUrl={sourcingMetaById[item.candidateId]?.detailUrl}
                 targetCurrency={targetCurrency}
                 state={publishState[item.candidateId]}

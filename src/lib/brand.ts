@@ -6,8 +6,8 @@ export const APP_FULL_NAME = "Tangbuy AI Sourcing";
 export const APP_DESCRIPTION =
   "Shopify 商家智能货源匹配工作台 — 图搜关联、SKU 对齐、物流报价与上架";
 
-/** Full horizontal brand logo (spec: max-height 48px, preserve aspect ratio). */
-export const BRAND_LOGO_FULL = "/brand/logo-svg.svg";
+/** Full horizontal brand logo (source: docs/logo-svg60.svg; spec max-height 48px in chrome). */
+export const BRAND_LOGO_FULL = "/brand/logo-svg60.svg";
 
 /** @deprecated Use {@link APP_TAGLINE} */
 export const APP_SUBTITLE = APP_TAGLINE;

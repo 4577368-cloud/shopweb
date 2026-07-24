@@ -2,6 +2,7 @@ import type { LogisticsEstimateResult } from "@/lib/api";
 import { isGoodsSourceQuoteFailure } from "@/lib/logistics/estimate-goods-block";
 import { readProductSourceIdentity } from "@/lib/product-source-identity";
 import type { LogisticsAnalysis, VariantLogisticsDecision } from "@/lib/types";
+import { aggregateDecisionCounts } from "@/lib/logistics/decision-engine";
 
 const PREFIX = "logistics-quotes:v2:";
 
@@ -135,6 +136,50 @@ export function stripStaleGoodsBlockedQuotesForIdentities(
     nextQuotes = reset.quoteResults;
   }
   return { analysis: nextAnalysis, quoteResults: nextQuotes };
+}
+
+function resetVariantQuotesForTemplateSwitch(
+  variant: VariantLogisticsDecision
+): VariantLogisticsDecision {
+  const hadQuoteOrConfirm =
+    variant.decisionConfirmed ||
+    variant.decisionStatus === "confirmed" ||
+    Boolean(variant.recommendedLine?.lineCode || variant.recommendedLine?.lineName) ||
+    variant.quoteStatus != null;
+
+  if (!hadQuoteOrConfirm) {
+    return { ...variant, decisionConfirmed: false };
+  }
+
+  return {
+    ...variant,
+    decisionConfirmed: false,
+    decisionStatus: "ready_for_quote",
+    decisionReason: undefined,
+    recommendedLine: undefined,
+    alternativeLines: undefined,
+    quoteStatus: undefined,
+  };
+}
+
+/** Drop cached lines and confirmations so a new template must re-run smart estimate. */
+export function clearLogisticsQuotesForTemplateSwitch(
+  analysis: LogisticsAnalysis
+): LogisticsAnalysis {
+  if (!analysis.productProfiles?.length) return analysis;
+  return {
+    ...analysis,
+    productProfiles: analysis.productProfiles.map((product) => {
+      const variantDecisions = (product.variantDecisions ?? []).map(
+        resetVariantQuotesForTemplateSwitch
+      );
+      return {
+        ...product,
+        variantDecisions,
+        decisionStatusCounts: aggregateDecisionCounts(variantDecisions),
+      };
+    }),
+  };
 }
 
 export function mergeQuoteResultsIntoAnalysis(

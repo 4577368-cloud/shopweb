@@ -84,7 +84,23 @@ export function LogisticsPipelineTaskCard({
 
   const buckets = progress.stats.failureBuckets;
   const bucketSummary = buckets ? bucketLabels(t, buckets) : [];
-  const activeTitles = progress.activeProductTitles ?? [];
+  const parallelCount = progress.activeProductIds?.length ?? 0;
+
+  const runningHint =
+    progress.phase === "waiting"
+      ? t("logisticsPipeline.clickEstimate")
+      : parallelCount > 1
+        ? t("logisticsPipeline.parallelActive", {
+            completed: progress.productIndex,
+            total: progress.productTotal,
+            count: parallelCount,
+          })
+        : progress.currentSkuStep
+          ? `${stepLabel(progress.currentSkuStep)}${detailLabel ? ` · ${detailLabel}` : ""}`
+          : t("logisticsPipeline.productProgressShort", {
+              index: progress.productIndex,
+              total: progress.productTotal,
+            });
 
   return (
     <div
@@ -152,33 +168,20 @@ export function LogisticsPipelineTaskCard({
         ) : null}
       </div>
 
-      <p className="mt-0.5 text-[10px] text-slate-500">
-        {isDone
-          ? t("logisticsPipeline.doneSummary", {
-              autoAccepted: progress.stats.autoAccepted,
-              pendingReview,
-            })
-          : progress.phase === "waiting"
-            ? t("logisticsPipeline.clickEstimate")
-          : (progress.activeProductIds?.length ?? 0) > 1
-            ? t("logisticsPipeline.parallelActive", {
-                completed: progress.productIndex,
-                total: progress.productTotal,
-                count: progress.activeProductIds!.length,
-              })
-            : t("logisticsPipeline.productProgress", {
-                index: progress.productIndex,
-                total: progress.productTotal,
-                title,
-              })}
-      </p>
-
-      {activeTitles.length > 0 && progress.phase === "running" ? (
-        <p className="mt-0.5 line-clamp-2 text-[10px] text-slate-600">
-          {t("logisticsPipeline.activeProducts", {
-            titles: activeTitles.join(" · "),
+      {isDone ? (
+        <p className="mt-0.5 text-[10px] text-slate-500">
+          {t("logisticsPipeline.doneSummary", {
+            autoAccepted: progress.stats.autoAccepted,
+            pendingReview,
           })}
         </p>
+      ) : progress.phase === "running" || progress.phase === "waiting" ? (
+        <>
+          <p className="mt-0.5 line-clamp-1 text-[10px] text-slate-600">{runningHint}</p>
+          {parallelCount <= 1 && title && progress.phase === "running" ? (
+            <p className="mt-0.5 line-clamp-1 text-[10px] text-slate-500">{title}</p>
+          ) : null}
+        </>
       ) : null}
 
       {progress.stats.ingestingRetry ? (
@@ -186,15 +189,6 @@ export function LogisticsPipelineTaskCard({
           {t("logisticsPipeline.ingestingRetryWait", {
             count: progress.stats.ingestingRetry,
           })}
-        </p>
-      ) : null}
-
-      {progress.currentSkuStep && progress.phase === "running" ? (
-        <p className="mt-0.5 text-[10px] text-sky-700">
-          {t("logisticsPipeline.currentStep", {
-            step: stepLabel(progress.currentSkuStep),
-          })}
-          {detailLabel ? ` · ${detailLabel}` : ""}
         </p>
       ) : null}
 
@@ -208,8 +202,21 @@ export function LogisticsPipelineTaskCard({
         />
       </div>
 
-      {progress.phase === "running" || isDone ? (
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500">
+      {progress.phase === "running" ? (
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500">
+          <span>
+            {progress.productIndex} / {progress.productTotal}
+          </span>
+          {progress.stats.autoAccepted > 0 ? (
+            <span className="text-emerald-600">
+              {t("logisticsPipeline.confirmed", {
+                count: progress.stats.autoAccepted,
+              })}
+            </span>
+          ) : null}
+        </div>
+      ) : isDone ? (
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500">
           <span>
             {progress.productIndex} / {progress.productTotal}
           </span>
@@ -228,7 +235,7 @@ export function LogisticsPipelineTaskCard({
         </div>
       ) : null}
 
-      {bucketSummary.length > 0 ? (
+      {(isDone || isError) && bucketSummary.length > 0 ? (
         <p className="mt-1 text-[10px] text-red-600/90">
           {t("logisticsPipeline.failureBreakdown", {
             breakdown: bucketSummary.join(" · "),

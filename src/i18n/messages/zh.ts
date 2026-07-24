@@ -844,6 +844,7 @@ export const zh: Dictionary = {
     tabEstimate: "预估",
     tabTemplates: "模板",
     templateSwitchResetConfirm: "模板已切换，未确认方案已重置，如需请重新预估。",
+    templateSwitchRecalcHint: "模板已切换，线路报价已清空，请重新运行智能预估。",
     title: "物流",
     toastAcceptAiDone: "已确认线路",
     toastAcceptAiNone: "该 SKU 暂无可确认项",
@@ -868,6 +869,7 @@ export const zh: Dictionary = {
     toastRoutesFetched: "{{withLine}} / {{total}} 个 SKU 已获线路（{{country}}，{{speed}}）",
     toastTemplateDeleted: "模板已删除",
     toastTemplateSaved: "模板已保存",
+    toastTemplateSavedEstimate: "模板已保存，请重新运行智能预估",
     toastTypeCorrected: "物流类型已更新",
     tokenMissing: "缺少访问令牌，请重新授权店铺"
   },
@@ -1132,6 +1134,7 @@ export const zh: Dictionary = {
     parallelActive: "已完成 {{completed}} / {{total}} 个商品 · {{count}} 个并行",
     preparing: "准备中…",
     productProgress: "{{index}} / {{total}} · {{title}}",
+    productProgressShort: "{{index}} / {{total}}",
     retryAria: "重试预估",
     skuProgress: "本商品 SKU {{done}} / {{total}}",
     statusDone: "已完成",

@@ -27,7 +27,6 @@ export interface CatalogProductCardProps {
   /** Purchase price converted to target currency (usually USD). */
   purchasePriceUsd?: number | null;
   sourcingSource?: SourcingSource;
-  listIndex?: number;
   /** 1688 offer detail link — not shown as Tangbuy. */
   sourceDetailUrl?: string | null;
   targetCurrency: string;
@@ -40,7 +39,6 @@ export function CatalogProductCard({
   item,
   purchasePriceUsd,
   sourcingSource,
-  listIndex: _listIndex,
   sourceDetailUrl,
   targetCurrency,
   state,

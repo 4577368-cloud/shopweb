@@ -5,17 +5,13 @@ import { ThumbImage } from "@/components/ui/thumb-image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
-  ArrowLeftRight,
+  ArrowRight,
   ChevronRight,
   ImageOff,
-  Loader2,
-  Plus,
-  Wand2,
 } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { api, ApiError } from "@/lib/api";
-import { isOfferNotFoundMessage } from "@/lib/batch-link/match-errors";
+import { api } from "@/lib/api";
 import { resolveSkuDetailUrl } from "@/lib/source-sku-matrix";
 import { readProductSourceIdentity } from "@/lib/product-source-identity";
 import type {
@@ -26,21 +22,22 @@ import type {
 import { cn } from "@/lib/utils";
 import {
   buildSupplementSourceHint,
-  enqueueSkuAlignRun,
   needsSupplementSource,
 } from "@/lib/sku-align-v1";
 import type { SkuAlignProductDetail } from "@/lib/sku-align-v1/types";
 import { buildGapSummaryText } from "@/lib/sku-align/drawer-helpers";
+import { mergeV1DetailIntoProductOverview } from "@/lib/sku-align/merge-v1-overview";
 import { skuAlignProductWorkbenchHref } from "@/lib/sku-align/deep-link";
 import { stashSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
 import { setSkuProductSession } from "@/lib/sku-align/product-session-cache";
 import {
   deriveVariantDisplayState,
-  countActiveAuto,
   countNeedsReview,
   countUnbound,
   filterVariants,
   hasIssues,
+  isFullyResolved,
+  isResolvedVariantState,
   type SkuFilterMode,
   type SkuVariantDisplayState,
 } from "@/lib/sku-align/display";
@@ -48,13 +45,16 @@ import { useT } from "@/i18n/LocaleProvider";
 
 export type ProductMatchState = "full" | "partial" | "none";
 
-/** Derived per-product state from the real overview (all / some / no variants bound). */
+/** Derived per-product state from display resolution (not raw bound row count). */
 export function productMatchState(product: SkuProductOverview): ProductMatchState {
   const total = product.variants.length;
-  const bound = product.variants.filter((v) => v.bound).length;
-  if (total > 0 && bound === total) return "full";
-  if (bound > 0) return "partial";
-  return "none";
+  if (total === 0) return "none";
+  if (isFullyResolved(product)) return "full";
+  const resolved = product.variants.filter((v) =>
+    isResolvedVariantState(deriveVariantDisplayState(v))
+  ).length;
+  if (resolved === 0) return "none";
+  return "partial";
 }
 
 export type { SkuFilterMode, SkuVariantDisplayState };
@@ -65,43 +65,13 @@ export {
   filterProducts,
   hasIssues,
   isFullyResolved,
+  isResolvedVariantState,
   matchesSkuProductSearch,
   sortProductsForWorkbench,
 } from "@/lib/sku-align/display";
 
 export function boundVariantCount(product: SkuProductOverview): number {
   return product.variants.filter((v) => v.bound).length;
-}
-
-/** Map auto-align backend errors to a readable message by machine-code prefix. */
-function autoAlignError(
-  err: unknown,
-  t: ReturnType<typeof useT>
-): string {
-  let raw = "";
-  if (err instanceof ApiError) {
-    if (err.status === 0) return err.message;
-    const body = err.body as { message?: string } | undefined;
-    raw = body?.message ?? err.message;
-  } else if (err instanceof Error) {
-    raw = err.message;
-  }
-  if (raw.startsWith("NOT_BOUND")) return t("skuBinding.errNotBound");
-  if (raw.startsWith("NO_VARIANT")) return t("skuBinding.errNoVariant");
-  if (raw.startsWith("NO_OFFER_SKU")) return t("skuBinding.errNoOfferSku");
-  if (raw.startsWith("AOP_CRED_MISSING")) return t("skuBinding.errAopCred");
-  if (raw.startsWith("AOP_TOKEN_INVALID")) return t("skuBinding.errAopToken");
-  if (isOfferNotFoundMessage(raw)) return t("skuBinding.errOfferGone");
-  if (raw.startsWith("GATEWAY_BUSY")) return t("skuBinding.errGatewayBusy");
-  if (raw.startsWith("SKU_NOT_IN_MATRIX")) {
-    return raw.includes(":")
-      ? raw.split(":").slice(1).join(":").trim()
-      : t("skuBinding.errSkuNotInMatrix");
-  }
-  if (raw.startsWith("NO_UNRESOLVED_VARIANT")) return t("skuBinding.errNoUnresolved");
-  if (raw.startsWith("SUPPLEMENT_LIMIT")) return t("skuBinding.errSupplementLimit");
-  if (raw.startsWith("SUPPLEMENT_SAME_AS_PRIMARY")) return t("skuBinding.errSupplementSame");
-  return raw || t("skuBinding.errAutoAlignFailed");
 }
 
 function MatchStatePill({
@@ -179,38 +149,36 @@ function buildVariantPreviewLine(
   }`;
 }
 
-const ICON_BTN =
-  "relative z-10 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-hairline bg-surface text-slate-700 transition-colors hover:bg-slate-50 active:bg-slate-100 disabled:pointer-events-none disabled:opacity-50";
-
 /**
  * One product row on the SKU binding list.
- * Navigation uses <Link>; async actions use <button type="button"> — never mixed on the same hit target.
  */
 export function SkuProductCard({
   product,
   shopName,
-  onAligned,
-  showToast,
   filterMode = "all",
 }: {
   product: SkuProductOverview;
   shopName: string;
-  onAligned: () => Promise<void>;
-  showToast: (message: string) => void;
+  onAligned?: () => Promise<void>;
+  showToast?: (message: string) => void;
   filterMode?: SkuFilterMode;
   pricingTemplate?: PricingTemplate | null;
 }) {
   const t = useT();
-  const total = product.variants.length;
-  const bound = boundVariantCount(product);
-  const state = productMatchState(product);
-
-  const [aligning, setAligning] = useState(false);
-  const [alignError, setAlignError] = useState<string | null>(null);
   const [v1Detail, setV1Detail] = useState<SkuAlignProductDetail | null>(null);
   const [v1DetailLoading, setV1DetailLoading] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
   const [cardVisible, setCardVisible] = useState(false);
+
+  const mergedProduct = useMemo(
+    () => mergeV1DetailIntoProductOverview(product, v1Detail),
+    [product, v1Detail]
+  );
+  const total = mergedProduct.variants.length;
+  const bound = mergedProduct.variants.filter((v) =>
+    isResolvedVariantState(deriveVariantDisplayState(v))
+  ).length;
+  const state = productMatchState(mergedProduct);
 
   const productId = product.thirdPlatformItemId;
   const stashHandoff = () => {
@@ -218,8 +186,6 @@ export function SkuProductCard({
     setSkuProductSession(shopName, product);
   };
   const workbenchHref = skuAlignProductWorkbenchHref(productId);
-  const replaceHref = skuAlignProductWorkbenchHref(productId, { tab: "replace" });
-  const supplementHref = skuAlignProductWorkbenchHref(productId, { tab: "supplement" });
 
   const refreshV1Detail = async () => {
     setV1DetailLoading(true);
@@ -232,15 +198,15 @@ export function SkuProductCard({
     }
   };
 
-  const pendingCount = countNeedsReview(product);
-  const unboundCount = countUnbound(product);
-  const manualCount = product.variants.filter(
+  const pendingCount = countNeedsReview(mergedProduct);
+  const unboundCount = countUnbound(mergedProduct);
+  const manualCount = mergedProduct.variants.filter(
     (v) => deriveVariantDisplayState(v) === "manual_active"
   ).length;
 
   const visibleVariants = useMemo(
-    () => filterVariants(product.variants, filterMode),
-    [product.variants, filterMode]
+    () => filterVariants(mergedProduct.variants, filterMode),
+    [mergedProduct.variants, filterMode]
   );
 
   useEffect(() => {
@@ -284,40 +250,12 @@ export function SkuProductCard({
     product.variants.find((v) => v.bound?.tangbuyProductId)?.bound?.tangbuyProductId?.trim() ||
     null;
   const canManualPick = Boolean(productDetailUrl && productTangbuyId);
-  const busy = aligning;
-
-  const runAutoAlign = async () => {
-    if (busy) return;
-    setAligning(true);
-    setAlignError(null);
-    try {
-      const status = await enqueueSkuAlignRun(shopName, {
-        triggerType: "MANUAL_REFRESH",
-        scopeType: "PRODUCT",
-        scopeIds: [productId],
-        forceRefresh: true,
-      });
-      if (status) {
-        showToast(
-          t("skuBinding.alignDone", {
-            matched: status.matchedCount,
-            suggested: status.suggestedCount,
-          })
-        );
-        await onAligned();
-        await refreshV1Detail();
-      } else {
-        showToast(t("skuBinding.alignNotAccepted"));
-      }
-    } catch (err) {
-      setAlignError(autoAlignError(err, t));
-    } finally {
-      setAligning(false);
-    }
-  };
 
   const showSupplementHint =
-    v1Detail && !v1DetailLoading && needsSupplementSource(v1Detail);
+    v1Detail &&
+    !v1DetailLoading &&
+    needsSupplementSource(v1Detail) &&
+    (unboundCount > 0 || (v1Detail.summary.noSourceVariants ?? 0) > 0);
   const supplementHint = v1Detail ? buildSupplementSourceHint(t, v1Detail) : null;
   const noSourceCount = v1Detail?.summary.noSourceVariants ?? 0;
   const gapSummary = buildGapSummaryText(t, unboundCount, noSourceCount);
@@ -328,18 +266,10 @@ export function SkuProductCard({
     <article
       ref={cardRef}
       className="overflow-hidden rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card"
-      {...(hasIssues(product) ? { "data-sku-issue-product": productId } : {})}
+      {...(hasIssues(mergedProduct) ? { "data-sku-issue-product": productId } : {})}
     >
       <div className="flex items-start gap-3 px-4 py-3.5">
-        {/* Title block: only thumb + text navigate to workbench */}
-        <Link
-          href={workbenchHref}
-          onClick={stashHandoff}
-          className="flex min-w-0 flex-1 items-start gap-3 text-left hover:opacity-90"
-          aria-label={t("skuBinding.viewSkuAria", {
-            title: product.title ?? productId,
-          })}
-        >
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           <Thumb
             src={product.imageUrl}
             alt={product.title ?? productId}
@@ -374,66 +304,23 @@ export function SkuProductCard({
               ) : null}
             </div>
           </div>
+        </div>
+
+        <Link
+          href={workbenchHref}
+          onClick={stashHandoff}
+          className="relative z-10 shrink-0 self-center"
+        >
+          <Button size="sm" aria-label={t("skuBinding.viewSkuMapping")}>
+            {t("skuBinding.viewMapping")}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
         </Link>
-
-        {/* Actions: isolated from title link — z-10 so clicks never fall through */}
-        <div className="relative z-10 flex shrink-0 items-center gap-1.5">
-          {canManualPick ? (
-            <>
-              <Link
-                href={replaceHref}
-                className={ICON_BTN}
-                title={t("skuBinding.replaceSource")}
-                aria-label={t("skuBinding.replaceSource")}
-                onClick={(e) => {
-                  if (busy) e.preventDefault();
-                  else stashHandoff();
-                }}
-                aria-disabled={busy}
-              >
-                <ArrowLeftRight className="h-3.5 w-3.5" />
-              </Link>
-              <Link
-                href={supplementHref}
-                className={ICON_BTN}
-                title={t("skuBinding.supplementSource")}
-                aria-label={t("skuBinding.supplementSource")}
-                onClick={(e) => {
-                  if (busy) e.preventDefault();
-                  else stashHandoff();
-                }}
-                aria-disabled={busy}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Link>
-            </>
-          ) : null}
-          <button
-            type="button"
-            className={ICON_BTN}
-            onClick={() => void runAutoAlign()}
-            disabled={busy}
-            title={aligning ? t("skuBinding.aligning") : t("skuBinding.autoAlign")}
-            aria-label={aligning ? t("skuBinding.aligning") : t("skuBinding.autoAlign")}
-          >
-            {aligning ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Wand2 className="h-3.5 w-3.5" />
-            )}
-          </button>
-        </div>
       </div>
-
-      {alignError ? (
-        <div className="mx-4 mb-3 rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          {alignError}
-        </div>
-      ) : null}
 
       {showSupplementHint && supplementHint && canManualPick ? (
         <Link
-          href={supplementHref}
+          href={workbenchHref}
           onClick={stashHandoff}
           className="mx-4 mb-3 flex items-center gap-3 rounded-[var(--radius-control)] border border-amber-200 bg-amber-50/50 px-3 py-2.5 transition-colors hover:bg-amber-50"
           aria-label={t("skuBinding.enterSupplement")}
@@ -466,38 +353,10 @@ export function SkuProductCard({
         </div>
       ) : null}
 
-      {canManualPick && visibleVariants.length > 0 ? (
-        <Link
-          href={workbenchHref}
-          onClick={stashHandoff}
-          className="flex w-full items-center gap-2 border-t border-hairline/60 px-4 py-2.5 transition-colors hover:bg-surface-muted/40"
-          aria-label={t("skuBinding.viewSkuMapping")}
-        >
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-subtle" />
-          {state === "full" || bound > 0 ? (
-            <Badge variant="success" className="shrink-0 px-1.5 py-0 text-[10px]">
-              {t("skuBinding.alignedCount", { count: bound })}
-            </Badge>
-          ) : null}
-          <span className="shrink-0 text-[10px] text-ink-subtle">
-            {manualCount > 0
-              ? t("skuBinding.statusAutoManual", {
-                  auto: countActiveAuto(product),
-                  manual: manualCount,
-                })
-              : pendingCount > 0
-                ? t("skuBinding.pendingConfirm", { count: pendingCount })
-                : unboundCount > 0
-                  ? t("skuBinding.unboundCount", { count: unboundCount })
-                  : t("skuBinding.allAutoAligned")}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-[11px] text-ink-muted">
-            {alignedPreview}
-          </span>
-          <span className="shrink-0 text-[11px] font-medium text-brand">
-            {t("skuBinding.viewMapping")}
-          </span>
-        </Link>
+      {canManualPick && visibleVariants.length > 0 && alignedPreview ? (
+        <p className="border-t border-hairline/60 px-4 py-2 text-[11px] text-ink-muted">
+          {alignedPreview}
+        </p>
       ) : null}
     </article>
   );

@@ -844,6 +844,7 @@ export const es: Dictionary = {
     tabEstimate: "Estimate",
     tabTemplates: "Templates",
     templateSwitchResetConfirm: "Template changed — unconfirmed plans were reset. Re-run estimate if needed.",
+    templateSwitchRecalcHint: "Template switched — quotes cleared. Run smart estimate again for all SKUs.",
     title: "Logistics",
     toastAcceptAiDone: "Route confirmed",
     toastAcceptAiNone: "Nothing to confirm for this SKU",
@@ -868,6 +869,7 @@ export const es: Dictionary = {
     toastRoutesFetched: "{{withLine}} / {{total}} SKUs got routes ({{country}}, {{speed}})",
     toastTemplateDeleted: "Template deleted",
     toastTemplateSaved: "Template saved",
+    toastTemplateSavedEstimate: "Template saved — run smart estimate again",
     toastTypeCorrected: "Logistics type updated",
     tokenMissing: "Missing access token — re-authorize the store"
   },
@@ -1132,6 +1134,7 @@ export const es: Dictionary = {
     parallelActive: "{{completed}} / {{total}} products done · {{count}} in parallel",
     preparing: "Preparing…",
     productProgress: "{{index}} / {{total}} · {{title}}",
+    productProgressShort: "{{index}} / {{total}}",
     retryAria: "Retry estimate",
     skuProgress: "SKUs {{done}} / {{total}} on this product",
     statusDone: "Complete",

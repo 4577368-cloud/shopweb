@@ -464,7 +464,6 @@ function SelectContent() {
   }>({ ids: [], page: 1, totalPages: 1 });
   const [searchQuery, setSearchQuery] = useState("");
   const batchLinkRequestSeq = useRef(0);
-  const autoLinkVisitRef = useRef(false);
 
   const fireBatchLink = useCallback((source: BatchLinkRequest["source"], productIds?: string[]) => {
     batchLinkRequestSeq.current += 1;
@@ -504,33 +503,31 @@ function SelectContent() {
     batchLinkActiveRef.current = batchLinkActive;
   }, [batchLinkActive]);
 
-  // Enter page → auto-run one batch for all linkable unbound products (once per visit).
-  useEffect(() => {
-    autoLinkVisitRef.current = false;
-  }, [shopName]);
+  const newLinkableIds = useMemo(
+    () =>
+      pageLinkableScope.ids.filter((id) =>
+        newArrivalStats.pendingNewAnalysisIds.has(id)
+      ),
+    [pageLinkableScope.ids, newArrivalStats.pendingNewAnalysisIds]
+  );
+  const hasNewProductsToLink = newLinkableIds.length > 0;
 
-  useEffect(() => {
-    if (phase !== "result" || !isAuthorized || tab !== "shop" || batchLinkActive) return;
-    if (autoLinkVisitRef.current) return;
-    if (summary == null) return;
-
-    const newIds = pageLinkableScope.ids.filter((id) =>
-      newArrivalStats.pendingNewAnalysisIds.has(id)
-    );
-    if (newIds.length === 0) return;
-
-    autoLinkVisitRef.current = true;
+  const enqueueNewArrivalsBatchLink = useCallback(() => {
+    if (batchLinkActive) return;
+    if (newLinkableIds.length === 0) {
+      showToast(t("productsPage.toastNoNewToLink"));
+      return;
+    }
+    setTab("shop");
     setShopFilter("all");
-    fireBatchLink("auto", newIds);
+    fireBatchLink("manual", newLinkableIds);
   }, [
     batchLinkActive,
     fireBatchLink,
-    isAuthorized,
-    newArrivalStats.pendingNewAnalysisIds,
-    pageLinkableScope.ids,
-    phase,
-    summary,
-    tab,
+    newLinkableIds,
+    setTab,
+    showToast,
+    t,
   ]);
 
   const restartScan = useCallback(() => {
@@ -1983,32 +1980,6 @@ function SelectContent() {
     enqueueBatchLink("manual");
   }, [enqueueBatchLink]);
 
-  const statusCta: {
-    label: string;
-    href?: string;
-    onClick?: () => void;
-    loading?: boolean;
-    disabled?: boolean;
-    queueAction?: boolean;
-  } =
-    batchLinkActive
-      ? {
-          label: t("productsPage.batchLinkRunning"),
-          loading: true,
-          disabled: true,
-          queueAction: true,
-        }
-      : pageLinkableCount > 0
-        ? {
-            label: t("productsPage.batchLink"),
-            onClick: () => void enqueueUnboundMatch(),
-            queueAction: true,
-          }
-        : {
-            label: t("productsPage.skuBindingCta"),
-            href: localePath(locale, "/sku-align"),
-          };
-
   const scanCopilot: AiPanelContent = {
     title: scanDone ? t("productsPage.scanDoneTitle") : t("productsPage.scanRunningTitle"),
     summary: scanDone
@@ -2177,33 +2148,56 @@ function SelectContent() {
                 </button>
               )}
             </div>
-            {statusCta.href ? (
-              <Link
-                href={statusCta.href}
-                onMouseEnter={() => {
-                  if (isAuthorized && shopName) prefetchSkuAlignListCache(shopName);
-                }}
-                onFocus={() => {
-                  if (isAuthorized && shopName) prefetchSkuAlignListCache(shopName);
-                }}
-              >
-                <Button>
-                  {statusCta.label}
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-            ) : (
+            {hasNewProductsToLink ? (
               <Button
                 size="sm"
-                onClick={statusCta.onClick}
-                disabled={statusCta.disabled || statusCta.loading}
+                onClick={() => void enqueueNewArrivalsBatchLink()}
+                disabled={batchLinkActive}
               >
-                {statusCta.loading ? (
+                {batchLinkActive ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : null}
-                {statusCta.label}
+                {batchLinkActive
+                  ? t("productsPage.batchLinkRunning")
+                  : t("productsPage.batchLinkNewArrivals", {
+                      count: newLinkableIds.length,
+                    })}
               </Button>
-            )}
+            ) : pageLinkableCount > 0 ? (
+              <Button
+                size="sm"
+                onClick={() => void enqueueUnboundMatch()}
+                disabled={batchLinkActive}
+              >
+                {batchLinkActive ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                {batchLinkActive
+                  ? t("productsPage.batchLinkRunning")
+                  : t("productsPage.batchLink")}
+              </Button>
+            ) : null}
+            <Link
+              href={localePath(locale, "/sku-align")}
+              onMouseEnter={() => {
+                if (isAuthorized && shopName) prefetchSkuAlignListCache(shopName);
+              }}
+              onFocus={() => {
+                if (isAuthorized && shopName) prefetchSkuAlignListCache(shopName);
+              }}
+            >
+              <Button
+                size="sm"
+                variant={
+                  hasNewProductsToLink || pageLinkableCount > 0
+                    ? "secondary"
+                    : "primary"
+                }
+              >
+                {t("productsPage.skuBindingCta")}
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
           </div>
         }
       >
@@ -2229,6 +2223,11 @@ function SelectContent() {
                 recommendedCategories={recommendedCategories}
                 onRefresh={restartScan}
                 onViewNewArrivals={() => setShopFilter("new_arrivals")}
+                onBatchLinkNewArrivals={
+                  hasNewProductsToLink
+                    ? () => void enqueueNewArrivalsBatchLink()
+                    : undefined
+                }
                 batchLinkBusy={batchLinkActive}
               />
             ) : (

@@ -72,6 +72,7 @@ import {
   displayStateLabel,
   type SkuVariantDisplayState,
 } from "@/lib/sku-align/display";
+import { mergeV1DetailIntoProductOverview } from "@/lib/sku-align/merge-v1-overview";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import type { Locale } from "@/i18n/config";
 import {
@@ -336,9 +337,13 @@ export function SkuProductWorkbench({
   const canPick = Boolean(effectiveDetailUrl?.trim() && effectiveTangbuyId?.trim());
 
   /* ---------- derived ---------- */
+  const displayProduct = useMemo(
+    () => mergeV1DetailIntoProductOverview(product, v1Detail),
+    [product, v1Detail]
+  );
   const supplementGaps = useMemo(
-    () => supplementGapVariantsFromOverview(product.variants, matrix, v1Detail),
-    [product.variants, matrix, v1Detail]
+    () => supplementGapVariantsFromOverview(displayProduct.variants, matrix, v1Detail),
+    [displayProduct.variants, matrix, v1Detail]
   );
   /** 补充 Tab 列出全部规格，用户可自由为任意行指定补充货源。 */
   const supplementPanelVariants = product.variants;
@@ -358,15 +363,15 @@ export function SkuProductWorkbench({
 
   const alignedCount = useMemo(
     () =>
-      product.variants.filter(
+      displayProduct.variants.filter(
         (v) =>
           deriveVariantDisplayState(v) === "active_auto" ||
           deriveVariantDisplayState(v) === "manual_active"
       ).length,
-    [product.variants]
+    [displayProduct.variants]
   );
 
-  const unboundCount = useMemo(() => countUnbound(product), [product]);
+  const unboundCount = useMemo(() => countUnbound(displayProduct), [displayProduct]);
 
   const candidateByKey = useMemo(() => {
     const map = new Map<string, RankedCoverageCandidate>();
@@ -1417,10 +1422,10 @@ export function SkuProductWorkbench({
                 : t("skuWorkbench.footerPrimaryHint")
               : phase === "replace"
                 ? t("skuWorkbench.footerReplaceHint")
-                : supplementPanelVariants.length > 0
+                : supplementGaps.length > 0
                   ? t("skuWorkbench.footerSupplementProgress", {
                       assigned: assignedGapCount,
-                      total: supplementPanelVariants.length,
+                      total: supplementGaps.length,
                     })
                   : t("skuWorkbench.footerNoSupplementNeeded")}
           </p>

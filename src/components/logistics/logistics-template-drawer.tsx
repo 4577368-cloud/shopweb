@@ -160,7 +160,7 @@ export function LogisticsTemplateDrawer({
         markets: marketSelectionForCountry(selectedCountry),
       };
 
-      const saved = await onSave(
+      await onSave(
         upsertData,
         editingId &&
           editingId !== "default" &&
@@ -168,8 +168,7 @@ export function LogisticsTemplateDrawer({
           ? editingId
           : undefined
       );
-      setEditingId(saved.id);
-      onSelect(saved);
+      onClose();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -237,8 +236,21 @@ export function LogisticsTemplateDrawer({
                   }
                   const selected = templates.find((tpl) => tpl.id === nextId);
                   if (selected) {
+                    const single = singleCountryCodeFromMarkets(selected.markets);
+                    const normalized = single
+                      ? { ...selected, markets: marketSelectionForCountry(single) }
+                      : selected;
                     setEditingId(selected.id);
-                    onSelect(selected);
+                    setFormData(normalized);
+                    if (single) {
+                      const group = MARKET_GROUPS.find((g) =>
+                        g.countries.some((c) => c.code === single)
+                      );
+                      setSelectedGroupId(group?.id ?? null);
+                    } else {
+                      setSelectedGroupId(null);
+                    }
+                    setError(null);
                   }
                 }}
                 className="rounded-[var(--radius-control)] border border-hairline bg-surface px-2 py-1 text-xs text-ink"

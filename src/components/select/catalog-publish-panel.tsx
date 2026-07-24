@@ -435,7 +435,6 @@ export function CatalogPublishPanel({
       string,
       {
         source: SourcingSearchHit["source"];
-        listIndex?: number;
         detailUrl?: string | null;
       }
     > = {};
@@ -443,7 +442,6 @@ export function CatalogPublishPanel({
       const row = hitsToCatalogRecommendations([hit], template)[0];
       map[row.candidateId] = {
         source: hit.source,
-        listIndex: hit.listIndex,
         detailUrl:
           hit.source === "1688" ? hit.detailUrl1688 ?? null : hit.tangbuyUrl,
       };

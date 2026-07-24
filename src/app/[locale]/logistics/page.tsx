@@ -66,6 +66,7 @@ import {
   readQuoteCache,
   stripStaleGoodsBlockedQuotesForIdentities,
   writeQuoteCache,
+  clearLogisticsQuotesForTemplateSwitch,
 } from "@/lib/logistics/quote-cache";
 import { enrichVariantsWithMeasures } from "@/lib/logistics/variant-measures";
 import {
@@ -247,6 +248,9 @@ function LogisticsContent() {
   }, [activeTemplate]);
 
   const prevScopeKeyRef = useRef<string | null>(null);
+  const skipQuoteCacheHydrateRef = useRef(false);
+  const suppressScopeSwitchToastRef = useRef(false);
+  const pendingPipelineResetRef = useRef(false);
 
   useEffect(() => {
     setQuoteMarketCode(resolveQuoteMarketCode(activeTemplate, null));
@@ -256,35 +260,26 @@ function LogisticsContent() {
       return;
     }
 
-    // 仅当模板维度真正变化（非首次装载）时，把基于旧模板的已确认 SKU
-    // 回退为待确认，避免 completion-gate 被旧确认误导。
-    // 限制：accept 文件按 shop 全局存储，刷新后服务端会重新合并全局确认；
-    // 彻底按模板区分需改造 accept 存储（更大改动），此处覆盖会话内切换场景。
     if (prevScopeKeyRef.current && prevScopeKeyRef.current !== templateScopeKey) {
+      skipQuoteCacheHydrateRef.current = true;
+      pendingPipelineResetRef.current = true;
+      setQuoteResults(new Map());
+      writeQuoteCache(shopName, templateScopeKey, new Map());
       setAnalysis((prev) => {
         if (!prev) return prev;
-        const productProfiles = (prev.productProfiles ?? []).map((product) => {
-          const variantDecisions = (product.variantDecisions ?? []).map((v) =>
-            v.decisionConfirmed || v.decisionStatus === "confirmed"
-              ? {
-                  ...v,
-                  decisionStatus: "ready_for_quote" as const,
-                  decisionConfirmed: false,
-                  decisionReason: undefined,
-                }
-              : v
-          );
-          return {
-            ...product,
-            variantDecisions,
-            decisionStatusCounts: aggregateDecisionCounts(variantDecisions),
-          };
-        });
-        return { ...prev, productProfiles };
+        return clearLogisticsQuotesForTemplateSwitch(prev);
       });
-      showToast(t("logistics.templateSwitchResetConfirm"));
+      if (!suppressScopeSwitchToastRef.current) {
+        showToast(t("logistics.templateSwitchRecalcHint"));
+      }
+      suppressScopeSwitchToastRef.current = false;
     }
     prevScopeKeyRef.current = templateScopeKey;
+
+    if (skipQuoteCacheHydrateRef.current) {
+      skipQuoteCacheHydrateRef.current = false;
+      return;
+    }
 
     const cached = readQuoteCache(shopName, templateScopeKey);
     setAnalysis((prev) => {
@@ -485,9 +480,11 @@ function LogisticsContent() {
         }
         return [saved, ...prev];
       });
+      suppressScopeSwitchToastRef.current = true;
       setActiveTemplate(saved);
-      showToast(t("logistics.toastTemplateSaved"));
+      showToast(t("logistics.toastTemplateSavedEstimate"));
       setWorkflowStep("estimate");
+      setShowDrawer(false);
       return saved;
     } catch (err) {
       showToast(readableError(err));
@@ -863,6 +860,13 @@ function LogisticsContent() {
     setAnalysis,
     showToast,
   });
+
+  useEffect(() => {
+    if (!pendingPipelineResetRef.current) return;
+    pendingPipelineResetRef.current = false;
+    pipeline.resetScopeRun();
+    setWorkflowStep("estimate");
+  }, [templateScopeKey, pipeline.resetScopeRun]);
 
   const completionGate = useMemo(
     () =>
