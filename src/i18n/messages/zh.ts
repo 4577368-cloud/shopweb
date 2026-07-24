@@ -2000,6 +2000,7 @@ export const zh: Dictionary = {
 
   productsPage: {
     batchLink: "一键关联",
+    batchLinkNewArrivals: "一键关联（{{count}} 个新商品）",
     batchLinkRunning: "一键关联中…",
     clearTemplateConfirm: "恢复系统默认后，右侧将重新出现首次定价引导。确定？",
     copyOptimize: "优化",
@@ -2018,6 +2019,7 @@ export const zh: Dictionary = {
     toastBatchPriceDone: "批量改价完成（{{mode}}）：成功 {{success}} 个，失败 {{failed}} 个",
     toastListingUpdated: "已将「{{title}}」状态更新为 {{status}}",
     toastNoLinkable: "当前页暂无可关联商品（需有主图）",
+    toastNoNewToLink: "没有待关联的新商品",
     toastPricingAuth: "请先授权店铺，授权后即可配置并保存定价策略",
     toastPricingDefaultReset: "已恢复系统默认，可重新体验首次配置",
     toastPricingDemoReset: "已恢复未配置状态，可体验首次定价引导",

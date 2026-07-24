@@ -2001,6 +2001,7 @@ export const fr: Dictionary = {
 
   productsPage: {
     batchLink: "Link all",
+    batchLinkNewArrivals: "Link new ({{count}})",
     batchLinkRunning: "Linking…",
     clearTemplateConfirm: "Reset to defaults? The pricing guide will show again on the right.",
     copyOptimize: "Optimize",
@@ -2019,6 +2020,7 @@ export const fr: Dictionary = {
     toastBatchPriceDone: "Batch pricing done: {{success}} ok, {{failed}} failed",
     toastListingUpdated: "「{{title}}」updated to {{status}}",
     toastNoLinkable: "No linkable products on this page (needs main image)",
+    toastNoNewToLink: "No new products to link",
     toastPricingAuth: "Authorize your store to configure pricing",
     toastPricingDefaultReset: "Defaults restored — pricing guide will reappear",
     toastPricingDemoReset: "Reset to unconfigured — try the pricing guide",
