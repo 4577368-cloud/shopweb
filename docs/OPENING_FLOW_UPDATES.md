@@ -4,7 +4,7 @@
 
 | 日期 | Commit / 定位 | 摘要 | 涉及路径 | 行为变化 | 回溯 |
 |------|--------|------|----------|----------|------|
-| 2026-07-24 | **`008fb1d`** | **产品页 Step 1**：常量/Tab hook/扫描视图外置 | `products/page.tsx`、`lib/products/page-constants.ts`、`hooks/use-products-page-tab.ts`、`components/select/products-page/products-scan-view.tsx`、`OPENING_FLOW_AUDIT.md`、`OPENING_FLOW_UPDATES.md` | **无**（纯重构，扫描仪式与 `?tab=` 逻辑等价） | `git revert 008fb1d` |
+| 2026-07-24 | **`5611a44`** | **产品页 Step 1**：常量/Tab hook/扫描视图外置 | `products/page.tsx`、`lib/products/page-constants.ts`、`hooks/use-products-page-tab.ts`、`components/select/products-page/products-scan-view.tsx`、`OPENING_FLOW_AUDIT.md`、`OPENING_FLOW_UPDATES.md` | **无**（纯重构，扫描仪式与 `?tab=` 逻辑等价） | `git revert 5611a44` |
 | 2026-07-24 | `d7bf222` | 批次 A+B：删 3 dead 组件 + 商品描述 HTML sanitize + 审计文档 | `OPENING_FLOW_AUDIT.md`、`sanitize-product-html.ts`、`shop-product-detail-drawer.tsx`、删 `match-compare-row` 等 | 抽屉只读描述经白名单过滤；无路由变化 | `git revert d7bf222` |
 
 ## Step 1 细节（便于 diff 对照）
