@@ -4,21 +4,15 @@
 
 | 日期 | Commit / 定位 | 摘要 | 涉及路径 | 行为变化 | 回溯 |
 |------|--------|------|----------|----------|------|
-| 2026-07-24 | _(待提交)_ | **Onboarding E1**：shop auth 恢复 + workflow 进度 hook | `use-onboarding-shop-auth.ts`、`use-onboarding-workflow-progress.ts`、`onboarding-context.tsx` | **无** | revert 本提交 |
+| 2026-07-24 | _(待提交)_ | **SKU 对齐 H2+H3**：mirror 加载 + 进页扫描仪式 | `use-sku-align-mirror-load.ts`、`use-sku-align-entry.ts`、`sku-align/page.tsx` | **无** | revert 本提交 |
 | 2026-07-24 | **`a62c402`** | **物流页 Step 6**：模板/完成度/onboarding 桥接 + decision workspace props | `use-logistics-page-actions.ts`、`use-logistics-decision-workspace-props.ts`、`logistics/page.tsx` | **无** | `git revert a62c402` |
 | 2026-07-24 | **`9108ed2`** | **物流页 Step 5**：报价/accept/pipeline → `use-logistics-quote-estimate` | 见上 | **无** | `git revert 9108ed2` |
 | 2026-07-24 | **`8774c2b`** | **物流页 Step 4**：mirror 加载 + agent accept_all_ready hook | `use-logistics-mirror-load.ts`、`use-logistics-agent-commands.ts`、`default-template.ts`、`logistics/page.tsx` | **无** | `git revert 8774c2b` |
 | 2026-07-24 | **`e3233d6`** | **物流页 Step 3**：workflow body + setup + decision workspace | `logistics-workflow-*.tsx`、`logistics/page.tsx` | **无** | `git revert e3233d6` |
 | 2026-07-24 | **`b04bf92`** | **物流页 Step 2**：workflow 导航 hook | 见 OPENING_FLOW_UPDATES | **无** | `git revert b04bf92` |
 | 2026-07-24 | **`2690d05`** | **物流页 Step 1**：`?step=` hook + page-constants | 见上 | URL 走 locale 路径 | `git revert 2690d05` |
-| 2026-07-24 | _(待提交)_ | **产品页 Step 8**：定价 hook + focus/AI 编辑 + batch 完成 | `use-products-pricing.ts`、`use-products-focus.ts`、`batch-link-finish.ts`、`products/page.tsx` | **无** | revert 本提交 |
-| 2026-07-24 | _(待提交)_ | **产品页 Step 7**：Agent rail + command 预览/执行 hook | `use-products-agent-rail.ts`、`use-products-commands.ts`、`resolve-title-copy-style.ts`、`products/page.tsx` | **无** | revert 本提交 |
-| 2026-07-24 | _(待提交)_ | **产品页 Step 6**：扫描进结果 / 店铺 bootstrap / handoff | `use-products-entry.ts`、`products/page.tsx` | **无** | revert 本提交 |
-| 2026-07-24 | _(待提交)_ | **产品页 Step 5**：mirror 加载 / 静默刷新 hook | `use-products-mirror.ts`、`products/page.tsx` | **无** | revert 本提交 |
-| 2026-07-24 | _(待提交)_ | **产品页 Step 4**：batch link / 上新感知 / 展示指标 hook+lib | `use-products-batch-link.ts`、`use-products-new-arrivals.ts`、`display-metrics.ts`、`products/page.tsx` | **无** | revert 本提交 |
-| 2026-07-24 | _(待提交)_ | **产品页 Step 3**：发现 tab（filters mount + CatalogPublishPanel） | `products-catalog-tab.tsx`、`products/page.tsx` | **无** | revert 本提交 |
-| 2026-07-24 | _(待提交)_ | **产品页 Step 2**：顶栏 + shop tab 壳 | `products-page-header-actions.tsx`、`products-shop-tab.tsx` | **无** | revert 本提交 |
-| 2026-07-24 | **`5611a44`** | **产品页 Step 1**：常量/Tab hook/扫描视图外置 | 见 Step 1 行下脚注 | **无** | `git revert 5611a44` |
+| 2026-07-24 | **`c27ccb4`** | **产品页 Step 2–9**（与 Step 1 合看开店选品拆页） | `use-products-*`、`products-page/*`、`products/page.tsx` | **无** | `git revert c27ccb4`（含 Step 2–9） |
+| 2026-07-24 | **`5611a44`** | **产品页 Step 1**：常量/Tab hook/扫描视图 | 见 OPENING_FLOW_UPDATES 脚注 | **无** | `git revert 5611a44` |
 | 2026-07-24 | `d7bf222` | 批次 A+B：删 3 dead 组件 + 商品描述 HTML sanitize + 审计文档 | `OPENING_FLOW_AUDIT.md`、`sanitize-product-html.ts`、`shop-product-detail-drawer.tsx`、删 `match-compare-row` 等 | 抽屉只读描述经白名单过滤；无路由变化 | `git revert d7bf222` |
 
 ## Step 8 细节（便于 diff 对照）

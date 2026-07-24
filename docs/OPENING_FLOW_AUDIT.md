@@ -2,7 +2,59 @@
 
 > **范围**：安装 → 授权 → 选品 → SKU 对齐 → 物流 → 同步（+ 首页概览）。  
 > **排除**：订单中心 / 运营中枢 / Hub / `src/components/order/**` / `order-center` 路由 — **暂不审计、暂不改**。  
-> **日期**：2026-07-24 · 静态走查 + `tsc` / 抽样 `eslint`，未含 E2E 与 `tangbuy-plugin` Java。
+> **日期**：2026-07-24 · **复审计**（批次 A–E 在 `dev` 落地后）· 静态走查 + `tsc`，未含 E2E 与 `tangbuy-plugin` Java。
+
+---
+
+## 0. 总览（复审计结论）
+
+### 0.1 一句话
+
+开店线的 **「上帝页面 / 上帝 Context」重构主战役已结束**：产品、物流、`OnboardingProvider` 均已变成 **薄编排 + hooks/组件**；继续无需求地拆 page **收益递减**。当前更值得关注的是 **SKU 对齐列表页体量**、**产品 Agent 命令单文件**、**API 与 session 绑定（P0）**，以及 **首页与步骤页 UI 壳不一致** 的产品决策。
+
+### 0.2 体量快照（`wc -l`，2026-07-24）
+
+| 区域 | 文件 | 行数 | 角色 |
+|------|------|------|------|
+| 选品 | `products/page.tsx` | ~550 | 编排壳 ✅ |
+| 物流 | `logistics/page.tsx` | ~566 | 编排壳 ✅ |
+| Context | `onboarding-context.tsx` | ~435 | 组合层 ✅ |
+| **SKU** | **`sku-align/page.tsx`** | **~810** | 编排壳；mirror/entry 已外置（H2+H3） |
+| SKU 子页 | `sku-align/product/page.tsx` | ~394 | 可接受 |
+| 同步 | `sync/page.tsx` | ~564 | 仪式 + 摘要，暂不动 |
+| 重 hook | `use-products-commands.ts` | ~1143 | 认知负荷 ⚠️ |
+| 重 hook | `use-logistics-quote-estimate.ts` | ~922 | 域内聚，可接受 |
+
+### 0.3 已提交重构（`dev`，回溯见 [OPENING_FLOW_UPDATES.md](./OPENING_FLOW_UPDATES.md)）
+
+| 批次 | 摘要 | 代表 commit |
+|------|------|-------------|
+| A | 死组件删除 | `d7bf222` |
+| B | 商品描述 HTML sanitize | `d7bf222` |
+| C | 产品页 Step 1–9 | `5611a44`、`c27ccb4` |
+| D | 物流 Step 1–6 | `2690d05` … `a62c402` |
+| E | Onboarding shop auth + workflow progress | `6fb5ebc` |
+
+### 0.4 建议优先级（开店 only）
+
+| 优先级 | 项 | 说明 |
+|--------|-----|------|
+| **P0 安全** | Plugin/BFF **shop 与 session 绑定** | 前端 `shopName` 参数仍不可信；与后端威胁模型对齐 |
+| **P1 质量** | 端到端 **手工回归**（§0.5） | 拆页多、无 E2E；发 `main`/大演示前必做 |
+| **P2 架构** | SKU 列表页拆页（**批次 H**，可选） | 仅在 SKU 功能迭代时做；勿为拆而拆 |
+| **P2 架构** | `use-products-commands` 拆 preview/executor 纯函数 | 与 SKU 无关，可独立小 PR |
+| **产品** | 首页 `AppShell` vs `WorkbenchShell`（批次 F） | IA 决策，非纯技术 |
+| **工程** | 开店路径 ESLint scope（批次 G） | 随触达文件顺手清 |
+| **不做** | Onboarding E2、物流/产品 page 再拆 | 除非新需求 |
+
+### 0.5 端到端手工回归清单（发版前）
+
+1. **授权**：冷启动恢复 domain；OAuth 回跳 `hydrateAuthorizedShop`；未授权页链到 `/authorize`。
+2. **选品**：扫描进结果 / 跳过仪式；Shop tab 筛选与 batch link；Catalog tab 刊登入口；Agent 定价/待确认 ack（抽样 1 条命令）。
+3. **SKU**：列表扫描与工作台；进 `sku-align/product` 绑定/纠偏；侧栏 SKU 步状态与列表一致。
+4. **物流**：`?step=setup|estimate|confirm`；保存模板 → estimate；增量 pipeline + 单条报价/accept；完成度 gate → 去同步。
+5. **同步**：launch 仪式与 `completeSyncCeremony`；侧栏 sync 步 completed。
+6. **首页**：概览指标与 `refreshWorkflowProgress` 不报错（授权后 2s 内拉数）。
 
 ---
 
@@ -19,155 +71,154 @@
 | 5 | sync | `/sync` | `sync/page.tsx` |
 | 概览 | — | `/` | `page.tsx`（**仍用 `AppShell`**，与步骤页 `WorkbenchShell` 不一致） |
 
-**左栏**：开店步骤页 → `StepSidebar`（`hub-mode` 关）或 `HubAwareSidebar`（hub 开，与开店并行调试）。
+**左栏**：开店步骤页 → `StepSidebar`（`hub-mode` 关）或 `HubAwareSidebar`（hub 开）。
 
-**状态与数据**：`src/context/onboarding-context.tsx` + `/api/plugin/**`（`next.config` rewrite → `NEXT_PUBLIC_API_BASE`）。
+**状态与数据**：`onboarding-context.tsx`（组合） + `use-onboarding-shop-auth` / `use-onboarding-workflow-progress` + 各页 hooks + `/api/plugin/**`（rewrite → `NEXT_PUBLIC_API_BASE`）。
 
 **关键约定（坑）**
 
 - `shopify/auth/*`：**全域名** `xxx.myshopify.com`
 - `order/header/list`、`product/list`：**短名** `xxx`（`normalizeShopName` / `resolveShopApiName`）
-- 验证：`npx tsc --noEmit -p tsconfig.json`（勿并行多次）
+- 验证：`npx tsc --noEmit -p tsconfig.json`
 
 ---
 
-## 2. 确认无引用的死代码（开店相关 · 可安全删除）
+## 2. 死代码（开店相关）
 
-| 文件 | 说明 |
+| 文件 | 状态 |
 |------|------|
-| `src/components/products/match-compare-row.tsx` | 全仓无 import |
-| `src/components/products/products-decision-panel.tsx` | 全仓无 import |
-| `src/components/sku-align/sku-picker-tray.tsx` | 已被 `sku-picker-dialog.tsx` 替代，无 import |
+| `match-compare-row.tsx`、`products-decision-panel.tsx`、`sku-picker-tray.tsx` | ✅ 已删（`d7bf222`） |
 
-**不在本次删除（属订单域）**：`src/components/order/order-card.tsx` 等 — 等订单线单独清理。
-
-**仓库脚本**：`scripts/patch-*-i18n.mjs`、`eval-sku-commands.ts` 为一次性工具，不参与运行时；可归档或文档说明，避免误执行。
+**仓库脚本**：`scripts/patch-*-i18n.mjs`、`eval-sku-commands.ts` 为一次性工具，不参与运行时。
 
 ---
 
-## 3. 架构与可维护性（精细化优化主战场）
+## 3. 架构与可维护性
 
-### 3.1 God Page / 上帝 Context
+### 3.1 页面与 Context（当前）
 
-| 文件 | 约行数 | 风险 |
-|------|--------|------|
-| `src/app/[locale]/products/page.tsx` | ~500（Step 9 后） | **编排壳**：路由三态 + Tab + rail；逻辑在 `use-products-*` |
-| `src/app/[locale]/logistics/page.tsx` | ~565 | 编排壳；逻辑在 mirror/quote/page-actions hooks |
-| `src/context/onboarding-context.tsx` | ~435 | 组合层；auth + workflow 在 onboarding hooks |
-
-**建议方向（分批，每批 tsc + 目视一步）**
-
-- products：**Step 1–9 已完成**（见 §3.4）；余量仅为目视/E2E 回归与 `use-products-commands` 体量治理。
-- logistics：按 **workflow step**（setup / estimate / confirm）拆 section 组件；复用已有 `logistics-*` 组件，page 只编排。
-- onboarding：拆 **shop hydrate**、**workflow progress**、**logistics snapshot** 为独立 hook 或 `lib/onboarding/*`，context 只组合。
-
-### 3.4 产品页拆页回顾（Step 1–9 · 本地待提交）
-
-**模块地图**
-
-| 层 | 文件 | 职责 |
-|----|------|------|
-| 页面壳 | `products/page.tsx` | 授权/扫描/结果布局、Tab、header、挂 drawer/rail |
-| Tab UI | `products-*-tab.tsx`、`products-scan-view.tsx` | Shop / Catalog / 扫描阶段展示 |
-| 编排 hooks | `use-products-page-tab`、`entry`、`scan`、`mirror`、`batch-link`、`new-arrivals` | 生命周期与数据 |
-| 交互 hooks | `pricing`、`focus`、`agent-rail`、`commands`、`shop-tab-props` | 定价、焦点、Agent、命令、Shop 面板 props |
-| 纯逻辑 | `lib/products/*`（display-metrics、batch-link-finish、page-constants、resolve-title-copy-style） | 可单测的推导与收尾 |
-
-**拆完的好处**
-
-1. **可定位性**：改扫描仪式 → `use-products-entry`；改静默刷新/mirror → `use-products-mirror`；改 Copilot 命令 → `use-products-commands`；不再在 2400 行里全文搜索。
-2. **行为边界清晰**：`page.tsx` 基本无业务分支，降低「改 Agent 误伤 batch link」的概率。
-3. **依赖顺序显式**：mirror 在 batch 之后、entry 在 mirror 之后、agent 在 pricing 之后 — 避免 phase/template 环依赖（entry 收 visibility，pricing 收 template state）。
-4. **与组件目录一致**：`components/select/products-page/*` 管展示，hooks 管编排，符合现有 SKU/物流「page 薄、组件厚」方向。
-5. **可回溯**：`OPENING_FLOW_UPDATES.md` 按 Step 记录路径与 revert 粒度。
-
-**带来的成本 / 风险（需知情）**
-
-| 风险 | 说明 | 缓解 |
+| 文件 | 行数 | 结论 |
 |------|------|------|
-| **Hook 参数面宽** | `useProductsShopTabProps`、`useProductsAgentRail` 入参多，改签名要改两处 | 保持 hook 与 page 同 PR；必要时再收一层 `ProductsPageStore` context（非必须） |
-| **`use-products-commands` 体量大** (~1100 行) | 预览/执行仍在单文件，认知负荷未完全消失 | 后续可拆 `lib/products/command-preview-generators.ts` + `command-executors.ts`（纯函数） |
-| **无自动化回归** | 拆页未改 API 契约，但扫描/batch/命令路径多 | 提交前清单：扫描进结果、跳过仪式、batch 完成 toast、Agent 定价/待确认 ack、catalog 刊登 |
-| **useMemo 依赖遗漏** | shop-tab-props / mirror 等靠 memo 稳定引用 | 异常表现多为「面板不刷新」— 对照 hook deps；`tsc` 不捕此问题 |
-| **双处 template** | mirror `loadSummary` 与 pricing hook 共用 `setTemplate` | 已约定 pricing hook 先创建 state，mirror 只写入 — 勿再在 page 建第二份 template state |
-| **行为声称「无变」** | 重构意图为搬运；边缘时序（如 batch 中 visibility refresh）理论上一致 | 以 `OPENING_FLOW_UPDATES` 行为列 + 上表手工回归为准 |
+| `products/page.tsx` | ~550 | 编排壳；逻辑在 `use-products-*`（11 个 hook） |
+| `logistics/page.tsx` | ~566 | 编排壳；mirror / quote / page-actions / workflow 组件 |
+| `onboarding-context.tsx` | ~435 | mock 产品·SKU·物流表单·sync·toast + 组合两个 onboarding hooks |
+| `sku-align/page.tsx` | ~982 | **下一处可选拆页**；已有 `use-sku-align-scan` 等，主体仍在 page |
 
-**结论**：产品页 **god page 问题在开店线内已基本解决**；剩余主战场是 **logistics page**、**onboarding context**，以及 commands 大文件的二次拆分。**不建议**在无需求时继续拆 `page.tsx`（收益递减）；下一步优先 **提交 Step 2–9** 或 **批次 D logistics**。
+**Hook 地图（开店编排）**
 
-### 3.2 UI 栈不一致
+- **产品**：`use-products-page-tab`、`entry`、`mirror`、`batch-link`、`new-arrivals`、`pricing`、`focus`、`agent-rail`、`commands`、`shop-tab-props`（+ `lib/products/*`）
+- **物流**：`use-logistics-workflow-step`、`workflow-navigation`、`mirror-load`、`quote-estimate`、`page-actions`、`agent-commands`、`incremental-pipeline`（+ `logistics-workflow-*` 组件）
+- **Onboarding**：`use-onboarding-shop-auth`、`use-onboarding-workflow-progress`（+ `lib/onboarding/auth-session-ready`）
+
+### 3.4 产品页拆页回顾（Step 1–9 · `c27ccb4`）
+
+**好处**：可定位性、行为边界、依赖顺序显式、与 `components/select/products-page/*` 分工、CHANGELOG 可 revert。
+
+**残留风险**：`use-products-commands` 体量大；hook 宽参数面；无自动化回归 — 见下表。
+
+| 风险 | 缓解 |
+|------|------|
+| commands ~1100 行 | 拆 `lib/products/command-*` 纯函数（可选） |
+| memo deps 遗漏 | 面板不刷新时查 hook deps |
+| 手工回归 | §0.5 选品段 |
+
+**结论**：产品页 god page **已解决**。
+
+### 3.5 物流页拆页回顾（Step 1–6 · `2690d05`–`a62c402`）
+
+| 层 | 职责 |
+|----|------|
+| URL / 导航 | `page-constants`、`use-logistics-workflow-step`、`use-logistics-workflow-navigation` |
+| 数据入站 | `use-logistics-mirror-load` |
+| 报价 / pipeline / accept | `use-logistics-quote-estimate` |
+| 模板 / gate / 发布 snapshot | `use-logistics-page-actions` |
+| UI 块 | `logistics-workflow-body`、`setup`、`decision-workspace` |
+
+**好处**：与产品页同构；物流页可只读 shell + Agent 接线。
+
+**残留**：`use-logistics-quote-estimate` 仍大但 **域内聚**；API shop 校验不在此次重构范围。
+
+**结论**：物流 god page **已解决**；无功能需求时 **停拆**。
+
+### 3.6 Onboarding（E1 · `6fb5ebc`）
+
+- **抽出**：冷启动店铺恢复、workflow API 刷新、侧栏 step 推导、`publishLogistics*`。
+- **留在 context**：mock 演示数据（productMatches/skuAlignments）、物流表单、sync 仪式、toast、dashboard activities。
+
+**结论**：上帝 Context **已降到可维护**；E2（mock 动作外置）**明确不做**除非 mock 要删改。
+
+### 3.2 UI 栈不一致（未变）
 
 - 步骤页：`WorkbenchShell` + `WorkbenchPanel` + `StepSidebar`
-- 首页：`AppShell` + `PageHeader` + `MetricCard`
-
-**建议**：要么首页迁 Workbench（与 §4 运营中心设计一致），要么文档明确「首页 = 营销/dashboard 例外」。
+- 首页：`AppShell` + `PageHeader` + `MetricCard` → 批次 **F**，产品决策
 
 ### 3.3 i18n / mock
 
-- `src/data/mock.ts` 中 `initialSteps` 的 title/description 仍为中文硬编码；侧栏展示已走 `steps.*`，mock 字段主要用于初始 state — 可逐步删冗余或改为 key。
+- `initialSteps` 中文硬编码；侧栏已 `steps.*` — 低优清理。
 
 ---
 
 ## 4. 隐患与安全（开店相关 API）
 
-| 级别 | 问题 | 位置 | 建议 |
-|------|------|------|------|
-| P0 | Next 路由仅校验 `shopName` 参数，**无 Shopify session 绑定** | `/api/logistics/*` 等 | 与 plugin 约定：服务端按 session 解析 shop，或 BFF 校验 cookie；威胁模型写进 AGENTS |
-| P0 | 商品描述 **HTML 直出** | `shop-product-detail-drawer.tsx` | ✅ 批次 B：`sanitize-product-html.ts` |
-| P1 | **`/api/oss/upload`** 无鉴权/限流 | `app/api/oss/upload/route.ts` | 同源 session + rate limit |
-| P1 | **`/api/translate`** 开放 POST | 滥用成本 | 鉴权或内网 only |
-| P1 | **`NEXT_PUBLIC_TANGBUY_*_TOKEN`** 进浏览器包 | mall/admin 直连 | 最小权限 token；敏感能力仅 server route |
-| P2 | 授权 **乐观 UI** | `getAuthSessionReadySnapshot` + localStorage domain | 冷启动短闪「已授权」；可加强 loading 态 |
+| 级别 | 问题 | 状态 |
+|------|------|------|
+| P0 | Next/plugin：**shopName 无 session 绑定** | ❌ 待 plugin/BFF |
+| P0 | 商品描述 HTML | ✅ `sanitize-product-html` |
+| P1 | `/api/oss/upload` 鉴权/限流 | 未做 |
+| P1 | `/api/translate` 开放 POST | 未做 |
+| P1 | `NEXT_PUBLIC_TANGBUY_*_TOKEN` 进浏览器 | 威胁模型需文档化 |
+| P2 | 授权乐观 UI（localStorage） | 已知；可加强 loading |
 
 ---
 
 ## 5. 工程质量
 
-- **ESLint**：全仓约 261 项（含大量 `prefer-const`、未使用 import）；开店路径重点：`shop-products-panel.tsx`、`onboarding-context.tsx`、`workflow-step-snapshots.ts`
-- **Lint 未用符号（开店抽样）**：`icons.tsx` 部分 export；`sourcing/search.ts` 常量；`workflow-step-snapshots.ts` 内部函数 — 删或用起来
-- **测试脚本**：`src/lib/logistics/test-*.ts`、`sourcing/test-*.ts` 为 CLI 样本，不打包；保留
+- **tsc**：开店改动后应保持 `npx tsc --noEmit` 绿。
+- **ESLint**：全仓仍有存量；开店触达：`shop-products-panel.tsx`、`workflow-step-snapshots.ts`。
+- **测试**：`src/lib/logistics/test-*.ts` 等为 CLI 样本，不打包。
 
 ---
 
-## 6. 推荐优化批次（仅开店 · 不动订单）
+## 6. 批次状态（仅开店）
 
-| 批次 | 内容 | 验收 |
+| 批次 | 内容 | 状态 |
 |------|------|------|
-| **A · 清理** | 删 §2 三个 dead 组件；清开店相关 unused export | tsc | ✅ 2026-07-24 |
-| **B · 安全** | HTML sanitize；梳理 logistics API shop 校验（前后端对齐） | 手工 + plugin 确认 | ✅ sanitize 已做；API 待 plugin |
-| **C · 拆页** | products Step 1–9：hooks + shop tab props | tsc + §3.4 回归清单 | ✅ Step 9 本地（2026-07-24，待提交） |
-| **D · 拆页** | logistics Step 1–6：hooks + workflow body + 报价/模板编排 | tsc + 三步 UI 回归 | ✅ 批次 D 收尾 |
-| **E · Context** | onboarding：shop auth + workflow progress hooks | tsc + 侧栏进度一致 | ✅ E1 本地 |
-| **F · UI 统一** | 首页是否迁 Workbench（产品决策） | 目视 |
-| **G · Lint** | 开店目录 `eslint` 清零或 CI scope | lint green |
+| **A · 清理** | 死组件 | ✅ |
+| **B · 安全** | HTML sanitize；API shop 校验 | 半 ✅ |
+| **C · 拆页** | products Step 1–9 | ✅ `dev` |
+| **D · 拆页** | logistics Step 1–6 | ✅ `dev` |
+| **E · Context** | onboarding E1 | ✅ `dev` |
+| **F · UI** | 首页 Workbench 与否 | 待定 |
+| **G · Lint** | 开店目录 lint scope | 待定 |
+| **H · 拆页（可选）** | `sku-align` H2 mirror + H3 entry | tsc + 扫描/深链回归 | ✅ H2+H3 `dev` |
 
 ---
 
 ## 7. Workbuddy / AI 启动提示（开店专项）
 
 ```text
-范围：开店流程 only。不要改 src/components/order/**、order-center、Hub 运营。
+范围：开店流程 only。不要改 order-center、Hub 运营（除非用户明确）。
 
-必读：docs/OPENING_FLOW_AUDIT.md、docs/OPERATIONS_CENTER_DESIGN.md §4.1（视觉规范，写 UI 时遵）
+必读：本文件、OPENING_FLOW_UPDATES.md、OPERATIONS_CENTER_DESIGN.md §4.1（写 UI 时）
 
-当前批次：[填 A–G 之一]
+默认：拆页已完成 — 新需求优先小 diff；SKU 列表 / P0 API / 手工回归 见 §0.4。
 
-约束：逐文件小改、git diff 自检、不 checkout 用户文件；验证 npx tsc --noEmit -p tsconfig.json
+验证：npx tsc --noEmit -p tsconfig.json
 ```
 
 ---
 
 ## 8. 关联文档
 
-- 步骤产品：`ORDER_CENTER_DESIGN.md` 仅中枢 IA 参考；开店步骤字段以各页 + `workflow-progress` 为准
-- 视觉：`OPERATIONS_CENTER_DESIGN.md` §4.1（Hub 与开店共享 token/组件）
-- SKU 架构：`.workbuddy/memory/MEMORY.md` §SKU 对齐
+- 变更 commit 表：[OPENING_FLOW_UPDATES.md](./OPENING_FLOW_UPDATES.md)
+- 视觉：`OPERATIONS_CENTER_DESIGN.md` §4.1
+- SKU：`.workbuddy/memory/MEMORY.md` §SKU 对齐
 
 ---
 
-## 9. 变更记录
+## 9. 文档历史
 
-提交后的开店改动见 **[OPENING_FLOW_UPDATES.md](./OPENING_FLOW_UPDATES.md)**（含 commit、路径、是否改行为、revert 提示）。
-
----
-
-*下一动：onboarding **E2**（mock 产品/SKU 动作、toast、dashboard 活动可继续外置）；或运营中心设计落地。*
+| 日期 | 说明 |
+|------|------|
+| 2026-07-24 | 初版 + 批次 A/B |
+| 2026-07-24 | **复审计**：批次 C/D/E 落地后更新 §0、§3.5–3.6、优先级与回归清单 |

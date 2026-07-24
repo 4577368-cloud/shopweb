@@ -24,9 +24,10 @@ import {
   CopilotCard,
 } from "@/components/workbench/assistant-rail";
 import { InfoCard } from "@/components/workbench/info-card";
-import { ScanStage, SCAN_STAGE_PROGRESS_ANIMATION_MS, type ScanTaskStatus } from "@/components/workbench/scan-stage";
-import { useSkuAlignScan } from "@/hooks/use-sku-align-scan";
-import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
+import { ScanStage, type ScanTaskStatus } from "@/components/workbench/scan-stage";
+import { useSkuAlignMirrorLoad } from "@/hooks/use-sku-align-mirror-load";
+import { useSkuAlignEntry } from "@/hooks/use-sku-align-entry";
+import { markScanned } from "@/lib/scan/gate";
 import {
   MetricSummaryCards,
   type MetricSummaryItem,
@@ -62,41 +63,21 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import { productsMirrorShopKey } from "@/lib/products/mirror-cache";
-import { prefetchLogisticsMirror } from "@/lib/logistics/prefetch-logistics-mirror";
-import { warmLaunchSummaryPartial } from "@/lib/sync/warm-launch-summary-partial";
 import { workflowScanShopKey } from "@/lib/scan/shop-key";
 import {
-  clearSkuAlignMirrorCache,
-  getSkuAlignMirrorCache,
-  setSkuAlignMirrorCache,
-  isSkuAlignMirrorCacheFresh,
-} from "@/lib/sku-align/sku-align-mirror-cache";
-import {
   parseSkuAlignFilterParam,
-  parseSkuAlignTabParam,
   scrollToFirstSkuIssueProduct,
   SKU_ALIGN_FILTER_PARAM,
-  SKU_ALIGN_PRODUCT_PARAM,
-  SKU_ALIGN_TAB_PARAM,
   skuAlignHref,
   skuAlignProductWorkbenchHref,
 } from "@/lib/sku-align/deep-link";
 import { stashSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
-import {
-  clearSkuOverviewSession,
-  peekSkuOverviewSession,
-  setSkuOverviewSession,
-} from "@/lib/sku-align/overview-session-cache";
-import type { AiPanelContent, PricingTemplate, SkuProductOverview } from "@/lib/types";
+import type { AiPanelContent } from "@/lib/types";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 
 const SkuLogisticsEntryGate = dynamic(() => import("@/components/sku-align/sku-logistics-entry-gate").then((m) => ({ default: m.SkuLogisticsEntryGate })), { ssr: false });
 const SkuAgentPanel = dynamic(() => import("@/components/sku-align/sku-agent-panel").then((m) => ({ default: m.SkuAgentPanel })), { ssr: false });
-
-// After scan completes, wait for the progress bar to reach 100% visually before switching views.
-const SCAN_COMPLETION_DWELL_MS = 450;
-const SCAN_FINISH_DELAY_MS = SCAN_STAGE_PROGRESS_ANIMATION_MS + SCAN_COMPLETION_DWELL_MS;
 
 type FilterId = SkuFilterMode;
 
@@ -122,204 +103,52 @@ function SkuAlignContent() {
     { label: t("sku.breadcrumb") },
   ];
 
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [products, setProducts] = useState<SkuProductOverview[]>([]);
-  const [pricingTemplate, setPricingTemplate] = useState<PricingTemplate | null>(null);
-  const hasLoadedOnceRef = useRef(false);
-
-  useEffect(() => {
-    hasLoadedOnceRef.current = false;
-  }, [shopName]);
-  const autoAlignStartedRef = useRef<string | null>(null);
-  /** Scan already ran V1 align — skip duplicate PAGE_ENTER align on first result load. */
-  const skipNextAutoAlignRef = useRef(false);
-  const scanFinishScheduledRef = useRef(false);
-  const scanFinishedRef = useRef(false);
-
-  useEffect(() => {
-    autoAlignStartedRef.current = null;
-  }, [shopName]);
   const [filter, setFilter] = useState<FilterId>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const pendingScrollRef = useRef(false);
   const [confirmingPage, setConfirmingPage] = useState(false);
-  // "result" is the SSR/hydration-safe default; the mount effect flips to "scan" on first visit.
-  const [phase, setPhase] = useState<"scan" | "result">("result");
 
   const {
-    tasks: scanTasks,
-    recent: scanRecent,
-    done: scanDone,
-    start: startScan,
-    cancel: cancelScan,
-  } = useSkuAlignScan(shopName);
+    loading,
+    setLoading,
+    refreshing,
+    error,
+    products,
+    setProducts,
+    pricingTemplate,
+    setPricingTemplate,
+    load,
+    hasLoadedOnceRef,
+  } = useSkuAlignMirrorLoad({
+    shopName,
+    shopMirrorKey,
+    shopDomain: shop.domain,
+    t,
+  });
 
-  const load = useCallback(
-    async (opts?: { silent?: boolean; skipCache?: boolean }) => {
-      // 命中镜像缓存且非静默主动加载 → 直接 hydrate，不 loading、不 fetch；
-      // 后台静默刷新（skipCache）写回最新数据。
-      if (!opts?.silent && !opts?.skipCache && isSkuAlignMirrorCacheFresh(shopName)) {
-        const cached = getSkuAlignMirrorCache(shopName);
-        if (cached) {
-          setProducts(cached.overview);
-          setPricingTemplate(cached.pricingTemplate);
-          hasLoadedOnceRef.current = true;
-          void load({ silent: true, skipCache: true });
-          return;
-        }
-      }
-      const silent = opts?.silent ?? hasLoadedOnceRef.current;
-      if (!silent) setLoading(true);
-      else setRefreshing(true);
-      setError(null);
-      try {
-        void api.backfillBindingSnapshots(shopName).catch(() => null);
-        const [next, tpl] = await Promise.all([
-          api.getSkuOverview(shopName),
-          api.getPricingTemplate(shopName).catch(() => null),
-        ]);
-        setProducts(next);
-        setSkuOverviewSession(shopName, next);
-        setPricingTemplate(tpl);
-        setSkuAlignMirrorCache(shopName, {
-          overview: next,
-          pricingTemplate: tpl,
-        });
-        hasLoadedOnceRef.current = true;
-        prefetchLogisticsMirror(shopName, shopMirrorKey, shop.domain, t);
-        void api
-          .skuAlignV1Overview(shopName)
-          .catch(() => null)
-          .then((skuOverview) => {
-            warmLaunchSummaryPartial(shopMirrorKey, shopName, shop.domain, t, {
-              skuOverview,
-              pricingTemplate: tpl ?? undefined,
-            });
-          });
-      } catch (err) {
-        setError(readableError(err));
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [shopName, shopMirrorKey, shop.domain, t]
-  );
-
-  // Move to the result view once (guarded), pulling the freshly-aligned overview. Non-blocking:
-  // callable while the scan is still running ("直接查看当前结果") — cancels remaining work first.
-  const finishToResult = useCallback(() => {
-    if (scanFinishedRef.current) return;
-    scanFinishedRef.current = true;
-    cancelScan();
-    markScanned("sku-align", scanShopKey);
-    skipNextAutoAlignRef.current = true;
-    setPhase("result");
-    const cached = peekSkuOverviewSession(shopName);
-    if (cached?.length) {
-      setProducts(cached);
-      setLoading(false);
-      hasLoadedOnceRef.current = true;
-      void load({ silent: true });
-    } else {
-      void load();
-    }
-  }, [cancelScan, shopName, load]);
-
-  // Decide once per shop: first session visit → play the scan; otherwise straight to result.
-  const startedForShopRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!isAuthorized) return;
-    if (startedForShopRef.current === shopName) return;
-    startedForShopRef.current = shopName;
-
-    const deepFilter = parseSkuAlignFilterParam(
-      searchParams.get(SKU_ALIGN_FILTER_PARAM)
-    );
-    const deepProductId = searchParams.get(SKU_ALIGN_PRODUCT_PARAM)?.trim() || null;
-
-    if (deepProductId) {
-      markScanned("sku-align", scanShopKey);
-      router.replace(
-        skuAlignProductWorkbenchHref(deepProductId, {
-          tab: parseSkuAlignTabParam(searchParams.get(SKU_ALIGN_TAB_PARAM)),
-        })
-      );
-      return;
-    }
-
-    if (deepFilter && deepFilter !== "all") {
-      markScanned("sku-align", scanShopKey);
-      setPhase("result");
-      setFilter(deepFilter);
-      if (deepFilter === "partially_linked") pendingScrollRef.current = true;
-      void load();
-      return;
-    }
-
-    const cachedOverview = peekSkuOverviewSession(shopName);
-    const mirrorFresh = isSkuAlignMirrorCacheFresh(shopName);
-    const productsStepDone = hasScanned("products", scanShopKey);
-    const skipScan =
-      hasScanned("sku-align", scanShopKey) ||
-      (cachedOverview?.length ?? 0) > 0 ||
-      mirrorFresh ||
-      productsStepDone;
-
-    if (skipScan) {
-      if (productsStepDone || mirrorFresh || (cachedOverview?.length ?? 0) > 0) {
-        skipNextAutoAlignRef.current = true;
-      }
-      if (!hasScanned("sku-align", scanShopKey)) {
-        markScanned("sku-align", scanShopKey);
-      }
-      setPhase("result");
-      if (mirrorFresh) {
-        const cached = getSkuAlignMirrorCache(shopName);
-        if (cached) {
-          setProducts(cached.overview);
-          setPricingTemplate(cached.pricingTemplate);
-          setLoading(false);
-          hasLoadedOnceRef.current = true;
-          void load({ silent: true, skipCache: true });
-          return;
-        }
-      }
-      if (cachedOverview?.length) {
-        setProducts(cachedOverview);
-        setLoading(false);
-        hasLoadedOnceRef.current = true;
-        void load({ silent: true });
-      } else {
-        void load();
-      }
-    } else {
-      scanFinishScheduledRef.current = false;
-      scanFinishedRef.current = false;
-      setPhase("scan");
-      void startScan();
-    }
-  }, [isAuthorized, shopName, scanShopKey, load, startScan, searchParams, router]);
-
-  useEffect(() => {
-    if (phase !== "scan" || !scanDone || scanFinishScheduledRef.current) return;
-    scanFinishScheduledRef.current = true;
-    const timer = window.setTimeout(() => {
-      void finishToResult();
-    }, SCAN_FINISH_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [phase, scanDone, finishToResult]);
-
-  useEffect(() => {
-    const deepFilter = parseSkuAlignFilterParam(
-      searchParams.get(SKU_ALIGN_FILTER_PARAM)
-    );
-    if (!deepFilter || deepFilter === "all") return;
-    setFilter((current) => (current === deepFilter ? current : deepFilter));
-    if (deepFilter === "partially_linked") pendingScrollRef.current = true;
-  }, [searchParams]);
+  const {
+    phase,
+    scanTasks,
+    scanRecent,
+    scanDone,
+    finishToResult,
+    restartScan,
+    skipNextAutoAlignRef,
+    autoAlignStartedRef,
+  } = useSkuAlignEntry({
+    shopName,
+    scanShopKey,
+    isAuthorized,
+    searchParams,
+    router,
+    load,
+    setProducts,
+    setPricingTemplate,
+    setLoading,
+    hasLoadedOnceRef,
+    setFilter,
+    pendingScrollRef,
+  });
 
   const handleFilterChange = useCallback(
     (id: FilterId) => {
@@ -329,6 +158,15 @@ function SkuAlignContent() {
     },
     [router]
   );
+
+  useEffect(() => {
+    const deepFilter = parseSkuAlignFilterParam(
+      searchParams.get(SKU_ALIGN_FILTER_PARAM)
+    );
+    if (!deepFilter || deepFilter === "all") return;
+    setFilter((current) => (current === deepFilter ? current : deepFilter));
+    if (deepFilter === "partially_linked") pendingScrollRef.current = true;
+  }, [searchParams]);
 
   // Entering the workbench: silently align variants that still have no binding at all.
   useEffect(() => {
@@ -364,18 +202,7 @@ function SkuAlignContent() {
         // Fail-open — user can still tap per-product align.
       }
     })();
-  }, [phase, isAuthorized, loading, products, shopName]);
-
-  const restartScan = useCallback(() => {
-    autoAlignStartedRef.current = null;
-    clearScanned("sku-align", scanShopKey);
-    clearSkuAlignMirrorCache(shopName);
-    clearSkuOverviewSession(shopName);
-    scanFinishScheduledRef.current = false;
-    scanFinishedRef.current = false;
-    setPhase("scan");
-    void startScan();
-  }, [shopName, scanShopKey, startScan]);
+  }, [phase, isAuthorized, loading, products, shopName, setProducts]);
 
   const metricsSnapshot = useMemo(
     () => computeSkuAlignMetrics(products),
