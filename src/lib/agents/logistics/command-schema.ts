@@ -1,5 +1,6 @@
 export type LogisticsCommandId =
   | "accept_all_ready"
+  | "start_estimate"
   | "fetch_quotes"
   | "open_template"
   | "focus_issues"
@@ -20,6 +21,8 @@ export type LogisticsDecisionStatus =
 
 export interface LogisticsCommandParams {
   filterMode?: LogisticsFilterMode;
+  /** List tab filter when focus_status targets a bucket, not a decision status. */
+  listFilter?: string;
   status?: LogisticsDecisionStatus;
   productId?: string;
   skuId?: string;
@@ -63,6 +66,9 @@ export type LogisticsCommandExecution =
       totalCount: number;
     }
   | {
+      type: "start_estimate";
+    }
+  | {
       type: "fetch_quotes";
       variantIds?: string[];
     }
@@ -85,6 +91,7 @@ export type LogisticsCommandExecution =
 
 export const LOGISTICS_COMMAND_IDS: LogisticsCommandId[] = [
   "accept_all_ready",
+  "start_estimate",
   "fetch_quotes",
   "open_template",
   "focus_issues",
@@ -111,9 +118,16 @@ export const LOGISTICS_COMMAND_DEFS: {
     sensitivity: "high",
   },
   {
+    id: "start_estimate",
+    label: "智能预估",
+    description: "启动智能预估管线（并行报价 + 普货自动确认）",
+    defaultConfirmation: false,
+    sensitivity: "low",
+  },
+  {
     id: "fetch_quotes",
-    label: "运费预估",
-    description: "获取各规格的线路运费与推荐线路",
+    label: "刷新报价",
+    description: "全量刷新线路报价，不启动智能预估管线",
     defaultConfirmation: false,
     sensitivity: "low",
   },

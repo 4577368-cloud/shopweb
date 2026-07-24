@@ -87,6 +87,7 @@ import {
   listPendingAckProductIds,
 } from "@/lib/batch-link/batch-ack-pending";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
+import { rerankForShopMirrorProduct } from "@/lib/sku-align/image-search-sku-rank";
 import { sortProductsForBatchLink } from "@/lib/batch-link/sort-products";
 import type { BatchLinkCardDrive, BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
 import { INITIAL_BATCH_LINK_PROGRESS } from "@/lib/batch-link/types";
@@ -127,7 +128,6 @@ import {
   formatImageMatchLabel,
   formatTitleMatchLabel,
   imageGateBlockedHint,
-  passesImageRecommendGate,
 } from "@/lib/batch-link/image-match";
 import {
   filterLinkableProducts,
@@ -142,6 +142,10 @@ import {
   snapTitleNeedsItemGetFallback,
 } from "@/lib/batch-link/source-display-title";
 import { backfillProductSourceIdentity } from "@/lib/logistics/resolve-estimate-goods-id";
+import {
+  isPoolIngestPending,
+  isTerminalPoolIngestStatus,
+} from "@/lib/logistics/estimate-goods-block";
 import {
   mergeIdentityIntoBinding,
   mergeStoredIdentityIntoBinding,
@@ -565,6 +569,7 @@ export function ShopProductsPanel({
         setProducts(cached.items);
         setBindings(cached.bindings);
         onShopProductsChange?.(cached.items, cached.bindings);
+        setLoading(false);
         void load({ silent: true });
         return cached.items;
       }
@@ -605,6 +610,14 @@ export function ShopProductsPanel({
             if (!binding.bound || !binding.tangbuyProductId) continue;
             if (isPublishSourcedBinding(binding)) continue;
             if (binding.sourceIdentity?.internalGoodsId?.trim()) continue;
+
+            const storedIdentity = readProductSourceIdentity(shopName, itemId);
+            if (storedIdentity?.internalGoodsId?.trim()) continue;
+            const poolStatus =
+              storedIdentity?.poolIngestStatus ??
+              binding.sourceIdentity?.poolIngestStatus;
+            if (isTerminalPoolIngestStatus(poolStatus)) continue;
+            if (isPoolIngestPending(poolStatus)) continue;
 
             backfillAttempts += 1;
             try {
@@ -1618,9 +1631,25 @@ function ShopProductCard({
       }
       setMatchScores(pipeline.matchScores);
       setImageScores(pipeline.imageScores);
-      const ranked = pipeline.rankedItems;
+      let ordered = pipeline.rankedItems;
+      try {
+        const reranked = await rerankForShopMirrorProduct(
+          shopName,
+          item.thirdPlatformItemId,
+          pipeline.rankedItems,
+          pipeline.imageScores,
+          { maxProbe: 5 }
+        );
+        ordered = reranked.orderedCandidates;
+      } catch {
+        /* keep image-search order */
+      }
       setRecommendedIdx(0);
-      setResult(pipeline.result);
+      setResult(
+        pipeline.result
+          ? { ...pipeline.result, items: ordered }
+          : null
+      );
       setCurrentIdx(0);
     } catch (err) {
       setResult(null);
@@ -2768,8 +2797,7 @@ function ShopProductCard({
                 const imageScore = resolveCandidateImageScore(c, imageScores);
                 const imageBlockedHint = imageGateBlockedHint(t, imageScore);
                 const isCurrent = idx === currentIdx;
-                const isTop =
-                  idx === recommendedIdx && passesImageRecommendGate(imageScore);
+                const isTop = idx === recommendedIdx;
                 const isBoundCand =
                   boundOfferId != null && boundOfferId === c.productId;
                 const costCny = parseGatewayPrice(c.price);

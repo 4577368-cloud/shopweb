@@ -3,6 +3,7 @@
 import { PanelRight, PanelRightClose } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 
 export interface AssistantToggleProps {
   open: boolean;
@@ -19,7 +20,8 @@ export function AssistantToggle({
   onToggle,
   className,
 }: AssistantToggleProps) {
-  const label = open ? "收起 AI 助手" : "打开 AI 助手";
+  const t = useT();
+  const label = open ? t("assistant.collapseAssistant") : t("assistant.expandAssistant");
   return (
     <Button
       type="button"

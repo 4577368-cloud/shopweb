@@ -33,6 +33,7 @@ import type { SkuAlignProductDetail } from "@/lib/sku-align-v1/types";
 import { buildGapSummaryText } from "@/lib/sku-align/drawer-helpers";
 import { skuAlignProductWorkbenchHref } from "@/lib/sku-align/deep-link";
 import { stashSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
+import { setSkuProductSession } from "@/lib/sku-align/product-session-cache";
 import {
   deriveVariantDisplayState,
   countActiveAuto,
@@ -212,7 +213,10 @@ export function SkuProductCard({
   const [cardVisible, setCardVisible] = useState(false);
 
   const productId = product.thirdPlatformItemId;
-  const stashHandoff = () => stashSkuProductHandoff(shopName, product);
+  const stashHandoff = () => {
+    stashSkuProductHandoff(shopName, product);
+    setSkuProductSession(shopName, product);
+  };
   const workbenchHref = skuAlignProductWorkbenchHref(productId);
   const replaceHref = skuAlignProductWorkbenchHref(productId, { tab: "replace" });
   const supplementHref = skuAlignProductWorkbenchHref(productId, { tab: "supplement" });

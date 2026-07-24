@@ -104,6 +104,8 @@ function FulfillmentSkuRow({
   busy,
   accepting,
   quotingThis,
+  quotingThisVariant,
+  quoteReveal,
   pipelineActive,
   pipelineProcessing,
   measureOverride,
@@ -126,6 +128,8 @@ function FulfillmentSkuRow({
   busy: boolean;
   accepting?: boolean;
   quotingThis?: boolean;
+  quotingThisVariant?: boolean;
+  quoteReveal?: boolean;
   pipelineActive?: boolean;
   pipelineProcessing?: boolean;
   measureOverride?: MeasureOverride;
@@ -201,7 +205,7 @@ function FulfillmentSkuRow({
         size="sm"
         className="h-7 min-w-[4rem]"
         onClick={onAcceptAi}
-        disabled={busy || accepting || quotingThis}
+        disabled={busy || accepting || quotingThis || quotingThisVariant}
       >
         {accepting ? (
           <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -227,7 +231,8 @@ function FulfillmentSkuRow({
         "border-t border-hairline/80 px-4 py-3 first:border-t-0",
         rowStatus === "failed" && "bg-red-50/30",
         rowStatus === "ingesting" && "bg-sky-50/25",
-        rowStatus === "pending_review" && "bg-amber-50/20"
+        rowStatus === "pending_review" && "bg-amber-50/20",
+        quoteReveal && "sku-map-match-shimmer border-emerald-300/80"
       )}
     >
       <div
@@ -391,10 +396,13 @@ export function LogisticsProductGroup({
   onSaveMeasures,
   onAcceptAi,
   onFetchProductQuotes,
+  onFetchVariantQuote,
   onCorrect,
   onMeasureOverride,
   renderMeasureEditPanel,
   quotingProduct = false,
+  quotingVariantId = null,
+  quoteRevealVariantIds,
   selectedLineByVariant,
   onSelectLine,
   shopName = "",
@@ -416,9 +424,15 @@ export function LogisticsProductGroup({
   onSaveMeasures: (variantId: string, next: MeasureOverride) => void;
   onAcceptAi: (variant: VariantLogisticsDecision) => void;
   onFetchProductQuotes: () => void;
+  onFetchVariantQuote?: (
+    variant: VariantLogisticsDecision,
+    override?: MeasureOverride
+  ) => void;
   onCorrect: (type: LogisticsTypeCode) => void;
   onMeasureOverride?: (variantId: string, next: MeasureOverride) => void;
   quotingProduct?: boolean;
+  quotingVariantId?: string | null;
+  quoteRevealVariantIds?: Set<string>;
   shopName?: string;
   selectedLineByVariant?: Map<string, string>;
   onSelectLine?: (variantId: string, lineKey: string) => void;
@@ -621,8 +635,14 @@ export function LogisticsProductGroup({
                 busy={busy}
                 accepting={accepting}
                 quotingThis={quotingProduct}
+                quotingThisVariant={quotingVariantId === variantId}
+                quoteReveal={quoteRevealVariantIds?.has(variantId)}
                 pipelineActive={pipelineActive}
-                pipelineProcessing={pipelineHighlighted || quotingProduct}
+                pipelineProcessing={
+                  pipelineHighlighted ||
+                  quotingProduct ||
+                  quotingVariantId === variantId
+                }
                 measureOverride={measureOverrides.get(variantId)}
                 onToggleEdit={() => onToggleEdit(variantId)}
                 onSaveMeasures={(next) => onSaveMeasures(variantId, next)}
@@ -643,7 +663,7 @@ export function LogisticsProductGroup({
                     onMeasureOverride?.(variantId, next);
                     onSaveMeasures(variantId, next);
                     onToggleEdit(variantId);
-                    onFetchProductQuotes();
+                    onFetchVariantQuote?.(variant, next);
                   },
                   () => onToggleEdit(variantId)
                 )}

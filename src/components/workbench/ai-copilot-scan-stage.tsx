@@ -240,7 +240,7 @@ export function AiCopilotScanStage({
       {!done ? (
         <p className="inline-flex items-center gap-1.5 text-xs text-ink-subtle">
           <Clock className="h-3.5 w-3.5" />
-          {t("workbenchScan.eta")}
+          {t("workbenchScan.eta", { overallPct })}
         </p>
       ) : null}
 

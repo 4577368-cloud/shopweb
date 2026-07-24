@@ -27,7 +27,14 @@ function needsFocusProduct(intent: SkuCommandDraft["intent"]): boolean {
   return (
     intent === "rerun_auto_align" ||
     intent === "explain_sku_match" ||
-    intent === "open_sku_detail"
+    intent === "open_sku_detail" ||
+    intent === "bind_variant" ||
+    intent === "unbind" ||
+    intent === "change_source" ||
+    intent === "add_supplement_source" ||
+    intent === "ignore_match" ||
+    intent === "set_manual" ||
+    intent === "tune_threshold"
   );
 }
 
@@ -97,6 +104,49 @@ function isPartiallyLinked(product: SkuProductOverview): boolean {
   const active = product.variants.filter((v) => v.bound?.bindStatus === "ACTIVE").length;
   const pending = product.variants.filter((v) => v.bound?.bindStatus === "PENDING").length;
   return pending > 0 || (active > 0 && active < product.variants.length);
+}
+
+/** Resolve a single variant by explicit ordinal (variantIndex) or spec text (variantSpec). */
+function resolveVariantId(
+  t: TranslateFn,
+  productId: string,
+  draft: SkuCommandDraft,
+  ctx: SkuPageContext
+): { variantId: string | null; variantLabel: string | null; clarify?: string } {
+  const product = ctx.productCatalog.find((p) => p.thirdPlatformItemId === productId);
+  if (!product) {
+    return { variantId: null, variantLabel: null, clarify: t("agentSku.clarifySelectForUnbind") };
+  }
+  const variants = product.variants ?? [];
+  const idx = draft.params.variantIndex;
+  if (idx != null && idx >= 1 && idx <= variants.length) {
+    const v = variants[idx - 1];
+    return { variantId: v.thirdPlatformSkuId, variantLabel: v.optionLabel };
+  }
+  const spec = draft.params.variantSpec?.trim();
+  if (spec) {
+    const matches = variants.filter((v) =>
+      v.optionLabel?.toLowerCase().includes(spec.toLowerCase())
+    );
+    if (matches.length === 1) {
+      return { variantId: matches[0].thirdPlatformSkuId, variantLabel: matches[0].optionLabel };
+    }
+    if (matches.length > 1) {
+      return {
+        variantId: null,
+        variantLabel: null,
+        clarify: t("agentSku.clarifyAmbiguous", {
+          matches: matches.slice(0, 5).map((m) => `「${m.optionLabel}」`).join("、"),
+        }),
+      };
+    }
+    return {
+      variantId: null,
+      variantLabel: null,
+      clarify: t("agentSku.clarifyNoVariantMatch", { spec, title: product.title ?? "" }),
+    };
+  }
+  return { variantId: null, variantLabel: null, clarify: t("agentSku.clarifyVariantNeeded") };
 }
 
 function resolveBatchProductIds(
@@ -336,6 +386,67 @@ export function planSkuCommand(
         executable: true,
       };
     }
+    case "unbind": {
+      if (!productId) {
+        return {
+          draft,
+          operation: t("agentSku.opUnbind"),
+          targetLabel: focusTitle,
+          detailLines: [],
+          executable: false,
+          clarify: t("agentSku.clarifySelectForUnbind"),
+        };
+      }
+      const variant = resolveVariantId(t, productId, draft, ctx);
+      if (variant.clarify || !variant.variantId) {
+        return {
+          draft: { ...draft, productId },
+          operation: t("agentSku.opUnbind"),
+          targetLabel: focusTitle,
+          detailLines: [],
+          executable: false,
+          clarify: variant.clarify ?? t("agentSku.clarifyVariantNeeded"),
+        };
+      }
+      return {
+        draft: { ...draft, productId, confirmationRequired: true },
+        operation: t("agentSku.opUnbind"),
+        targetLabel: focusTitle,
+        detailLines: [
+          t("agentSku.detailUnbind", { variantLabel: variant.variantLabel ?? "", title: focusTitle }),
+        ],
+        executable: true,
+      };
+    }
+    case "bind_variant":
+    case "change_source":
+    case "add_supplement_source":
+    case "ignore_match":
+    case "set_manual":
+    case "tune_threshold": {
+      if (!productId) {
+        return {
+          draft,
+          operation: commandOperationLabel(t, draft.intent),
+          targetLabel: focusTitle,
+          detailLines: [],
+          executable: false,
+          clarify: t("agentSku.clarifySelectForDetail"),
+        };
+      }
+      return {
+        draft: { ...draft, productId },
+        operation: commandOperationLabel(t, draft.intent),
+        targetLabel: focusTitle,
+        detailLines: [
+          t("agentSku.detailRouteWorkbench", {
+            title: focusTitle,
+            action: commandOperationLabel(t, draft.intent),
+          }),
+        ],
+        executable: true,
+      };
+    }
     default:
       return {
         draft,
@@ -355,6 +466,16 @@ export function commandRequiresConfirmation(plan: SkuCommandPlan): boolean {
   );
 }
 
+/** Plan a multi-step (composite) command. Each draft is planned independently;
+ *  callers execute the resulting plans in order. */
+export function planSkuCommandSequence(
+  t: TranslateFn,
+  drafts: SkuCommandDraft[],
+  ctx: SkuPageContext
+): SkuCommandPlan[] {
+  return drafts.map((d) => planSkuCommand(t, d, ctx));
+}
+
 export function commandOperationLabel(
   t: TranslateFn,
   intent: SkuCommandDraft["intent"]
@@ -372,6 +493,20 @@ export function commandOperationLabel(
       return t("agentSku.opExplainMatch");
     case "open_sku_detail":
       return t("agentSku.opOpenDetail");
+    case "bind_variant":
+      return t("agentSku.opBindVariant");
+    case "unbind":
+      return t("agentSku.opUnbind");
+    case "change_source":
+      return t("agentSku.opChangeSource");
+    case "add_supplement_source":
+      return t("agentSku.opAddSupplement");
+    case "ignore_match":
+      return t("agentSku.opIgnoreMatch");
+    case "set_manual":
+      return t("agentSku.opSetManual");
+    case "tune_threshold":
+      return t("agentSku.opTuneThreshold");
     default:
       return t("agentSku.opExecute");
   }
@@ -404,6 +539,16 @@ export function resolveSkuCommandExecution(
       return { type: "rerun_auto_align", productId: plan.draft.productId };
     }
     case "open_sku_detail": {
+      const productId = plan.draft.productId;
+      if (!productId) return null;
+      return { type: "focus_product", productId };
+    }
+    case "bind_variant":
+    case "change_source":
+    case "add_supplement_source":
+    case "ignore_match":
+    case "set_manual":
+    case "tune_threshold": {
       const productId = plan.draft.productId;
       if (!productId) return null;
       return { type: "focus_product", productId };

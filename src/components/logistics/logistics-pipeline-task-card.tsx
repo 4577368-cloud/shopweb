@@ -119,12 +119,26 @@ export function LogisticsPipelineTaskCard({
             })
           : progress.phase === "waiting"
             ? t("logisticsPipeline.clickEstimate")
+          : (progress.activeProductIds?.length ?? 0) > 1
+            ? t("logisticsPipeline.parallelActive", {
+                completed: progress.productIndex,
+                total: progress.productTotal,
+                count: progress.activeProductIds!.length,
+              })
             : t("logisticsPipeline.productProgress", {
                 index: progress.productIndex,
                 total: progress.productTotal,
                 title,
               })}
       </p>
+
+      {progress.stats.ingestingRetry ? (
+        <p className="mt-0.5 text-[10px] text-amber-700">
+          {t("logisticsPipeline.ingestingRetryWait", {
+            count: progress.stats.ingestingRetry,
+          })}
+        </p>
+      ) : null}
 
       {progress.currentSkuStep && progress.phase === "running" ? (
         <p className="mt-0.5 text-[10px] text-sky-700">

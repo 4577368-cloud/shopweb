@@ -13,7 +13,10 @@ import {
   type LogisticsFilterMode,
   type PostalLimitFilter,
 } from "@/lib/logistics/display";
-import type { LogisticsPipelineProgress } from "@/lib/logistics/incremental-pipeline";
+import {
+  isPipelineProductActive,
+  type LogisticsPipelineProgress,
+} from "@/lib/logistics/incremental-pipeline";
 import {
   LogisticsProductGroup,
   buildProductShellMeta,
@@ -122,7 +125,7 @@ function MeasureEditPanel({
             })
           }
         >
-          {t("logisticsDecision.saveRecalc")}
+          {t("logisticsDecision.saveApply")}
         </Button>
         <Button size="sm" variant="secondary" className="h-7 text-[10px]" onClick={onCancel}>
           {t("logisticsDecision.cancel")}
@@ -159,10 +162,13 @@ export function LogisticsDecisionList({
   onCorrect,
   onAcceptAi,
   onFetchProductQuotes,
+  onFetchVariantQuote,
   onClearFocus,
   onMeasureOverride,
   accepting,
   quotingProductId,
+  quotingVariantId,
+  quoteRevealVariantIds,
   pricing,
   pipelineActive,
   pipelineProgress,
@@ -180,10 +186,16 @@ export function LogisticsDecisionList({
   onCorrect: (itemId: string, type: LogisticsTypeCode) => void;
   onAcceptAi: (variant: VariantLogisticsDecision, productId: string) => void;
   onFetchProductQuotes: (productId: string, variants: VariantLogisticsDecision[]) => void;
+  onFetchVariantQuote?: (
+    variant: VariantLogisticsDecision,
+    override?: MeasureOverride
+  ) => void;
   onClearFocus: () => void;
   onMeasureOverride?: (variantId: string, next: MeasureOverride) => void;
   accepting?: boolean;
   quotingProductId?: string | null;
+  quotingVariantId?: string | null;
+  quoteRevealVariantIds?: Set<string>;
   pricing?: PricingTemplate | null;
   pipelineActive?: boolean;
   pipelineProgress?: LogisticsPipelineProgress | null;
@@ -299,7 +311,7 @@ export function LogisticsDecisionList({
       if (
         pipelineActive &&
         pipelineProgress?.phase === "running" &&
-        pipelineProgress.currentProductId === productId
+        isPipelineProductActive(pipelineProgress, productId, pipelineActive)
       ) {
         return true;
       }
@@ -408,9 +420,14 @@ export function LogisticsDecisionList({
 
   return (
     <div className="space-y-3">
-      {resolvedFilter === "pending" ? (
+      {resolvedFilter === "pending_quote" ? (
         <p className="rounded-[var(--radius-control)] border border-brand/20 bg-brand-soft/30 px-3 py-2 text-[11px] leading-snug text-ink">
-          {t("logisticsDecision.pendingTabHint")}
+          {t("logisticsDecision.pendingQuoteTabHint")}
+        </p>
+      ) : null}
+      {resolvedFilter === "pending_confirm" ? (
+        <p className="rounded-[var(--radius-control)] border border-sky-200 bg-sky-50/50 px-3 py-2 text-[11px] leading-snug text-sky-900">
+          {t("logisticsDecision.pendingConfirmTabHint")}
         </p>
       ) : null}
       {resolvedFilter === "needs_attention" ? (
@@ -427,8 +444,8 @@ export function LogisticsDecisionList({
         };
         const pipelineHighlighted = Boolean(
           pipelineActive &&
-            pipelineProgress?.currentProductId === productId &&
-            pipelineProgress.phase === "running"
+            pipelineProgress?.phase === "running" &&
+            isPipelineProductActive(pipelineProgress, productId, pipelineActive)
         );
 
         return (
@@ -448,6 +465,8 @@ export function LogisticsDecisionList({
             measureOverrides={measureOverrides}
             editingVariantId={editingVariantId}
             quotingProduct={quotingProductId === productId}
+            quotingVariantId={quotingVariantId}
+            quoteRevealVariantIds={quoteRevealVariantIds}
             onToggleExpanded={() => toggleExpanded(productId)}
             onToggleEdit={(variantId) =>
               setEditingVariantId((cur) => (cur === variantId ? null : variantId))
@@ -467,6 +486,7 @@ export function LogisticsDecisionList({
             onFetchProductQuotes={() =>
               onFetchProductQuotes(profile.thirdPlatformItemId, variants)
             }
+            onFetchVariantQuote={onFetchVariantQuote}
             onCorrect={(type) => onCorrect(productId, type)}
             onMeasureOverride={onMeasureOverride}
             renderMeasureEditPanel={renderMeasureEditPanel}

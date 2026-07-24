@@ -295,6 +295,39 @@ select {
   animation: batch-link-shimmer 1.4s ease-in-out infinite;
 }
 
+.sku-map-match-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.sku-map-match-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgb(16 185 129 / 0.08) 35%,
+    rgb(16 185 129 / 0.38) 50%,
+    rgb(16 185 129 / 0.08) 65%,
+    transparent 100%
+  );
+  animation: sku-map-match-shimmer 0.95s ease-out forwards;
+}
+
+@keyframes sku-map-match-shimmer {
+  0% {
+    transform: translateX(-120%);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+}
+
 @keyframes batch-link-shimmer {
   0% {
     transform: translateX(-100%);

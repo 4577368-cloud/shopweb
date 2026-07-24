@@ -20,10 +20,16 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { useLogisticsIncrementalPipeline } from "@/hooks/use-logistics-incremental-pipeline";
 import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
+import {
+  getLogisticsMirrorCache,
+  setLogisticsMirrorCache,
+  isLogisticsMirrorCacheFresh,
+} from "@/lib/logistics/logistics-mirror-cache";
 import { api, readableError, type LogisticsAcceptDecisionRequest, type LogisticsEstimateResult } from "@/lib/api";
 import type { LogisticsFilterMode, PostalLimitFilter } from "@/lib/logistics/display";
 import {
   coerceLogisticsFilterMode,
+  decisionStatusToFilterMode,
   normalizeLogisticsFilterMode,
 } from "@/lib/logistics/display";
 import {
@@ -51,8 +57,12 @@ import {
   writeQuoteCache,
 } from "@/lib/logistics/quote-cache";
 import { enrichVariantsWithMeasures } from "@/lib/logistics/variant-measures";
-import { GOODS_INGESTING_MESSAGE } from "@/lib/logistics/estimate-goods-block";
+import {
+  GOODS_INGESTING_MESSAGE,
+  userFacingQuoteErrorMessage,
+} from "@/lib/logistics/estimate-goods-block";
 import { enrichVariantsWithEstimateGoodsIds } from "@/lib/logistics/resolve-estimate-goods-id";
+import { chunkEstimateVariants } from "@/lib/logistics/estimate-batch";
 import { quoteStatusForGoodsBlock } from "@/lib/logistics/estimate-goods-block";
 import { countCatalogIngestingProducts } from "@/lib/tangbuy/catalog-ingest-display";
 import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
@@ -134,6 +144,10 @@ function LogisticsContent() {
   >(new Map());
   const [quoting, setQuoting] = useState(false);
   const [quotingProductId, setQuotingProductId] = useState<string | null>(null);
+  const [quotingVariantId, setQuotingVariantId] = useState<string | null>(null);
+  const [quoteRevealVariantIds, setQuoteRevealVariantIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [accepting, setAccepting] = useState(false);
   const [batchFailedVariantIds, setBatchFailedVariantIds] = useState<string[]>([]);
   const [focusTarget, setFocusTarget] = useState<LogisticsFocusTarget | null>(
@@ -166,7 +180,7 @@ function LogisticsContent() {
   }, []);
 
   const handleViewPendingConfirm = useCallback(() => {
-    setFilterMode("pending");
+    setFilterMode("pending_confirm");
     setFocusTarget(null);
     scrollToLogisticsList();
   }, [scrollToLogisticsList]);
@@ -273,7 +287,24 @@ function LogisticsContent() {
   }, [shopName, measureOverrides]);
 
   const load = useCallback(
-    async (forceClassify: boolean) => {
+    async (forceClassify: boolean, opts?: { skipCache?: boolean }) => {
+      // 命中镜像缓存且非强制重分类 → 直接 hydrate（不 loading、不 fetch），
+      // 同时后台静默刷新（skipCache）写回最新数据。
+      if (!forceClassify && !opts?.skipCache && isLogisticsMirrorCacheFresh(shopName)) {
+        const cached = getLogisticsMirrorCache(shopName);
+        if (cached) {
+          setAnalysis(cached.analysis);
+          setTemplates(cached.templates);
+          setPricingTemplate(cached.pricingTemplate);
+          setActiveTemplate(
+            cached.templates.length > 0
+              ? cached.templates[0]
+              : DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName"))
+          );
+          void load(false, { skipCache: true });
+          return;
+        }
+      }
       setLoading(true);
       setError(null);
       try {
@@ -293,6 +324,11 @@ function LogisticsContent() {
         } else {
           setActiveTemplate(DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName")));
         }
+        setLogisticsMirrorCache(shopName, {
+          analysis: a,
+          templates: ts,
+          pricingTemplate: pt,
+        });
       } catch (err) {
         setError(readableError(err));
         const ts = await api.listLogisticsTemplates(shopName).catch(() => []);
@@ -303,7 +339,7 @@ function LogisticsContent() {
         setLoading(false);
       }
     },
-    [shopName]
+    [shopName, t]
   );
 
   useEffect(() => {
@@ -615,40 +651,57 @@ function LogisticsContent() {
       }
 
       if (quotableVariants.length > 0) {
-        const response = await api.estimateLogistics(
-          {
-            shopName,
-            countryCode: params.countryCode,
-            countryId: params.countryId,
-            shippingOption: params.shippingOption,
-            packaging: params.packaging,
-            quoteCurrency: pricingTemplate?.targetCurrency?.trim().toUpperCase() || "USD",
-            variants: quotableVariants.map(
-              ({
-                estimateGoodsId,
-                estimateGoodsError: _err,
-                titleHint: _title,
-                thirdPlatformItemId: _itemId,
-                sourceIdentity: _identity,
-                ...variant
-              }) => ({
-                ...variant,
-                tangbuyGoodsId: estimateGoodsId ?? variant.tangbuyGoodsId,
-              })
-            ),
-            needOtherLine: true,
-            needMeasure: quotableVariants.some(
-              (v) =>
-                v.weightG == null ||
-                v.lengthCm == null ||
-                v.widthCm == null ||
-                v.heightCm == null
-            ),
-          },
-          signal
-        );
-        for (const r of response.results) {
-          resultsMap.set(r.thirdPlatformSkuId, r);
+        type QuotableVariant = (typeof quotableVariants)[number];
+        const toEstimatePayload = ({
+          estimateGoodsId,
+          estimateGoodsError: _err,
+          titleHint: _title,
+          thirdPlatformItemId: _itemId,
+          sourceIdentity: _identity,
+          ...variant
+        }: QuotableVariant) => ({
+          ...variant,
+          tangbuyGoodsId: estimateGoodsId ?? variant.tangbuyGoodsId,
+        });
+
+        for (const chunk of chunkEstimateVariants(quotableVariants)) {
+          if (signal?.aborted) return null;
+          try {
+            const response = await api.estimateLogistics(
+              {
+                shopName,
+                countryCode: params.countryCode,
+                countryId: params.countryId,
+                shippingOption: params.shippingOption,
+                packaging: params.packaging,
+                quoteCurrency:
+                  pricingTemplate?.targetCurrency?.trim().toUpperCase() || "USD",
+                variants: chunk.map(toEstimatePayload),
+                needOtherLine: true,
+                needMeasure: chunk.some(
+                  (v) =>
+                    v.weightG == null ||
+                    v.lengthCm == null ||
+                    v.widthCm == null ||
+                    v.heightCm == null
+                ),
+              },
+              signal
+            );
+            for (const r of response.results) {
+              resultsMap.set(r.thirdPlatformSkuId, r);
+            }
+          } catch (err) {
+            if (signal?.aborted) return null;
+            const message = readableError(err);
+            for (const variant of chunk) {
+              resultsMap.set(variant.thirdPlatformSkuId, {
+                thirdPlatformSkuId: variant.thirdPlatformSkuId,
+                quoteStatus: "FAILED",
+                errorMessage: message,
+              });
+            }
+          }
         }
       }
       setQuoteResults((prev) => {
@@ -837,7 +890,10 @@ function LogisticsContent() {
         };
       });
     }
-    void handleFetchQuotes([variant.thirdPlatformSkuId], override);
+    setQuotingVariantId(variant.thirdPlatformSkuId);
+    void handleFetchQuotes([variant.thirdPlatformSkuId], override).finally(() => {
+      setQuotingVariantId(null);
+    });
   };
 
   const handleFetchQuotesForProduct = (
@@ -893,10 +949,26 @@ function LogisticsContent() {
           ? t("logistics.toastRoutesFetched", { withLine, total: resultsMap.size, country: params?.countryCode ?? "", speed: params?.shippingOption ?? "" })
           : ingestingCount > 0
             ? GOODS_INGESTING_MESSAGE
-            : results.find((r) => r.errorMessage)?.errorMessage ||
+            : userFacingQuoteErrorMessage(
+                results.find((r) => r.errorMessage)?.errorMessage
+              ) ||
               t("logistics.toastNoRoutesReturned", { total: resultsMap.size, country: params?.countryCode ?? "" })
       );
-      setFilterMode("all");
+      const quotedIds =
+        variantIds?.filter((id) => resultsMap.get(id)?.recommendedLine) ?? [];
+      if (quotedIds.length > 0) {
+        setQuoteRevealVariantIds((prev) => new Set([...prev, ...quotedIds]));
+        window.setTimeout(() => {
+          setQuoteRevealVariantIds((prev) => {
+            const next = new Set(prev);
+            for (const id of quotedIds) next.delete(id);
+            return next;
+          });
+        }, 1000);
+      }
+      if (!variantIds?.length || variantIds.length > 1) {
+        setFilterMode("all");
+      }
     } catch (err) {
       showToast(readableError(err));
     } finally {
@@ -1046,11 +1118,7 @@ function LogisticsContent() {
   };
 
   const handleFocusStatus = (status: LogisticsDecisionStatus) => {
-    if (status === "pending_sku") {
-      setFilterMode("needs_attention");
-    } else {
-      setFilterMode("pending");
-    }
+    setFilterMode(decisionStatusToFilterMode(status));
     setFocusTarget({ status });
   };
 
@@ -1080,11 +1148,11 @@ function LogisticsContent() {
     (step: LogisticsWorkflowStep) => {
       setWorkflowStep(step);
       if (step === "estimate") {
-        setFilterMode("pending");
+        setFilterMode("pending_quote");
         scrollToLogisticsList();
       } else if (step === "confirm") {
         const attention = planMetrics.exceptionCount + planMetrics.skuUnlinkedCount;
-        setFilterMode(attention > 0 ? "needs_attention" : "pending");
+        setFilterMode(attention > 0 ? "needs_attention" : "pending_confirm");
         scrollToLogisticsList();
       } else {
         setFilterMode("all");
@@ -1276,7 +1344,7 @@ function LogisticsContent() {
                 title={
                   planMetrics.pendingQuoteCount > 0
                     ? t("logistics.estimateTitle", { count: planMetrics.pendingQuoteCount })
-                    : t("logistics.estimateNone")
+                    : t("logistics.estimatePipelineHint")
                 }
               >
                 {pipeline.pipelineRunning ? (
@@ -1420,6 +1488,9 @@ function LogisticsContent() {
                 onFetchProductQuotes={(productId, variants) =>
                   handleFetchQuotesForProduct(productId, variants)
                 }
+                onFetchVariantQuote={(variant, override) =>
+                  handleFetchQuoteForVariant(variant, override)
+                }
                 onMeasureOverride={(variantId, next) => {
                   setMeasureOverrides((prev) => {
                     const map = new Map(prev);
@@ -1429,6 +1500,8 @@ function LogisticsContent() {
                 }}
                 accepting={accepting}
                 quotingProductId={quotingProductId}
+                quotingVariantId={quotingVariantId}
+                quoteRevealVariantIds={quoteRevealVariantIds}
                 onClearFocus={() => setFocusTarget(null)}
                 pricing={pricingTemplate}
                 pipelineActive={pipeline.pipelineActive}
@@ -1445,12 +1518,12 @@ function LogisticsContent() {
                     <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
                       <div
                         className="h-full rounded-full bg-gradient-to-r from-brand to-emerald-500 transition-all duration-300"
-                        style={{ width: `${Math.round(((pipeline.progress.productIndex + 1) / pipeline.progress.productTotal) * 100)}%` }}
+                        style={{ width: `${Math.round((pipeline.progress.productIndex / pipeline.progress.productTotal) * 100)}%` }}
                       />
                     </div>
                     <div className="text-center text-xs text-ink-subtle">
                       {t("logistics.pipelineRunningProgress", {
-                        current: pipeline.progress.productIndex + 1,
+                        current: pipeline.progress.productIndex,
                         total: pipeline.progress.productTotal,
                         title: pipeline.progress.currentProductTitle ?? "",
                       })}

@@ -8,8 +8,10 @@ import {
   buildEstimateGoodsBlockMessage,
   buildGatewayGoodsNotReadyMessage,
   classifyGoodsBlockFromIdentity,
+  logEstimateGoodsBlockDiagnostic,
   type EstimateGoodsBlockReason,
   isPoolIngestPending,
+  isTerminalPoolIngestStatus,
 } from "@/lib/logistics/estimate-goods-block";
 import { buildOfferDetailUrl } from "@/lib/logistics/variant-measures";
 import {
@@ -84,9 +86,16 @@ function extractOfferIdFromUrl(url: string | null | undefined): string | null {
 
 function unresolvedFromIdentity(
   identity: ProductSourceIdentity,
-  offerId: string
+  offerId: string,
+  upstreamError?: string | null
 ): UnresolvedEstimateGoodsId {
   const blockReason = classifyGoodsBlockFromIdentity(identity);
+  logEstimateGoodsBlockDiagnostic(blockReason, {
+    offerId,
+    poolIngestStatus: identity.poolIngestStatus,
+    upstreamError,
+    context: "resolveEstimateGoodsId",
+  });
   return {
     errorMessage: buildEstimateGoodsBlockMessage(blockReason, offerId),
     offerId1688: offerId,
@@ -350,6 +359,17 @@ export async function backfillProductSourceIdentity(input: {
   try {
     const existing = readProductSourceIdentity(input.shopName, input.thirdPlatformItemId);
     if (existing?.internalGoodsId?.trim()) return existing;
+
+    if (isTerminalPoolIngestStatus(existing?.poolIngestStatus)) {
+      return existing;
+    }
+
+    if (
+      input.skipPoolRetry &&
+      isPoolIngestPending(existing?.poolIngestStatus)
+    ) {
+      return existing;
+    }
 
     const retried =
       existing && !input.skipPoolRetry

@@ -24,6 +24,7 @@ export function assertProductsCopyGrounded(
       context.pricing.summaryLine,
       ...context.recommendedCategoryNames,
       ...context.filterSummary,
+      context.tab === "catalog" ? "Tangbuy 1× 1688 1.2×" : "",
     ],
   });
 }

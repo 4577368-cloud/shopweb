@@ -10,10 +10,11 @@ export async function classifySkuCommandInput(
   ctx?: SkuCommandClassifyContext | null,
   locale?: string | null
 ): Promise<SkuCommandClassifyResult> {
-  return classifyCommandInput(text, {
+  return classifyCommandInput<SkuCommandClassifyResult>(text, {
     rulesClassify: classifySkuCommandByRules,
     apiPath: "/api/agents/sku-align/command",
     context: ctx ?? null,
     locale,
+    priority: "llm-first",
   });
 }

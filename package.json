@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:sourcing": "npx tsx src/lib/sourcing/test-classify-rules.ts && npx tsx src/lib/sourcing/test-display-pricing.ts"
   },
   "dependencies": {
     "@shopify/polaris-icons": "^9.3.1",

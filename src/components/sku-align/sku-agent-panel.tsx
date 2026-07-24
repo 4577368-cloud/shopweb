@@ -11,10 +11,18 @@ import { classifySkuCommandInput } from "@/lib/agents/sku-align/command-client";
 import { getSkuCommandUIConfig } from "@/lib/agents/sku-align/command-ui-config";
 import {
   planSkuCommand,
+  planSkuCommandSequence,
+  commandOperationLabel,
   commandRequiresConfirmation,
   resolveSkuCommandExecution,
 } from "@/lib/agents/sku-align/plan-command";
-import type { SkuCommandExecution, SkuCommandPlan } from "@/lib/agents/sku-align/command-schema";
+import {
+  buildSkuDraftFromIntent,
+  type SkuCommandClarify,
+  type SkuCommandExecution,
+  type SkuCommandId,
+  type SkuCommandPlan,
+} from "@/lib/agents/sku-align/command-schema";
 import type { SkillExecutionFeedback } from "@/lib/agents/sku-align/skills";
 import { buildSkuSkillFeedback, skuCommandBelongsToSkill } from "@/lib/agents/sku-align/skills";
 import { readableError } from "@/lib/api";
@@ -55,10 +63,13 @@ export function SkuAgentPanel({
   const t = useT();
   const locale = useLocale();
   const [commandPlan, setCommandPlan] = useState<SkuCommandPlan | null>(null);
+  const [commandSequence, setCommandSequence] = useState<SkuCommandPlan[] | null>(null);
+  const [seqCurrent, setSeqCurrent] = useState(0);
+  const [seqDone, setSeqDone] = useState(false);
   const [commandExecuting, setCommandExecuting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [input, setInput] = useState("");
-  const [clarify, setClarify] = useState<string | null>(null);
+  const [clarify, setClarify] = useState<string | SkuCommandClarify | null>(null);
   const [preview, setPreview] = useState<ConfirmPreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -126,13 +137,29 @@ export function SkuAgentPanel({
       const classifyResult = await classifySkuCommandInput(text, classifyContext, locale);
       if (requestSeq.current !== seq) return;
 
+      if (
+        classifyResult.confidence === "high" &&
+        classifyResult.steps &&
+        classifyResult.steps.length > 0
+      ) {
+        const plans = planSkuCommandSequence(t, classifyResult.steps, context);
+        setCommandSequence(plans);
+        setCommandPlan(null);
+        setClarify(null);
+        setSeqCurrent(0);
+        setSeqDone(false);
+        return;
+      }
+
       if (classifyResult.confidence === "high" && classifyResult.draft) {
         const plan = planSkuCommand(t, classifyResult.draft, context);
         setCommandPlan(plan);
+        setCommandSequence(null);
         return;
       }
 
       setClarify(classifyResult.clarify ?? t("skuAgent.errCannotUnderstand"));
+      setCommandSequence(null);
     } catch (err) {
       if (requestSeq.current !== seq) return;
       setClarify(readableError(err) || t("skuAgent.errCommandFailed"));
@@ -189,6 +216,56 @@ export function SkuAgentPanel({
       return;
     }
   };
+
+  const handleClarifyCandidate = useCallback(
+    (intent: SkuCommandId) => {
+      const d = buildSkuDraftFromIntent(intent);
+      const plan = planSkuCommand(t, d, context);
+      setClarify(null);
+      setCommandPlan(plan);
+      setCommandSequence(null);
+    },
+    [context, t]
+  );
+
+  const executeSequence = useCallback(
+    async (plans: SkuCommandPlan[]) => {
+      setCommandExecuting(true);
+      setClarify(null);
+      setSkillFeedback(null);
+      setSeqDone(false);
+      try {
+        for (let i = 0; i < plans.length; i++) {
+          setSeqCurrent(i + 1);
+          const plan = plans[i];
+          const execution = resolveSkuCommandExecution(plan);
+          if (execution) {
+            await applyCommandExecution(plan, execution);
+            continue;
+          }
+          const executor = commandExecutors[plan.draft.intent];
+          if (!executor) throw new Error(t("skuAgent.errNoExecutor"));
+          const ui = getSkuCommandUIConfig(plan.draft.intent);
+          if (ui?.requiresPreview || commandRequiresConfirmation(plan)) {
+            const gen = previewGenerators[plan.draft.intent];
+            if (!gen) throw new Error(t("skuAgent.errNoPreviewGenerator"));
+            const preview = await gen(plan, shopName);
+            await executor(preview.payload);
+          } else {
+            await executor({});
+          }
+        }
+        setSeqDone(true);
+        setExecStep("done");
+      } catch (err) {
+        setClarify(readableError(err) || t("skuAgent.errCommandFailed"));
+        setExecStep("error");
+      } finally {
+        setCommandExecuting(false);
+      }
+    },
+    [t, commandExecutors, previewGenerators, shopName, context]
+  );
 
   const generatePreview = useCallback(async () => {
     if (!commandPlan) return;
@@ -332,9 +409,84 @@ export function SkuAgentPanel({
         </div>
       </div>
 
-      {clarify ? (
+      {clarify && typeof clarify === "string" ? (
         <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
           {clarify}
+        </div>
+      ) : null}
+
+      {clarify && typeof clarify !== "string" ? (
+        <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <div>{clarify.message}</div>
+          {clarify.candidates && clarify.candidates.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {clarify.candidates.map((c) => (
+                <button
+                  key={c.intent}
+                  type="button"
+                  onClick={() => handleClarifyCandidate(c.intent)}
+                  className="rounded-lg border border-amber-300 bg-white px-2 py-1 text-[11px] font-medium text-amber-800 hover:border-amber-400 hover:bg-amber-100 transition-colors"
+                >
+                  {commandOperationLabel(t, c.intent)}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {commandSequence ? (
+        <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-xs">
+          <div className="font-semibold text-ink mb-2">
+            {t("skuAgent.seqTitle")}
+            {commandExecuting && seqCurrent > 0 ? (
+              <span className="ml-1 font-normal text-ink-muted">
+                （{seqCurrent}/{commandSequence.length}）
+              </span>
+            ) : null}
+          </div>
+          <ol className="space-y-1.5">
+            {commandSequence.map((p, i) => (
+              <li key={i} className="flex gap-2">
+                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-ink-subtle" />
+                <span className="text-ink-muted">
+                  <span className="font-medium text-ink">
+                    {t("skuAgent.seqStep", { n: i + 1 })}
+                  </span>{" "}
+                  {p.operation} · {p.targetLabel}
+                </span>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-3 flex gap-2">
+            <Button
+              size="sm"
+              className="flex-1"
+              onClick={() => executeSequence(commandSequence)}
+              disabled={commandExecuting}
+            >
+              {commandExecuting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                t("skuAgent.seqExecute")
+              )}
+            </Button>
+            <button
+              type="button"
+              disabled={commandExecuting}
+              onClick={() => {
+                setCommandSequence(null);
+                setSeqDone(false);
+                setSeqCurrent(0);
+              }}
+              className="rounded-[var(--radius-control)] border border-hairline px-3 py-1.5 text-xs text-ink-muted hover:text-ink disabled:opacity-50"
+            >
+              {t("commandUi.cancel")}
+            </button>
+          </div>
+          {seqDone ? (
+            <div className="mt-2 text-[11px] text-emerald-700">{t("skuAgent.seqDone")}</div>
+          ) : null}
         </div>
       ) : null}
 
@@ -356,6 +508,9 @@ export function SkuAgentPanel({
           setExecStep(null);
           setBatchProgress(null);
           setSkillFeedback(null);
+          setCommandSequence(null);
+          setSeqDone(false);
+          setSeqCurrent(0);
         }}
         onAutoApply={handleConfirmWithPreview}
         onDirectExecute={() => {
@@ -363,7 +518,7 @@ export function SkuAgentPanel({
         }}
       />
 
-      {execStep === "done" && !skillFeedback ? (
+      {execStep === "done" && !skillFeedback && !commandSequence ? (
         <div className="rounded-[var(--radius-card)] border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
           {t("skuAgent.execDone")}
         </div>

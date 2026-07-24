@@ -11,6 +11,7 @@ import {
   mapImageMatchConfirmError,
 } from "@/lib/batch-link/match-errors";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
+import { rerankForShopMirrorProduct } from "@/lib/sku-align/image-search-sku-rank";
 import {
   INITIAL_BATCH_LINK_PROGRESS,
   type BatchLinkCardDrive,
@@ -214,11 +215,28 @@ export function useBatchLinkQueue({
         });
         if (runId !== runIdRef.current) break;
 
-        const confidencePatch = pipeline.rankedItems.length
-          ? confidenceDrivePatch(pipeline)
+        let rankedItems = pipeline.rankedItems;
+        let searchResult = pipeline.result;
+        if (pipeline.result && pipeline.rankedItems.length > 0) {
+          const reranked = await rerankForShopMirrorProduct(
+            shopName,
+            id,
+            pipeline.rankedItems,
+            pipeline.imageScores,
+            { maxProbe: AUTO_BIND_CANDIDATE_LIMIT }
+          );
+          rankedItems = reranked.orderedCandidates;
+          searchResult = { ...pipeline.result, items: reranked.orderedCandidates };
+        }
+
+        const confidencePatch = rankedItems.length
+          ? confidenceDrivePatch({
+              ...pipeline,
+              rankedItems,
+            })
           : {};
 
-        if (pipeline.error || !pipeline.result || pipeline.rankedItems.length === 0) {
+        if (pipeline.error || !searchResult || rankedItems.length === 0) {
           setCardState(id, "failed", {
             productTitle: title,
             errorMessage: pipeline.error ?? "未找到可靠候选",
@@ -235,7 +253,7 @@ export function useBatchLinkQueue({
           setCardState(id, "failed", {
             productTitle: title,
             ...confidencePatch,
-            searchResult: pipeline.result,
+            searchResult: searchResult,
             matchScores: pipeline.matchScores,
             imageScores: pipeline.imageScores,
             highlightTopCandidate: true,
@@ -248,7 +266,7 @@ export function useBatchLinkQueue({
         setCardState(id, "candidates_ready", {
           productTitle: title,
           ...confidencePatch,
-          searchResult: pipeline.result,
+          searchResult: searchResult,
           matchScores: pipeline.matchScores,
           imageScores: pipeline.imageScores,
           highlightTopCandidate: true,
@@ -260,7 +278,7 @@ export function useBatchLinkQueue({
           setCardState(id, "needs_review", {
             productTitle: title,
             ...confidencePatch,
-            searchResult: pipeline.result,
+            searchResult: searchResult,
             matchScores: pipeline.matchScores,
             imageScores: pipeline.imageScores,
             highlightTopCandidate: true,
@@ -274,11 +292,11 @@ export function useBatchLinkQueue({
         }
 
         // High confidence — auto select top candidate (same as「选用」).
-        const candidatesToTry = pipeline.rankedItems.slice(0, AUTO_BIND_CANDIDATE_LIMIT);
+        const candidatesToTry = rankedItems.slice(0, AUTO_BIND_CANDIDATE_LIMIT);
         setCardState(id, "auto_selecting", {
           productTitle: title,
           ...confidencePatch,
-          searchResult: pipeline.result,
+          searchResult: searchResult,
           matchScores: pipeline.matchScores,
           imageScores: pipeline.imageScores,
           highlightTopCandidate: true,
@@ -290,7 +308,7 @@ export function useBatchLinkQueue({
         setCardState(id, "binding", {
           productTitle: title,
           ...confidencePatch,
-          searchResult: pipeline.result,
+          searchResult: searchResult,
           matchScores: pipeline.matchScores,
           imageScores: pipeline.imageScores,
           highlightTopCandidate: true,
@@ -306,7 +324,7 @@ export function useBatchLinkQueue({
               shopName,
               product,
               candidate,
-              pipeline.result,
+              searchResult,
               {
                 auto: true,
                 allowPoolIngest: true,
@@ -320,7 +338,7 @@ export function useBatchLinkQueue({
             setCardState(id, "done", {
               productTitle: title,
               ...confidencePatch,
-              searchResult: pipeline.result,
+              searchResult: searchResult,
               matchScores: pipeline.matchScores,
               imageScores: pipeline.imageScores,
               highlightTopCandidate: true,
@@ -345,7 +363,7 @@ export function useBatchLinkQueue({
           setCardState(id, "failed", {
             productTitle: title,
             ...confidencePatch,
-            searchResult: pipeline.result,
+            searchResult: searchResult,
             matchScores: pipeline.matchScores,
             imageScores: pipeline.imageScores,
             highlightTopCandidate: true,

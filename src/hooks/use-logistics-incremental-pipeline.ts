@@ -10,6 +10,13 @@ import {
   type LogisticsPipelineProgress,
   type ProductPipelineWork,
 } from "@/lib/logistics/incremental-pipeline";
+import {
+  collectIngestingVariantIds,
+  INGESTING_RETRY_DELAY_MS,
+  mapWithConcurrency,
+  PIPELINE_PRODUCT_CONCURRENCY,
+  sleepMs,
+} from "@/lib/logistics/estimate-batch";
 import type { LogisticsAnalysis, VariantLogisticsDecision } from "@/lib/types";
 
 type FetchQuotesFn = (
@@ -116,119 +123,187 @@ export function useLogisticsIncrementalPipeline({
         skipped,
       };
       let latestQuotes = new Map(quoteResults);
+      let completedProducts = 0;
+      const activeProductIds = new Set<string>();
+      const workTitleById = new Map(works.map((w) => [w.productId, w.title]));
+      let lockChain = Promise.resolve();
 
-      try {
-        for (let i = 0; i < works.length; i += 1) {
-          if (isCancelled()) {
-            return;
-          }
+      const withLock = async <T>(fn: () => T | Promise<T>): Promise<T> => {
+        const run = lockChain.then(fn, fn);
+        lockChain = run.then(
+          () => undefined,
+          () => undefined
+        );
+        return run;
+      };
 
-          const work = works[i]!;
-          if (!isCancelled()) {
-            setProgress((prev) => ({
-              ...prev,
-              phase: "running",
-              productIndex: i + 1,
-              productTotal: works.length,
-              currentProductId: work.productId,
-              currentProductTitle: work.title,
-              stats: { ...stats },
-            }));
-          }
+      const resolveActiveTitle = (): string | null => {
+        if (activeProductIds.size !== 1) return null;
+        const id = [...activeProductIds][0];
+        return id ? (workTitleById.get(id) ?? null) : null;
+      };
 
-          let productQuotes = latestQuotes;
+      const syncProgress = (patch?: Partial<LogisticsPipelineProgress>) => {
+        if (isCancelled()) return;
+        setProgress((prev) => ({
+          ...prev,
+          phase: "running",
+          productIndex: completedProducts,
+          productTotal: works.length,
+          activeProductIds: [...activeProductIds],
+          currentProductId:
+            activeProductIds.size === 1 ? [...activeProductIds][0]! : null,
+          currentProductTitle: resolveActiveTitle(),
+          stats: { ...stats },
+          ...patch,
+        }));
+      };
 
+      const processProduct = async (work: ProductPipelineWork) => {
+        if (isCancelled()) return;
+
+        activeProductIds.add(work.productId);
+        syncProgress({
+          currentProductTitle: work.title,
+          currentSkuStep:
+            work.quoteVariantIds.length > 0
+              ? "quote"
+              : work.acceptVariantIds.length > 0
+                ? "accept"
+                : null,
+        });
+
+        try {
           if (work.quoteVariantIds.length > 0) {
-            if (isCancelled()) {
+            if (isCancelled()) return;
+            syncProgress({ currentSkuStep: "quote" });
+
+            let fetched: Map<string, LogisticsEstimateResult> | null = null;
+            try {
+              fetched = await fetchQuotesForVariants(
+                work.quoteVariantIds,
+                abortRef.current?.signal
+              );
+            } catch (err) {
+              if (
+                isCancelled() ||
+                (err instanceof Error && err.name === "AbortError")
+              ) {
+                return;
+              }
+              await withLock(() => {
+                stats.failed += work.quoteVariantIds.length;
+              });
               return;
             }
 
-            if (!isCancelled()) {
-              setProgress((prev) => ({
-                ...prev,
-                currentSkuStep: "quote",
-              }));
-            }
-            const fetched = await fetchQuotesForVariants(
-              work.quoteVariantIds,
-              abortRef.current?.signal
-            );
-            if (isCancelled()) {
-              return;
-            }
-            if (fetched === null) {
-              stats.failed += work.quoteVariantIds.length;
-              continue;
-            }
-            productQuotes = fetched;
-            latestQuotes = new Map([...latestQuotes, ...fetched]);
-            for (const skuId of work.quoteVariantIds) {
-              const result = fetched.get(skuId);
-              if (!result?.recommendedLine) stats.failed += 1;
-            }
+            await withLock(() => {
+              if (fetched === null) {
+                stats.failed += work.quoteVariantIds.length;
+                return;
+              }
+              latestQuotes = new Map([...latestQuotes, ...fetched]);
+              for (const skuId of work.quoteVariantIds) {
+                const result = fetched.get(skuId);
+                if (result?.quoteStatus === "INGESTING") continue;
+                if (!result?.recommendedLine) stats.failed += 1;
+              }
+            });
           }
 
-          if (isCancelled()) {
-            return;
-          }
+          if (isCancelled()) return;
 
-          const autoAcceptIds = collectAutoAcceptIds(
-            work,
-            productQuotes,
-            analysis
+          const autoAcceptIds = await withLock(() =>
+            collectAutoAcceptIds(work, latestQuotes, analysis)
           );
 
           if (autoAcceptIds.length > 0) {
-            if (!isCancelled()) {
-              setProgress((prev) => ({
-                ...prev,
-                currentSkuStep: "accept",
-                stats: { ...stats },
-              }));
-            }
+            syncProgress({ currentSkuStep: "accept" });
 
             const quotes: NonNullable<LogisticsAcceptDecisionRequest["quotes"]> =
               {};
-            for (const skuId of autoAcceptIds) {
-              const quote = productQuotes.get(skuId);
-              if (!quote?.recommendedLine) continue;
-              quotes[skuId] = {
-                recommendedLine: quote.recommendedLine,
-                alternativeLines: quote.alternativeLines,
-                quoteStatus: quote.quoteStatus,
-              };
-            }
+            await withLock(() => {
+              for (const skuId of autoAcceptIds) {
+                const quote = latestQuotes.get(skuId);
+                if (!quote?.recommendedLine) continue;
+                quotes[skuId] = {
+                  recommendedLine: quote.recommendedLine,
+                  alternativeLines: quote.alternativeLines,
+                  quoteStatus: quote.quoteStatus,
+                };
+              }
+            });
 
             const acceptIds = Object.keys(quotes);
             if (acceptIds.length > 0) {
-              if (isCancelled()) {
-                return;
-              }
-              try {
-                const result = await acceptDecision({
-                  shopName,
-                  targetScope: "VARIANTS",
-                  variantIds: acceptIds,
-                  quotes,
-                });
-                setAnalysis(result.analysis);
-                stats.autoAccepted += result.acceptedCount;
-              } catch {
-                stats.failed += acceptIds.length;
-              }
+              if (isCancelled()) return;
+              await withLock(async () => {
+                try {
+                  const result = await acceptDecision({
+                    shopName,
+                    targetScope: "VARIANTS",
+                    variantIds: acceptIds,
+                    quotes,
+                  });
+                  setAnalysis(result.analysis);
+                  stats.autoAccepted += result.acceptedCount;
+                } catch {
+                  stats.failed += acceptIds.length;
+                }
+              });
             }
           }
-
-          if (!isCancelled()) {
-            setProgress((prev) => ({
-              ...prev,
-              stats: { ...stats },
-            }));
-          }
+        } finally {
+          activeProductIds.delete(work.productId);
+          completedProducts += 1;
+          syncProgress({ currentSkuStep: null });
         }
+      };
+
+      try {
+        await mapWithConcurrency(
+          works,
+          PIPELINE_PRODUCT_CONCURRENCY,
+          processProduct,
+          isCancelled
+        );
 
         if (isCancelled()) {
           return;
+        }
+
+        const allQuotedIds = works.flatMap((w) => w.quoteVariantIds);
+        const ingestingIds = collectIngestingVariantIds(latestQuotes, allQuotedIds);
+        if (ingestingIds.length > 0) {
+          if (!isCancelled()) {
+            showToast(
+              `${ingestingIds.length} 个 SKU 入库中，约 ${Math.round(INGESTING_RETRY_DELAY_MS / 1000)} 秒后自动重试报价`
+            );
+            setProgress((prev) => ({
+              ...prev,
+              currentSkuStep: "quote",
+              currentProductTitle: null,
+              stats: { ...stats, ingestingRetry: ingestingIds.length },
+            }));
+          }
+          try {
+            await sleepMs(INGESTING_RETRY_DELAY_MS, abortRef.current?.signal);
+          } catch {
+            return;
+          }
+          if (!isCancelled()) {
+            try {
+              const retried = await fetchQuotesForVariants(
+                ingestingIds,
+                abortRef.current?.signal
+              );
+              if (retried) {
+                latestQuotes = new Map([...latestQuotes, ...retried]);
+              }
+            } catch {
+              // Ingesting retry is best-effort — main pass already completed.
+            }
+          }
         }
 
         ranScopeRef.current = templateScopeKey;

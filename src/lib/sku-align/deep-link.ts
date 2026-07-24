@@ -68,6 +68,40 @@ export function parseSkuAlignTabParam(
   return "primary";
 }
 
+/** Read workbench tab from the current location query (popstate / manual URL). */
+export function readSkuAlignProductTabFromLocation(): import("@/lib/sku-align/drawer-helpers").DrawerPhase {
+  if (typeof window === "undefined") return "primary";
+  return parseSkuAlignTabParam(
+    new URLSearchParams(window.location.search).get(SKU_ALIGN_TAB_PARAM)
+  );
+}
+
+/**
+ * Sync workbench tab into the URL without a Next.js navigation (no remount).
+ * Keeps deep links / refresh working while tab switches stay client-side.
+ */
+export function syncSkuAlignProductTabInUrl(
+  locale: string,
+  productId: string,
+  opts?: {
+    tab?: import("@/lib/sku-align/drawer-helpers").DrawerPhase;
+    variantId?: string | null;
+  }
+): void {
+  if (typeof window === "undefined" || !productId.trim()) return;
+
+  const href = skuAlignProductWorkbenchHref(productId, {
+    tab: opts?.tab,
+    variantId: opts?.variantId?.trim() || undefined,
+  });
+  const path = href.startsWith("/") ? `/${locale}${href}` : href;
+  const next = `${path}${window.location.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (current === next) return;
+
+  window.history.replaceState(window.history.state, "", next);
+}
+
 export function parseSkuAlignFilterParam(
   value: string | null
 ): SkuAlignFilterParam | null {

@@ -25,6 +25,8 @@ export interface AgentFilterPreset {
   categoryId?: string;
   categoryName?: string;
   keywords?: string;
+  sourceFilter?: "all" | "tangbuy" | "1688";
+  priceMaxUsd?: number;
   label: string;
 }
 

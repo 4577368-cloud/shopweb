@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, startTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Check, ChevronDown, Globe } from "@/lib/ui/icons";
 import { useLocale } from "@/i18n/LocaleProvider";
@@ -46,9 +46,14 @@ export function LanguageSwitcher({ className }: { className?: string }) {
     const rest = segments.slice(2).join("/");
     const newPath = `/${next}${rest ? `/${rest}` : ""}`;
     document.cookie = `locale=${next}; path=/; max-age=${60 * 60 * 24 * 365}`;
-    // Defer navigation one tick so the menu unmounts cleanly first.
+    // Warm the target locale route so the navigation doesn't stall on a cold RSC request.
+    router.prefetch(newPath);
+    // Defer navigation one tick so the menu unmounts cleanly first; wrap in a
+    // transition so the layout re-render (await params) doesn't block the UI.
     window.setTimeout(() => {
-      router.push(newPath);
+      startTransition(() => {
+        router.push(newPath);
+      });
     }, 0);
   }
 

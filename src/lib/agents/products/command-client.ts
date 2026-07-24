@@ -20,5 +20,6 @@ export async function classifyProductCommandInput(
     apiPath: "/api/agents/products/command",
     context: ctx ?? null,
     locale,
+    priority: "llm-first",
   });
 }

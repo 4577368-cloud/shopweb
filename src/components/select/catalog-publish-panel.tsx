@@ -9,20 +9,20 @@ import { CatalogLinkDrawer } from "@/components/select/catalog-link-drawer";
 import type { PublishCellState } from "@/components/select/catalog-product-card";
 import { SmartSourcingFilters } from "@/components/select/smart-sourcing-filters";
 import { useOnboarding } from "@/context/onboarding-context";
-import { useT } from "@/i18n/LocaleProvider";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 import { api, readableError } from "@/lib/api";
-import {
-  fetchRecommendations,
-  repriceRecommendations,
-} from "@/lib/catalog-recommendations";
-import {
-  listingPurchaseCostDisplay,
-  resolveListingPricingContext,
-} from "@/lib/listing-pricing";
+import { resolveListingPricingContext } from "@/lib/listing-pricing";
+import { sourcingProcurementDisplay } from "@/lib/sourcing/display-pricing";
+import { hitsToCatalogRecommendations } from "@/lib/sourcing/map-catalog";
+import { publishSourcingHit } from "@/lib/sourcing/publish-sourcing-hit";
+import { searchSourcingHits } from "@/lib/sourcing/search";
+import { setSourcingSession } from "@/lib/sourcing/session";
+import type { SourcingSearchHit } from "@/lib/sourcing/types";
 import {
   createSavedSearch,
   loadFiltersCollapsed,
   loadSavedSearches,
+  normalizeCatalogFilters,
   persistFiltersCollapsed,
   persistSavedSearches,
   summarizeFilters,
@@ -33,7 +33,6 @@ import type {
   RecommendedCategory,
   SavedCatalogSearch,
 } from "@/lib/catalog-sourcing-types";
-import { resolvePublishSnapshot } from "@/lib/tangbuy-mall-gateway";
 import { markCatalogPublished } from "@/lib/batch-link/publish-source";
 import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
 import type { CatalogRecommendation, PricingTemplate } from "@/lib/types";
@@ -43,26 +42,6 @@ const PAGE_SIZE = 30;
 function money(value?: number | null, currency?: string | null): string {
   if (value == null) return "—";
   return `${value.toFixed(2)}${currency ? ` ${currency}` : ""}`;
-}
-
-function parseOptionalNumber(raw: string): number | null {
-  const t = raw.trim();
-  if (!t) return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
-}
-
-function buildGatewayKeywords(
-  filters: CatalogFilterState,
-  categories: RecommendedCategory[]
-): string {
-  const parts: string[] = [];
-  if (filters.keywords.trim()) parts.push(filters.keywords.trim());
-  for (const id of filters.categoryIds) {
-    const name = categories.find((c) => c.id === id)?.name;
-    if (name) parts.push(name);
-  }
-  return parts.join(" ").trim();
 }
 
 export function CatalogPublishPanel({
@@ -86,13 +65,19 @@ export function CatalogPublishPanel({
   filtersMountEl?: HTMLElement | null;
   sharedTemplate?: PricingTemplate | null;
   onAppliedFilterSummaryChange?: (chips: string[]) => void;
-  filterPresetRequest?: { categoryName?: string; keywords?: string } | null;
+  filterPresetRequest?: {
+    categoryName?: string;
+    keywords?: string;
+    sourceFilter?: "all" | "tangbuy" | "1688";
+    priceMaxUsd?: number;
+  } | null;
   onFilterPresetConsumed?: () => void;
   /** Called after catalog item is linked to an existing shop product. */
   onBindingLinked?: (thirdPlatformItemId: string) => void;
   onPublished?: (thirdPlatformItemId: string) => void;
 }) {
   const t = useT();
+  const locale = useLocale();
   const { shop, showToast } = useOnboarding();
   const shopName = shop.name;
 
@@ -108,6 +93,7 @@ export function CatalogPublishPanel({
     {}
   );
   const [linkItem, setLinkItem] = useState<CatalogRecommendation | null>(null);
+  const [sourcingHits, setSourcingHits] = useState<SourcingSearchHit[]>([]);
 
   const [filters, setFilters] = useState<CatalogFilterState>(DEFAULT_CATALOG_FILTERS);
   const [appliedFilters, setAppliedFilters] =
@@ -126,31 +112,28 @@ export function CatalogPublishPanel({
 
   const hasNextPage = recommendations.length >= PAGE_SIZE;
 
-  const fetchOpts = useCallback((f: CatalogFilterState) => {
-    return {
-      keywords: buildGatewayKeywords(f, categoriesRef.current),
-      sort: f.sort,
-      priceMinUsd: parseOptionalNumber(f.priceMinUsd),
-      priceMaxUsd: parseOptionalNumber(f.priceMaxUsd),
-    };
-  }, []);
-
   const loadPage = useCallback(
     async (pageNum: number, tpl?: PricingTemplate | null, f?: CatalogFilterState) => {
       const effectiveTemplate = tpl ?? templateRef.current;
       if (!effectiveTemplate) return;
       const filterState = f ?? appliedRef.current;
-      const items = await fetchRecommendations(
+      const hits = await searchSourcingHits({
         shopName,
-        PAGE_SIZE,
-        (pageNum - 1) * PAGE_SIZE,
-        effectiveTemplate,
-        fetchOpts(filterState)
+        limit: PAGE_SIZE,
+        offset: (pageNum - 1) * PAGE_SIZE,
+        template: effectiveTemplate,
+        filters: filterState,
+        categories: categoriesRef.current,
+        localeCountry: locale === "zh" ? "cn" : locale,
+      });
+      setSourcingHits(hits);
+      setSourcingSession(shopName, hits);
+      setRecommendations(
+        hitsToCatalogRecommendations(hits, effectiveTemplate)
       );
-      setRecommendations(items);
       setPage(pageNum);
     },
-    [shopName, fetchOpts]
+    [shopName, locale]
   );
 
   const loadAll = useCallback(
@@ -198,10 +181,12 @@ export function CatalogPublishPanel({
     if (!sharedTemplate) return;
     setTemplate(sharedTemplate);
     templateRef.current = sharedTemplate;
-    setRecommendations((prev) =>
-      prev.length > 0 ? repriceRecommendations(prev, sharedTemplate) : prev
-    );
-  }, [sharedTemplate]);
+    if (sourcingHits.length > 0) {
+      setRecommendations(
+        hitsToCatalogRecommendations(sourcingHits, sharedTemplate)
+      );
+    }
+  }, [sharedTemplate, sourcingHits]);
 
   // Surface applied filters to page-level PageContext / agents.
   useEffect(() => {
@@ -240,6 +225,11 @@ export function CatalogPublishPanel({
       ...DEFAULT_CATALOG_FILTERS,
       categoryIds: match ? [match.id] : [],
       keywords: filterPresetRequest.keywords?.trim() ?? "",
+      sourceFilter: filterPresetRequest.sourceFilter ?? "all",
+      priceMaxUsd:
+        filterPresetRequest.priceMaxUsd != null
+          ? String(filterPresetRequest.priceMaxUsd)
+          : "",
     };
     setFilters(next);
     setAppliedFilters(next);
@@ -313,14 +303,16 @@ export function CatalogPublishPanel({
 
   const handleSelectSaved = useCallback(
     async (search: SavedCatalogSearch) => {
-      setFilters(search.filters);
-      setAppliedFilters(search.filters);
+      const normalized = normalizeCatalogFilters(search.filters);
+      setFilters(normalized);
+      setAppliedFilters(normalized);
+      appliedRef.current = normalized;
       setActiveSavedId(search.id);
       setFiltersCollapsed(true);
       persistFiltersCollapsed(shopName, true);
       setPageTurning(true);
       try {
-        await loadPage(1, templateRef.current, search.filters);
+        await loadPage(1, templateRef.current, normalized);
       } catch (err) {
         showToast(readableError(err, t));
       } finally {
@@ -343,6 +335,12 @@ export function CatalogPublishPanel({
   const handlePublish = async (item: CatalogRecommendation) => {
     const current = publishState[item.candidateId];
     if (current?.loading) return;
+
+    const hit = sourcingHits.find((h) => {
+      const row = hitsToCatalogRecommendations([h], template)[0];
+      return row.candidateId === item.candidateId;
+    });
+
     if (
       !window.confirm(
         t("catalogPublish.confirmPublish", {
@@ -359,13 +357,35 @@ export function CatalogPublishPanel({
       ...prev,
       [item.candidateId]: { loading: true },
     }));
+
     try {
-      const snapshot = await resolvePublishSnapshot(item);
-      const result = await api.publishCatalogItem(
+      const publishHit: SourcingSearchHit =
+        hit ??
+        ({
+          hitId: `tangbuy:${item.candidateId}`,
+          source: item.offerId1688 && !item.tangbuyUrl ? "1688" : "tangbuy",
+          title: item.title,
+          imageUrl: item.imageUrl,
+          imageUrls: item.imageUrls,
+          costCny: item.price,
+          currency: item.currency,
+          candidateId: item.candidateId,
+          tangbuyUrl: item.tangbuyUrl,
+          offerId1688: item.offerId1688,
+          displayMultiplier: item.offerId1688 ? 1.2 : 1,
+        } satisfies SourcingSearchHit);
+
+      const outcome = await publishSourcingHit({
+        hit: publishHit,
         shopName,
-        item.candidateId,
-        snapshot
-      );
+        template,
+      });
+
+      if (!outcome.ok || !outcome.result) {
+        throw new Error(outcome.error ?? t("catalogPublish.publishFailed"));
+      }
+
+      const result = outcome.result;
       setPublishState((prev) => ({
         ...prev,
         [item.candidateId]: { loading: false, result },
@@ -391,21 +411,45 @@ export function CatalogPublishPanel({
     } catch (err) {
       setPublishState((prev) => ({
         ...prev,
-        [item.candidateId]: { loading: false, error: readableError(err, t) },
+        [item.candidateId]: {
+          loading: false,
+          error: readableError(err, t),
+        },
       }));
-      showToast(t("catalogPublish.publishFailed"));
+      showToast(readableError(err, t) || t("catalogPublish.publishFailed"));
     }
   };
 
   const purchasePriceById = useMemo(() => {
-    const listingCtx = resolveListingPricingContext(template);
     const map: Record<string, number | null> = {};
-    if (!listingCtx) return map;
-    for (const item of recommendations) {
-      map[item.candidateId] = listingPurchaseCostDisplay(item.price, listingCtx);
+    if (!template) return map;
+    for (const hit of sourcingHits) {
+      const row = hitsToCatalogRecommendations([hit], template)[0];
+      map[row.candidateId] = sourcingProcurementDisplay(hit.costCny, template);
     }
     return map;
-  }, [recommendations, template]);
+  }, [sourcingHits, template]);
+
+  const sourcingMetaById = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        source: SourcingSearchHit["source"];
+        listIndex?: number;
+        detailUrl?: string | null;
+      }
+    > = {};
+    for (const hit of sourcingHits) {
+      const row = hitsToCatalogRecommendations([hit], template)[0];
+      map[row.candidateId] = {
+        source: hit.source,
+        listIndex: hit.listIndex,
+        detailUrl:
+          hit.source === "1688" ? hit.detailUrl1688 ?? null : hit.tangbuyUrl,
+      };
+    }
+    return map;
+  }, [sourcingHits, template]);
 
   const listingCtx = resolveListingPricingContext(template);
   const targetCurrency = listingCtx?.targetCurrency ?? "USD";
@@ -463,6 +507,7 @@ export function CatalogPublishPanel({
         pageTurning={pageTurning}
         hasNextPage={hasNextPage}
         purchasePriceById={purchasePriceById}
+        sourcingMetaById={sourcingMetaById}
         targetCurrency={targetCurrency}
         publishState={publishState}
         onPublish={(item) => void handlePublish(item)}

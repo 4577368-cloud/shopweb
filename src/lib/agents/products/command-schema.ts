@@ -12,7 +12,10 @@ export type ProductCommandId =
   | "draft_product"
   | "archive_product"
   | "batch_draft_products"
-  | "batch_archive_products";
+  | "batch_archive_products"
+  | "search_sourcing"
+  | "publish_sourcing_item"
+  | "set_sourcing_filters";
 
 export type ProductCommandTargetScope = "current" | "explicit" | "none" | "all";
 
@@ -56,6 +59,19 @@ export interface ProductCommandParams {
   batchPriceMultiplier?: number;
   /** Batch price: fixed target price */
   batchPriceFixed?: number;
+  /** Discover tab — dual-source search keywords */
+  sourcingKeywords?: string;
+  sourcingSourceFilter?: "all" | "tangbuy" | "1688";
+  /** 1-based list index for publish_sourcing_item */
+  sourcingListIndex?: number;
+  sourcingItemHint?: string;
+  sourcingPriceMaxUsd?: number;
+  /** Internal — shop scope for sourcing session lookup */
+  sourcingShopName?: string;
+  /** Snapshot for confirm card / execution */
+  sourcingProcurementUsd?: number | null;
+  sourcingDisplayUsd?: number | null;
+  sourcingCurrency?: string;
 }
 
 export interface ProductCommandDraft {
@@ -139,6 +155,16 @@ export type ProductCommandExecution =
       totalCount: number;
       targetStatus: "DRAFT" | "ARCHIVED";
       filterLabel: string;
+    }
+  | {
+      type: "sourcing_publish";
+      hitId: string;
+      productTitle: string;
+      source: "tangbuy" | "1688";
+      displayPrice?: number | null;
+      procurementDisplay?: number | null;
+      currency?: string;
+      poolStatus?: string | null;
     };
 
 export const PRODUCT_COMMAND_IDS: ProductCommandId[] = [
@@ -155,6 +181,9 @@ export const PRODUCT_COMMAND_IDS: ProductCommandId[] = [
   "archive_product",
   "batch_draft_products",
   "batch_archive_products",
+  "search_sourcing",
+  "publish_sourcing_item",
+  "set_sourcing_filters",
 ];
 
 export const PRODUCT_COMMAND_SET = new Set<ProductCommandId>(PRODUCT_COMMAND_IDS);
@@ -258,5 +287,26 @@ export const PRODUCT_COMMAND_DEFS: {
     description: "批量将多个 Shopify 商品归档下架（ARCHIVED）",
     defaultConfirmation: true,
     sensitivity: "high",
+  },
+  {
+    id: "search_sourcing",
+    label: "找货源",
+    description: "在发现 Tab 搜索 Tangbuy + 1688 货源（关键词/类目）",
+    defaultConfirmation: false,
+    sensitivity: "low",
+  },
+  {
+    id: "publish_sourcing_item",
+    label: "上架货源",
+    description: "将发现列表中的某个货源上架到 Shopify（1688 先入池）",
+    defaultConfirmation: true,
+    sensitivity: "high",
+  },
+  {
+    id: "set_sourcing_filters",
+    label: "找货筛选",
+    description: "设置发现 Tab 的预算、来源（Tangbuy/1688）等筛选",
+    defaultConfirmation: false,
+    sensitivity: "low",
   },
 ];

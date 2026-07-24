@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/LocaleProvider";
 
 export function ImageZoomOverlay({
   src,
@@ -16,6 +17,7 @@ export function ImageZoomOverlay({
   className?: string;
 }) {
   const [mounted, setMounted] = useState(false);
+  const t = useT();
 
   useEffect(() => {
     setMounted(true);
@@ -45,7 +47,7 @@ export function ImageZoomOverlay({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="放大预览"
+      aria-label={t("common.zoomPreview")}
       className={cn(
         "fixed inset-0 z-[100] flex cursor-zoom-out items-center justify-center bg-black/75 p-4",
         className

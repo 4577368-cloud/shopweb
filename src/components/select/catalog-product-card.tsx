@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/LocaleProvider";
 import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
+import type { SourcingSource } from "@/lib/sourcing/types";
 import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
 import type { CatalogRecommendation, PublishResult, PublishStatus } from "@/lib/types";
 
@@ -25,6 +26,10 @@ export interface CatalogProductCardProps {
   item: CatalogRecommendation;
   /** Purchase price converted to target currency (usually USD). */
   purchasePriceUsd?: number | null;
+  sourcingSource?: SourcingSource;
+  listIndex?: number;
+  /** 1688 offer detail link — not shown as Tangbuy. */
+  sourceDetailUrl?: string | null;
   targetCurrency: string;
   state?: PublishCellState;
   onPublish: () => void;
@@ -34,6 +39,9 @@ export interface CatalogProductCardProps {
 export function CatalogProductCard({
   item,
   purchasePriceUsd,
+  sourcingSource,
+  listIndex,
+  sourceDetailUrl,
   targetCurrency,
   state,
   onPublish,
@@ -92,22 +100,48 @@ export function CatalogProductCard({
             <Badge variant="danger">{t("catalogCard.failed")}</Badge>
           </div>
         ) : null}
+        {sourcingSource ? (
+          <div className="absolute right-2 top-2 flex flex-col items-end gap-1">
+            {listIndex != null ? (
+              <Badge variant="default" className="text-[10px]">
+                #{listIndex}
+              </Badge>
+            ) : null}
+            <Badge
+              variant={sourcingSource === "1688" ? "warning" : "success"}
+              className="text-[10px]"
+            >
+              {sourcingSource === "1688"
+                ? t("catalogCard.source1688")
+                : t("catalogCard.sourceTangbuy")}
+            </Badge>
+          </div>
+        ) : null}
       </div>
 
       <h3 className="mt-2.5 line-clamp-2 min-h-[2.5rem] text-xs font-semibold leading-5 text-ink">
-        {item.tangbuyUrl ? (
-          <a
-            href={item.tangbuyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-ink hover:text-link hover:underline"
-            title={t("catalogCard.openOnTangbuy")}
-          >
-            {item.title}
-          </a>
-        ) : (
-          item.title
-        )}
+        {(() => {
+          const href =
+            sourcingSource === "1688"
+              ? sourceDetailUrl?.trim() || null
+              : item.tangbuyUrl?.trim() || null;
+          if (!href) return item.title;
+          return (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-ink hover:text-link hover:underline"
+              title={
+                sourcingSource === "1688"
+                  ? t("catalogCard.openOn1688")
+                  : t("catalogCard.openOnTangbuy")
+              }
+            >
+              {item.title}
+            </a>
+          );
+        })()}
       </h3>
 
       <div className="mt-1.5">
@@ -116,6 +150,13 @@ export function CatalogProductCard({
             price: money(item.estimatedSalePrice, item.targetCurrency ?? targetCurrency),
           })}
         </p>
+        {sourcingSource ? (
+          <p className="mt-0.5 text-[10px] text-ink-subtle">
+            {sourcingSource === "1688"
+              ? t("catalogCard.displayPriceNote1688")
+              : t("catalogCard.displayPriceNoteTangbuy")}
+          </p>
+        ) : null}
         <p className="mt-0.5 text-xs font-medium text-ink">
           {t("catalogCard.purchaseCost", {
             price: money(purchasePriceUsd, targetCurrency),

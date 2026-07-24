@@ -23,19 +23,39 @@ import { api, invalidateSkuOverviewCache, readableError } from "@/lib/api";
 import type { DrawerPhase } from "@/lib/sku-align/drawer-helpers";
 import {
   parseSkuAlignTabParam,
+  readSkuAlignProductTabFromLocation,
   SKU_ALIGN_PRODUCT_PARAM,
   SKU_ALIGN_TAB_PARAM,
   SKU_ALIGN_VARIANT_PARAM,
   skuAlignHref,
-  skuAlignProductWorkbenchHref,
+  syncSkuAlignProductTabInUrl,
 } from "@/lib/sku-align/deep-link";
-import { takeSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
+import { markScanned } from "@/lib/scan/gate";
+import {
+  peekSkuProductHandoff,
+  takeSkuProductHandoff,
+} from "@/lib/sku-align/overview-handoff";
+import {
+  peekSkuProductSession,
+  setSkuProductSession,
+} from "@/lib/sku-align/product-session-cache";
 import { readProductSourceIdentity } from "@/lib/product-source-identity";
 import { resolveSkuDetailUrl } from "@/lib/source-sku-matrix";
 import type { PricingTemplate, SkuProductOverview } from "@/lib/types";
 import type { SkuAlignProductDetail } from "@/lib/sku-align-v1/types";
 import { useLocale, useT } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
+
+function resolveCachedProduct(
+  shopName: string,
+  productId: string
+): SkuProductOverview | null {
+  if (!productId) return null;
+  return (
+    peekSkuProductHandoff(shopName, productId) ??
+    peekSkuProductSession(shopName, productId)
+  );
+}
 
 function SkuAlignProductContent() {
   const router = useRouter();
@@ -47,37 +67,58 @@ function SkuAlignProductContent() {
   const locale = useLocale();
 
   const productId = searchParams.get(SKU_ALIGN_PRODUCT_PARAM)?.trim() ?? "";
-  const tab = parseSkuAlignTabParam(searchParams.get(SKU_ALIGN_TAB_PARAM));
+  const tabParam = searchParams.get(SKU_ALIGN_TAB_PARAM);
   const focusVariantId = searchParams.get(SKU_ALIGN_VARIANT_PARAM)?.trim() || null;
+  const [phase, setPhase] = useState<DrawerPhase>(() =>
+    parseSkuAlignTabParam(tabParam)
+  );
 
-  const [loading, setLoading] = useState(true);
+  const cachedProduct = useMemo(
+    () => resolveCachedProduct(shopName, productId),
+    [shopName, productId]
+  );
+
+  const [loading, setLoading] = useState(() => !cachedProduct);
   const [error, setError] = useState<string | null>(null);
-  const [product, setProduct] = useState<SkuProductOverview | null>(null);
-  const [pricingTemplate, setPricingTemplate] = useState<PricingTemplate | null>(null);
+  const [product, setProduct] = useState<SkuProductOverview | null>(
+    () => cachedProduct
+  );
+  const [pricingTemplate, setPricingTemplate] = useState<PricingTemplate | null>(
+    null
+  );
   const [v1Detail, setV1Detail] = useState<SkuAlignProductDetail | null>(null);
-  const productRef = useRef<SkuProductOverview | null>(null);
+  const productRef = useRef<SkuProductOverview | null>(cachedProduct);
+  const loadedForRef = useRef<string | null>(
+    cachedProduct ? `${shopName}::${productId}` : null
+  );
 
   const load = useCallback(
-    async (opts?: { silent?: boolean }) => {
+    async (opts?: { silent?: boolean; forceOverview?: boolean }) => {
       if (!productId) return;
       const silent = opts?.silent === true;
-      if (!silent) {
+      const hasLocal =
+        productRef.current?.thirdPlatformItemId === productId ||
+        Boolean(peekSkuProductHandoff(shopName, productId)) ||
+        Boolean(peekSkuProductSession(shopName, productId));
+
+      if (!silent && !hasLocal) {
         setLoading(true);
       }
       setError(null);
       try {
-        const handed = takeSkuProductHandoff(shopName, productId);
+        takeSkuProductHandoff(shopName, productId);
+
         const [tpl, detail] = await Promise.all([
           api.getPricingTemplate(shopName).catch(() => null),
           api.skuAlignV1ProductDetail(shopName, productId).catch(() => null),
         ]);
 
-        let found: SkuProductOverview | null = handed;
-        if (!found && productRef.current?.thirdPlatformItemId === productId) {
-          found = productRef.current;
-        }
+        let found: SkuProductOverview | null =
+          productRef.current?.thirdPlatformItemId === productId
+            ? productRef.current
+            : resolveCachedProduct(shopName, productId);
 
-        if (!found || silent) {
+        if (!found || opts?.forceOverview) {
           invalidateSkuOverviewCache(shopName);
           const overview = await api.getSkuOverview(shopName);
           const fresh =
@@ -100,6 +141,7 @@ function SkuAlignProductContent() {
 
         setProduct(found);
         productRef.current = found;
+        setSkuProductSession(shopName, found);
         setPricingTemplate(tpl);
         setV1Detail(detail);
       } catch (err) {
@@ -108,13 +150,15 @@ function SkuAlignProductContent() {
           showToast(message);
           return;
         }
+        if (productRef.current?.thirdPlatformItemId === productId) {
+          showToast(message);
+          return;
+        }
         setError(message);
         setProduct(null);
         productRef.current = null;
       } finally {
-        if (!silent) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     },
     [shopName, productId, showToast, t]
@@ -122,8 +166,58 @@ function SkuAlignProductContent() {
 
   useEffect(() => {
     if (!isAuthorized || !productId) return;
+    markScanned("sku-align", shopName);
+
+    const loadKey = `${shopName}::${productId}`;
+    if (loadedForRef.current === loadKey && productRef.current) {
+      void load({ silent: true });
+      return;
+    }
+
+    const instant = resolveCachedProduct(shopName, productId);
+    if (instant) {
+      setProduct(instant);
+      productRef.current = instant;
+      setLoading(false);
+      loadedForRef.current = loadKey;
+      void load({ silent: true });
+      return;
+    }
+
+    loadedForRef.current = loadKey;
     void load();
-  }, [isAuthorized, productId, load]);
+  }, [isAuthorized, productId, load, shopName]);
+
+  /** External navigation (different product / deep link) — re-read tab from URL once. */
+  useEffect(() => {
+    setPhase(parseSkuAlignTabParam(tabParam));
+  }, [productId, tabParam]);
+
+  /** Browser back/forward while staying on this page. */
+  useEffect(() => {
+    const onPopState = () => {
+      setPhase(readSkuAlignProductTabFromLocation());
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const goBackToList = useCallback(() => {
+    markScanned("sku-align", shopName);
+    router.replace(skuAlignHref());
+  }, [router, shopName]);
+
+  const setTab = useCallback(
+    (next: DrawerPhase) => {
+      if (!productId) return;
+      setPhase(next);
+      syncSkuAlignProductTabInUrl(locale, productId, {
+        tab: next,
+        variantId: focusVariantId,
+      });
+    },
+    [productId, focusVariantId, locale]
+  );
 
   const storedSource = product
     ? readProductSourceIdentity(shopName, product.thirdPlatformItemId)
@@ -146,20 +240,6 @@ function SkuAlignProductContent() {
         ?.tangbuyProductId?.trim() ||
       null
     : null;
-
-  const setTab = useCallback(
-    (phase: DrawerPhase) => {
-      if (!productId) return;
-      router.replace(
-        skuAlignProductWorkbenchHref(productId, {
-          tab: phase,
-          variantId: focusVariantId ?? undefined,
-        }),
-        { scroll: false }
-      );
-    },
-    [router, productId, focusVariantId]
-  );
 
   const breadcrumbs = useMemo(
     () => [
@@ -226,6 +306,8 @@ function SkuAlignProductContent() {
     );
   }
 
+  const showBlockingLoader = loading && !product;
+
   return (
     <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
       <WorkbenchPanel
@@ -235,7 +317,7 @@ function SkuAlignProductContent() {
         maxWidth={1280}
         {...wb.panelProps}
       >
-        {loading ? (
+        {showBlockingLoader ? (
           <div className="flex items-center gap-2 py-16 text-sm text-ink-muted">
             <Loader2 className="h-4 w-4 animate-spin text-brand" />
             {t("sku.loadingProductSpecs")}
@@ -260,12 +342,12 @@ function SkuAlignProductContent() {
             shopName={shopName}
             detailUrl={detailUrl}
             tangbuyProductId={tangbuyProductId}
-            phase={tab}
+            phase={phase}
             onPhaseChange={setTab}
             focusVariantId={focusVariantId}
             v1Detail={v1Detail}
             pricingTemplate={pricingTemplate}
-            onSaved={() => load({ silent: true })}
+            onSaved={() => load({ silent: true, forceOverview: true })}
             onRefreshDetail={async () => {
               try {
                 setV1Detail(
@@ -275,7 +357,7 @@ function SkuAlignProductContent() {
                 setV1Detail(null);
               }
             }}
-            onBack={() => router.push(skuAlignHref())}
+            onBack={goBackToList}
             showToast={showToast}
           />
         )}

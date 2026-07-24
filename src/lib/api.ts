@@ -731,6 +731,36 @@ export const api = {
       )}&country=${encodeURIComponent(country)}`
     ),
 
+  /** 1688 keyword-assisted image search (discover tab dual-source). */
+  search1688Offers: (opts: {
+    keyword: string;
+    imageUrl: string;
+    country?: string;
+    page?: number;
+    size?: number;
+  }) => {
+    const params = new URLSearchParams();
+    params.set("keyword", opts.keyword);
+    params.set("imageUrl", opts.imageUrl);
+    if (opts.country) params.set("country", opts.country);
+    if (opts.page != null) params.set("page", String(opts.page));
+    if (opts.size != null) params.set("size", String(opts.size));
+    return request<{
+      items?: Array<{
+        offerId?: string | null;
+        subject?: string | null;
+        subjectTrans?: string | null;
+        imageUrl?: string | null;
+        price?: string | null;
+        consignPrice?: string | null;
+        promotionPrice?: string | null;
+        companyName?: string | null;
+        detailUrl?: string | null;
+      }>;
+      totalRecords?: number | null;
+    }>(`/api/plugin/match/image-aop/search?${params.toString()}`);
+  },
+
   /** List the shop's mirrored on-sale products (read-only; path A display). */
   getShopProducts: (shop: string) =>
     request<ShopMirrorProduct[]>(

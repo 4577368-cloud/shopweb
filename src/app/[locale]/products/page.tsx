@@ -41,6 +41,7 @@ import {
 } from "@/lib/shop-product-mirror-baseline";
 import { formatNewArrivalAnalysisSummary } from "@/lib/new-arrival-analysis-result";
 import { mergeProductBaseline } from "@/lib/shop-product-mirror-baseline";
+import { clearMirrorCache } from "@/lib/products/mirror-cache";
 import { formatBatchLinkSummary } from "@/lib/batch-link/types";
 import type { BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
 import { buildNewArrivalResultFromBatch } from "@/lib/batch-link/build-new-arrival-result";
@@ -84,6 +85,13 @@ import type {
 import type { ScanHandoffPayload } from "@/lib/scan/handoff";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
+import { publishSourcingHit } from "@/lib/sourcing/publish-sourcing-hit";
+import {
+  getSourcingSession,
+  resolveHitByListIndex,
+} from "@/lib/sourcing/session";
+import { markCatalogPublished } from "@/lib/batch-link/publish-source";
+import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
 
 const SmartSourcingSummaryBar = dynamic(() => import("@/components/select/smart-sourcing-summary-bar").then((m) => ({ default: m.SmartSourcingSummaryBar })), { ssr: false });
 const PricingTemplateDrawer = dynamic(() => import("@/components/select/pricing-template-drawer").then((m) => ({ default: m.PricingTemplateDrawer })), { ssr: false });
@@ -238,6 +246,8 @@ function SelectContent() {
   const [filterPresetRequest, setFilterPresetRequest] = useState<{
     categoryName?: string;
     keywords?: string;
+    sourceFilter?: "all" | "tangbuy" | "1688";
+    priceMaxUsd?: number;
   } | null>(null);
 
   const {
@@ -447,6 +457,7 @@ function SelectContent() {
   const restartScan = useCallback(() => {
     finishedRef.current = false;
     clearScanned("products", shopName);
+    clearMirrorCache(shopName);
     setPhase("scan");
     void startScan();
   }, [shopName, startScan]);
@@ -727,6 +738,8 @@ function SelectContent() {
         setFilterPresetRequest({
           categoryName: action.filterPreset?.categoryName,
           keywords: action.filterPreset?.keywords,
+          sourceFilter: action.filterPreset?.sourceFilter,
+          priceMaxUsd: action.filterPreset?.priceMaxUsd,
         });
       }
     },
@@ -1541,8 +1554,72 @@ function SelectContent() {
           },
         };
       },
+      publish_sourcing_item: async (plan: any) => {
+        const hitId = plan.draft.params.sourcingItemHint as string | undefined;
+        const index = plan.draft.params.sourcingListIndex as number | undefined;
+        const session = getSourcingSession(shopName);
+        const hit =
+          (hitId ? session?.hits.find((h) => h.hitId === hitId) : null) ??
+          (index != null ? resolveHitByListIndex(shopName, index) : null);
+        if (!hit) throw new Error(t("agentProducts.clarifySourcingPublishTarget"));
+
+        const currency =
+          (plan.draft.params.sourcingCurrency as string | undefined) ?? "USD";
+        const procurement = plan.draft.params.sourcingProcurementUsd as
+          | number
+          | null
+          | undefined;
+        const display = plan.draft.params.sourcingDisplayUsd as
+          | number
+          | null
+          | undefined;
+
+        const fmt = (n: number | null | undefined) =>
+          n != null ? `${currency} ${n.toFixed(2)}` : "—";
+
+        return {
+          sections: [
+            {
+              title: hit.title,
+              rows: [
+                {
+                  label: t("agentProducts.detailSourcingSource", {
+                    source: hit.source,
+                  }),
+                  before: "",
+                  after: hit.source === "1688" ? "1688" : "Tangbuy",
+                },
+                {
+                  label: t("catalogCard.purchaseCost", {
+                    price: fmt(procurement),
+                  }),
+                  before: "",
+                  after: fmt(procurement),
+                },
+                {
+                  label: t("catalogCard.suggestedPrice", {
+                    price: fmt(display),
+                  }),
+                  before: "",
+                  after: `${fmt(display)} (${hit.displayMultiplier}×)`,
+                },
+              ],
+            },
+          ],
+          impact: {
+            scope: t("agentProducts.opPublishSourcing"),
+            durationHint: hit.source === "1688" ? "30–90s" : "10–30s",
+            reversible: false,
+            riskNote:
+              hit.source === "1688"
+                ? t("agentProducts.detailPoolWillIngest")
+                : undefined,
+          },
+          payload: { hitId: hit.hitId },
+        };
+      },
     }),
-    [t, copyActionLabel, previewFieldLabel, previewModeNote, previewDurationHint]
+    [t, copyActionLabel, previewFieldLabel, previewModeNote, previewDurationHint, shopName]
   );
 
   const commandExecutors = useMemo(
@@ -1659,6 +1736,32 @@ function SelectContent() {
           onProgress: p.onProgress,
         });
       },
+      publish_sourcing_item: async (payload: Record<string, unknown>) => {
+        const p = payload as { hitId: string };
+        const session = getSourcingSession(shopName);
+        const hit = session?.hits.find((h) => h.hitId === p.hitId);
+        if (!hit) {
+          throw new Error(t("agentProducts.clarifySourcingPublishTarget"));
+        }
+        const tpl = template ?? (await api.getPricingTemplate(shopName));
+        const outcome = await publishSourcingHit({
+          hit,
+          shopName,
+          template: tpl,
+        });
+        if (!outcome.ok || !outcome.result) {
+          throw new Error(outcome.error ?? t("catalogPublish.publishFailed"));
+        }
+        if (
+          outcome.result.publishStatus === "PUBLISHED" &&
+          outcome.result.shopifyProductId?.trim() &&
+          outcome.catalogItem
+        ) {
+          const productId = outcome.result.shopifyProductId.trim();
+          markCatalogPublished(shopName, productId);
+          queuePublishReveal(shopName, productId, outcome.catalogItem);
+        }
+      },
     }),
     [
       executeListingPriceUpdate,
@@ -1667,6 +1770,9 @@ function SelectContent() {
       executeBatchListingPriceUpdate,
       executeProductStatusUpdate,
       executeBatchProductStatusUpdate,
+      shopName,
+      template,
+      t,
     ]
   );
 

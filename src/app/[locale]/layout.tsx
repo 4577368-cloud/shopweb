@@ -1,26 +1,14 @@
-import type { Metadata } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
 import { notFound } from "next/navigation";
-import { OnboardingProvider } from "@/context/onboarding-context";
-import { ToastHost } from "@/components/layout/toast-host";
-import { LocaleProvider } from "@/i18n/LocaleProvider";
-import { messages } from "@/i18n/messages";
-import { isLocale, localeHtmlLang, type Locale } from "@/i18n/config";
-import { APP_DESCRIPTION, APP_FULL_NAME } from "@/lib/brand";
-import "./globals.css";
+import { isLocale } from "@/i18n/config";
 
-const displayFont = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-brand",
-  weight: ["500", "600", "700"],
-  display: "swap",
-});
-
-export const metadata: Metadata = {
-  title: APP_FULL_NAME,
-  description: APP_DESCRIPTION,
-};
-
+/**
+ * Nested layout for the [locale] dynamic segment. The real <html>/<body> and
+ * global providers now live in the root layout (src/app/layout.tsx), which
+ * stays mounted across language switches. This layer only validates the
+ * segment and renders children — it intentionally holds no global state, so a
+ * language switch (which changes the [locale] segment) remounts this layout
+ * and the page but NOT the root providers.
+ */
 export default async function LocaleLayout({
   children,
   params,
@@ -30,23 +18,5 @@ export default async function LocaleLayout({
 }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
-
-  const typed = locale as Locale;
-
-  return (
-    <html
-      lang={localeHtmlLang[typed]}
-      translate="no"
-      className={`${displayFont.variable} h-full antialiased`}
-    >
-      <body className="min-h-full bg-app-shell font-sans text-foreground" translate="no">
-        <LocaleProvider locale={typed} messages={messages[typed]}>
-          <OnboardingProvider>
-            {children}
-            <ToastHost />
-          </OnboardingProvider>
-        </LocaleProvider>
-      </body>
-    </html>
-  );
+  return <>{children}</>;
 }

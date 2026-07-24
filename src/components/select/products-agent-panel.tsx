@@ -138,14 +138,22 @@ export function ProductsAgentPanel({
     const examples: string[] = [];
     if (context.pendingCount > 0) examples.push(t("productsAgent.exampleConfirmAll"));
     if (context.unboundCount > 0) examples.push(t("productsAgent.exampleRematch"));
+    if (context.tab === "catalog") {
+      examples.push(
+        t("productsAgent.exampleDiscoverSearch"),
+        t("productsAgent.examplePublishSecond")
+      );
+    }
     examples.push(
       t("productsAgent.examplePrice"),
       t("productsAgent.exampleTranslate"),
-      t("productsAgent.examplePendingOnly"),
-      t("productsAgent.exampleDraft")
+      t("productsAgent.examplePendingOnly")
     );
-    return examples.slice(0, 4);
-  }, [context.pendingCount, context.unboundCount, t]);
+    if (context.tab !== "catalog") {
+      examples.push(t("productsAgent.exampleDraft"));
+    }
+    return examples.slice(0, 5);
+  }, [context.pendingCount, context.unboundCount, context.tab, t]);
 
   const dispatchAction = (action: AgentSuggestedAction) => {
     onApplySuggestedAction?.(action);

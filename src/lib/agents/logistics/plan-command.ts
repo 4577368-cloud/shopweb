@@ -15,6 +15,7 @@ export interface LogisticsPageContext {
   confirmedCount: number;
   highRiskTypes: string[];
   readyVariantIds: string[];
+  pipelineRunning?: boolean;
 }
 
 function statusLabel(t: TranslateFn, status: LogisticsDecisionStatus): string {
@@ -82,6 +83,31 @@ export function planLogisticsCommand(
         executable: true,
       };
     }
+    case "start_estimate": {
+      if (ctx.pipelineRunning) {
+        return {
+          draft,
+          operation: t("agentLogistics.opStartEstimate"),
+          targetLabel: t("agentLogistics.targetStartEstimate"),
+          detailLines: [],
+          executable: false,
+          clarify: t("agentLogistics.clarifyPipelineRunning"),
+        };
+      }
+      return {
+        draft: {
+          ...draft,
+          targetScope: "all",
+        },
+        operation: t("agentLogistics.opStartEstimate"),
+        targetLabel: t("agentLogistics.targetStartEstimate"),
+        detailLines: [
+          t("agentLogistics.detailStartEstimateLine1"),
+          t("agentLogistics.detailStartEstimateLine2"),
+        ],
+        executable: true,
+      };
+    }
     case "fetch_quotes": {
       return {
         draft: {
@@ -143,6 +169,28 @@ export function planLogisticsCommand(
       };
     }
     case "focus_status": {
+      if (draft.params.listFilter) {
+        const tabLabels: Record<string, string> = {
+          pending_quote: t("agentLogistics.tabPendingQuote"),
+          pending_confirm: t("agentLogistics.tabPendingConfirm"),
+          needs_attention: t("agentLogistics.tabNeedsAttention"),
+        };
+        const tabLabel =
+          tabLabels[draft.params.listFilter] ?? draft.params.listFilter;
+        return {
+          draft: {
+            ...draft,
+            targetScope: "all",
+            params: { ...draft.params },
+          },
+          operation: t("agentLogistics.opFocusStatus"),
+          targetLabel: tabLabel,
+          detailLines: [
+            t("agentLogistics.detailFocusListFilter", { tab: tabLabel }),
+          ],
+          executable: true,
+        };
+      }
       const status = draft.params.status ?? "needs_review";
       const label = statusLabel(t, status);
       const extraFilters: string[] = [];
@@ -207,6 +255,8 @@ export function commandOperationLabel(
       return t("agentLogistics.opAcceptAllReady");
     case "fetch_quotes":
       return t("agentLogistics.opFetchQuotes");
+    case "start_estimate":
+      return t("agentLogistics.opStartEstimate");
     case "open_template":
       return t("agentLogistics.opOpenTemplate");
     case "focus_issues":
@@ -232,6 +282,9 @@ export function resolveLogisticsCommandExecution(
         totalCount: ctx.readyAcceptCount,
       };
     }
+    case "start_estimate": {
+      return { type: "start_estimate" };
+    }
     case "fetch_quotes": {
       return { type: "fetch_quotes" };
     }
@@ -242,6 +295,12 @@ export function resolveLogisticsCommandExecution(
       return { type: "set_filter", filterMode: "issues" };
     }
     case "focus_status": {
+      if (plan.draft.params.listFilter) {
+        return {
+          type: "set_filter",
+          filterMode: plan.draft.params.listFilter,
+        };
+      }
       const status = plan.draft.params.status ?? "needs_review";
       return { type: "focus_status", status };
     }

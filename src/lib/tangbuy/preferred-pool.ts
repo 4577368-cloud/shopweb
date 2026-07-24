@@ -8,8 +8,11 @@ import {
   type ResolveProductSourceInput,
 } from "@/lib/catalog-product-resolve";
 import { buildOfferDetailUrl } from "@/lib/logistics/variant-measures";
+import { isTerminalPoolIngestStatus } from "@/lib/logistics/estimate-goods-block";
 import { buildTangbuyProductUrl } from "@/lib/tangbuy-mall-gateway";
 import type { PoolIngestStatus, ProductSourceIdentity } from "@/lib/types";
+import type { ImageSearchProduct } from "@/lib/types";
+import { writeProductSourceIdentity } from "@/lib/product-source-identity";
 
 /** 入池后反查 goodsId：首次等待 2s，避免索引尚未就绪 */
 const POLL_DELAYS_MS = [2000, 4000, 6000, 8000];
@@ -26,21 +29,70 @@ export interface PreferredPoolAddResult {
   skipped?: boolean;
 }
 
+const poolAddLogKeys = new Set<string>();
+
+function logPoolAddDiagnostic(
+  offerId1688: string,
+  detail: {
+    skipped?: boolean;
+    error?: string;
+    httpStatus?: number;
+  }
+): void {
+  if (typeof console === "undefined") return;
+  const error =
+    detail.error?.trim() ||
+    (detail.skipped ? "未配置 TANGBUY_ADMIN_TOKEN" : "登记失败");
+  const key = `${offerId1688}:${detail.skipped ? "skipped" : error}`;
+  if (poolAddLogKeys.has(key)) return;
+  poolAddLogKeys.add(key);
+
+  const payload = {
+    offerId1688,
+    error,
+    ...(detail.httpStatus != null ? { httpStatus: detail.httpStatus } : {}),
+    ...(detail.skipped ? { skipped: true } : {}),
+  };
+
+  const isExpected =
+    detail.skipped ||
+    /TANGBUY_ADMIN|未配置|认证失败|token|unauthorized/i.test(error);
+  if (isExpected) {
+    console.warn("[tangbuy/preferred-pool/add]", payload);
+  } else {
+    console.error("[tangbuy/preferred-pool/add]", payload);
+  }
+}
+
 async function submitPreferredPoolAdd(
   offerId1688: string
 ): Promise<PreferredPoolAddResult> {
+  const offerId = offerId1688.trim();
+  if (!offerId) {
+    return { ok: false, status: "failed", error: "缺少 1688 offerId" };
+  }
+
   try {
     const res = await fetch("/api/tangbuy/preferred-pool/add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        providerItemId: offerId1688,
+        providerItemId: offerId,
         providerType: "alibaba",
       }),
     });
-    const body = (await res.json()) as PreferredPoolAddResult & {
-      status?: string;
-    };
+
+    let body: PreferredPoolAddResult & { status?: string };
+    try {
+      const parsed = await res.json();
+      body =
+        parsed && typeof parsed === "object"
+          ? (parsed as PreferredPoolAddResult)
+          : { ok: false, status: "failed", error: `HTTP ${res.status}` };
+    } catch {
+      body = { ok: false, status: "failed", error: `HTTP ${res.status}（非 JSON 响应）` };
+    }
+
     if (body.ok) {
       return {
         ok: true,
@@ -50,14 +102,23 @@ async function submitPreferredPoolAdd(
       };
     }
     if (body.skipped) {
+      logPoolAddDiagnostic(offerId, {
+        skipped: true,
+        error: body.error,
+        httpStatus: res.status,
+      });
       return { ok: false, status: "skipped", error: body.error, skipped: true };
     }
-    return { ok: false, status: "failed", error: body.error ?? "登记失败" };
+    const error = body.error?.trim() || `登记失败（HTTP ${res.status}）`;
+    logPoolAddDiagnostic(offerId, { error, httpStatus: res.status });
+    return { ok: false, status: "failed", error };
   } catch (e) {
+    const error = e instanceof Error ? e.message : "登记请求失败";
+    logPoolAddDiagnostic(offerId, { error });
     return {
       ok: false,
       status: "failed",
-      error: e instanceof Error ? e.message : "登记请求失败",
+      error,
     };
   }
 }
@@ -143,7 +204,7 @@ export async function resolveIdentityWithPreferredPool(
     poolIngestStatus: pool.ok ? "pending_resolve" : pool.skipped ? "skipped" : "failed",
   };
 
-  if (!pool.ok && pool.status !== "skipped") {
+  if (!pool.ok) {
     return withPoolMeta;
   }
 
@@ -193,8 +254,14 @@ export async function ensurePoolIngestForLogistics(input: {
   }
 
   const pending = input.existingIdentity?.poolIngestStatus;
-  const needsSubmit = !pending || pending === "failed";
+  if (isTerminalPoolIngestStatus(pending)) {
+    return {
+      ...(input.existingIdentity ?? base),
+      poolIngestStatus: pending,
+    };
+  }
 
+  const needsSubmit = !pending;
   let withPool = input.existingIdentity ?? base;
 
   if (needsSubmit) {
@@ -208,7 +275,7 @@ export async function ensurePoolIngestForLogistics(input: {
           ? "skipped"
           : "failed",
     };
-    if (!pool.ok && !pool.skipped) return withPool;
+    if (!pool.ok) return withPool;
     if (input.shopName?.trim()) {
       invalidateCatalogOfferMapCache(input.shopName);
     }
@@ -271,6 +338,48 @@ export async function retryPendingPoolResolve(
 
 export function catalogUrlFromGoodsId(goodsId: string): string {
   return buildTangbuyProductUrl(goodsId, "PREFERRED");
+}
+
+/** Best-effort pool ingest when binding a 1688 offer (SKU replace / supplement). */
+export async function ensureOfferPoolFor1688Candidate(input: {
+  shopName: string;
+  candidate: Pick<
+    import("@/lib/types").ImageSearchProduct,
+    | "productId"
+    | "detailUrl"
+    | "offerId1688"
+    | "internalGoodsId"
+    | "catalogSource"
+    | "skuId"
+    | "title"
+  >;
+  titleHint?: string | null;
+}): Promise<void> {
+  if (input.candidate.catalogSource || input.candidate.internalGoodsId?.trim()) {
+    return;
+  }
+  const offerId =
+    input.candidate.offerId1688?.trim() ||
+    extractOfferIdFromUrl(input.candidate.detailUrl) ||
+    (isOfferId1688(input.candidate.productId) ? input.candidate.productId.trim() : null);
+  if (!offerId) return;
+
+  try {
+    await ensurePoolIngestForLogistics({
+      offerId1688: offerId,
+      tangbuySkuId: input.candidate.skuId,
+      titleHint: input.titleHint ?? input.candidate.title,
+      shopName: input.shopName,
+    });
+  } catch (err) {
+    if (typeof console !== "undefined") {
+      console.error("[tangbuy/preferred-pool/sku]", {
+        offerId,
+        shopName: input.shopName,
+        error: err instanceof Error ? err.message : err,
+      });
+    }
+  }
 }
 
 export { isInternalGoodsId, isOfferId1688 };

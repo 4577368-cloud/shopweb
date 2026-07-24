@@ -17,5 +17,6 @@ export interface CommandClassifyResult<TDraft = unknown> {
   confidence: "high" | "low" | "none";
   source?: string;
   draft?: TDraft;
-  clarify?: string;
+  /** Plain string for simple rules; sku-align also returns a structured object. */
+  clarify?: unknown;
 }

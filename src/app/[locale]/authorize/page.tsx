@@ -30,6 +30,11 @@ import { api } from "@/lib/api";
 import { SHOP_STORAGE_KEY, launchShopifyInstall } from "@/lib/shopify-install";
 import type { AiPanelContent } from "@/lib/types";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
+import {
+  getAuthorizeMirrorCache,
+  setAuthorizeMirrorCache,
+  isAuthorizeMirrorCacheFresh,
+} from "@/lib/authorize/authorize-mirror-cache";
 import { localePath } from "@/i18n/LocaleLink";
 import { localeHtmlLang } from "@/i18n/config";
 import { cn } from "@/lib/utils";
@@ -89,23 +94,42 @@ export default function AuthorizePage() {
   }, [authSessionReady]);
 
   // Real post-auth stats: 已关联货源 (distinct bound products) + 已刊登 (catalog publishes still on Shopify).
-  const loadStats = useCallback(async (shopName: string) => {
-    try {
-      const [list, published] = await Promise.all([
-        api.listImageBindings(shopName),
-        api.getPublishedCount(shopName).catch(() => ({ count: 0 })),
-      ]);
-      const distinct = new Set(
-        list
-          .filter((b) => b.bound && b.thirdPlatformItemId)
-          .map((b) => b.thirdPlatformItemId)
-      );
-      setBoundCount(distinct.size);
-      setPublishedCount(published.count ?? 0);
-    } catch {
-      setBoundCount(null);
-    }
-  }, []);
+  const loadStats = useCallback(
+    async (shopName: string, opts?: { skipCache?: boolean }) => {
+      // 命中镜像缓存 → 直接 hydrate，不 loading、不 fetch；后台静默刷新写回。
+      if (!opts?.skipCache && isAuthorizeMirrorCacheFresh(shopName)) {
+        const cached = getAuthorizeMirrorCache(shopName);
+        if (cached) {
+          setBoundCount(cached.boundCount);
+          setPublishedCount(cached.publishedCount);
+          void loadStats(shopName, { skipCache: true });
+          return;
+        }
+      }
+      try {
+        const [list, published] = await Promise.all([
+          api.listImageBindings(shopName),
+          api.getPublishedCount(shopName).catch(() => ({ count: 0 })),
+        ]);
+        const distinct = new Set(
+          list
+            .filter((b) => b.bound && b.thirdPlatformItemId)
+            .map((b) => b.thirdPlatformItemId)
+        );
+        const bound = distinct.size;
+        const publishedCount = published.count ?? 0;
+        setBoundCount(bound);
+        setPublishedCount(publishedCount);
+        setAuthorizeMirrorCache(shopName, {
+          boundCount: bound,
+          publishedCount: publishedCount,
+        });
+      } catch {
+        setBoundCount(null);
+      }
+    },
+    []
+  );
 
   // Once authorized, read the real "已关联货源数" from the same source /products uses.
   // Re-run whenever the active shop changes (multi-shop switcher).

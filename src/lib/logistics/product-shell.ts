@@ -8,7 +8,11 @@ import {
   type LogisticsTranslate,
   variantHasQuoteLine,
 } from "@/lib/logistics/display";
-import type { LogisticsPipelineProgress } from "@/lib/logistics/incremental-pipeline";
+import { userFacingQuoteErrorMessage } from "@/lib/logistics/estimate-goods-block";
+import {
+  isPipelineProductActive,
+  type LogisticsPipelineProgress,
+} from "@/lib/logistics/incremental-pipeline";
 import type {
   PricingTemplate,
   ProductLogisticsProfile,
@@ -119,7 +123,9 @@ export function formatVariantIssueHint(
     if (quoteStatus === "INGESTING") {
       return t("logisticsDisplay.issueHint.ingesting");
     }
-    const msg = quoteResult.errorMessage.trim();
+    const msg =
+      userFacingQuoteErrorMessage(quoteResult.errorMessage.trim()) ??
+      quoteResult.errorMessage.trim();
     return msg.length > 48 ? `${msg.slice(0, 48)}…` : msg;
   }
   const status = effectiveQuoteStatus({
@@ -172,8 +178,11 @@ export function computeProductShellMeta(
   let minFee: number | null = null;
   let minFeeLabel: string | null = null;
 
-  const isProcessing =
-    Boolean(pipelineActive && pipeline?.currentProductId === profile.thirdPlatformItemId);
+  const isProcessing = isPipelineProductActive(
+    pipeline ?? null,
+    profile.thirdPlatformItemId,
+    pipelineActive
+  );
 
   for (const variant of variants) {
     const quote = quoteResults.get(variant.thirdPlatformSkuId);
