@@ -3,9 +3,10 @@
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import type { LogisticsPlanMetrics } from "@/lib/logistics/display";
 import { needsAttentionCount, pendingWorkCount } from "@/lib/logistics/display";
+import type { LogisticsWorkflowStep } from "@/lib/logistics/page-constants";
 import { useT } from "@/i18n/LocaleProvider";
 
-export type LogisticsWorkflowStep = "setup" | "estimate" | "confirm";
+export type { LogisticsWorkflowStep } from "@/lib/logistics/page-constants";
 
 export function deriveLogisticsWorkflowStep(input: {
   hasSavedTemplate: boolean;

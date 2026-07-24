@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import dynamic from "next/dynamic";
 import { Loader2, RefreshCw, ArrowRight } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
@@ -19,6 +19,7 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { useLogisticsIncrementalPipeline } from "@/hooks/use-logistics-incremental-pipeline";
+import { useLogisticsWorkflowStep } from "@/hooks/use-logistics-workflow-step";
 import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
 import {
   clearLogisticsMirrorCache,
@@ -131,6 +132,7 @@ function LogisticsContent() {
   const wb = useWorkbenchPage("logistics");
   const t = useT();
   const locale = useLocale();
+  const { workflowStep, setWorkflowStep } = useLogisticsWorkflowStep(locale);
 
   const breadcrumbs = [
     { label: t("nav.workbench"), href: localePath(locale, "/") },
@@ -156,20 +158,6 @@ function LogisticsContent() {
   const [error, setError] = useState<string | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [filterMode, setFilterMode] = useState<LogisticsFilterMode>("all");
-  const [workflowStep, setWorkflowStep] = useState<LogisticsWorkflowStep>(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const step = params.get("step") as LogisticsWorkflowStep;
-      if (step === "setup" || step === "estimate" || step === "confirm") {
-        return step;
-      }
-    }
-    return "setup";
-  });
-
-  useEffect(() => {
-    router.replace(`/logistics?step=${workflowStep}`, { scroll: false });
-  }, [workflowStep, router]);
   const [postalLimitFilter, setPostalLimitFilter] = useState<PostalLimitFilter>("all");
   const [quoteResults, setQuoteResults] = useState<
     Map<string, LogisticsEstimateResult>
@@ -1325,13 +1313,12 @@ function LogisticsContent() {
       setWorkflowStep("setup");
       return;
     }
-    setWorkflowStep((prev) => {
-      if (prev === "setup") {
-        return deriveLogisticsWorkflowStep({ hasSavedTemplate, metrics: planMetrics });
-      }
-      return prev;
-    });
-  }, [hasSavedTemplate, planMetrics]);
+    if (workflowStep === "setup") {
+      setWorkflowStep(
+        deriveLogisticsWorkflowStep({ hasSavedTemplate, metrics: planMetrics })
+      );
+    }
+  }, [hasSavedTemplate, planMetrics, workflowStep, setWorkflowStep]);
 
   const handleWorkflowStepChange = useCallback(
     (step: LogisticsWorkflowStep) => {
@@ -1809,5 +1796,9 @@ function writeMeasureOverrides(
 }
 
 export default function LogisticsPage() {
-  return <LogisticsContent />;
+  return (
+    <Suspense fallback={null}>
+      <LogisticsContent />
+    </Suspense>
+  );
 }

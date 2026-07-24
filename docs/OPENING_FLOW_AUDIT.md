@@ -135,7 +135,7 @@
 | **A · 清理** | 删 §2 三个 dead 组件；清开店相关 unused export | tsc | ✅ 2026-07-24 |
 | **B · 安全** | HTML sanitize；梳理 logistics API shop 校验（前后端对齐） | 手工 + plugin 确认 | ✅ sanitize 已做；API 待 plugin |
 | **C · 拆页** | products Step 1–9：hooks + shop tab props | tsc + §3.4 回归清单 | ✅ Step 9 本地（2026-07-24，待提交） |
-| **D · 拆页** | logistics 按 workflow step 拆 page 编排 | tsc + 物流三步回归 |
+| **D · 拆页** | logistics Step 1：workflow step 常量 + URL hook | tsc + 三步 Tab URL | ✅ Step 1 本地（2026-07-24） |
 | **E · Context** | onboarding 拆 shop/progress  hook | tsc + 各步进度条一致 |
 | **F · UI 统一** | 首页是否迁 Workbench（产品决策） | 目视 |
 | **G · Lint** | 开店目录 `eslint` 清零或 CI scope | lint green |
@@ -170,4 +170,4 @@
 
 ---
 
-*下一动：**提交 products Step 2–9**（`dev`）；或开店 **批次 D · logistics**；订单线后置。*
+*下一动：logistics **Step 2**（`handleWorkflowStepChange` + 主内容区壳）；订单线后置。*
