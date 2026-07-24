@@ -51,15 +51,48 @@
 
 | 文件 | 约行数 | 风险 |
 |------|--------|------|
-| `src/app/[locale]/products/page.tsx` | ~2400 | 选品+catalog+agents+扫描 全堆一页，改一处易牵全身 |
+| `src/app/[locale]/products/page.tsx` | ~500（Step 9 后） | **编排壳**：路由三态 + Tab + rail；逻辑在 `use-products-*` |
 | `src/app/[locale]/logistics/page.tsx` | ~1800 | 模板/报价/分组/agent 耦合 |
 | `src/context/onboarding-context.tsx` | ~840 | 步骤进度、镜像、物流表单、toast、dashboard 全集中 |
 
 **建议方向（分批，每批 tsc + 目视一步）**
 
-- products：按 **tab（shop / catalog）**、**agent 执行**、**ShopProductsPanel 容器** 拆 hook + 子模块（已有大量 `components/select/*` 可上移编排层）。
+- products：**Step 1–9 已完成**（见 §3.4）；余量仅为目视/E2E 回归与 `use-products-commands` 体量治理。
 - logistics：按 **workflow step**（setup / estimate / confirm）拆 section 组件；复用已有 `logistics-*` 组件，page 只编排。
 - onboarding：拆 **shop hydrate**、**workflow progress**、**logistics snapshot** 为独立 hook 或 `lib/onboarding/*`，context 只组合。
+
+### 3.4 产品页拆页回顾（Step 1–9 · 本地待提交）
+
+**模块地图**
+
+| 层 | 文件 | 职责 |
+|----|------|------|
+| 页面壳 | `products/page.tsx` | 授权/扫描/结果布局、Tab、header、挂 drawer/rail |
+| Tab UI | `products-*-tab.tsx`、`products-scan-view.tsx` | Shop / Catalog / 扫描阶段展示 |
+| 编排 hooks | `use-products-page-tab`、`entry`、`scan`、`mirror`、`batch-link`、`new-arrivals` | 生命周期与数据 |
+| 交互 hooks | `pricing`、`focus`、`agent-rail`、`commands`、`shop-tab-props` | 定价、焦点、Agent、命令、Shop 面板 props |
+| 纯逻辑 | `lib/products/*`（display-metrics、batch-link-finish、page-constants、resolve-title-copy-style） | 可单测的推导与收尾 |
+
+**拆完的好处**
+
+1. **可定位性**：改扫描仪式 → `use-products-entry`；改静默刷新/mirror → `use-products-mirror`；改 Copilot 命令 → `use-products-commands`；不再在 2400 行里全文搜索。
+2. **行为边界清晰**：`page.tsx` 基本无业务分支，降低「改 Agent 误伤 batch link」的概率。
+3. **依赖顺序显式**：mirror 在 batch 之后、entry 在 mirror 之后、agent 在 pricing 之后 — 避免 phase/template 环依赖（entry 收 visibility，pricing 收 template state）。
+4. **与组件目录一致**：`components/select/products-page/*` 管展示，hooks 管编排，符合现有 SKU/物流「page 薄、组件厚」方向。
+5. **可回溯**：`OPENING_FLOW_UPDATES.md` 按 Step 记录路径与 revert 粒度。
+
+**带来的成本 / 风险（需知情）**
+
+| 风险 | 说明 | 缓解 |
+|------|------|------|
+| **Hook 参数面宽** | `useProductsShopTabProps`、`useProductsAgentRail` 入参多，改签名要改两处 | 保持 hook 与 page 同 PR；必要时再收一层 `ProductsPageStore` context（非必须） |
+| **`use-products-commands` 体量大** (~1100 行) | 预览/执行仍在单文件，认知负荷未完全消失 | 后续可拆 `lib/products/command-preview-generators.ts` + `command-executors.ts`（纯函数） |
+| **无自动化回归** | 拆页未改 API 契约，但扫描/batch/命令路径多 | 提交前清单：扫描进结果、跳过仪式、batch 完成 toast、Agent 定价/待确认 ack、catalog 刊登 |
+| **useMemo 依赖遗漏** | shop-tab-props / mirror 等靠 memo 稳定引用 | 异常表现多为「面板不刷新」— 对照 hook deps；`tsc` 不捕此问题 |
+| **双处 template** | mirror `loadSummary` 与 pricing hook 共用 `setTemplate` | 已约定 pricing hook 先创建 state，mirror 只写入 — 勿再在 page 建第二份 template state |
+| **行为声称「无变」** | 重构意图为搬运；边缘时序（如 batch 中 visibility refresh）理论上一致 | 以 `OPENING_FLOW_UPDATES` 行为列 + 上表手工回归为准 |
+
+**结论**：产品页 **god page 问题在开店线内已基本解决**；剩余主战场是 **logistics page**、**onboarding context**，以及 commands 大文件的二次拆分。**不建议**在无需求时继续拆 `page.tsx`（收益递减）；下一步优先 **提交 Step 2–9** 或 **批次 D logistics**。
 
 ### 3.2 UI 栈不一致
 
@@ -79,7 +112,7 @@
 | 级别 | 问题 | 位置 | 建议 |
 |------|------|------|------|
 | P0 | Next 路由仅校验 `shopName` 参数，**无 Shopify session 绑定** | `/api/logistics/*` 等 | 与 plugin 约定：服务端按 session 解析 shop，或 BFF 校验 cookie；威胁模型写进 AGENTS |
-| P0 | 商品描述 **HTML 直出** | `shop-product-detail-drawer.tsx` `dangerouslySetInnerHTML` | sanitize 或 strip tags |
+| P0 | 商品描述 **HTML 直出** | `shop-product-detail-drawer.tsx` | ✅ 批次 B：`sanitize-product-html.ts` |
 | P1 | **`/api/oss/upload`** 无鉴权/限流 | `app/api/oss/upload/route.ts` | 同源 session + rate limit |
 | P1 | **`/api/translate`** 开放 POST | 滥用成本 | 鉴权或内网 only |
 | P1 | **`NEXT_PUBLIC_TANGBUY_*_TOKEN`** 进浏览器包 | mall/admin 直连 | 最小权限 token；敏感能力仅 server route |
@@ -101,7 +134,7 @@
 |------|------|------|
 | **A · 清理** | 删 §2 三个 dead 组件；清开店相关 unused export | tsc | ✅ 2026-07-24 |
 | **B · 安全** | HTML sanitize；梳理 logistics API shop 校验（前后端对齐） | 手工 + plugin 确认 | ✅ sanitize 已做；API 待 plugin |
-| **C · 拆页** | products Step 1：常量/Tab hook/扫描视图外置 | tsc + 选品页回归 | ✅ Step 1（2026-07-24） |
+| **C · 拆页** | products Step 1–9：hooks + shop tab props | tsc + §3.4 回归清单 | ✅ Step 9 本地（2026-07-24，待提交） |
 | **D · 拆页** | logistics 按 workflow step 拆 page 编排 | tsc + 物流三步回归 |
 | **E · Context** | onboarding 拆 shop/progress  hook | tsc + 各步进度条一致 |
 | **F · UI 统一** | 首页是否迁 Workbench（产品决策） | 目视 |
@@ -137,4 +170,4 @@
 
 ---
 
-*下一动：产品页 **Step 2**（shop tab 壳）；订单线后置。*
+*下一动：**提交 products Step 2–9**（`dev`）；或开店 **批次 D · logistics**；订单线后置。*
