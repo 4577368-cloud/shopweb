@@ -46,6 +46,7 @@ import {
   peekMirrorCache,
   productsMirrorShopKey,
   setMirrorCache,
+  isMirrorCacheFresh,
 } from "@/lib/products/mirror-cache";
 import type {
   ImageBindingView,
@@ -581,9 +582,40 @@ export function ShopProductsPanel({
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
-  const load = useCallback(async (opts?: { silent?: boolean; retryPoolBackfill?: boolean }): Promise<ShopMirrorProduct[] | null> => {
+  const load = useCallback(async (opts?: { silent?: boolean; retryPoolBackfill?: boolean; force?: boolean }): Promise<ShopMirrorProduct[] | null> => {
     const silent = opts?.silent ?? false;
+    const force = opts?.force ?? false;
     const retryPoolBackfill = opts?.retryPoolBackfill ?? !silent;
+
+    if (silent && !force && batchLinkBusyRef.current) {
+      return products.length > 0 ? products : peekMirrorCache(shopMirrorKey)?.items ?? null;
+    }
+
+    if (silent && !force && isMirrorCacheFresh(shopMirrorKey)) {
+      try {
+        const bound = await api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]);
+        const map: Record<string, ImageBindingView> = {};
+        for (const b of bound) {
+          if (!b.thirdPlatformItemId) continue;
+          map[b.thirdPlatformItemId] = mergeStoredIdentityIntoBinding(
+            shopName,
+            b.thirdPlatformItemId,
+            b
+          );
+        }
+        const ackedMap = await autoAckHighConfidencePendingBindings(shopName, map);
+        const cached = peekMirrorCache(shopMirrorKey);
+        const items = cached?.items ?? products;
+        setProducts(items);
+        setBindings(ackedMap);
+        onShopProductsChange?.(items, ackedMap);
+        setMirrorCache(shopMirrorKey, { items, bindings: ackedMap });
+        return items;
+      } catch {
+        return null;
+      }
+    }
+
     if (!silent) {
       const cached = peekMirrorCache(shopMirrorKey);
       // Only hydrate from cache when it has rows; empty cache must not skip the fetch.

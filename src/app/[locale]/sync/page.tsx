@@ -25,9 +25,8 @@ import {
 import {
   buildCeremonyTasks,
   ceremonyProductIndex,
-  CEREMONY_HOLD_MS,
-  CEREMONY_PROGRESS_MS,
   displayStat,
+  resolveCeremonyDurations,
   SYNC_CEREMONY_DONE_KEY,
   SYNC_CEREMONY_SUMMARY_VIEWED_KEY,
 } from "@/lib/sync/ceremony-progress";
@@ -143,17 +142,31 @@ export default function SyncPage() {
     };
   }, [loadSummary]);
 
+  const ceremonyRevisit =
+    revisitRef.current || readSummaryViewed() || readCeremonyCelebrated();
+
   useEffect(() => {
     if (phase !== "running" || !summary) return;
 
+    const { progressMs, holdMs } = resolveCeremonyDurations(ceremonyRevisit);
     const startedAt = performance.now();
     const tick = () => {
       const elapsed = performance.now() - startedAt;
-      const next = Math.min(100, Math.round((elapsed / CEREMONY_PROGRESS_MS) * 100));
+      const next = Math.min(100, Math.round((elapsed / progressMs) * 100));
       setCeremonyPercent(next);
 
       if (next >= 100) {
-        setPhase("holding");
+        if (holdMs <= 0) {
+          completeSyncCeremony();
+          sessionStorage.setItem(SYNC_CEREMONY_DONE_KEY, "1");
+          setPhase(ceremonyRevisit ? "summary" : "complete");
+          if (ceremonyRevisit) {
+            sessionStorage.setItem(SYNC_CEREMONY_SUMMARY_VIEWED_KEY, "1");
+            setReportInstant(true);
+          }
+        } else {
+          setPhase("holding");
+        }
         return;
       }
       requestAnimationFrame(tick);
@@ -161,20 +174,21 @@ export default function SyncPage() {
 
     const frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [phase, summary]);
+  }, [phase, summary, ceremonyRevisit, completeSyncCeremony]);
 
   useEffect(() => {
     if (phase !== "holding") return;
 
+    const { holdMs } = resolveCeremonyDurations(ceremonyRevisit);
     setCeremonyPercent(100);
     const timer = window.setTimeout(() => {
       completeSyncCeremony();
       sessionStorage.setItem(SYNC_CEREMONY_DONE_KEY, "1");
       setPhase("complete");
-    }, CEREMONY_HOLD_MS);
+    }, holdMs);
 
     return () => window.clearTimeout(timer);
-  }, [phase, completeSyncCeremony]);
+  }, [phase, completeSyncCeremony, ceremonyRevisit]);
 
   const ceremonyTasks = useMemo(
     () =>

@@ -42,7 +42,7 @@ import {
 } from "@/lib/shop-product-mirror-baseline";
 import { formatNewArrivalAnalysisSummary } from "@/lib/new-arrival-analysis-result";
 import { mergeProductBaseline } from "@/lib/shop-product-mirror-baseline";
-import { clearMirrorCache, peekMirrorCache, productsMirrorShopKey, setMirrorCache } from "@/lib/products/mirror-cache";
+import { clearMirrorCache, isMirrorCacheFresh, peekMirrorCache, productsMirrorShopKey, setMirrorCache } from "@/lib/products/mirror-cache";
 import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import { formatBatchLinkSummary } from "@/lib/batch-link/types";
 import type { BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
@@ -254,6 +254,7 @@ function SelectContent() {
   const bumpMirrorRefresh = useCallback(() => {
     setMirrorRefreshSignal((n) => n + 1);
   }, []);
+  const batchLinkBusyRef = useRef(false);
   const [pendingMinis, setPendingMinis] = useState<
     import("@/lib/agents/products/shop-minis").ShopProductMini[]
   >([]);
@@ -314,8 +315,17 @@ function SelectContent() {
   );
 
   const loadSummary = useCallback(
-    async (opts?: { silent?: boolean }) => {
+    async (opts?: { silent?: boolean; force?: boolean }) => {
       const silent = opts?.silent ?? false;
+      const force = opts?.force ?? false;
+
+      if (silent && !force && batchLinkBusyRef.current) {
+        const cached = peekMirrorCache(shopMirrorKey);
+        if (cached) {
+          return { products: cached.items, bindings: cached.bindings };
+        }
+      }
+
       if (!silent) {
         const cached = peekMirrorCache(shopMirrorKey);
         if (cached) {
@@ -337,7 +347,35 @@ function SelectContent() {
         }
       }
 
-      void api.backfillPublishedBindings(shopName).catch(() => null);
+      if (silent && !force && isMirrorCacheFresh(shopMirrorKey)) {
+        try {
+          const bindings = await api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]);
+          const map = indexImageBindings(bindings);
+          const cached = peekMirrorCache(shopMirrorKey);
+          const products = cached?.items ?? [];
+          const merged = applyTitleEditsToProducts(
+            applyListingEditsToProducts(products, aiFieldEditsRef.current),
+            aiFieldEditsRef.current
+          );
+          const stats = computeShopProductBindingStats(products, map);
+          setBindingsMap(map);
+          setShopProducts(merged);
+          setSummary({
+            shopProducts: stats.analyzed,
+            confirmedProducts: stats.confirmed,
+            pendingProducts: stats.pending,
+          });
+          setMirrorCache(shopMirrorKey, { items: products, bindings: map });
+          refreshNewArrivalAwareness(merged, map);
+          return { products: merged, bindings: map };
+        } catch {
+          return null;
+        }
+      }
+
+      if (!batchLinkBusyRef.current) {
+        void api.backfillPublishedBindings(shopName).catch(() => null);
+      }
       const [products, bindings, tpl] = await Promise.all([
         api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
         api.listImageBindings(shopName).catch(() => []),
@@ -372,8 +410,8 @@ function SelectContent() {
     cancelScan();
     markScanned("products", shopMirrorKey);
     markScanHandoff(shopName, scanStats);
-    const { products } = await loadSummary();
-    if (products) commitAnalysisBaseline(products);
+    const result = await loadSummary();
+    if (result?.products) commitAnalysisBaseline(result.products);
     setPhase("result");
   }, [cancelScan, shopName, shopMirrorKey, loadSummary, scanStats, commitAnalysisBaseline]);
 
@@ -442,7 +480,7 @@ function SelectContent() {
   useEffect(() => {
     if (phase !== "result" || !isAuthorized) return;
     const onVisible = () => {
-      if (document.visibilityState === "visible") void loadSummary();
+      if (document.visibilityState === "visible") void loadSummary({ silent: true });
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
@@ -477,6 +515,20 @@ function SelectContent() {
   const batchLinkActive = batchLinkProgress?.active ?? false;
   const pageLinkableCount = pageLinkableScope.ids.length;
 
+  useEffect(() => {
+    batchLinkBusyRef.current = batchLinkActive;
+  }, [batchLinkActive]);
+
+  const handleBatchLinkProgressChange = useCallback((progress: BatchLinkProgress) => {
+    batchLinkBusyRef.current = progress.active;
+    setBatchLinkProgress(progress);
+  }, []);
+
+  const refreshProductsQuietly = useCallback(() => {
+    if (batchLinkBusyRef.current) return;
+    void loadSummary({ silent: true });
+  }, [loadSummary]);
+
   const enqueueBatchLink = useCallback(
     (source: BatchLinkRequest["source"]) => {
       if (batchLinkActive) return;
@@ -497,11 +549,6 @@ function SelectContent() {
       t,
     ]
   );
-
-  const batchLinkActiveRef = useRef(false);
-  useEffect(() => {
-    batchLinkActiveRef.current = batchLinkActive;
-  }, [batchLinkActive]);
 
   const newLinkableIds = useMemo(
     () =>
@@ -2239,7 +2286,7 @@ function SelectContent() {
           {tab === "shop" ? (
             <div>
               <ShopProductsPanel
-                onActivity={loadSummary}
+                onActivity={refreshProductsQuietly}
                 filter={shopFilter}
                 onFilterChange={setShopFilter}
                 pendingNewAnalysisIds={newArrivalStats.pendingNewAnalysisIds}
@@ -2252,10 +2299,12 @@ function SelectContent() {
                 batchLinkRequest={batchLinkRequest}
                 mirrorRefreshSignal={mirrorRefreshSignal}
                 linkingLocked={batchLinkActive}
-                onBatchLinkProgressChange={setBatchLinkProgress}
+                onBatchLinkProgressChange={handleBatchLinkProgressChange}
                 onPageLinkableScopeChange={setPageLinkableScope}
                 onBatchLinkFinished={(progress) => {
-                  void loadSummary().then(({ bindings }) => {
+                  void loadSummary({ force: true }).then((data) => {
+                    if (!data) return;
+                    const { bindings } = data;
                     bumpMirrorRefresh();
                     if (progress.sessionOrder.length > 0) {
                       mergeProductBaseline(shopName, progress.sessionOrder);
@@ -2294,7 +2343,7 @@ function SelectContent() {
           ) : null}
           {tab === "catalog" ? (
             <CatalogPublishPanel
-              onActivity={loadSummary}
+              onActivity={refreshProductsQuietly}
               onBindingLinked={() => bumpMirrorRefresh()}
               onPublished={() => bumpMirrorRefresh()}
               recommendedCategories={recommendedCategories}

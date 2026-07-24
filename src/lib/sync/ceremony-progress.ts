@@ -2,6 +2,22 @@ import type { ProgressTask } from "@/lib/sync/launch-summary";
 
 export const CEREMONY_PROGRESS_MS = 15_000;
 export const CEREMONY_HOLD_MS = 5_000;
+/** Shorter animation when user already completed or viewed the summary once. */
+export const CEREMONY_PROGRESS_MS_REVISIT = 4_000;
+export const CEREMONY_HOLD_MS_REVISIT = 0;
+
+export function resolveCeremonyDurations(revisit: boolean): {
+  progressMs: number;
+  holdMs: number;
+} {
+  if (revisit) {
+    return {
+      progressMs: CEREMONY_PROGRESS_MS_REVISIT,
+      holdMs: CEREMONY_HOLD_MS_REVISIT,
+    };
+  }
+  return { progressMs: CEREMONY_PROGRESS_MS, holdMs: CEREMONY_HOLD_MS };
+}
 
 export type CeremonyTranslate = (
   key: string,
