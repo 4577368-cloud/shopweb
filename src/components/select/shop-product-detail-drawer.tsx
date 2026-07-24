@@ -23,6 +23,7 @@ import type {
   ShopProductVariantUpdatePayload,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { sanitizeProductDescriptionHtml } from "@/lib/sanitize-product-html";
 import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 const POLL_MS = 8000;
@@ -494,6 +495,10 @@ export function ShopProductDetailDrawer({
   const descriptionHtml = form?.description.trim()
     ? toHtml(form.description)
     : detail?.description?.trim() || "";
+  const safeDescriptionHtml = useMemo(
+    () => sanitizeProductDescriptionHtml(descriptionHtml),
+    [descriptionHtml]
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -678,10 +683,10 @@ export function ShopProductDetailDrawer({
                     />
                   ) : (
                     <div className="rounded-[var(--radius-control)] border border-hairline bg-surface-muted/30 px-3 py-2">
-                      {descriptionHtml ? (
+                      {safeDescriptionHtml ? (
                         <div
                           className="prose prose-sm max-w-none text-ink [&_img]:my-2 [&_img]:max-h-48 [&_img]:rounded-md"
-                          dangerouslySetInnerHTML={{ __html: descriptionHtml }}
+                          dangerouslySetInnerHTML={{ __html: safeDescriptionHtml }}
                         />
                       ) : (
                         <p className="text-xs text-ink-subtle">{t("productDetail.noDescription")}</p>
