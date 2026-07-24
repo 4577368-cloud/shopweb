@@ -62,6 +62,7 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import { productsMirrorShopKey } from "@/lib/products/mirror-cache";
+import { prefetchLogisticsMirror } from "@/lib/logistics/prefetch-logistics-mirror";
 import { warmLaunchSummaryPartial } from "@/lib/sync/warm-launch-summary-partial";
 import { workflowScanShopKey } from "@/lib/scan/shop-key";
 import {
@@ -187,6 +188,7 @@ function SkuAlignContent() {
           pricingTemplate: tpl,
         });
         hasLoadedOnceRef.current = true;
+        prefetchLogisticsMirror(shopName, shopMirrorKey, shop.domain, t);
         void api
           .skuAlignV1Overview(shopName)
           .catch(() => null)

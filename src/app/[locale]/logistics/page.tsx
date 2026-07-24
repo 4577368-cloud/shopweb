@@ -23,12 +23,11 @@ import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline"
 import {
   clearLogisticsMirrorCache,
   getLogisticsMirrorCache,
+  peekLogisticsMirrorCache,
   setLogisticsMirrorCache,
-  isLogisticsMirrorCacheFresh,
 } from "@/lib/logistics/logistics-mirror-cache";
 import {
   clearLogisticsSession,
-  peekLogisticsSession,
   setLogisticsSession,
 } from "@/lib/logistics/logistics-session-cache";
 import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
@@ -125,6 +124,10 @@ function LogisticsContent() {
   const shopName = shop.name?.trim() || shop.domain?.trim() || "";
   const scanShopKey = workflowScanShopKey(shop);
   const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
+
+  const logisticsCacheBootstrap = shopName
+    ? peekLogisticsMirrorCache(shopName)
+    : undefined;
   const wb = useWorkbenchPage("logistics");
   const t = useT();
   const locale = useLocale();
@@ -135,10 +138,18 @@ function LogisticsContent() {
     { label: t("nav.logistics") },
   ];
 
-  const [analysis, setAnalysis] = useState<LogisticsAnalysis | null>(null);
-  const [templates, setTemplates] = useState<LogisticsTemplate[]>([]);
-  const [activeTemplate, setActiveTemplate] = useState<LogisticsTemplate | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [analysis, setAnalysis] = useState<LogisticsAnalysis | null>(
+    () => logisticsCacheBootstrap?.analysis ?? null
+  );
+  const [templates, setTemplates] = useState<LogisticsTemplate[]>(
+    () => logisticsCacheBootstrap?.templates ?? []
+  );
+  const [activeTemplate, setActiveTemplate] = useState<LogisticsTemplate | null>(() => {
+    const ts = logisticsCacheBootstrap?.templates;
+    if (ts && ts.length > 0) return ts[0];
+    return null;
+  });
+  const [loading, setLoading] = useState(() => !logisticsCacheBootstrap?.analysis);
   const [classifying, setClassifying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [correctingId, setCorrectingId] = useState<string | null>(null);
@@ -176,7 +187,9 @@ function LogisticsContent() {
     null
   );
   const [quoteMarketCode, setQuoteMarketCode] = useState<string | null>(null);
-  const [pricingTemplate, setPricingTemplate] = useState<PricingTemplate | null>(null);
+  const [pricingTemplate, setPricingTemplate] = useState<PricingTemplate | null>(
+    () => logisticsCacheBootstrap?.pricingTemplate ?? null
+  );
   const [measureOverrides, setMeasureOverrides] = useState<Map<string, MeasureOverride>>(
     new Map()
   );
@@ -351,20 +364,10 @@ function LogisticsContent() {
         );
       };
 
-      if (!forceClassify && !opts?.skipCache && isLogisticsMirrorCacheFresh(shopName)) {
-        const cached = getLogisticsMirrorCache(shopName);
+      if (!forceClassify && !opts?.skipCache) {
+        const cached = peekLogisticsMirrorCache(shopName);
         if (cached?.analysis) {
           hydrateFromCache(cached);
-          setLoading(false);
-          void load(false, { skipCache: true, silent: true });
-          return;
-        }
-      }
-
-      if (!forceClassify && !opts?.skipCache) {
-        const session = peekLogisticsSession(shopName);
-        if (session?.analysis) {
-          hydrateFromCache(session);
           setLoading(false);
           void load(false, { skipCache: true, silent: true });
           return;
@@ -1661,20 +1664,10 @@ function LogisticsContent() {
           ) : null}
 
           {loading && !analysis ? (
-            hasScanned("logistics", scanShopKey) && !classifying ? (
-              <FadeSwap
-                loading
-                minHeightClass="min-h-[320px]"
-                skeleton={<TableSkeleton rows={4} />}
-              >
-                <div />
-              </FadeSwap>
-            ) : (
-              <LogisticsClassifyStage
-                phase={classifying ? "classifying" : "loading"}
-                productCount={workflowSku?.productCount}
-              />
-            )
+            <LogisticsClassifyStage
+              phase={classifying ? "classifying" : "loading"}
+              productCount={workflowSku?.productCount}
+            />
           ) : error && !analysis ? (
             <div className="rounded-[var(--radius-card)] border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
               {error}
