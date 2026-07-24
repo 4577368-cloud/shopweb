@@ -20,6 +20,7 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { useLogisticsIncrementalPipeline } from "@/hooks/use-logistics-incremental-pipeline";
 import { useLogisticsWorkflowStep } from "@/hooks/use-logistics-workflow-step";
+import { useLogisticsWorkflowNavigation } from "@/hooks/use-logistics-workflow-navigation";
 import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
 import {
   clearLogisticsMirrorCache,
@@ -38,7 +39,6 @@ import { warmLaunchSummaryPartial } from "@/lib/sync/warm-launch-summary-partial
 import { api, readableError, type LogisticsAcceptDecisionRequest, type LogisticsEstimateResult } from "@/lib/api";
 import type { LogisticsFilterMode, PostalLimitFilter } from "@/lib/logistics/display";
 import {
-  coerceLogisticsFilterMode,
   decisionStatusToFilterMode,
   normalizeLogisticsFilterMode,
 } from "@/lib/logistics/display";
@@ -96,7 +96,6 @@ import type {
 } from "@/lib/types";
 import type { LogisticsFocusTarget, MeasureOverride } from "@/components/logistics/logistics-decision-list";
 import { LogisticsDecisionList } from "@/components/logistics/logistics-decision-list";
-import type { LogisticsWorkflowStep } from "@/components/logistics/logistics-workflow-steps";
 
 const LogisticsAgentPanel = dynamic(() => import("@/components/logistics/logistics-agent-panel").then((m) => ({ default: m.LogisticsAgentPanel })), { ssr: false });
 const LogisticsTemplateSetupCard = dynamic(() => import("@/components/logistics/logistics-template-setup-card").then((m) => ({ default: m.LogisticsTemplateSetupCard })), { ssr: false });
@@ -105,8 +104,6 @@ const LogisticsSyncConfirmCard = dynamic(() => import("@/components/logistics/lo
 const LogisticsTemplateDrawer = dynamic(() => import("@/components/logistics/logistics-template-drawer").then((m) => ({ default: m.LogisticsTemplateDrawer })), { ssr: false });
 const LogisticsWorkflowSteps = dynamic(() => import("@/components/logistics/logistics-workflow-steps").then((m) => ({ default: m.LogisticsWorkflowSteps })), { ssr: false });
 const LogisticsClassifyStage = dynamic(() => import("@/components/logistics/logistics-classify-stage").then((m) => ({ default: m.LogisticsClassifyStage })), { ssr: false });
-
-import { deriveLogisticsWorkflowStep } from "@/components/logistics/logistics-workflow-steps";
 
 const DEFAULT_TEMPLATE = (shopName: string, name = "Default template"): LogisticsTemplate => ({
   id: "default",
@@ -186,13 +183,6 @@ function LogisticsContent() {
   >(new Map());
   const [showSyncConfirm, setShowSyncConfirm] = useState(false);
   const batchAcceptCancelRef = useRef(false);
-  const logisticsListRef = useRef<HTMLDivElement>(null);
-
-  const scrollToLogisticsList = useCallback(() => {
-    requestAnimationFrame(() => {
-      logisticsListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }, []);
 
   const handleSelectLine = useCallback((variantId: string, lineKey: string) => {
     setSelectedLineByVariant((prev) => {
@@ -202,23 +192,27 @@ function LogisticsContent() {
     });
   }, []);
 
-  const handleViewPendingConfirm = useCallback(() => {
-    setFilterMode("pending_confirm");
-    setFocusTarget(null);
-    scrollToLogisticsList();
-  }, [scrollToLogisticsList]);
-
-  const handleViewExceptions = useCallback(() => {
-    setFilterMode("needs_attention");
-    setFocusTarget(null);
-    scrollToLogisticsList();
-  }, [scrollToLogisticsList]);
-
   const workbench = useMemo(
     () => deriveLogisticsWorkbenchState(analysis, quoteResults),
     [analysis, quoteResults]
   );
   const planMetrics = workbench.metrics;
+  const hasSavedTemplate = hasSavedLogisticsTemplate(templates);
+
+  const {
+    logisticsListRef,
+    scrollToLogisticsList,
+    handleWorkflowStepChange,
+    handleViewPendingConfirm,
+    handleViewExceptions,
+  } = useLogisticsWorkflowNavigation({
+    workflowStep,
+    setWorkflowStep,
+    hasSavedTemplate,
+    planMetrics,
+    setFilterMode,
+    onClearFocusTarget: () => setFocusTarget(null),
+  });
 
   const catalogIngestingCount = useMemo(() => {
     if (!analysis || !shopName) return 0;
@@ -238,8 +232,6 @@ function LogisticsContent() {
       quoteResults,
     });
   }, [analysis, shopName, quoteResults]);
-
-  const hasSavedTemplate = hasSavedLogisticsTemplate(templates);
 
   const templateScopeKey = useMemo(() => {
     if (!activeTemplate) return "";
@@ -1303,39 +1295,6 @@ function LogisticsContent() {
     setFilterMode(normalizeLogisticsFilterMode(mode));
     setFocusTarget(null);
   }, []);
-
-  useEffect(() => {
-    setFilterMode((prev) => coerceLogisticsFilterMode(prev, planMetrics));
-  }, [planMetrics]);
-
-  useEffect(() => {
-    if (!hasSavedTemplate) {
-      setWorkflowStep("setup");
-      return;
-    }
-    if (workflowStep === "setup") {
-      setWorkflowStep(
-        deriveLogisticsWorkflowStep({ hasSavedTemplate, metrics: planMetrics })
-      );
-    }
-  }, [hasSavedTemplate, planMetrics, workflowStep, setWorkflowStep]);
-
-  const handleWorkflowStepChange = useCallback(
-    (step: LogisticsWorkflowStep) => {
-      setWorkflowStep(step);
-      if (step === "estimate") {
-        setFilterMode("pending_quote");
-        scrollToLogisticsList();
-      } else if (step === "confirm") {
-        const attention = planMetrics.exceptionCount + planMetrics.skuUnlinkedCount;
-        setFilterMode(attention > 0 ? "needs_attention" : "pending_confirm");
-        scrollToLogisticsList();
-      } else {
-        setFilterMode("all");
-      }
-    },
-    [planMetrics.exceptionCount, planMetrics.skuUnlinkedCount, scrollToLogisticsList]
-  );
 
   const logisticsPreviewGenerators = useMemo(
     () => ({
