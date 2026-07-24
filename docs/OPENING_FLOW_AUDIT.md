@@ -10,7 +10,7 @@
 
 ### 0.1 一句话
 
-开店线的 **「上帝页面 / 上帝 Context」重构主战役已结束**：产品、物流、`OnboardingProvider` 均已变成 **薄编排 + hooks/组件**；继续无需求地拆 page **收益递减**。当前更值得关注的是 **SKU 对齐列表页体量**、**产品 Agent 命令单文件**、**API 与 session 绑定（P0）**，以及 **首页与步骤页 UI 壳不一致** 的产品决策。
+开店线的 **「上帝页面 / 上帝 Context」重构主战役已结束**：产品、物流、SKU 列表、`OnboardingProvider` 均已变成 **薄编排 + hooks/组件**；继续无需求地拆 page **收益递减**。当前更值得关注的是 **产品 Agent 命令单文件**、**API 与 session 绑定（P0）**，以及 **首页与步骤页 UI 壳不一致** 的产品决策。
 
 ### 0.2 体量快照（`wc -l`，2026-07-24）
 
@@ -19,7 +19,7 @@
 | 选品 | `products/page.tsx` | ~550 | 编排壳 ✅ |
 | 物流 | `logistics/page.tsx` | ~566 | 编排壳 ✅ |
 | Context | `onboarding-context.tsx` | ~435 | 组合层 ✅ |
-| **SKU** | **`sku-align/page.tsx`** | **~810** | 编排壳；mirror/entry 已外置（H2+H3） |
+| **SKU** | **`sku-align/page.tsx`** | **~524** | 编排壳 ✅；H2–H6 hooks + scan/result 视图 |
 | SKU 子页 | `sku-align/product/page.tsx` | ~394 | 可接受 |
 | 同步 | `sync/page.tsx` | ~564 | 仪式 + 摘要，暂不动 |
 | 重 hook | `use-products-commands.ts` | ~1143 | 认知负荷 ⚠️ |
@@ -41,7 +41,7 @@
 |--------|-----|------|
 | **P0 安全** | Plugin/BFF **shop 与 session 绑定** | 前端 `shopName` 参数仍不可信；与后端威胁模型对齐 |
 | **P1 质量** | 端到端 **手工回归**（§0.5） | 拆页多、无 E2E；发 `main`/大演示前必做 |
-| **P2 架构** | SKU 列表页拆页（**批次 H**，可选） | 仅在 SKU 功能迭代时做；勿为拆而拆 |
+| **P2 架构** | SKU 列表页再拆（H1 深链等） | 批次 H 主拆已完成；仅功能迭代时小 diff |
 | **P2 架构** | `use-products-commands` 拆 preview/executor 纯函数 | 与 SKU 无关，可独立小 PR |
 | **产品** | 首页 `AppShell` vs `WorkbenchShell`（批次 F） | IA 决策，非纯技术 |
 | **工程** | 开店路径 ESLint scope（批次 G） | 随触达文件顺手清 |
@@ -102,13 +102,14 @@
 | `products/page.tsx` | ~550 | 编排壳；逻辑在 `use-products-*`（11 个 hook） |
 | `logistics/page.tsx` | ~566 | 编排壳；mirror / quote / page-actions / workflow 组件 |
 | `onboarding-context.tsx` | ~435 | mock 产品·SKU·物流表单·sync·toast + 组合两个 onboarding hooks |
-| `sku-align/page.tsx` | ~982 | **下一处可选拆页**；已有 `use-sku-align-scan` 等，主体仍在 page |
+| `sku-align/page.tsx` | ~524 | 编排壳；`use-sku-align-mirror-load`、`entry`、`auto-align`、`agent-commands` + `sku-align-scan-view` / `result-body` |
 
 **Hook 地图（开店编排）**
 
 - **产品**：`use-products-page-tab`、`entry`、`mirror`、`batch-link`、`new-arrivals`、`pricing`、`focus`、`agent-rail`、`commands`、`shop-tab-props`（+ `lib/products/*`）
 - **物流**：`use-logistics-workflow-step`、`workflow-navigation`、`mirror-load`、`quote-estimate`、`page-actions`、`agent-commands`、`incremental-pipeline`（+ `logistics-workflow-*` 组件）
 - **Onboarding**：`use-onboarding-shop-auth`、`use-onboarding-workflow-progress`（+ `lib/onboarding/auth-session-ready`）
+- **SKU 列表**：`use-sku-align-mirror-load`、`use-sku-align-entry`、`use-sku-align-auto-align`、`use-sku-align-agent-commands`（+ `use-sku-align-scan`）+ `sku-align-scan-view` / `sku-align-result-body`
 
 ### 3.4 产品页拆页回顾（Step 1–9 · `c27ccb4`）
 
@@ -190,7 +191,7 @@
 | **E · Context** | onboarding E1 | ✅ `dev` |
 | **F · UI** | 首页 Workbench 与否 | 待定 |
 | **G · Lint** | 开店目录 lint scope | 待定 |
-| **H · 拆页（可选）** | `sku-align` H2 mirror + H3 entry | tsc + 扫描/深链回归 | ✅ H2+H3 `dev` |
+| **H · 拆页（可选）** | `sku-align` H2–H6 mirror/entry/auto-align/agent/视图 | tsc + 扫描/深链/Agent 回归 | ✅ `dev` |
 
 ---
 

@@ -4,7 +4,9 @@
 
 | 日期 | Commit / 定位 | 摘要 | 涉及路径 | 行为变化 | 回溯 |
 |------|--------|------|----------|----------|------|
-| 2026-07-24 | _(待提交)_ | **SKU 对齐 H2+H3**：mirror 加载 + 进页扫描仪式 | `use-sku-align-mirror-load.ts`、`use-sku-align-entry.ts`、`sku-align/page.tsx` | **无** | revert 本提交 |
+| 2026-07-24 | **`65ccf9e`** | **SKU 对齐 H4–H6**：静默对齐/滚动 + Agent 预览执行 + scan/result 视图 | `use-sku-align-auto-align.ts`、`use-sku-align-agent-commands.ts`、`sku-align-scan-view.tsx`、`sku-align-result-body.tsx`、`sku-align/page.tsx` | **无** | `git revert 65ccf9e` |
+| 2026-07-24 | **`2218107`** | **SKU 对齐 H2+H3**：mirror 加载 + 进页扫描仪式 | `use-sku-align-mirror-load.ts`、`use-sku-align-entry.ts`、`sku-align/page.tsx` | **无** | `git revert 2218107` |
+| 2026-07-24 | **`6fb5ebc`** | **Onboarding E1**：shop auth 恢复 + workflow 进度 hook | `use-onboarding-shop-auth.ts`、`use-onboarding-workflow-progress.ts`、`onboarding-context.tsx` | **无** | `git revert 6fb5ebc` |
 | 2026-07-24 | **`a62c402`** | **物流页 Step 6**：模板/完成度/onboarding 桥接 + decision workspace props | `use-logistics-page-actions.ts`、`use-logistics-decision-workspace-props.ts`、`logistics/page.tsx` | **无** | `git revert a62c402` |
 | 2026-07-24 | **`9108ed2`** | **物流页 Step 5**：报价/accept/pipeline → `use-logistics-quote-estimate` | 见上 | **无** | `git revert 9108ed2` |
 | 2026-07-24 | **`8774c2b`** | **物流页 Step 4**：mirror 加载 + agent accept_all_ready hook | `use-logistics-mirror-load.ts`、`use-logistics-agent-commands.ts`、`default-template.ts`、`logistics/page.tsx` | **无** | `git revert 8774c2b` |
