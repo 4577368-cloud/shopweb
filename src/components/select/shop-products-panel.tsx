@@ -41,7 +41,11 @@ import {
   type AiFieldId,
 } from "@/lib/ai-field-edit-feedback";
 import { api, ApiError, readableError } from "@/lib/api";
-import { getMirrorCache, setMirrorCache, isMirrorCacheFresh } from "@/lib/products/mirror-cache";
+import {
+  peekMirrorCache,
+  productsMirrorShopKey,
+  setMirrorCache,
+} from "@/lib/products/mirror-cache";
 import type {
   ImageBindingView,
   ImageSearchProduct,
@@ -539,11 +543,22 @@ export function ShopProductsPanel({
   const t = useT();
   const locale = useLocale();
   const shopName = shop.name;
+  const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    const cached = peekMirrorCache(
+      productsMirrorShopKey(shop.name, shop.domain)
+    );
+    return !cached;
+  });
   const [error, setError] = useState<string | null>(null);
   const [batchAcking, setBatchAcking] = useState(false);
-  const [products, setProducts] = useState<ShopMirrorProduct[]>([]);
+  const [products, setProducts] = useState<ShopMirrorProduct[]>(() => {
+    return (
+      peekMirrorCache(productsMirrorShopKey(shop.name, shop.domain))?.items ??
+      []
+    );
+  });
   const [internalFilter, setInternalFilter] = useState<ShopFilter>("all");
   const minisFpRef = useRef("");
   const filter = filterProp ?? internalFilter;
@@ -555,7 +570,11 @@ export function ShopProductsPanel({
     [onFilterChange]
   );
   // 回显: itemId -> ACTIVE binding. Server is the source of truth; refreshed on load/sync.
-  const [bindings, setBindings] = useState<Record<string, ImageBindingView>>({});
+  const [bindings, setBindings] = useState<Record<string, ImageBindingView>>(
+    () =>
+      peekMirrorCache(productsMirrorShopKey(shop.name, shop.domain))?.bindings ??
+      {}
+  );
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
@@ -563,10 +582,9 @@ export function ShopProductsPanel({
     const silent = opts?.silent ?? false;
     const retryPoolBackfill = opts?.retryPoolBackfill ?? !silent;
     if (!silent) {
-      // 切语言等整页重 mount 时，若缓存新鲜则直接 hydrate，不触发网关 fetch / skeleton。
-      // 列表数据与语言无关，可跨 locale 安全复用；随后后台静默刷新保持新鲜。
-      const cached = getMirrorCache(shopName);
-      if (cached && isMirrorCacheFresh(shopName)) {
+      // 有缓存（含刷新后 sessionStorage）先展示，再后台静默拉新，避免整页空白。
+      const cached = peekMirrorCache(shopMirrorKey);
+      if (cached) {
         setProducts(cached.items);
         setBindings(cached.bindings);
         onShopProductsChange?.(cached.items, cached.bindings);
@@ -595,7 +613,7 @@ export function ShopProductsPanel({
       const ackedMap = await autoAckHighConfidencePendingBindings(shopName, map);
       setBindings(ackedMap);
       onShopProductsChange?.(items, ackedMap);
-      setMirrorCache(shopName, { items, bindings: ackedMap });
+      setMirrorCache(shopMirrorKey, { items, bindings: ackedMap });
 
       void (async () => {
         try {
@@ -657,7 +675,7 @@ export function ShopProductsPanel({
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [shopName, onShopProductsChange]);
+  }, [shopName, shopMirrorKey, onShopProductsChange]);
 
   const batchLinkBusyRef = useRef(false);
   const batchWasActiveRef = useRef(false);

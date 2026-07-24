@@ -42,7 +42,8 @@ import {
 } from "@/lib/shop-product-mirror-baseline";
 import { formatNewArrivalAnalysisSummary } from "@/lib/new-arrival-analysis-result";
 import { mergeProductBaseline } from "@/lib/shop-product-mirror-baseline";
-import { clearMirrorCache, getMirrorCache, isMirrorCacheFresh, setMirrorCache } from "@/lib/products/mirror-cache";
+import { clearMirrorCache, peekMirrorCache, productsMirrorShopKey, setMirrorCache } from "@/lib/products/mirror-cache";
+import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import { formatBatchLinkSummary } from "@/lib/batch-link/types";
 import type { BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
 import { buildNewArrivalResultFromBatch } from "@/lib/batch-link/build-new-arrival-result";
@@ -122,9 +123,10 @@ const SCAN_FINISH_DELAY_MS =
 function SelectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, isAuthorized, authSessionReady, showToast, refreshWorkflowProgress } =
+  const { shop, isAuthorized, authBootstrapping, showToast, refreshWorkflowProgress } =
     useOnboarding();
-  const shopName = shop.name;
+  const shopName = resolveShopApiName(shop);
+  const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
   const wb = useWorkbenchPage("products");
   const t = useT();
   const locale = useLocale();
@@ -275,7 +277,7 @@ function SelectContent() {
       products: ShopMirrorProduct[],
       bindings: Record<string, ImageBindingView>
     ) => {
-      if (!hasScanned("products", shopName)) {
+      if (!hasScanned("products", shopMirrorKey)) {
         setNewArrivalStats(emptyNewArrivals);
         return;
       }
@@ -303,8 +305,8 @@ function SelectContent() {
   const loadSummary = useCallback(
     async (opts?: { silent?: boolean }) => {
       const silent = opts?.silent ?? false;
-      if (!silent && isMirrorCacheFresh(shopName)) {
-        const cached = getMirrorCache(shopName);
+      if (!silent) {
+        const cached = peekMirrorCache(shopMirrorKey);
         if (cached) {
           const merged = applyTitleEditsToProducts(
             applyListingEditsToProducts(cached.items, aiFieldEditsRef.current),
@@ -344,12 +346,12 @@ function SelectContent() {
         confirmedProducts: stats.confirmed,
         pendingProducts: stats.pending,
       });
-      setMirrorCache(shopName, { items: products, bindings: map });
+      setMirrorCache(shopMirrorKey, { items: products, bindings: map });
       refreshNewArrivalAwareness(merged, map);
       void refreshWorkflowProgress();
       return { products: merged, bindings: map };
     },
-    [shopName, refreshNewArrivalAwareness, refreshWorkflowProgress]
+    [shopName, shopMirrorKey, refreshNewArrivalAwareness, refreshWorkflowProgress]
   );
 
   const finishedRef = useRef(false);
@@ -358,7 +360,7 @@ function SelectContent() {
     if (finishedRef.current) return;
     finishedRef.current = true;
     cancelScan();
-    markScanned("products", shopName);
+    markScanned("products", shopMirrorKey);
     markScanHandoff(shopName, scanStats);
     const { products } = await loadSummary();
     if (products) commitAnalysisBaseline(products);
@@ -373,7 +375,7 @@ function SelectContent() {
     finishedRef.current = false;
     scanFinishScheduledRef.current = false;
     void (async () => {
-      if (hasScanned("products", shopName)) {
+      if (hasScanned("products", shopMirrorKey)) {
         setPhase("result");
         void loadSummary();
         return;
@@ -499,18 +501,40 @@ function SelectContent() {
   const restartScan = useCallback(() => {
     finishedRef.current = false;
     scanFinishScheduledRef.current = false;
-    clearScanned("products", shopName);
-    clearMirrorCache(shopName);
+    clearScanned("products", shopMirrorKey);
+    clearMirrorCache(shopMirrorKey);
     setPhase("scan");
     void startScan();
   }, [shopName, startScan]);
 
-  const pendingCount = summary?.pendingProducts ?? 0;
-  const analyzed = summary?.shopProducts ?? 0;
-  const matched = summary != null ? summary.confirmedProducts + summary.pendingProducts : 0;
-  const unbound = summary != null ? Math.max(analyzed - matched, 0) : 0;
+  const mirrorSnapshot = useMemo(
+    () => peekMirrorCache(shopMirrorKey),
+    [shopMirrorKey]
+  );
 
-  const analysisReady = phase === "result" && summary != null;
+  const displaySummary = useMemo((): ProductsSummary | null => {
+    if (summary) return summary;
+    if (!mirrorSnapshot) return null;
+    const stats = computeShopProductBindingStats(
+      mirrorSnapshot.items,
+      mirrorSnapshot.bindings
+    );
+    return {
+      shopProducts: stats.analyzed,
+      confirmedProducts: stats.confirmed,
+      pendingProducts: stats.pending,
+    };
+  }, [summary, mirrorSnapshot]);
+
+  const pendingCount = displaySummary?.pendingProducts ?? 0;
+  const analyzed = displaySummary?.shopProducts ?? 0;
+  const matched =
+    displaySummary != null
+      ? displaySummary.confirmedProducts + displaySummary.pendingProducts
+      : 0;
+  const unbound = displaySummary != null ? Math.max(analyzed - matched, 0) : 0;
+
+  const analysisReady = phase === "result" && displaySummary != null;
   const previewPricingGuide = searchParams.get("previewPricingGuide") === "1";
 
   const shopCurrencyHint = shopProducts[0]?.currency ?? null;
@@ -559,7 +583,7 @@ function SelectContent() {
         shopFilter,
         authorized: isAuthorized,
         shopName,
-        analyzedCount: summary?.shopProducts ?? 0,
+        analyzedCount: displaySummary?.shopProducts ?? 0,
         matchedCount: matched,
         pendingCount,
         unboundCount: unbound,
@@ -584,7 +608,7 @@ function SelectContent() {
       shopFilter,
       isAuthorized,
       shopName,
-      summary?.shopProducts,
+      displaySummary?.shopProducts,
       matched,
       pendingCount,
       unbound,
@@ -1988,7 +2012,7 @@ function SelectContent() {
     />
   );
 
-  if (!authSessionReady) {
+  if (authBootstrapping) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />} rail={rail} {...wb.shellProps}>
         <WorkbenchPanel
@@ -2077,7 +2101,7 @@ function SelectContent() {
   }
 
   const tabs = [
-    { id: "shop", label: t("products.tabShop"), count: summary?.shopProducts },
+    { id: "shop", label: t("products.tabShop"), count: displaySummary?.shopProducts },
     { id: "catalog", label: t("products.tabDiscover") },
   ];
 
@@ -2147,8 +2171,8 @@ function SelectContent() {
           <div className="min-h-0">
             {tab === "shop" ? (
               <SmartSourcingSummaryBar
-                ready={summary != null}
-                analyzed={summary?.shopProducts ?? 0}
+                ready={displaySummary != null}
+                analyzed={displaySummary?.shopProducts ?? 0}
                 matched={matched}
                 pending={pendingCount}
                 unbound={unbound}

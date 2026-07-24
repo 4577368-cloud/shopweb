@@ -122,6 +122,67 @@ function catalogUrlForItemId(itemId: string): string {
   return buildTangbuyProductUrl(itemId, "PREFERRED");
 }
 
+function pickCatalogSku(
+  detail: ItemGetProduct,
+  preferred?: string | null
+): string | null {
+  const want = preferred?.trim();
+  if (want && detail.productSkus?.some((s) => String(s.skuId) === want)) {
+    return want;
+  }
+  const first = detail.productSkus?.[0]?.skuId;
+  return first != null ? String(first) : null;
+}
+
+/**
+ * After preferred-pool ingest, admin ES `providerItemId` is the reliable lookup
+ * (mall gateway keyword search often returns 0 rows for the same offer).
+ */
+export async function resolveCatalogMatchViaAdminApi(input: {
+  offerId1688: string;
+  tangbuySkuId?: string | null;
+}): Promise<CatalogGoodsIdMatch | null> {
+  const offerId = input.offerId1688.trim();
+  if (!offerId || typeof fetch === "undefined") return null;
+
+  try {
+    const res = await fetch("/api/tangbuy/catalog/resolve-offer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ offerId1688: offerId }),
+    });
+    const body = (await res.json()) as {
+      ok?: boolean;
+      internalGoodsId?: string;
+      tangbuyCatalogUrl?: string;
+    };
+    if (!body.ok || !body.internalGoodsId?.trim()) return null;
+
+    const goodsId = body.internalGoodsId.trim();
+    const url = body.tangbuyCatalogUrl?.trim() || catalogUrlForItemId(goodsId);
+    let sku: string | null = input.tangbuySkuId?.trim() || null;
+    if (isMallGatewayConfigured()) {
+      const detail = await fetchItemDetail(url);
+      if (detail) {
+        sku = pickCatalogSku(detail, input.tangbuySkuId) ?? sku;
+      }
+    }
+    if (!sku) return null;
+
+    return {
+      internalGoodsId: goodsId,
+      catalogItemId: goodsId,
+      tangbuyCatalogUrl: url,
+      tangbuySkuId: sku,
+      offerId1688: offerId,
+      dataSource: "PREFERRED",
+      resolvedVia: "catalog_match",
+    };
+  } catch {
+    return null;
+  }
+}
+
 function detailUrlMatchesOffer(
   detailUrl: string | null | undefined,
   offerId: string
@@ -146,16 +207,15 @@ export async function resolveInternalGoodsIdByOffer(input: {
   const pickSku = (
     detail: ItemGetProduct,
     preferred?: string | null
-  ): string | null => {
-    const want = preferred?.trim();
-    if (want && detail.productSkus?.some((s) => String(s.skuId) === want)) {
-      return want;
-    }
-    const first = detail.productSkus?.[0]?.skuId;
-    return first != null ? String(first) : null;
-  };
+  ): string | null => pickCatalogSku(detail, preferred);
 
   try {
+    const adminHit = await resolveCatalogMatchViaAdminApi({
+      offerId1688: offerId,
+      tangbuySkuId: input.tangbuySkuId,
+    });
+    if (adminHit) return adminHit;
+
     if (input.shopName?.trim()) {
       const fromRecs = await loadRecommendationsOfferMap(input.shopName);
       const goodsId = fromRecs.get(offerId);
@@ -238,6 +298,12 @@ export async function resolveInternalGoodsIdByOfferSku(input: {
   if (!offerId || !sku) return null;
 
   try {
+    const adminHit = await resolveCatalogMatchViaAdminApi({
+      offerId1688: offerId,
+      tangbuySkuId: sku,
+    });
+    if (adminHit) return adminHit;
+
   if (input.shopName?.trim()) {
     const fromRecs = await loadRecommendationsOfferMap(input.shopName);
     const goodsId = fromRecs.get(offerId);

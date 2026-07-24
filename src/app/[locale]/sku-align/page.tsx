@@ -98,7 +98,7 @@ type FilterId = SkuFilterMode;
 function SkuAlignContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, showToast, isAuthorized, authSessionReady, refreshWorkflowProgress } =
+  const { shop, showToast, isAuthorized, authBootstrapping, refreshWorkflowProgress } =
     useOnboarding();
   const shopName = shop.name;
   const wb = useWorkbenchPage("sku-align");
@@ -671,7 +671,7 @@ function SkuAlignContent() {
     },
   };
 
-  if (!authSessionReady) {
+  if (authBootstrapping) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
         <WorkbenchPanel

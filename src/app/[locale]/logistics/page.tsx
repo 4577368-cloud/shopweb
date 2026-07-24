@@ -113,7 +113,7 @@ const DEFAULT_TEMPLATE = (shopName: string, name = "Default template"): Logistic
 
 function LogisticsContent() {
   const router = useRouter();
-  const { shop, isAuthorized, authSessionReady, saveLogistics, showToast, skuReadyForNext, workflowSku, logisticsCompleted, publishLogisticsStepSnapshot, publishLogisticsPipelineActive } =
+  const { shop, isAuthorized, authBootstrapping, saveLogistics, showToast, skuReadyForNext, workflowSku, logisticsCompleted, publishLogisticsStepSnapshot, publishLogisticsPipelineActive } =
     useOnboarding();
   const shopName = shop.name?.trim() || shop.domain?.trim() || "";
   const wb = useWorkbenchPage("logistics");
@@ -1323,7 +1323,7 @@ function LogisticsContent() {
     [handleAcceptAllReady]
   );
 
-  if (!authSessionReady) {
+  if (authBootstrapping) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
         <WorkbenchPanel

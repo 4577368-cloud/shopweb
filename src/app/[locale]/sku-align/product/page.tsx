@@ -60,7 +60,7 @@ function resolveCachedProduct(
 function SkuAlignProductContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, showToast, isAuthorized, authSessionReady } = useOnboarding();
+  const { shop, showToast, isAuthorized, authBootstrapping } = useOnboarding();
   const shopName = shop.name;
   const wb = useWorkbenchPage("sku-align");
   const t = useT();
@@ -253,7 +253,7 @@ function SkuAlignProductContent() {
 
   const panelTitle = t("sku.breadcrumb");
 
-  if (!authSessionReady) {
+  if (authBootstrapping) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
         <WorkbenchPanel title={panelTitle} breadcrumbs={breadcrumbs} {...wb.panelProps}>

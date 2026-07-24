@@ -3,6 +3,7 @@ import {
   invalidateCatalogOfferMapCache,
   isInternalGoodsId,
   isOfferId1688,
+  resolveCatalogMatchViaAdminApi,
   resolveInternalGoodsIdByOffer,
   resolveInternalGoodsIdByOfferSku,
   resolveProductSourceIdentity,
@@ -65,11 +66,12 @@ function logPoolAddDiagnostic(
 
   const isExpected =
     detail.skipped ||
-    /TANGBUY_ADMIN|未配置|认证失败|token|unauthorized/i.test(error);
+    /TANGBUY_ADMIN|未配置|认证失败|token|unauthorized/i.test(error) ||
+    /获取不到该商品信息|商品信息|not found|invalid offer/i.test(error);
   if (isExpected) {
-    console.warn("[tangbuy/preferred-pool/add]", payload);
+    console.warn(`[tangbuy/preferred-pool/add] ${offerId1688}: ${error}`, payload);
   } else {
-    console.error("[tangbuy/preferred-pool/add]", payload);
+    console.error(`[tangbuy/preferred-pool/add] ${offerId1688}: ${error}`, payload);
   }
 }
 
@@ -79,6 +81,18 @@ async function submitPreferredPoolAdd(
   const offerId = offerId1688.trim();
   if (!offerId) {
     return { ok: false, status: "failed", error: "缺少 1688 offerId" };
+  }
+  if (!isOfferId1688(offerId)) {
+    logPoolAddDiagnostic(offerId, {
+      skipped: true,
+      error: "非 1688 offerId，跳过商品库登记",
+    });
+    return {
+      ok: false,
+      status: "skipped",
+      error: "非 1688 offerId，跳过商品库登记",
+      skipped: true,
+    };
   }
 
   try {
@@ -142,6 +156,12 @@ export async function pollResolveGoodsIdAfterPool(input: {
   const offerId = input.offerId1688.trim();
   const sku = input.tangbuySkuId?.trim();
   if (!offerId) return null;
+
+  const adminImmediate = await resolveCatalogMatchViaAdminApi({
+    offerId1688: offerId,
+    tangbuySkuId: input.tangbuySkuId,
+  });
+  if (adminImmediate) return adminImmediate;
 
   for (const delay of POLL_DELAYS_MS) {
     if (delay > 0) await sleep(delay);
@@ -297,7 +317,24 @@ export async function ensurePoolIngestForLogistics(input: {
           ? "skipped"
           : "failed",
     };
-    if (!pool.ok) return withPool;
+    if (!pool.ok) {
+      const adminHit = await resolveCatalogMatchViaAdminApi({
+        offerId1688: offerId,
+        tangbuySkuId: input.tangbuySkuId,
+      });
+      if (adminHit) {
+        return mergePoolResolvedIdentity(
+          {
+            ...withPool,
+            poolIngestStatus: "already_exists",
+            poolIngestedAt: withPool.poolIngestedAt ?? now,
+          },
+          adminHit,
+          "already_exists"
+        );
+      }
+      return withPool;
+    }
     if (input.shopName?.trim()) {
       invalidateCatalogOfferMapCache(input.shopName);
     }
@@ -316,6 +353,14 @@ export async function ensurePoolIngestForLogistics(input: {
 
   if (match) {
     return mergePoolResolvedIdentity(withPool, match, "resolved");
+  }
+
+  const adminLate = await resolveCatalogMatchViaAdminApi({
+    offerId1688: offerId,
+    tangbuySkuId: input.tangbuySkuId,
+  });
+  if (adminLate) {
+    return mergePoolResolvedIdentity(withPool, adminLate, "already_exists");
   }
 
   return { ...withPool, poolIngestStatus: "pending_resolve" };

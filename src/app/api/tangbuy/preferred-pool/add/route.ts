@@ -3,6 +3,7 @@ import {
   getPreferredPoolServerConfig,
   isPreferredPoolConfigured,
   isPreferredPoolDuplicateMessage,
+  isPreferredPoolUpstreamBusinessError,
   isPreferredPoolUpstreamSuccess,
 } from "@/lib/tangbuy/preferred-pool-config";
 
@@ -52,9 +53,9 @@ export async function POST(request: Request) {
     level: defaults.level,
     suitableCountryList: defaults.suitableCountryList,
     labelIdList: defaults.labelIdList,
-    operateUserId: defaults.operateUserId || undefined,
+    operateUserId: defaults.operateUserId,
     operateUserName: defaults.operateUserName,
-    operateDept: defaults.operateDept || undefined,
+    operateDept: defaults.operateDept,
     ownerSource: defaults.ownerSource,
   };
   if (defaults.categoryId) {
@@ -117,16 +118,38 @@ export async function POST(request: Request) {
     msg.includes("认证失败") ||
     msg.toLowerCase().includes("unauthorized");
 
+  if (isAuthFailure) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "TANGBUY_ADMIN_TOKEN 无效或已过期，请从 admin.tangbuy.cc 重新复制 Bearer token",
+        upstreamStatus: upstream.status,
+        code,
+      },
+      { status: 401 }
+    );
+  }
+
+  // Admin 业务拒绝（如「获取不到该商品信息」）— 关联仍可成功，勿用 HTTP 502 吓用户。
+  if (isPreferredPoolUpstreamBusinessError(code, msg)) {
+    return NextResponse.json({
+      ok: false,
+      status: "upstream_rejected",
+      error: msg || `商品库登记失败（code ${code ?? "unknown"}）`,
+      upstreamStatus: upstream.status,
+      code,
+    });
+  }
+
   return NextResponse.json(
     {
       ok: false,
-      error: isAuthFailure
-        ? "TANGBUY_ADMIN_TOKEN 无效或已过期，请从 admin.tangbuy.cc 重新复制 Bearer token"
-        : msg || `商品库登记失败（${upstream.status}）`,
+      error: msg || `商品库登记失败（HTTP ${upstream.status}）`,
       upstreamStatus: upstream.status,
       code,
       upstreamBody: parsed ? undefined : text.slice(0, 500) || undefined,
     },
-    { status: isAuthFailure ? 401 : 502 }
+    { status: upstream.ok ? 200 : 502 }
   );
 }

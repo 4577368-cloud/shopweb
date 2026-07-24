@@ -6,7 +6,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -80,7 +79,9 @@ import type {
 } from "@/lib/types";
 import {
   fetchRestoredShopAuth,
+  readStoredShopDomain,
   resolveShopDomainToRestore,
+  shopDisplayNameFromDomain,
 } from "@/lib/restore-shop-auth";
 
 interface OnboardingState {
@@ -120,6 +121,8 @@ interface OnboardingState {
   isAuthorized: boolean;
   /** False until the cold-load auth restore pass finishes (localStorage + /status). */
   authSessionReady: boolean;
+  /** True while restore is in flight — show loading, not「未连接」empty state. */
+  authBootstrapping: boolean;
   productsReadyForNext: boolean;
   skuReadyForNext: boolean;
   workflowSku: WorkflowSkuProgress | null;
@@ -163,9 +166,21 @@ export function isSkuResolved(row: SkuAlignment | SkuAlignStatus) {
 export function OnboardingProvider({ children }: { children: ReactNode }) {
   const t = useT();
   const [steps, setSteps] = useState(initialSteps);
-  const [shop, setShop] = useState(mockShop);
-  const [authStatus, setAuthStatus] = useState<AuthStatus>("waiting_input");
-  const [shopDomainInput, setShopDomainInput] = useState("");
+  const [shop, setShop] = useState(() => {
+    const domain = readStoredShopDomain();
+    if (!domain) return mockShop;
+    return {
+      ...mockShop,
+      domain,
+      name: shopDisplayNameFromDomain(domain),
+    };
+  });
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(() =>
+    readStoredShopDomain() ? "authorizing" : "waiting_input"
+  );
+  const [shopDomainInput, setShopDomainInput] = useState(
+    () => readStoredShopDomain() ?? ""
+  );
   const [overview, setOverview] = useState(EMPTY_OVERVIEW);
   const [productMatches, setProductMatches] = useState(mockProductMatches);
   const [skuAlignments, setSkuAlignments] = useState(mockSkuAlignments);
@@ -191,8 +206,6 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [dashboardRefreshedAt, setDashboardRefreshedAt] = useState<string | null>(
     null
   );
-  const authRestoreStartedRef = useRef(false);
-
   const updateStepStatus = useCallback(
     (id: StepId, status: OnboardingStep["status"]) => {
       setSteps((prev) =>
@@ -267,9 +280,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
   // Cold load: restore authorized shop from localStorage / ?shop / backend list on every page.
   useEffect(() => {
-    if (authRestoreStartedRef.current) return;
     if (typeof window === "undefined") return;
-    authRestoreStartedRef.current = true;
 
     let cancelled = false;
     const timer = window.setTimeout(() => {
@@ -281,8 +292,16 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         const shopToRestore = await resolveShopDomainToRestore();
         if (cancelled) return;
 
-        if (shopToRestore && !shopDomainInput.trim()) {
+        if (shopToRestore) {
           setShopDomainInput(shopToRestore);
+          setShop((prev) => ({
+            ...prev,
+            domain: shopToRestore,
+            name: shopDisplayNameFromDomain(shopToRestore),
+          }));
+          setAuthStatus((prev) =>
+            prev === "authorized" ? prev : "authorizing"
+          );
         }
 
         if (!shopToRestore) {
@@ -290,11 +309,20 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         }
 
         const restored = await fetchRestoredShopAuth(shopToRestore);
-        if (cancelled || !restored) return;
+        if (cancelled) return;
 
-        hydrateAuthorizedShop(restored);
+        if (restored) {
+          hydrateAuthorizedShop(restored);
+          return;
+        }
+
+        setAuthStatus("ready_to_authorize");
       } catch {
-        // Offline / CORS — fall through to unauthenticated UI.
+        if (!cancelled) {
+          setAuthStatus((prev) =>
+            prev === "authorized" ? prev : "ready_to_authorize"
+          );
+        }
       } finally {
         if (!cancelled) {
           window.clearTimeout(timer);
@@ -430,6 +458,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const isAuthorized = authStatus === "authorized";
+  const authBootstrapping = !authSessionReady || authStatus === "authorizing";
 
   const shopApiName = resolveShopApiName(shop);
 
@@ -704,6 +733,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       showToast,
       isAuthorized,
       authSessionReady,
+      authBootstrapping,
       productsReadyForNext,
       skuReadyForNext,
       workflowSku,
@@ -748,6 +778,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       showToast,
       isAuthorized,
       authSessionReady,
+      authBootstrapping,
       productsReadyForNext,
       skuReadyForNext,
       workflowSku,
