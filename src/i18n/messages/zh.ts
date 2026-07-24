@@ -420,7 +420,7 @@ export const zh: Dictionary = {
   catalogCard: {
     failed: "上架失败",
     imageUnavailable: "图片不可用",
-    linkBtn: "关联在售",
+    linkBtn: "关联",
     linkToLiveTitle: "关联到已有在售商品",
     mallUnavailable: "商城暂不可用",
     openOnTangbuy: "在 Tangbuy 打开",
@@ -434,6 +434,7 @@ export const zh: Dictionary = {
     purchaseCost: "采购价 {{price}}",
     retryPublish: "重试上架",
     suggestedPrice: "建议售价 {{price}}",
+    suggestedPriceLabel: "建议售价",
     sourceTangbuy: "Tangbuy",
     source1688: "1688",
     displayPriceNoteTangbuy: "展示价：采购价 1×（仅汇率）",

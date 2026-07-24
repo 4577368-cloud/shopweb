@@ -423,7 +423,7 @@ export const en = {
   catalogCard: {
     failed: "Failed",
     imageUnavailable: "Image Unavailable",
-    linkBtn: "Link Btn",
+    linkBtn: "Link",
     linkToLiveTitle: "Link To Live Title",
     mallUnavailable: "Mall Unavailable",
     openOnTangbuy: "Open On Tangbuy",
@@ -437,6 +437,7 @@ export const en = {
     purchaseCost: "Purchase Cost",
     retryPublish: "Retry Publish",
     suggestedPrice: "Suggested Price",
+    suggestedPriceLabel: "Suggested price",
     sourceTangbuy: "Tangbuy",
     source1688: "1688",
     displayPriceNoteTangbuy: "Display price: 1× procurement (FX only)",

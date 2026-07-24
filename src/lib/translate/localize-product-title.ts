@@ -155,8 +155,8 @@ export async function localizeProductTitle(
 
   if (sourceLang === targetLang) {
     return {
-      success: false,
-      error: "源语言与目标语言相同，无需翻译",
+      success: true,
+      text,
       unchanged: true,
       sourceLang,
       targetLang,
@@ -190,13 +190,23 @@ export async function localizeProductTitle(
     const memText =
       style === "amazon" ? stripListingTitleNoise(memTextRaw) : memTextRaw;
     if (!isTitleLocalizationValid(text, memText, targetLang)) {
+      if (normalizeComparable(text) === normalizeComparable(memText)) {
+        return {
+          success: true,
+          text,
+          unchanged: true,
+          sourceLang,
+          targetLang,
+          engine: "mymemory",
+        };
+      }
       return {
         success: false,
         error:
           style === "amazon"
             ? "标题未成功本土化（结果与原文相同或不符合目标语言）。可配置 LLM_MODEL_* 以启用 Amazon 风格改写。"
             : "翻译结果无效（与原文相同或语言不匹配）",
-        unchanged: normalizeComparable(text) === normalizeComparable(memText),
+        unchanged: true,
         sourceLang,
         targetLang,
         engine: "mymemory",

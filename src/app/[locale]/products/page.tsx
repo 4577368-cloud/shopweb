@@ -1036,6 +1036,11 @@ function SelectContent() {
               undefined,
               style
             );
+            if (result.success && result.unchanged) {
+              success++;
+              onProgress?.(i + 1, total, success, failed);
+              continue;
+            }
             if (result.success && result.translatedText) {
               newText = result.translatedText;
             } else {

@@ -40,7 +40,7 @@ export function CatalogProductCard({
   item,
   purchasePriceUsd,
   sourcingSource,
-  listIndex,
+  listIndex: _listIndex,
   sourceDetailUrl,
   targetCurrency,
   state,
@@ -100,23 +100,6 @@ export function CatalogProductCard({
             <Badge variant="danger">{t("catalogCard.failed")}</Badge>
           </div>
         ) : null}
-        {sourcingSource ? (
-          <div className="absolute right-2 top-2 flex flex-col items-end gap-1">
-            {listIndex != null ? (
-              <Badge variant="default" className="text-[10px]">
-                #{listIndex}
-              </Badge>
-            ) : null}
-            <Badge
-              variant={sourcingSource === "1688" ? "warning" : "success"}
-              className="text-[10px]"
-            >
-              {sourcingSource === "1688"
-                ? t("catalogCard.source1688")
-                : t("catalogCard.sourceTangbuy")}
-            </Badge>
-          </div>
-        ) : null}
       </div>
 
       <h3 className="mt-2.5 line-clamp-2 min-h-[2.5rem] text-xs font-semibold leading-5 text-ink">
@@ -145,10 +128,13 @@ export function CatalogProductCard({
       </h3>
 
       <div className="mt-1.5">
-        <p className="text-sm font-semibold text-brand-strong">
-          {t("catalogCard.suggestedPrice", {
-            price: money(item.estimatedSalePrice, item.targetCurrency ?? targetCurrency),
-          })}
+        <p className="text-sm">
+          <span className="font-semibold text-ink">
+            {t("catalogCard.suggestedPriceLabel")}
+          </span>{" "}
+          <span className="font-semibold tabular-nums text-red-600">
+            {money(item.estimatedSalePrice, item.targetCurrency ?? targetCurrency)}
+          </span>
         </p>
         {sourcingSource ? (
           <p className="mt-0.5 text-[10px] text-ink-subtle">

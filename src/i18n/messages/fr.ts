@@ -422,7 +422,7 @@ export const fr: Dictionary = {
   catalogCard: {
     failed: "Failed",
     imageUnavailable: "Image Unavailable",
-    linkBtn: "Link Btn",
+    linkBtn: "Associer",
     linkToLiveTitle: "Link To Live Title",
     mallUnavailable: "Mall Unavailable",
     openOnTangbuy: "Open On Tangbuy",
@@ -436,6 +436,7 @@ export const fr: Dictionary = {
     purchaseCost: "Purchase Cost",
     retryPublish: "Réessayer Publish",
     suggestedPrice: "Suggested Price",
+    suggestedPriceLabel: "Prix conseillé",
     sourceTangbuy: "Tangbuy",
     source1688: "1688",
     displayPriceNoteTangbuy: "Display: 1× procurement",

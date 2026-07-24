@@ -61,7 +61,7 @@ export async function POST(req: Request) {
           targetLang: result.targetLang,
           unchanged: result.unchanged,
         },
-        { status: result.unchanged ? 422 : 500 }
+        { status: 500 }
       );
     }
 
@@ -71,6 +71,7 @@ export async function POST(req: Request) {
       sourceLang: result.sourceLang,
       targetLang: result.targetLang,
       engine: result.engine,
+      unchanged: result.unchanged,
     });
   } catch (err) {
     console.error("[translate] error:", err);
