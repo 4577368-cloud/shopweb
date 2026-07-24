@@ -143,7 +143,10 @@ export async function POST(request: Request) {
   return NextResponse.json(
     {
       ok: false,
-      error: msg || `商品库登记失败（HTTP ${upstream.status}）`,
+      error:
+        msg.includes("I/O error") || msg.includes("fetch failed")
+          ? `${msg}（云端无法访问 admin.tangbuy.cc，请在 Vercel 配置 NEXT_PUBLIC_TANGBUY_ADMIN_BROWSER_TOKEN 由浏览器直连）`
+          : msg || `商品库登记失败（HTTP ${upstream.status}）`,
       upstreamStatus: upstream.status,
       code,
       upstreamBody: parsed ? undefined : text.slice(0, 500) || undefined,

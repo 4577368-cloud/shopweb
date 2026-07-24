@@ -11,6 +11,10 @@ import {
 } from "@/lib/catalog-product-resolve";
 import { buildOfferDetailUrl } from "@/lib/logistics/variant-measures";
 import { isTerminalPoolIngestStatus } from "@/lib/logistics/estimate-goods-block";
+import {
+  isAdminBrowserIngestConfigured,
+  submitPreferredPoolAddFromBrowser,
+} from "@/lib/tangbuy/admin-browser";
 import { buildTangbuyProductUrl } from "@/lib/tangbuy-mall-gateway";
 import type { PoolIngestStatus, ProductSourceIdentity } from "@/lib/types";
 import type { ImageSearchProduct } from "@/lib/types";
@@ -67,7 +71,10 @@ function logPoolAddDiagnostic(
   const isExpected =
     detail.skipped ||
     /TANGBUY_ADMIN|未配置|认证失败|token|unauthorized/i.test(error) ||
-    /获取不到该商品信息|商品信息|not found|invalid offer/i.test(error);
+    /获取不到该商品信息|商品信息|not found|invalid offer/i.test(error) ||
+    /I\/O error|admin\.tangbuy\.cc.*不可达|NEXT_PUBLIC_TANGBUY_ADMIN_BROWSER_TOKEN/i.test(
+      error
+    );
   if (isExpected) {
     console.warn(`[tangbuy/preferred-pool/add] ${offerId1688}: ${error}`, payload);
   } else {
@@ -93,6 +100,32 @@ async function submitPreferredPoolAdd(
       error: "非 1688 offerId，跳过商品库登记",
       skipped: true,
     };
+  }
+
+  if (isAdminBrowserIngestConfigured()) {
+    const browser = await submitPreferredPoolAddFromBrowser(offerId);
+    if (browser.ok) {
+      return {
+        ok: true,
+        status:
+          browser.status === "already_exists" ? "already_exists" : "submitted",
+        msg: browser.msg,
+      };
+    }
+    if (browser.status === "upstream_rejected") {
+      logPoolAddDiagnostic(offerId, {
+        error: browser.error,
+        httpStatus: browser.httpStatus,
+      });
+      return { ok: false, status: "failed", error: browser.error };
+    }
+    if (browser.error && !/未配置/i.test(browser.error)) {
+      logPoolAddDiagnostic(offerId, {
+        error: browser.error,
+        httpStatus: browser.httpStatus,
+      });
+      return { ok: false, status: "failed", error: browser.error };
+    }
   }
 
   try {

@@ -6,6 +6,7 @@ import {
   rowToCatalogBase,
   type ItemGetProduct,
 } from "@/lib/tangbuy-mall-gateway";
+import { resolveOfferViaAdminFromBrowser } from "@/lib/tangbuy/admin-browser";
 import { buildOfferDetailUrl } from "@/lib/logistics/variant-measures";
 import type { ImageBindingView, ImageSearchProduct, ProductSourceIdentity } from "@/lib/types";
 
@@ -144,6 +145,29 @@ export async function resolveCatalogMatchViaAdminApi(input: {
 }): Promise<CatalogGoodsIdMatch | null> {
   const offerId = input.offerId1688.trim();
   if (!offerId || typeof fetch === "undefined") return null;
+
+  const browserHit = await resolveOfferViaAdminFromBrowser(offerId);
+  if (browserHit) {
+    const goodsId = browserHit.internalGoodsId.trim();
+    const url = browserHit.tangbuyCatalogUrl.trim();
+    let sku: string | null = input.tangbuySkuId?.trim() || null;
+    if (isMallGatewayConfigured()) {
+      const detail = await fetchItemDetail(url);
+      if (detail) {
+        sku = pickCatalogSku(detail, input.tangbuySkuId) ?? sku;
+      }
+    }
+    if (!sku) return null;
+    return {
+      internalGoodsId: goodsId,
+      catalogItemId: goodsId,
+      tangbuyCatalogUrl: url,
+      tangbuySkuId: sku,
+      offerId1688: offerId,
+      dataSource: "PREFERRED",
+      resolvedVia: "catalog_match",
+    };
+  }
 
   try {
     const res = await fetch("/api/tangbuy/catalog/resolve-offer", {

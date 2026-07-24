@@ -44,7 +44,13 @@ export async function fetchTangbuyAdmin(
     return res;
   } catch (directErr) {
     const proxyBase = pluginAdminProxyBase();
-    if (!proxyBase) throw directErr;
+    const directMsg =
+      directErr instanceof Error ? directErr.message : String(directErr);
+    // Render/US cannot reach admin.tangbuy.cc; proxy only adds latency and the same I/O failure.
+    const skipPluginProxy =
+      /fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|network/i.test(directMsg) ||
+      process.env.TANGBUY_ADMIN_SKIP_PLUGIN_PROXY === "1";
+    if (!proxyBase || skipPluginProxy) throw directErr;
 
     const proxyUrl = `${proxyBase}${path}`;
     const proxyRes = await fetch(proxyUrl, {
