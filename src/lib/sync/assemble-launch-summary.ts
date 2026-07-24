@@ -11,6 +11,7 @@ import {
   indexImageBindings,
 } from "@/lib/shop-product-binding-stats";
 import { peekMirrorCache } from "@/lib/products/mirror-cache";
+import type { LaunchSummaryBundle } from "@/lib/sync/launch-summary-bundle";
 import type {
   FollowUpItem,
   LaunchProduct,
@@ -621,8 +622,78 @@ export async function assembleLaunchSummaryFast(
   });
 }
 
-/** All workflow APIs merged (tier 2). */
-export async function assembleLaunchSummaryFull(
+export type { LaunchSummaryBundleInput } from "@/lib/sync/launch-summary-bundle";
+
+function resolveBundleLogistics(
+  shopName: string,
+  logisticsAnalysis: LogisticsAnalysis | null,
+  activeTemplate: LogisticsTemplate | null
+): {
+  mergedAnalysis: LogisticsAnalysis | null;
+  logistics: ReturnType<typeof computeLogisticsPlanMetrics>;
+} {
+  const templateScopeKey = buildLogisticsTemplateScopeKey(activeTemplate);
+  const quoteResults =
+    templateScopeKey && typeof window !== "undefined"
+      ? readQuoteCache(shopName, templateScopeKey)
+      : new Map();
+  const mergedAnalysis =
+    logisticsAnalysis && quoteResults.size > 0
+      ? mergeQuoteResultsIntoAnalysis(logisticsAnalysis, quoteResults)
+      : logisticsAnalysis;
+  const logistics = computeLogisticsPlanMetrics(mergedAnalysis, quoteResults);
+  return { mergedAnalysis, logistics };
+}
+
+export function assembleLaunchSummaryFromBundle(
+  bundle: LaunchSummaryBundle,
+  shopName: string,
+  shopDomain: string | undefined | null,
+  t: TranslateFn,
+  loadTier: "fast" | "full"
+): LaunchSummary {
+  const bindingsMap = indexImageBindings(bundle.bindings ?? []);
+  const domain = shopDomain?.trim() || shopName;
+
+  if (loadTier === "fast") {
+    return buildLaunchSummary({
+      shopName,
+      shopDomain: domain,
+      shopProducts: bundle.shopProducts ?? [],
+      bindingsMap,
+      skuOverview: null,
+      mergedAnalysis: null,
+      logistics: EMPTY_LOGISTICS,
+      pricingTemplate: null,
+      activeTemplate: null,
+      t,
+      loadTier: "fast",
+    });
+  }
+
+  const activeTemplate = bundle.logisticsTemplates?.[0] ?? null;
+  const { mergedAnalysis, logistics } = resolveBundleLogistics(
+    shopName,
+    bundle.logisticsAnalysis ?? null,
+    activeTemplate
+  );
+
+  return buildLaunchSummary({
+    shopName,
+    shopDomain: domain,
+    shopProducts: bundle.shopProducts ?? [],
+    bindingsMap,
+    skuOverview: bundle.skuOverview ?? null,
+    mergedAnalysis,
+    logistics,
+    pricingTemplate: bundle.pricingTemplate ?? null,
+    activeTemplate,
+    t,
+    loadTier: "full",
+  });
+}
+
+async function assembleLaunchSummaryFullLegacy(
   shopName: string,
   t: TranslateFn,
   shopDomain?: string | null
@@ -643,32 +714,52 @@ export async function assembleLaunchSummaryFull(
     api.listLogisticsTemplates(shopName).catch(() => [] as LogisticsTemplate[]),
   ]);
 
-  const bindingsMap = indexImageBindings(bindings);
-  const activeTemplate = logisticsTemplates[0] ?? null;
-  const templateScopeKey = buildLogisticsTemplateScopeKey(activeTemplate);
-  const quoteResults =
-    templateScopeKey && typeof window !== "undefined"
-      ? readQuoteCache(shopName, templateScopeKey)
-      : new Map();
-  const mergedAnalysis =
-    logisticsAnalysis && quoteResults.size > 0
-      ? mergeQuoteResultsIntoAnalysis(logisticsAnalysis, quoteResults)
-      : logisticsAnalysis;
-  const logistics = computeLogisticsPlanMetrics(mergedAnalysis, quoteResults);
-
-  return buildLaunchSummary({
+  return assembleLaunchSummaryFromBundle(
+    {
+      shopName,
+      shopProducts,
+      bindings,
+      skuOverview,
+      logisticsAnalysis,
+      pricingTemplate,
+      logisticsTemplates,
+    },
     shopName,
-    shopDomain: shopDomain?.trim() || shopName,
-    shopProducts,
-    bindingsMap,
-    skuOverview,
-    mergedAnalysis,
-    logistics,
-    pricingTemplate,
-    activeTemplate,
+    shopDomain,
     t,
-    loadTier: "full",
-  });
+    "full"
+  );
+}
+
+/** All workflow APIs merged (tier 2) — prefers aggregated plugin bundle. */
+export async function assembleLaunchSummaryFull(
+  shopName: string,
+  t: TranslateFn,
+  shopDomain?: string | null
+): Promise<LaunchSummary> {
+  try {
+    const [bundle, logisticsTemplates] = await Promise.all([
+      api.getLaunchSummaryBundle(shopName),
+      api.listLogisticsTemplates(shopName).catch(() => [] as LogisticsTemplate[]),
+    ]);
+    return assembleLaunchSummaryFromBundle(
+      {
+        shopName: bundle.shopName ?? shopName,
+        shopProducts: bundle.shopProducts ?? [],
+        bindings: bundle.bindings ?? [],
+        skuOverview: bundle.skuOverview ?? null,
+        logisticsAnalysis: bundle.logisticsAnalysis ?? null,
+        pricingTemplate: bundle.pricingTemplate ?? null,
+        logisticsTemplates,
+      },
+      shopName,
+      shopDomain,
+      t,
+      "full"
+    );
+  } catch {
+    return assembleLaunchSummaryFullLegacy(shopName, t, shopDomain);
+  }
 }
 
 /** @deprecated Prefer explicit Fast then Full on the sync page. */

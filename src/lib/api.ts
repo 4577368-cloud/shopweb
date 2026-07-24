@@ -784,6 +784,15 @@ export const api = {
   /** List the shop's mirrored on-sale products (read-only; path A display). */
   getShopProducts: (shop: string) => fetchShopProducts(shop),
 
+  /** P2: aggregated sync ceremony inputs (products, bindings, SKU, logistics, pricing). */
+  getLaunchSummaryBundle: (shop: string) =>
+    request<
+      Omit<
+        import("@/lib/sync/launch-summary-bundle").LaunchSummaryBundle,
+        "logisticsTemplates"
+      >
+    >(`/api/plugin/sync/launch-summary?shopName=${encodeURIComponent(shop)}`),
+
   /** Persisted Shopify order headers for shop scan context (webhook-synced). */
   listShopOrders: (shop: string) =>
     request<ShopOrderHeader[]>(

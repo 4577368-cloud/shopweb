@@ -61,6 +61,8 @@ import type { SkuCommandPlan } from "@/lib/agents/sku-align/command-schema";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
+import { productsMirrorShopKey } from "@/lib/products/mirror-cache";
+import { warmLaunchSummaryPartial } from "@/lib/sync/warm-launch-summary-partial";
 import { workflowScanShopKey } from "@/lib/scan/shop-key";
 import {
   clearSkuAlignMirrorCache,
@@ -104,6 +106,7 @@ function SkuAlignContent() {
     useOnboarding();
   const shopName = resolveShopApiName(shop);
   const scanShopKey = workflowScanShopKey(shop);
+  const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
   const wb = useWorkbenchPage("sku-align");
   const t = useT();
   const locale = useLocale();
@@ -184,6 +187,15 @@ function SkuAlignContent() {
           pricingTemplate: tpl,
         });
         hasLoadedOnceRef.current = true;
+        void api
+          .skuAlignV1Overview(shopName)
+          .catch(() => null)
+          .then((skuOverview) => {
+            warmLaunchSummaryPartial(shopMirrorKey, shopName, shop.domain, t, {
+              skuOverview,
+              pricingTemplate: tpl ?? undefined,
+            });
+          });
       } catch (err) {
         setError(readableError(err));
       } finally {
@@ -191,7 +203,7 @@ function SkuAlignContent() {
         setRefreshing(false);
       }
     },
-    [shopName]
+    [shopName, shopMirrorKey, shop.domain, t]
   );
 
   // Move to the result view once (guarded), pulling the freshly-aligned overview. Non-blocking:

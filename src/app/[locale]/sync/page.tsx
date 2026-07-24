@@ -26,6 +26,7 @@ import {
   peekLaunchSummaryCache,
   setLaunchSummaryCache,
 } from "@/lib/sync/launch-summary-cache";
+import { tryAssembleFromLaunchPartial } from "@/lib/sync/warm-launch-summary-partial";
 import {
   buildCeremonyTasks,
   ceremonyProductIndex,
@@ -149,6 +150,19 @@ export default function SyncPage() {
         } else if (isAuthorized && shopName) {
           void loadSummary({ background: true, cancelled: opts?.cancelled });
         }
+        return;
+      }
+
+      const fromPartial =
+        isAuthorized && shopName
+          ? tryAssembleFromLaunchPartial(shopMirrorKey, shopName, shop.domain, t)
+          : null;
+      if (fromPartial) {
+        setSummary(fromPartial);
+        setLaunchSummaryCache(shopMirrorKey, fromPartial);
+        setFullSummaryReady(true);
+        applyPostFetchPhase();
+        void loadSummary({ background: true, cancelled: opts?.cancelled });
         return;
       }
 

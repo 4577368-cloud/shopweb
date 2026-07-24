@@ -33,6 +33,8 @@ import {
 } from "@/lib/logistics/logistics-session-cache";
 import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
 import { workflowScanShopKey } from "@/lib/scan/shop-key";
+import { productsMirrorShopKey } from "@/lib/products/mirror-cache";
+import { warmLaunchSummaryPartial } from "@/lib/sync/warm-launch-summary-partial";
 import { api, readableError, type LogisticsAcceptDecisionRequest, type LogisticsEstimateResult } from "@/lib/api";
 import type { LogisticsFilterMode, PostalLimitFilter } from "@/lib/logistics/display";
 import {
@@ -122,6 +124,7 @@ function LogisticsContent() {
     useOnboarding();
   const shopName = shop.name?.trim() || shop.domain?.trim() || "";
   const scanShopKey = workflowScanShopKey(shop);
+  const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
   const wb = useWorkbenchPage("logistics");
   const t = useT();
   const locale = useLocale();
@@ -386,6 +389,11 @@ function LogisticsContent() {
         setLogisticsMirrorCache(shopName, payload);
         setLogisticsSession(shopName, payload);
         markScanned("logistics", scanShopKey);
+        warmLaunchSummaryPartial(shopMirrorKey, shopName, shop.domain, t, {
+          logisticsAnalysis: a,
+          logisticsTemplates: ts,
+          pricingTemplate: pt ?? undefined,
+        });
       } catch (err) {
         setError(readableError(err));
         const ts = await api.listLogisticsTemplates(shopName).catch(() => []);
@@ -400,7 +408,7 @@ function LogisticsContent() {
         if (!silent) setLoading(false);
       }
     },
-    [shopName, scanShopKey, t, applyLogisticsPayload]
+    [shopName, scanShopKey, shopMirrorKey, shop.domain, t, applyLogisticsPayload]
   );
 
   useEffect(() => {

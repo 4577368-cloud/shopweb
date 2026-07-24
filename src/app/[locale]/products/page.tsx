@@ -45,6 +45,7 @@ import { mergeProductBaseline } from "@/lib/shop-product-mirror-baseline";
 import { clearMirrorCache, isMirrorCacheFresh, peekMirrorCache, productsMirrorShopKey, setMirrorCache } from "@/lib/products/mirror-cache";
 import { assembleLaunchSummaryFastFromMirror } from "@/lib/sync/assemble-launch-summary";
 import { setLaunchSummaryCacheIfNotFull } from "@/lib/sync/launch-summary-cache";
+import { warmLaunchSummaryPartial } from "@/lib/sync/warm-launch-summary-partial";
 import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import { formatBatchLinkSummary } from "@/lib/batch-link/types";
 import type { BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
@@ -406,6 +407,11 @@ function SelectContent() {
         t
       );
       if (partial) setLaunchSummaryCacheIfNotFull(shopMirrorKey, partial);
+      warmLaunchSummaryPartial(shopMirrorKey, shopName, shop.domain, t, {
+        shopProducts: products,
+        bindings: map,
+        pricingTemplate: tpl ?? undefined,
+      });
       return { products: merged, bindings: map };
     },
     [shopName, shopMirrorKey, shop.domain, refreshNewArrivalAwareness, t]
