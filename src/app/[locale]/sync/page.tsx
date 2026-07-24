@@ -13,9 +13,15 @@ import { LaunchMetricsGrid } from "@/components/sync/launch-metrics-grid";
 import { ProductFlipCard } from "@/components/sync/product-flip-card";
 import { LaunchReportStream } from "@/components/sync/launch-report-stream";
 import { ProgressPanel } from "@/components/sync/progress-panel";
+import { SyncPageSkeleton } from "@/components/sync/sync-page-skeleton";
 import { useOnboarding } from "@/context/onboarding-context";
+import { productsMirrorShopKey } from "@/lib/products/mirror-cache";
 import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import { assembleLaunchSummary } from "@/lib/sync/assemble-launch-summary";
+import {
+  peekLaunchSummaryCache,
+  setLaunchSummaryCache,
+} from "@/lib/sync/launch-summary-cache";
 import {
   buildCeremonyTasks,
   ceremonyProductIndex,
@@ -46,6 +52,10 @@ function readCeremonyCelebrated(): boolean {
 export default function SyncPage() {
   const { shop, isAuthorized, completeSyncCeremony } = useOnboarding();
   const shopName = resolveShopApiName(shop);
+  const shopMirrorKey = useMemo(
+    () => productsMirrorShopKey(shop.name, shop.domain),
+    [shop.name, shop.domain]
+  );
   const t = useT();
   const locale = useLocale();
   const revisitRef = useRef(readSummaryViewed());
@@ -59,50 +69,79 @@ export default function SyncPage() {
   const [phase, setPhase] = useState<CeremonyPhase>("loading");
   const [ceremonyPercent, setCeremonyPercent] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshingSummary, setRefreshingSummary] = useState(false);
 
   const showFull = phase === "holding" || phase === "summary";
 
-  const loadSummary = async (cancelled: () => boolean) => {
-    setLoadError(null);
-    setPhase("loading");
-    try {
-      const data =
-        isAuthorized && shopName
-          ? await assembleLaunchSummary(shopName, t)
-          : getLaunchSummary();
-      if (cancelled()) return;
-      setSummary(data);
-      if (revisitRef.current || readSummaryViewed()) {
-        setCeremonyPercent(100);
-        setPhase("summary");
-      } else if (readCeremonyCelebrated()) {
-        setCeremonyPercent(100);
-        setPhase("complete");
-      } else {
-        setCeremonyPercent(0);
-        setPhase("running");
-      }
-    } catch {
-      if (cancelled()) return;
-      if (isAuthorized && shopName) {
-        setSummary(null);
-        setLoadError(t("sync.loadError"));
+  const applyPostFetchPhase = useCallback(() => {
+    if (revisitRef.current || readSummaryViewed()) {
+      setCeremonyPercent(100);
+      setPhase("summary");
+    } else if (readCeremonyCelebrated()) {
+      setCeremonyPercent(100);
+      setPhase("complete");
+    } else {
+      setCeremonyPercent(0);
+      setPhase("running");
+    }
+  }, []);
+
+  const loadSummary = useCallback(
+    async (opts?: { background?: boolean; cancelled?: () => boolean }) => {
+      const isCancelled = () => opts?.cancelled?.() ?? false;
+
+      if (!opts?.background) {
+        setLoadError(null);
+        const cached = shopName ? peekLaunchSummaryCache(shopMirrorKey) : undefined;
+        if (cached) {
+          setSummary(cached);
+          applyPostFetchPhase();
+          if (isAuthorized && shopName) {
+            void loadSummary({ background: true, cancelled: opts?.cancelled });
+          }
+          return;
+        }
         setPhase("loading");
       } else {
-        setSummary(getLaunchSummary());
-        setCeremonyPercent(0);
-        setPhase("running");
+        setRefreshingSummary(true);
       }
-    }
-  };
+
+      try {
+        const data =
+          isAuthorized && shopName
+            ? await assembleLaunchSummary(shopName, t)
+            : getLaunchSummary();
+        if (isCancelled()) return;
+        setSummary(data);
+        if (shopName) setLaunchSummaryCache(shopMirrorKey, data);
+        if (opts?.background) return;
+        applyPostFetchPhase();
+      } catch {
+        if (isCancelled()) return;
+        if (opts?.background) return;
+        if (isAuthorized && shopName) {
+          setSummary(null);
+          setLoadError(t("sync.loadError"));
+          setPhase("loading");
+        } else {
+          setSummary(getLaunchSummary());
+          setCeremonyPercent(0);
+          setPhase("running");
+        }
+      } finally {
+        if (opts?.background) setRefreshingSummary(false);
+      }
+    },
+    [applyPostFetchPhase, isAuthorized, shopMirrorKey, shopName, t]
+  );
 
   useEffect(() => {
     let cancelled = false;
-    void loadSummary(() => cancelled);
+    void loadSummary({ cancelled: () => cancelled });
     return () => {
       cancelled = true;
     };
-  }, [isAuthorized, shopName]);
+  }, [loadSummary]);
 
   useEffect(() => {
     if (phase !== "running" || !summary) return;
@@ -193,6 +232,7 @@ export default function SyncPage() {
           ? await assembleLaunchSummary(shopName, t)
           : getLaunchSummary();
       setSummary(data);
+      if (shopName) setLaunchSummaryCache(shopMirrorKey, data);
       setPhase("running");
     } catch {
       if (isAuthorized && shopName) {
@@ -205,16 +245,20 @@ export default function SyncPage() {
     } finally {
       setReplaying(false);
     }
-  }, [isAuthorized, shopName, replaying, t]);
+  }, [isAuthorized, shopMirrorKey, shopName, replaying, t]);
 
   const replayAction = (
-    <Button
+    <div className="flex items-center gap-2">
+      {refreshingSummary ? (
+        <span className="hidden text-xs text-ink-muted sm:inline">{t("sync.refreshingSummary")}</span>
+      ) : null}
+      <Button
       type="button"
       size="sm"
       variant="secondary"
       className="h-7 w-7 px-0"
       onClick={() => void replayCeremony()}
-      disabled={replaying || phase === "loading"}
+      disabled={replaying || (phase === "loading" && !summary)}
       title={t("sync.replayCeremonyTitle")}
       aria-label={t("sync.replayCeremonyAria")}
     >
@@ -224,6 +268,7 @@ export default function SyncPage() {
         <RefreshCw className="h-3.5 w-3.5" />
       )}
     </Button>
+    </div>
   );
 
   if (phase === "complete" && summary) {
@@ -241,7 +286,7 @@ export default function SyncPage() {
     );
   }
 
-  if (phase === "loading" || !summary) {
+  if (!summary && (phase === "loading" || loadError)) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />}>
         <WorkbenchPanel
@@ -260,21 +305,22 @@ export default function SyncPage() {
                 type="button"
                 size="sm"
                 variant="secondary"
-                onClick={() => void loadSummary(() => false)}
+                onClick={() => void loadSummary()}
               >
                 <RefreshCw className="h-3.5 w-3.5" />
                 {t("common.retry")}
               </Button>
             </div>
           ) : (
-            <div className="flex items-center justify-center gap-2 py-20 text-sm text-ink-muted">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              {t("sync.summarizing")}
-            </div>
+            <SyncPageSkeleton message={t("sync.summarizingTier1")} />
           )}
         </WorkbenchPanel>
       </WorkbenchShell>
     );
+  }
+
+  if (!summary) {
+    return null;
   }
 
   return (
