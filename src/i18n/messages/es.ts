@@ -2207,8 +2207,7 @@ export const es: Dictionary = {
     goTo: "Go to {{title}}",
     progress: "Setup progress",
     upgradeLabel: "Upgrade",
-    upgradeHint: "Dropshipping y planes",
-    upgradeAria: "Abrir el portal de dropshipping de Tangbuy en una pestaña nueva",
+    upgradeAria: "Abrir dropshipping de Tangbuy en una pestaña nueva",
   },
   sku: {
     acceptPage: "Accept this page",

@@ -8,7 +8,6 @@ import { AppLogo } from "@/components/brand/app-logo";
 import { useOnboarding } from "@/context/onboarding-context";
 import { ShopSwitcher } from "@/components/workbench/shop-switcher";
 import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
-import { SidebarAdCarousel } from "@/components/workbench/sidebar-ad-carousel";
 import { SidebarUpgradeCta } from "@/components/workbench/sidebar-upgrade-cta";
 import { SidebarUserMenu } from "@/components/workbench/sidebar-user-menu";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
@@ -174,8 +173,6 @@ export function StepSidebar() {
           })}
         </ul>
       </nav>
-
-      <SidebarAdCarousel className="px-4 pb-3" />
 
       <SidebarUpgradeCta />
 

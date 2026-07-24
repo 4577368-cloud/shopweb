@@ -2209,8 +2209,7 @@ export const fr: Dictionary = {
     goTo: "Go to {{title}}",
     progress: "Setup progress",
     upgradeLabel: "Upgrade",
-    upgradeHint: "Dropshipping et offres",
-    upgradeAria: "Ouvrir le portail dropshipping Tangbuy dans un nouvel onglet",
+    upgradeAria: "Ouvrir le dropshipping Tangbuy dans un nouvel onglet",
   },
   sku: {
     acceptPage: "Accept this page",

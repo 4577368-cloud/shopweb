@@ -2208,8 +2208,7 @@ export const zh: Dictionary = {
     goTo: "前往：{{title}}",
     progress: "开店进度",
     upgradeLabel: "Upgrade",
-    upgradeHint: "Tangbuy 代发与套餐",
-    upgradeAria: "在新标签页打开 Tangbuy 代发平台（升级与账户）",
+    upgradeAria: "在新标签页打开 Tangbuy 代发平台",
   },
   sku: {
     acceptPage: "刷新列表",
