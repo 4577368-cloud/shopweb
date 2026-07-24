@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useCallback, useMemo, useRef, useState, Suspense } from "react";
 import dynamic from "next/dynamic";
 import { Loader2, RefreshCw, ArrowRight } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
@@ -13,7 +13,6 @@ import { AssistantRail } from "@/components/workbench/assistant-rail";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { FadeSwap } from "@/components/ui/fade-swap";
-import { codesFromSelections } from "@/components/logistics/market-multi-select";
 import { useOnboarding } from "@/context/onboarding-context";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
@@ -22,7 +21,8 @@ import { useLogisticsWorkflowNavigation } from "@/hooks/use-logistics-workflow-n
 import { useLogisticsMirrorLoad } from "@/hooks/use-logistics-mirror-load";
 import { useLogisticsAgentCommands } from "@/hooks/use-logistics-agent-commands";
 import { useLogisticsQuoteEstimate } from "@/hooks/use-logistics-quote-estimate";
-import { createDefaultLogisticsTemplate } from "@/lib/logistics/default-template";
+import { useLogisticsPageActions } from "@/hooks/use-logistics-page-actions";
+import { useLogisticsDecisionWorkspaceProps } from "@/hooks/use-logistics-decision-workspace-props";
 import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
 import {
   clearLogisticsMirrorCache,
@@ -33,28 +33,15 @@ import {
 import { clearScanned } from "@/lib/scan/gate";
 import { workflowScanShopKey } from "@/lib/scan/shop-key";
 import { productsMirrorShopKey } from "@/lib/products/mirror-cache";
-import { api, readableError } from "@/lib/api";
 import type { LogisticsFilterMode, PostalLimitFilter } from "@/lib/logistics/display";
 import {
   decisionStatusToFilterMode,
   normalizeLogisticsFilterMode,
 } from "@/lib/logistics/display";
-import {
-  listTemplateCountryCodes,
-  resolveQuoteMarketCode,
-} from "@/lib/logistics/template-params";
-import {
-  evaluateLogisticsCompletionGate,
-  deriveLogisticsStepSnapshot,
-  type CompletionGateResult,
-} from "@/lib/logistics/completion-gate";
-import { stashLogisticsSyncExceptionCount } from "@/lib/logistics/sync-handoff";
 import { deriveLogisticsWorkbenchState } from "@/lib/logistics/workbench-state";
 import { countCatalogIngestingProducts } from "@/lib/tangbuy/catalog-ingest-display";
 import type {
   LogisticsDecisionStatus,
-  LogisticsTemplate,
-  LogisticsTypeCode,
   VariantLogisticsDecision,
 } from "@/lib/types";
 import { LogisticsWorkflowBody } from "@/components/logistics/logistics-workflow-body";
@@ -103,8 +90,6 @@ function LogisticsContent() {
     t,
   });
 
-  const [saving, setSaving] = useState(false);
-  const [correctingId, setCorrectingId] = useState<string | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [filterMode, setFilterMode] = useState<LogisticsFilterMode>("all");
   const [postalLimitFilter, setPostalLimitFilter] = useState<PostalLimitFilter>("all");
@@ -161,6 +146,47 @@ function LogisticsContent() {
   const hasSavedTemplate = hasSavedLogisticsTemplate(templates);
 
   const {
+    saving,
+    correctingId,
+    completionGate,
+    skuBindingGap,
+    handleCorrect,
+    handleSaveTemplate,
+    handleDeleteTemplate,
+    handleSelectTemplate,
+    handleSave,
+    handleSaveAndSync,
+  } = useLogisticsPageActions({
+    shopName,
+    locale,
+    router,
+    localePath,
+    analysis,
+    setAnalysis,
+    templates,
+    setTemplates,
+    activeTemplate,
+    setActiveTemplate,
+    quoteResults,
+    hasSavedTemplate,
+    pipelineRunning: pipeline.pipelineRunning,
+    pipelineActive: pipeline.pipelineActive,
+    suppressScopeSwitchToastRef,
+    setQuoteMarketCode,
+    setWorkflowStep,
+    setShowDrawer,
+    saveLogistics,
+    showToast,
+    t,
+    isAuthorized,
+    skuReadyForNext,
+    logisticsCompleted,
+    workflowSku,
+    publishLogisticsPipelineActive,
+    publishLogisticsStepSnapshot,
+  });
+
+  const {
     logisticsListRef,
     scrollToLogisticsList,
     handleWorkflowStepChange,
@@ -194,223 +220,6 @@ function LogisticsContent() {
     });
   }, [analysis, shopName, quoteResults]);
 
-  const handleCorrect = async (itemId: string, type: LogisticsTypeCode) => {
-    if (correctingId) return;
-    setCorrectingId(itemId);
-    try {
-      const updated = await api.correctLogisticsType(shopName, itemId, type);
-      setAnalysis((prev) => {
-        if (!prev) return prev;
-        const productProfiles = prev.productProfiles.map((p) =>
-          p.thirdPlatformItemId === itemId ? updated : p
-        );
-
-        const totalVariants = productProfiles.reduce(
-          (sum, p) => sum + p.totalVariants,
-          0
-        );
-        const decisionStatusCounts: Record<LogisticsDecisionStatus, number> = {
-          pending_sku: 0,
-          pending_postal_meta: 0,
-          ready_for_quote: 0,
-          confirmed: 0,
-          restricted: 0,
-          needs_review: 0,
-        };
-        for (const p of productProfiles) {
-          for (const [status, count] of Object.entries(p.decisionStatusCounts)) {
-            decisionStatusCounts[status as LogisticsDecisionStatus] += count;
-          }
-        }
-
-        const highRiskTypes = productProfiles
-          .map((p) => p.dominantLogisticsType)
-          .filter(
-            (t, i, arr) =>
-              (t === "BATTERY_MAGNETIC" || t === "FOOD" || t === "BLADE") &&
-              arr.indexOf(t) === i
-          );
-
-        return {
-          ...prev,
-          productProfiles,
-          totalVariants,
-          decisionStatusCounts,
-          highRiskTypes,
-        };
-      });
-      showToast(t("logistics.toastTypeCorrected"));
-    } catch (err) {
-      showToast(readableError(err));
-    } finally {
-      setCorrectingId(null);
-    }
-  };
-
-  const handleSaveTemplate = async (
-    upsertData: {
-      shopName: string;
-      name?: string;
-      packaging: string;
-      speedPreference: string;
-      markets: { marketGroupId: string; countryCodes: string[] }[];
-    },
-    id?: string
-  ) => {
-    setSaving(true);
-    try {
-      const saved = await api.upsertLogisticsTemplate(shopName, upsertData as any, id);
-      setTemplates((prev) => {
-        if (id) {
-          return prev.map((t) => (t.id === id ? saved : t));
-        }
-        return [saved, ...prev];
-      });
-      suppressScopeSwitchToastRef.current = true;
-      setActiveTemplate(saved);
-      showToast(t("logistics.toastTemplateSavedEstimate"));
-      setWorkflowStep("estimate");
-      setShowDrawer(false);
-      return saved;
-    } catch (err) {
-      showToast(readableError(err));
-      throw err;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDeleteTemplate = async (id: string) => {
-    try {
-      await api.deleteLogisticsTemplate(shopName, id);
-      setTemplates((prev) => prev.filter((t) => t.id !== id));
-      if (activeTemplate?.id === id) {
-        const remaining = templates.filter((t) => t.id !== id);
-        setActiveTemplate(
-          remaining.length > 0
-            ? remaining[0]
-            : createDefaultLogisticsTemplate(shopName, t("logistics.defaultTemplateName"))
-        );
-      }
-      showToast(t("logistics.toastTemplateDeleted"));
-    } catch (err) {
-      showToast(readableError(err));
-    }
-  };
-
-  const handleSelectTemplate = (template: LogisticsTemplate) => {
-    setActiveTemplate(template);
-    setQuoteMarketCode(resolveQuoteMarketCode(template, null));
-  };
-
-  const handleSave = async (goSync = false, syncExceptionCount?: number) => {
-    if (!activeTemplate || saving) return;
-    const codes = codesFromSelections(activeTemplate.markets);
-    if (codes.length === 0) {
-      showToast(t("logistics.toastPickMarket"));
-      return;
-    }
-    setSaving(true);
-    try {
-      saveLogistics();
-      if (goSync) {
-        if (syncExceptionCount && syncExceptionCount > 0) {
-          stashLogisticsSyncExceptionCount(syncExceptionCount);
-        }
-        router.push(localePath(locale, "/sync"));
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveAndSync = () => {
-    if (!hasSavedTemplate) {
-      showToast(t("completionGate.blockerNoTemplate"));
-      return;
-    }
-    if (pipeline.pipelineActive) {
-      showToast(t("completionGate.blockerPipelineRunning"));
-      return;
-    }
-    void handleSave(true, completionGate.exceptionCount);
-  };
-
-
-  const completionGate = useMemo(
-    () =>
-      evaluateLogisticsCompletionGate(
-        {
-          hasSavedTemplate,
-          pipelineActive: pipeline.pipelineRunning,
-          analysis,
-          quoteResults,
-          templateMarketsConfigured: Boolean(
-            activeTemplate && codesFromSelections(activeTemplate.markets).length > 0
-          ),
-        },
-        t
-      ),
-    [
-      hasSavedTemplate,
-      pipeline.pipelineRunning,
-      analysis,
-      quoteResults,
-      activeTemplate,
-      t,
-    ]
-  );
-
-  const skuBindingGap = useMemo(() => {
-    if (workflowSku) {
-      return {
-        products: workflowSku.issueProductCount,
-        skus: workflowSku.needsReview + workflowSku.unbound,
-      };
-    }
-    let products = 0;
-    let skus = 0;
-    for (const product of analysis?.productProfiles ?? []) {
-      const pending = (product.variantDecisions ?? []).filter(
-        (v) => v.decisionStatus === "pending_sku"
-      );
-      if (pending.length > 0) {
-        products += 1;
-        skus += pending.length;
-      }
-    }
-    return { products, skus };
-  }, [workflowSku, analysis]);
-
-  useEffect(() => {
-    publishLogisticsPipelineActive(pipeline.pipelineActive);
-  }, [pipeline.pipelineActive, publishLogisticsPipelineActive]);
-
-  useEffect(() => {
-    if (!isAuthorized) {
-      publishLogisticsStepSnapshot(null);
-      return;
-    }
-    publishLogisticsStepSnapshot(
-      deriveLogisticsStepSnapshot(
-        {
-          skuReady: skuReadyForNext,
-          pipelineActive: pipeline.pipelineActive,
-          gate: completionGate,
-          logisticsCompleted,
-        },
-        t
-      )
-    );
-  }, [
-    isAuthorized,
-    skuReadyForNext,
-    pipeline.pipelineActive,
-    completionGate,
-    logisticsCompleted,
-    publishLogisticsStepSnapshot,
-    t,
-  ]);
 
 
   const handleFocusStatus = (status: LogisticsDecisionStatus) => {
@@ -460,49 +269,19 @@ function LogisticsContent() {
     quoteResults,
   ]);
 
-  const logisticsDecisionWorkspace = useMemo(() => {
-    if (!showDecisionWorkspace || !analysis) return null;
-    return {
-      analysis,
-      shopName,
-      filterMode,
-      postalLimitFilter,
-      quoteResults,
-      activeTemplate,
-      correctingId,
-      focusTarget,
-      onCorrect: (id: string, type: LogisticsTypeCode) => void handleCorrect(id, type),
-      onAcceptAi: (v: VariantLogisticsDecision, pid: string) =>
-        void handleAcceptAi(v, pid),
-      onFetchProductQuotes: (productId: string, variants: VariantLogisticsDecision[]) =>
-        handleFetchQuotesForProduct(productId, variants),
-      onIngestProductSource: handleIngestProductSource,
-      onCatalogIngestComplete: handleCatalogIngestComplete,
-      onFetchVariantQuote: (
-        variant: VariantLogisticsDecision,
-        override?: MeasureOverride
-      ) => handleFetchQuoteForVariant(variant, override),
-      onMeasureOverride: (variantId: string, next: MeasureOverride) => {
-        setMeasureOverrides((prev) => {
-          const map = new Map(prev);
-          map.set(variantId, next);
-          return map;
-        });
-      },
-      accepting,
-      quotingProductId,
-      ingestingProductId,
-      quotingVariantId,
-      quoteRevealVariantIds,
-      onClearFocus: () => setFocusTarget(null),
-      pricing: pricingTemplate,
-      pipelineActive: pipeline.pipelineActive,
-      pipelineProgress: pipeline.progress,
-      selectedLineByVariant,
-      onSelectLine: handleSelectLine,
-    };
-  }, [
-    showDecisionWorkspace,
+  const onMeasureOverride = useCallback(
+    (variantId: string, next: MeasureOverride) => {
+      setMeasureOverrides((prev) => {
+        const map = new Map(prev);
+        map.set(variantId, next);
+        return map;
+      });
+    },
+    [setMeasureOverrides]
+  );
+
+  const logisticsDecisionWorkspace = useLogisticsDecisionWorkspaceProps({
+    enabled: showDecisionWorkspace,
     analysis,
     shopName,
     filterMode,
@@ -511,23 +290,25 @@ function LogisticsContent() {
     activeTemplate,
     correctingId,
     focusTarget,
-    handleCorrect,
-    handleAcceptAi,
-    handleFetchQuotesForProduct,
-    handleIngestProductSource,
-    handleCatalogIngestComplete,
-    handleFetchQuoteForVariant,
+    onCorrect: handleCorrect,
+    onAcceptAi: (v, pid) => void handleAcceptAi(v, pid),
+    onFetchProductQuotes: handleFetchQuotesForProduct,
+    onIngestProductSource: handleIngestProductSource,
+    onCatalogIngestComplete: handleCatalogIngestComplete,
+    onFetchVariantQuote: handleFetchQuoteForVariant,
+    onMeasureOverride,
     accepting,
     quotingProductId,
     ingestingProductId,
     quotingVariantId,
     quoteRevealVariantIds,
-    pricingTemplate,
-    pipeline.pipelineActive,
-    pipeline.progress,
+    onClearFocus: () => setFocusTarget(null),
+    pricing: pricingTemplate,
+    pipelineActive: pipeline.pipelineActive,
+    pipelineProgress: pipeline.progress,
     selectedLineByVariant,
-    handleSelectLine,
-  ]);
+    onSelectLine: handleSelectLine,
+  });
 
   if (authBootstrapping) {
     return (

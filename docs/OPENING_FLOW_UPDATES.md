@@ -4,7 +4,8 @@
 
 | 日期 | Commit / 定位 | 摘要 | 涉及路径 | 行为变化 | 回溯 |
 |------|--------|------|----------|----------|------|
-| 2026-07-24 | _(待提交)_ | **物流页 Step 5**：报价/accept/pipeline → `use-logistics-quote-estimate` | `use-logistics-quote-estimate.ts`、`measure-overrides-storage.ts`、`logistics/page.tsx` | **无** | revert 本提交 |
+| 2026-07-24 | _(待提交)_ | **物流页 Step 6**：模板/完成度/onboarding 桥接 + decision workspace props | `use-logistics-page-actions.ts`、`use-logistics-decision-workspace-props.ts`、`logistics/page.tsx` | **无** | revert 本提交 |
+| 2026-07-24 | **`9108ed2`** | **物流页 Step 5**：报价/accept/pipeline → `use-logistics-quote-estimate` | 见上 | **无** | `git revert 9108ed2` |
 | 2026-07-24 | **`8774c2b`** | **物流页 Step 4**：mirror 加载 + agent accept_all_ready hook | `use-logistics-mirror-load.ts`、`use-logistics-agent-commands.ts`、`default-template.ts`、`logistics/page.tsx` | **无** | `git revert 8774c2b` |
 | 2026-07-24 | **`e3233d6`** | **物流页 Step 3**：workflow body + setup + decision workspace | `logistics-workflow-*.tsx`、`logistics/page.tsx` | **无** | `git revert e3233d6` |
 | 2026-07-24 | **`b04bf92`** | **物流页 Step 2**：workflow 导航 hook | 见 OPENING_FLOW_UPDATES | **无** | `git revert b04bf92` |
