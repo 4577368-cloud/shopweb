@@ -120,6 +120,15 @@ const SCAN_COMPLETION_DWELL_MS = 450;
 const SCAN_FINISH_DELAY_MS =
   SCAN_STAGE_PROGRESS_ANIMATION_MS + SCAN_COMPLETION_DWELL_MS;
 
+function productsEntryShouldSkipCeremony(
+  shopMirrorKey: string,
+  legacyShopName: string
+): boolean {
+  if (hasScanned("products", shopMirrorKey)) return true;
+  if (legacyShopName && hasScanned("products", legacyShopName)) return true;
+  return Boolean(peekMirrorCache(shopMirrorKey)?.items?.length);
+}
+
 function SelectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -264,6 +273,7 @@ function SelectContent() {
     done: scanDone,
     start: startScan,
     resumeActiveJob,
+    pollActiveMatchJobInBackground,
     cancel: cancelScan,
   } = useProductsScan(shopName);
 
@@ -365,7 +375,22 @@ function SelectContent() {
     const { products } = await loadSummary();
     if (products) commitAnalysisBaseline(products);
     setPhase("result");
-  }, [cancelScan, shopName, loadSummary, scanStats, commitAnalysisBaseline]);
+  }, [cancelScan, shopName, shopMirrorKey, loadSummary, scanStats, commitAnalysisBaseline]);
+
+  const exitScanToProducts = useCallback(() => {
+    cancelScan();
+    markScanned("products", shopMirrorKey);
+    finishedRef.current = true;
+    scanFinishScheduledRef.current = true;
+    setPhase("result");
+    void loadSummary();
+    void pollActiveMatchJobInBackground();
+  }, [
+    cancelScan,
+    shopMirrorKey,
+    loadSummary,
+    pollActiveMatchJobInBackground,
+  ]);
 
   const startedForShopRef = useRef<string | null>(null);
   useEffect(() => {
@@ -375,9 +400,11 @@ function SelectContent() {
     finishedRef.current = false;
     scanFinishScheduledRef.current = false;
     void (async () => {
-      if (hasScanned("products", shopMirrorKey)) {
+      if (productsEntryShouldSkipCeremony(shopMirrorKey, shopName)) {
+        markScanned("products", shopMirrorKey);
         setPhase("result");
         void loadSummary();
+        void pollActiveMatchJobInBackground();
         return;
       }
       const resumed = await resumeActiveJob();
@@ -388,7 +415,15 @@ function SelectContent() {
       setPhase("scan");
       await startScan();
     })();
-  }, [isAuthorized, shopName, loadSummary, startScan, resumeActiveJob]);
+  }, [
+    isAuthorized,
+    shopName,
+    shopMirrorKey,
+    loadSummary,
+    startScan,
+    resumeActiveJob,
+    pollActiveMatchJobInBackground,
+  ]);
 
   useEffect(() => {
     if (phase !== "scan" || !scanDone || scanFinishScheduledRef.current) return;
@@ -2093,6 +2128,7 @@ function SelectContent() {
             progressPercent={scanProgressPercent}
             done={scanDone}
             onViewResult={() => void finishToResult()}
+            onSkip={exitScanToProducts}
           />
         </WorkbenchPanel>
         {pricingDrawer}

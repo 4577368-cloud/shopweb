@@ -1,4 +1,5 @@
-import { getPreferredPoolServerConfig, isPreferredPoolConfigured } from "@/lib/tangbuy/preferred-pool-config";
+import { fetchTangbuyAdmin } from "@/lib/tangbuy/admin-http";
+import { isPreferredPoolConfigured } from "@/lib/tangbuy/preferred-pool-config";
 
 const INTERNAL_GOODS_ID_PATTERN = /^\d{14,}$/;
 
@@ -29,18 +30,14 @@ export async function resolveOfferViaAdminCatalog(
   const offerId = offerId1688.trim();
   if (!offerId) return null;
 
-  const { baseUrl, token } = getPreferredPoolServerConfig();
   let upstream: Response;
   try {
-    upstream = await fetch(`${baseUrl}/product-mall/admin/es/product/pageInfo`, {
+    upstream = await fetchTangbuyAdmin("/product-mall/admin/es/product/pageInfo", {
       method: "POST",
       headers: {
-        Authorization: token,
-        Accept: "application/json",
-        "Content-Type": "application/json;charset=UTF-8",
         Referer: "https://admin.tangbuy.cc/goods/summary",
       },
-      body: JSON.stringify({
+      jsonBody: {
         pageNum: 1,
         pageSize: 5,
         pageType: "0",
@@ -48,7 +45,7 @@ export async function resolveOfferViaAdminCatalog(
         manageLabelIdList: [],
         labelIdList: [],
         providerItemId: offerId,
-      }),
+      },
     });
   } catch {
     return null;

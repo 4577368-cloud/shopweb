@@ -294,9 +294,7 @@ export function SkuProductWorkbench({
   /** 灰区 LLM 复核置信度（pairKey→0-1）。 */
   const [llmScores, setLlmScores] = useState<Record<string, number>>({});
   const [matchAnimating, setMatchAnimating] = useState(false);
-  const [shimmerVariantIds, setShimmerVariantIds] = useState<Set<string>>(
-    () => new Set()
-  );
+  const [matchProgress, setMatchProgress] = useState({ done: 0, total: 0 });
   const matchAnimTokenRef = useRef(0);
   /** 用户主动触发匹配/改选后才展示保存按钮。 */
   const [primaryMappingDirty, setPrimaryMappingDirty] = useState(false);
@@ -588,7 +586,7 @@ export function SkuProductWorkbench({
     setManualAddInput("");
     setManualAddError(null);
     setMatchAnimating(false);
-    setShimmerVariantIds(new Set());
+    setMatchProgress({ done: 0, total: 0 });
     matchAnimTokenRef.current += 1;
   }, []);
 
@@ -969,12 +967,13 @@ export function SkuProductWorkbench({
       return;
     }
 
-    const token = ++matchAnimTokenRef.current;
-    setMatchAnimating(true);
-
     const variantOrder = product.variants
       .filter((v) => assignments[v.thirdPlatformSkuId])
       .map((v) => v.thirdPlatformSkuId);
+
+    const token = ++matchAnimTokenRef.current;
+    setMatchAnimating(true);
+    setMatchProgress({ done: 0, total: variantOrder.length });
 
     if (suggestCount === 0) {
       const baseline: Record<string, string> = {};
@@ -983,29 +982,28 @@ export function SkuProductWorkbench({
         if (bound) baseline[v.thirdPlatformSkuId] = bound;
       }
       setSelections({ ...baseline });
-      await new Promise((r) => window.setTimeout(r, 200));
+      await new Promise((r) => window.setTimeout(r, 120));
     }
 
-    for (const variantId of variantOrder) {
+    const stepMs = Math.min(
+      120,
+      Math.max(35, Math.floor(2200 / Math.max(variantOrder.length, 1)))
+    );
+
+    for (let i = 0; i < variantOrder.length; i++) {
+      const variantId = variantOrder[i]!;
       if (matchAnimTokenRef.current !== token) break;
-      await new Promise((r) => window.setTimeout(r, 300));
       const skuId = assignments[variantId]!;
       setSelections((prev) => ({ ...prev, [variantId]: skuId }));
-      setShimmerVariantIds((prev) => new Set(prev).add(variantId));
-      document
-        .getElementById(`sku-compare-row-${variantId}`)
-        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      window.setTimeout(() => {
-        setShimmerVariantIds((prev) => {
-          const next = new Set(prev);
-          next.delete(variantId);
-          return next;
-        });
-      }, 950);
+      setMatchProgress({ done: i + 1, total: variantOrder.length });
+      if (i < variantOrder.length - 1) {
+        await new Promise((r) => window.setTimeout(r, stepMs));
+      }
     }
 
     if (matchAnimTokenRef.current === token) {
       setMatchAnimating(false);
+      setMatchProgress({ done: 0, total: 0 });
       setPrimaryMappingDirty(true);
       showToast(
         suggestCount > 0
@@ -1341,7 +1339,7 @@ export function SkuProductWorkbench({
             suggestCount={suggestCount}
             previewCount={previewCount}
             matchAnimating={matchAnimating}
-            shimmerVariantIds={shimmerVariantIds}
+            matchProgress={matchProgress}
             supplementGaps={supplementGaps}
             focusVariantId={focusVariantId ?? null}
             focusRef={focusRef}
@@ -1470,7 +1468,7 @@ function PrimaryComparePanel({
   suggestCount,
   previewCount,
   matchAnimating,
-  shimmerVariantIds,
+  matchProgress,
   supplementGaps,
   focusVariantId,
   focusRef,
@@ -1496,7 +1494,7 @@ function PrimaryComparePanel({
   suggestCount: number;
   previewCount: number;
   matchAnimating: boolean;
-  shimmerVariantIds: Set<string>;
+  matchProgress: { done: number; total: number };
   supplementGaps: SkuVariant[];
   focusVariantId: string | null;
   focusRef: React.Ref<HTMLDivElement>;
@@ -1572,6 +1570,27 @@ function PrimaryComparePanel({
         </div>
       </div>
 
+      {matchAnimating && matchProgress.total > 0 ? (
+        <div className="shrink-0 border-b border-hairline bg-canvas/30 px-5 py-2.5">
+          <div className="flex items-center gap-3">
+            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-muted">
+              <div
+                className="h-full rounded-full bg-brand transition-[width] duration-150 ease-out"
+                style={{
+                  width: `${Math.round((matchProgress.done / matchProgress.total) * 100)}%`,
+                }}
+              />
+            </div>
+            <span className="shrink-0 text-[11px] tabular-nums text-ink-muted">
+              {t("skuWorkbench.matchProgress", {
+                done: matchProgress.done,
+                total: matchProgress.total,
+              })}
+            </span>
+          </div>
+        </div>
+      ) : null}
+
       {/* 列表头 */}
       <div className="shrink-0 border-b border-hairline bg-canvas/40 px-5 py-1.5">
         <div className="grid grid-cols-2 gap-6 text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
@@ -1625,7 +1644,6 @@ function PrimaryComparePanel({
                 value={selections[variant.thirdPlatformSkuId] ?? ""}
                 isGap={gapIds.has(variant.thirdPlatformSkuId)}
                 highlighted={focusVariantId === variant.thirdPlatformSkuId}
-                mapShimmer={shimmerVariantIds.has(variant.thirdPlatformSkuId)}
                 rowRef={
                   focusVariantId === variant.thirdPlatformSkuId ? focusRef : undefined
                 }
@@ -1663,7 +1681,6 @@ function PrimaryCompareRow({
   value,
   isGap,
   highlighted,
-  mapShimmer,
   rowRef,
   onSelect,
   onGoSupplement,
@@ -1676,7 +1693,6 @@ function PrimaryCompareRow({
   value: string;
   isGap: boolean;
   highlighted: boolean;
-  mapShimmer?: boolean;
   rowRef?: React.Ref<HTMLDivElement>;
   onSelect: (skuId: string) => void;
   onGoSupplement: () => void;
@@ -1746,12 +1762,7 @@ function PrimaryCompareRow({
       />
 
       {/* 货源映射 — 下拉 + 补充入口 */}
-      <div
-        className={cn(
-          COMPARE_MAP_PANEL_CLASS,
-          mapShimmer && "sku-map-match-shimmer border-emerald-300/80"
-        )}
-      >
+      <div className={COMPARE_MAP_PANEL_CLASS}>
         {matrix.length === 0 ? (
           <p className="text-[11px] text-ink-muted">
             {effectiveSkuId

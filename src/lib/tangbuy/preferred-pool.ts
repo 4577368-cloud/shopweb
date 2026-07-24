@@ -307,6 +307,23 @@ export async function ensurePoolIngestForLogistics(input: {
 
   if (needsSubmit) {
     if (input.retryPoolSubmit) clearPoolAddDiagnostic(offerId);
+    if (input.retryPoolSubmit) {
+      const adminEarly = await resolveCatalogMatchViaAdminApi({
+        offerId1688: offerId,
+        tangbuySkuId: input.tangbuySkuId,
+      });
+      if (adminEarly) {
+        return mergePoolResolvedIdentity(
+          {
+            ...base,
+            poolIngestStatus: "already_exists",
+            poolIngestedAt: now,
+          },
+          adminEarly,
+          "already_exists"
+        );
+      }
+    }
     const pool = await submitPreferredPoolAdd(offerId);
     withPool = {
       ...base,

@@ -19,8 +19,7 @@ export type CopilotWorkflowStepId =
   | "sync"
   | "features"
   | "match"
-  | "orders"
-  | "profit";
+  | "orders";
 
 export interface CopilotWorkflowStep {
   id: CopilotWorkflowStepId;
@@ -91,20 +90,7 @@ function ordersStatus(tasks: ScanTaskView[], stats: ScanSummaryStats): ScanTaskS
   return stats.shopContext.loaded ? "done" : "pending";
 }
 
-function profitStatus(tasks: ScanTaskView[], stats: ScanSummaryStats): ScanTaskStatus {
-  const match = effectiveMatchStatus(tasks, stats);
-  if (!isSettled(match) && match !== "failed") return "pending";
-  const orders = ordersStatus(tasks, stats);
-  if (!isSettled(orders) && orders !== "failed") return "pending";
-  const profit = taskOf(tasks, "profit");
-  if (!profit) {
-    if (isSettled(match) && isSettled(orders)) return "done";
-    return "pending";
-  }
-  return profit.status;
-}
-
-/** Map internal scan tasks → five AI Copilot workflow steps. */
+/** Map internal scan tasks → four AI Copilot workflow steps. */
 export function deriveCopilotWorkflow(
   tasks: ScanTaskView[],
   stats: ScanSummaryStats,
@@ -119,10 +105,8 @@ export function deriveCopilotWorkflow(
   let features = featuresStatus(tasks);
   let match = effectiveMatchStatus(tasks, stats);
   let ordersSt = ordersStatus(tasks, stats);
-  let profit = profitStatus(tasks, stats);
 
   if (done) {
-    profit = profit === "pending" ? "done" : profit;
     if (ordersSt === "pending") ordersSt = orders.loaded ? "done" : "skipped";
     if (match === "failed" && stats.unboundCount === 0) match = "done";
   }
@@ -176,16 +160,6 @@ export function deriveCopilotWorkflow(
     return { resultText: `${orders.orderCount} 笔订单已读取` };
   };
 
-  const profitLine = (): { resultText: string; reasonText?: string } => {
-    const profitTotal = matched;
-    if (profit === "running") {
-      return { resultText: profitTotal > 0 ? "分析中…" : "等待匹配结果" };
-    }
-    if (profit === "pending") return { resultText: "等待中" };
-    if (profitTotal <= 0) return { resultText: "无可分析商品" };
-    return { resultText: ratio(profitTotal, profitTotal, "已分析") };
-  };
-
   return [
     {
       id: "sync",
@@ -214,13 +188,6 @@ export function deriveCopilotWorkflow(
       subtitle: "同步近期订单与发货状态",
       status: ordersSt,
       ...ordersLine(),
-    },
-    {
-      id: "profit",
-      title: "分析利润空间",
-      subtitle: "结合售价与采购成本评估",
-      status: profit,
-      ...profitLine(),
     },
   ];
 }
@@ -282,8 +249,6 @@ export function copilotStatusHeadline(
       return { title: "正在匹配 Tangbuy 供应链…", hint };
     case "orders":
       return { title: "正在读取店铺订单…", hint };
-    case "profit":
-      return { title: "正在分析利润空间…", hint };
     default:
       return { title: "AI 正在分析你的店铺", hint };
   }

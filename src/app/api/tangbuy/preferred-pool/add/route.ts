@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fetchTangbuyAdmin } from "@/lib/tangbuy/admin-http";
 import {
   getPreferredPoolServerConfig,
   isPreferredPoolConfigured,
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { baseUrl, token, defaults } = getPreferredPoolServerConfig();
+  const { defaults } = getPreferredPoolServerConfig();
 
   // categoryId 非 OpenAPI 必填项 — 默认不传，由 admin 根据 1688 商品信息自动映射类目。
   // 仅当显式配置 TANGBUY_POOL_CATEGORY_ID 时才覆盖传入。
@@ -64,15 +65,12 @@ export async function POST(request: Request) {
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${baseUrl}/product-mall/admin/preferred/pool/add`, {
+    upstream = await fetchTangbuyAdmin("/product-mall/admin/preferred/pool/add", {
       method: "POST",
       headers: {
-        Authorization: token,
-        Accept: "application/json, text/plain, */*",
-        "Content-Type": "application/json;charset=UTF-8",
         Referer: "https://admin.tangbuy.cc/goods/shop/pool",
       },
-      body: JSON.stringify(payload),
+      jsonBody: payload,
     });
   } catch (e) {
     return NextResponse.json(

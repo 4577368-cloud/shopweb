@@ -512,7 +512,7 @@ export async function ingestProductSourceForLogistics(input: {
     variants.find((v) => v.tangbuySkuId?.trim()) ??
     variants[0];
 
-  const identity = await backfillProductSourceIdentity({
+  let identity = await backfillProductSourceIdentity({
     shopName: input.shopName,
     thirdPlatformItemId: input.profile.thirdPlatformItemId,
     tangbuyProductId:
@@ -523,6 +523,45 @@ export async function ingestProductSourceForLogistics(input: {
     retryPoolSubmit: true,
     skipPoolRetry: false,
   });
+
+  if (!identity?.internalGoodsId?.trim()) {
+    const { resolveCatalogMatchViaAdminApi } = await import(
+      "@/lib/catalog-product-resolve"
+    );
+    const offerId =
+      identity?.offerId1688?.trim() ||
+      extractOfferIdFromUrl(input.profile.detailUrl) ||
+      (isOfferId1688(sample?.tangbuyGoodsId) ? sample!.tangbuyGoodsId!.trim() : null) ||
+      (isOfferId1688(input.profile.tangbuyProductId)
+        ? input.profile.tangbuyProductId!.trim()
+        : null);
+    if (offerId) {
+      const hit = await resolveCatalogMatchViaAdminApi({
+        offerId1688: offerId,
+        tangbuySkuId: sample?.tangbuySkuId,
+      });
+      if (hit) {
+        const merged: ProductSourceIdentity = {
+          ...(identity ?? {}),
+          internalGoodsId: hit.internalGoodsId,
+          catalogItemId: hit.catalogItemId,
+          tangbuyCatalogUrl: hit.tangbuyCatalogUrl,
+          tangbuySkuId: hit.tangbuySkuId,
+          offerId1688: hit.offerId1688,
+          dataSource: hit.dataSource ?? "PREFERRED",
+          resolvedVia: hit.resolvedVia,
+          poolIngestStatus: "already_exists",
+          resolvedAt: new Date().toISOString(),
+        };
+        await persistIdentity(
+          input.shopName,
+          input.profile.thirdPlatformItemId,
+          merged
+        );
+        identity = merged;
+      }
+    }
+  }
 
   const ready = Boolean(identity?.internalGoodsId?.trim());
   const ingesting =
