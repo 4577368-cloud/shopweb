@@ -1,16 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   Boxes,
   CheckCircle2,
   Database,
   LineChart,
-  Link2,
   Loader2,
-  Pencil,
   RefreshCw,
   ShieldCheck,
   Sparkles,
@@ -24,10 +23,17 @@ import {
   type AssistantSuggestion,
 } from "@/components/workbench/assistant-rail";
 import { Button } from "@/components/ui/button";
-import { Input, Field } from "@/components/ui/input";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api } from "@/lib/api";
-import { SHOP_STORAGE_KEY, launchShopifyInstall } from "@/lib/shopify-install";
+import {
+  SHOP_STORAGE_KEY,
+  launchShopifyInstall,
+  normalizeShopDomain,
+} from "@/lib/shopify-install";
+import {
+  ShopDomainConnectField,
+  shopHandleFromDomain,
+} from "@/components/shopify/shop-domain-connect-field";
 import type { AiPanelContent } from "@/lib/types";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import {
@@ -62,9 +68,11 @@ function fmtDate(locale: string, iso?: string | null): string {
   return d.toLocaleString(htmlLang, { hour12: false });
 }
 
-export default function AuthorizePage() {
+function AuthorizePageContent() {
   const t = useT();
   const locale = useLocale();
+  const searchParams = useSearchParams();
+  const autoShopAttempted = useRef(false);
   const {
     authStatus,
     shopDomainInput,
@@ -76,11 +84,14 @@ export default function AuthorizePage() {
     hydrateAuthorizedShop,
   } = useOnboarding();
 
+  const [handle, setHandle] = useState(() =>
+    shopDomainInput ? shopHandleFromDomain(shopDomainInput) : ""
+  );
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [redirecting, setRedirecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [boundCount, setBoundCount] = useState<number | null>(null);
   const [publishedCount, setPublishedCount] = useState<number | null>(null);
-  const [editingDomain, setEditingDomain] = useState(false);
-  const [savedShop, setSavedShop] = useState<string | null>(null);
   const [productSyncState, setProductSyncState] =
     useState<ProductSyncState>("idle");
   const [mirrorProductCount, setMirrorProductCount] = useState<number | null>(
@@ -89,9 +100,50 @@ export default function AuthorizePage() {
   const syncAttemptedRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    setSavedShop(window.localStorage.getItem(SHOP_STORAGE_KEY));
-  }, [authSessionReady]);
+    if (shopDomainInput.trim()) {
+      setHandle(shopHandleFromDomain(shopDomainInput));
+    }
+  }, [shopDomainInput]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || shopDomainInput.trim()) return;
+    const saved = window.localStorage.getItem(SHOP_STORAGE_KEY);
+    if (saved) {
+      setHandle(shopHandleFromDomain(saved));
+      setShopDomainInput(saved);
+    }
+  }, [authSessionReady, shopDomainInput, setShopDomainInput]);
+
+  const connectWithDomain = useCallback(
+    (raw: string) => {
+      setConnectError(null);
+      setRedirecting(true);
+      const result = launchShopifyInstall(raw);
+      if (!result.ok) {
+        setRedirecting(false);
+        setConnectError(result.error ?? t("install.launchError"));
+        if (result.error) showToast(result.error);
+      }
+    },
+    [showToast, t]
+  );
+
+  useEffect(() => {
+    if (!authSessionReady || isAuthorized) return;
+    const shopParam = searchParams.get("shop")?.trim();
+    if (!shopParam || autoShopAttempted.current) return;
+    autoShopAttempted.current = true;
+    const normalized = normalizeShopDomain(shopParam);
+    setHandle(shopHandleFromDomain(normalized));
+    setShopDomainInput(normalized);
+    connectWithDomain(shopParam);
+  }, [
+    authSessionReady,
+    isAuthorized,
+    searchParams,
+    connectWithDomain,
+    setShopDomainInput,
+  ]);
 
   // Real post-auth stats: 已关联货源 (distinct bound products) + 已刊登 (catalog publishes still on Shopify).
   const loadStats = useCallback(
@@ -231,21 +283,18 @@ export default function AuthorizePage() {
   // Fallback connect on the return-landing page: reuse the shared launcher (validate → remember →
   // full-page navigate to the backend install → Shopify consent). No OAuth logic lives here.
   const startShopifyInstall = (explicitDomain?: string) => {
-    const result = launchShopifyInstall(explicitDomain ?? shopDomainInput);
-    if (!result.ok) {
-      setEditingDomain(true);
-      if (result.error) showToast(result.error);
-    }
+    connectWithDomain(explicitDomain ?? handle);
   };
 
-  const authorizing = authStatus === "authorizing";
+  const authorizing =
+    authStatus === "authorizing" || redirecting;
   const phase: Phase = isAuthorized
     ? "authorized"
     : !authSessionReady
       ? "restoring"
       : "unbound";
-  const trimmedDomain = shopDomainInput.trim();
-  const hasPrefilledShop = Boolean(savedShop) && !editingDomain && Boolean(trimmedDomain);
+  const normalizedDomain = normalizeShopDomain(handle);
+  const canConnect = Boolean(normalizedDomain) && !authorizing;
   const displayProductCount = mirrorProductCount ?? shop.productCount;
   const syncing = productSyncState === "syncing";
   const syncedProductLabel = formatSyncedProductLabel(
@@ -256,9 +305,9 @@ export default function AuthorizePage() {
 
   const trustSignals = [
     t("authorize.trustOfficial"),
+    t("authorize.trustScoped"),
+    t("authorize.trustRevocable"),
     t("authorize.trustEncrypted"),
-    t("authorize.trustReadOnly"),
-    t("authorize.trustNoModify"),
   ];
 
   const capabilities = [
@@ -275,9 +324,30 @@ export default function AuthorizePage() {
     productCount: displayProductCount,
     boundCount,
     productSyncState,
-    canConnect: Boolean(trimmedDomain) && !authorizing,
+    canConnect,
     onConnect: () => startShopifyInstall(),
   });
+
+  if (
+    redirecting &&
+    searchParams.get("shop") &&
+    !isAuthorized &&
+    authSessionReady
+  ) {
+    return (
+      <WorkbenchShell sidebar={<HubAwareSidebar />}>
+        <WorkbenchPanel title={t("authorize.pageTitle")}>
+          <div className="flex flex-col items-center justify-center gap-3 py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-brand" />
+            <p className="text-sm font-medium text-ink">
+              {t("install.redirectingToShopify")}
+            </p>
+            <p className="text-xs text-ink-muted">{t("install.shopFromAppHint")}</p>
+          </div>
+        </WorkbenchPanel>
+      </WorkbenchShell>
+    );
+  }
 
   return (
     <WorkbenchShell
@@ -377,61 +447,26 @@ export default function AuthorizePage() {
               ) : phase === "restoring" ? (
                 <RestoringBlock t={t} />
               ) : (
-                <div className="mt-5 space-y-3">
-                  {/* CTA-first: connecting is the hero action; domain is a secondary, prefilled field. */}
-                  <Button
-                    className="w-full"
-                    onClick={() => startShopifyInstall()}
+                <div className="mt-5 space-y-2">
+                  <ShopDomainConnectField
+                    value={handle}
+                    onChange={(v) => {
+                      setHandle(v);
+                      setShopDomainInput(normalizeShopDomain(v));
+                    }}
+                    onConnect={() => startShopifyInstall()}
+                    connecting={authorizing}
                     disabled={authorizing}
-                  >
-                    {authorizing ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        {t("authorize.authorizing")}
-                      </>
-                    ) : (
-                      <>
-                        <Link2 className="h-4 w-4" />
-                        {hasPrefilledShop
-                          ? t("authorize.connectDomain", { domain: trimmedDomain })
-                          : t("authorize.connectShop")}
-                      </>
-                    )}
-                  </Button>
-
-                  {hasPrefilledShop ? (
-                    <div className="flex items-center justify-between gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-3 py-2">
-                      <span className="min-w-0 truncate text-xs text-ink-muted">
-                        {t("authorize.lastShopHint")}
-                        <span className="font-medium text-ink">{trimmedDomain}</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setEditingDomain(true)}
-                        className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-link hover:text-link-hover hover:underline"
-                      >
-                        <Pencil className="h-3 w-3" />
-                        {t("authorize.changeShop")}
-                      </button>
-                    </div>
+                    buttonLabel={
+                      authorizing ? t("authorize.authorizing") : t("authorize.connectShop")
+                    }
+                  />
+                  {connectError ? (
+                    <p className="text-[11px] leading-4 text-red-600">{connectError}</p>
                   ) : (
-                    <Field
-                      label={t("authorize.shopDomainLabel")}
-                      hint={t("authorize.shopDomainHint")}
-                    >
-                      <div className="relative">
-                        <Input
-                          value={shopDomainInput}
-                          onChange={(e) => setShopDomainInput(e.target.value)}
-                          placeholder="your-store.myshopify.com"
-                          disabled={authorizing}
-                          className="pr-9"
-                        />
-                        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-ink-subtle">
-                          <ShieldCheck className="h-4 w-4" />
-                        </span>
-                      </div>
-                    </Field>
+                    <p className="text-[11px] leading-4 text-ink-subtle">
+                      {t("install.connectNote")}
+                    </p>
                   )}
                 </div>
               )}
@@ -494,6 +529,28 @@ export default function AuthorizePage() {
         </div>
       </WorkbenchPanel>
     </WorkbenchShell>
+  );
+}
+
+export default function AuthorizePage() {
+  const t = useT();
+  return (
+    <Suspense
+      fallback={
+        <WorkbenchShell sidebar={<HubAwareSidebar />}>
+          <WorkbenchPanel title={t("authorize.pageTitle")}>
+            <div className="flex justify-center py-16">
+              <Loader2
+                className="h-7 w-7 animate-spin text-brand"
+                aria-label={t("authorize.loading")}
+              />
+            </div>
+          </WorkbenchPanel>
+        </WorkbenchShell>
+      }
+    >
+      <AuthorizePageContent />
+    </Suspense>
   );
 }
 

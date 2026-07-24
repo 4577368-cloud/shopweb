@@ -10,12 +10,21 @@ export const SHOP_STORAGE_KEY = "tangbuy.shopDomain";
 
 export const SHOP_DOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i;
 
-/** Strip scheme/trailing slash/whitespace from a user-typed shop domain. */
+/** Strip scheme/trailing slash/whitespace; allow store handle without `.myshopify.com`. */
 export function normalizeShopDomain(input: string): string {
-  return input
+  let domain = input
     .trim()
     .replace(/^https?:\/\//, "")
-    .replace(/\/+$/, "");
+    .replace(/\/+$/, "")
+    .toLowerCase();
+
+  if (!domain) return "";
+
+  const host = domain.split("/")[0] ?? domain;
+  if (/^[a-z0-9][a-z0-9-]*$/.test(host)) {
+    return `${host}.myshopify.com`;
+  }
+  return host;
 }
 
 export interface LaunchInstallResult {
