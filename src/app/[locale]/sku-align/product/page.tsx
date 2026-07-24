@@ -316,6 +316,8 @@ function SkuAlignProductContent() {
       <WorkbenchPanel
         title={panelTitle}
         description={t("sku.panelDescription")}
+        descriptionClassName="text-xs leading-4"
+        titleClassName="text-base font-semibold leading-6"
         breadcrumbs={breadcrumbs}
         maxWidth={1280}
         {...wb.panelProps}

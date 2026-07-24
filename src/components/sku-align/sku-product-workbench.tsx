@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { SkuPickerDialog } from "./sku-picker-dialog";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { api, readableError } from "@/lib/api";
 import { resolve1688ProductTitle, resolveImageSearchDisplayTitle } from "@/lib/batch-link/1688-title-locale";
@@ -84,11 +85,11 @@ import { cn } from "@/lib/utils";
 
 /** 对照行内下拉：白底 + 实线边框，避免与行背景色混在一起。 */
 const COMPARE_SELECT_CLASS =
-  "h-9 w-full border-slate-300 bg-white text-xs text-ink shadow-sm ring-1 ring-slate-200/90";
+  "h-9 w-full border-hairline bg-surface text-xs text-ink shadow-sm ring-1 ring-hairline";
 
 /** 对照行右侧映射区：独立白底容器，提升辨识度。 */
 const COMPARE_MAP_PANEL_CLASS =
-  "min-w-0 rounded-md border border-slate-200 bg-white p-2.5 shadow-sm";
+  "min-w-0 rounded-md border border-hairline bg-surface p-2.5 shadow-sm";
 
 /** Side-by-side compare preview — large enough to judge color / shape. */
 const COMPARE_THUMB_CLASS = "h-28 w-28";
@@ -143,6 +144,8 @@ function CompareImageColumn({
   subtitle,
   badge,
   emptyHint,
+  layout = "vertical",
+  placeholder,
 }: {
   src?: string | null;
   alt: string;
@@ -150,15 +153,38 @@ function CompareImageColumn({
   subtitle?: string;
   badge?: ReactNode;
   emptyHint?: string;
+  layout?: "vertical" | "horizontal";
+  placeholder?: ReactNode;
 }) {
+  const thumbClass = layout === "horizontal" ? "h-[62px] w-[62px]" : COMPARE_THUMB_CLASS;
+  const thumbPx = layout === "horizontal" ? 124 : COMPARE_THUMB_PX;
+
+  if (layout === "horizontal") {
+    return (
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        {src ? (
+          <VariantThumb src={src} alt={alt} className={thumbClass} pixelWidth={thumbPx} />
+        ) : placeholder ? (
+          <div className="shrink-0">{placeholder}</div>
+        ) : (
+          <VariantThumb src={src} alt={alt} className={thumbClass} pixelWidth={thumbPx} />
+        )}
+        <div className="min-w-0 flex-1">
+          {badge ? <div className="mb-1 flex flex-wrap gap-1">{badge}</div> : null}
+          <p className="line-clamp-1 text-sm font-medium leading-snug text-ink">{title}</p>
+          {subtitle ? (
+            <p className="text-[13px] leading-snug text-ink-muted">{subtitle}</p>
+          ) : emptyHint ? (
+            <p className="text-[11px] leading-snug text-ink-subtle">{emptyHint}</p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
-      <VariantThumb
-        src={src}
-        alt={alt}
-        className={COMPARE_THUMB_CLASS}
-        pixelWidth={COMPARE_THUMB_PX}
-      />
+      <VariantThumb src={src} alt={alt} className={thumbClass} pixelWidth={thumbPx} />
       <div className="min-w-0 w-full space-y-1">
         {badge ? <div className="flex flex-wrap justify-center gap-1">{badge}</div> : null}
         <p className="line-clamp-2 text-xs font-medium leading-snug text-ink">{title}</p>
@@ -1267,67 +1293,69 @@ export function SkuProductWorkbench({
   /* ---------- render ---------- */
   return (
     <div className="flex min-h-[min(72vh,800px)] flex-col overflow-hidden rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">
-      <header className="shrink-0 border-b border-hairline px-6 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 flex-1 items-start gap-4">
-            <VariantThumb
-              src={product.imageUrl}
-              alt={product.title ?? ""}
-              className="h-16 w-16"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
-                {t("skuWorkbench.headerEyebrow")}
-              </p>
-              <h2 className="text-base font-semibold leading-6 text-ink">
-                {product.title ?? product.thirdPlatformItemId}
-              </h2>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-                <span className="text-emerald-700">
-                  {t("skuWorkbench.aligned", {
-                    aligned: alignedCount,
-                    total: product.variants.length,
-                  })}
-                </span>
-                <span>·</span>
-                <span>{t("skuWorkbench.unmapped", { count: unboundCount })}</span>
-                {supplementGaps.length > 0 ? (
-                  <>
-                    <span>·</span>
-                    <span className="text-amber-700">
-                      {t("skuWorkbench.sourceGaps", { count: supplementGaps.length })}
-                    </span>
-                  </>
-                ) : null}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-start gap-3">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-8 w-8 shrink-0 px-0"
-              onClick={onBack}
-              disabled={saving || registering}
-              title={t("skuWorkbench.backToListTitle")}
-              aria-label={t("skuWorkbench.backToListAria")}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <div className="w-full min-w-[min(100%,520px)] sm:w-auto">
-              <SegmentedTabs
-                variant="chip"
-                tabs={workbenchTabs}
-                value={phase}
-                onValueChange={(id) => {
-                  if ((id === "replace" || id === "supplement") && !canPick) return;
-                  onPhaseChange(id as DrawerPhase);
-                }}
-              />
+      {/* Toolbar: back button + tabs */}
+      <div className="shrink-0 flex items-center gap-3 border-b border-hairline px-6 py-2.5">
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-8 shrink-0 gap-1 px-2 text-[11px]"
+          onClick={onBack}
+          disabled={saving || registering}
+          title={t("skuWorkbench.backToListTitle")}
+          aria-label={t("skuWorkbench.backToListAria")}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {t("common.back")}
+        </Button>
+        <div className="min-w-0 flex-1 sm:w-auto sm:min-w-[320px]">
+          <SegmentedTabs
+            tabs={workbenchTabs}
+            value={phase}
+            onValueChange={(id) => {
+              if ((id === "replace" || id === "supplement") && !canPick) return;
+              onPhaseChange(id as DrawerPhase);
+            }}
+          />
+        </div>
+      </div>
+
+      {/* 所选货源信息条 */}
+      <div className="shrink-0 border-b border-hairline px-5 py-4">
+        <div className="flex h-[62px] items-start gap-4">
+          <VariantThumb
+            src={product.imageUrl}
+            alt={product.title ?? ""}
+            className="h-[62px] w-[62px]"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
+              <Store className="h-3.5 w-3.5 shrink-0 text-ink-subtle" />
+              {t("skuWorkbench.headerEyebrow")}
+            </p>
+            <h2 className="line-clamp-1 text-sm font-normal leading-5 text-ink">
+              {product.title ?? product.thirdPlatformItemId}
+            </h2>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+              <span className="text-success">
+                {t("skuWorkbench.aligned", {
+                  aligned: alignedCount,
+                  total: product.variants.length,
+                })}
+              </span>
+              <span>·</span>
+              <span>{t("skuWorkbench.unmapped", { count: unboundCount })}</span>
+              {supplementGaps.length > 0 ? (
+                <>
+                  <span>·</span>
+                  <span className="text-warning">
+                    {t("skuWorkbench.sourceGaps", { count: supplementGaps.length })}
+                  </span>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {phase === "primary" ? (
@@ -1522,16 +1550,16 @@ function PrimaryComparePanel({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* 当前货源信息条 */}
-      <div className="shrink-0 border-b border-hairline px-5 py-2.5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <Store className="h-3.5 w-3.5 shrink-0 text-ink-subtle" />
-            <VariantThumb src={merchantImage} alt={merchantTitle} className="h-7 w-7" />
+      <div className="shrink-0 border-b border-hairline px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-4">
+            <VariantThumb src={merchantImage} alt={merchantTitle} className="h-[62px] w-[62px]" />
             <div className="min-w-0">
-              <p className="text-[10px] uppercase tracking-wide text-ink-subtle">
+              <p className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
+                <Store className="h-3.5 w-3.5 shrink-0 text-ink-subtle" />
                 {currentSourceLabel}
               </p>
-              <p className="line-clamp-1 text-xs font-medium text-ink">{merchantTitle}</p>
+              <p className="line-clamp-1 text-sm font-medium text-ink">{merchantTitle}</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -1667,13 +1695,13 @@ function PrimaryComparePanel({
 function variantDisplayStateClass(state: SkuVariantDisplayState): string {
   switch (state) {
     case "active_auto":
-      return "bg-emerald-50 text-emerald-700";
+      return "bg-success-soft text-success";
     case "manual_active":
-      return "bg-sky-50 text-sky-700";
+      return "bg-info-soft text-info";
     case "needs_review":
-      return "bg-amber-50 text-amber-800";
+      return "bg-warning-soft text-warning";
     default:
-      return "bg-slate-100 text-slate-600";
+      return "bg-muted text-ink-muted";
   }
 }
 
@@ -1721,94 +1749,93 @@ function PrimaryCompareRow({
   const sourceTitle =
     row?.specLabel?.trim() ||
     (effectiveSkuId ? effectiveSkuId : t("skuWorkbench.pickSpec"));
-  const sourceSubtitle = row
-    ? formatOptionPrice(row.procurementPrice, shopCurrency, pricingTemplate)
-    : undefined;
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const canPickSource = ranked.length > 0;
 
   return (
     <div
       ref={rowRef}
       id={`sku-compare-row-${variant.thirdPlatformSkuId}`}
-      className={cn(
-        "space-y-3 rounded-[var(--radius-control)] border px-4 py-4 transition-colors",
-        highlighted
-          ? "border-brand bg-brand/5"
-          : matched
-            ? "border-emerald-200/80 bg-emerald-50/50"
-            : isGap
-              ? "border-amber-200/80 bg-amber-50/40"
-              : "border-hairline bg-surface"
-      )}
+      className="rounded-[var(--radius-control)] border border-[#E8E8E8] bg-[#FAFBFC] px-4 py-4 transition-colors"
     >
-      <CompareVisualPair
-        left={{
-          src: variant.imageUrl,
-          alt: variant.optionLabel,
-          title: variant.optionLabel,
-          subtitle: listingPriceLabel,
-          badge: (
-            <span
-              className={cn(
-                "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                variantDisplayStateClass(displayState)
-              )}
-            >
-              {displayStateLabel(t, displayState)}
-            </span>
-          ),
-        }}
-        right={{
-          src: row?.imageUrl,
-          alt: sourceTitle,
-          title: sourceTitle,
-          subtitle: sourceSubtitle,
-          emptyHint: effectiveSkuId ? undefined : t("skuWorkbench.pickSpec"),
-        }}
+      {/* 状态标签 */}
+      <div className="flex items-center gap-2">
+        <span
+          className={cn(
+            "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+            variantDisplayStateClass(displayState)
+          )}
+        >
+          {displayStateLabel(t, displayState)}
+        </span>
+      </div>
+
+      {/* 左右对照 + 选择按钮 */}
+      <div className="mt-3 grid grid-cols-[1fr_1fr_auto] items-start gap-3">
+        <CompareImageColumn
+          layout="horizontal"
+          src={variant.imageUrl}
+          alt={variant.optionLabel}
+          title={variant.optionLabel}
+          subtitle={listingPriceLabel}
+        />
+        <CompareImageColumn
+          layout="horizontal"
+          src={row?.imageUrl}
+          alt={sourceTitle}
+          title={sourceTitle}
+          subtitle={
+            matched
+              ? t("skuWorkbench.sourceCost", {
+                  price: formatOptionPrice(row!.procurementPrice, shopCurrency, pricingTemplate),
+                })
+              : t("skuWorkbench.sourceCost", { price: "—" })
+          }
+          placeholder={
+            <div className="flex h-[62px] w-[62px] shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
+              <span className="text-[10px] text-ink-subtle">{t("skuWorkbench.emptySource")}</span>
+            </div>
+          }
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="h-8 shrink-0 px-3 text-xs"
+          disabled={!canPickSource}
+          onClick={() => setPickerOpen(true)}
+        >
+          {t("skuWorkbench.selectSku")}
+        </Button>
+      </div>
+
+      <SkuPickerDialog
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        variantLabel={variant.optionLabel}
+        rows={ranked}
+        selectedSkuId={effectiveSkuId}
+        shopCurrency={shopCurrency}
+        pricingTemplate={pricingTemplate}
+        onConfirm={(skuId) => onSelect(skuId)}
       />
 
-      {/* 货源映射 — 下拉 + 补充入口 */}
-      <div className={COMPARE_MAP_PANEL_CLASS}>
-        {matrix.length === 0 ? (
-          <p className="text-[11px] text-ink-muted">
-            {effectiveSkuId
-              ? t("skuWorkbench.boundSkuAdjust", { id: effectiveSkuId })
-              : t("skuWorkbench.specTableEmpty")}
-          </p>
-        ) : (
-          <div className="space-y-2">
-            <Select
-              value={effectiveSkuId}
-              onChange={(e) => onSelect(e.target.value)}
-              className={COMPARE_SELECT_CLASS}
-            >
-              <option value="">
-                {ranked.length === 0
-                  ? t("skuWorkbench.noSpecsInSource")
-                  : t("skuWorkbench.pickSpec")}
-              </option>
-              {ranked.map((r) => (
-                <option key={r.skuId} value={r.skuId}>
-                  {r.specLabel} · {formatOptionPrice(r.procurementPrice, shopCurrency, pricingTemplate)}
-                  {r.matchScore > 0 ? ` · ${Math.round(r.matchScore * 100)}%` : ""}
-                </option>
-              ))}
-            </Select>
-            {(displayState === "unbound" ||
-              displayState === "needs_review" ||
-              isGap ||
-              bestScore < COVERAGE_MATCH_THRESHOLD) && (
-              <button
-                type="button"
-                onClick={onGoSupplement}
-                className="inline-flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-amber-300/80 bg-amber-50/60 px-2 py-1.5 text-[11px] font-medium text-amber-800 hover:bg-amber-50"
-              >
-                <Plus className="h-3 w-3" />
-                {t("skuWorkbench.goSupplement")}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      {/* 补充货源入口 */}
+      {(displayState === "unbound" ||
+        displayState === "needs_review" ||
+        isGap ||
+        bestScore < COVERAGE_MATCH_THRESHOLD) && (
+        <button
+          type="button"
+          onClick={onGoSupplement}
+          className="mt-3 inline-flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-warning/50 bg-warning-soft/60 px-2 py-1.5 text-xs font-semibold text-warning hover:bg-warning-soft"
+        >
+          <Plus className="h-3 w-3" />
+          {t("skuWorkbench.goSupplement")}
+        </button>
+      )}
     </div>
   );
 }

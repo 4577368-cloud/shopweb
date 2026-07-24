@@ -1265,7 +1265,7 @@ export const en = {
     view: "View"
   },
   logisticsWorkflow: {
-    hint: "Configure strategy → estimate shipping → confirm plans",
+    hint: "Configure logistics steps",
     stepConfirm: "3 · Confirm",
     stepEstimate: "2 · Estimate",
     stepSetup: "1 · Strategy"
@@ -2540,6 +2540,9 @@ export const en = {
     selectedSourceFallback: "Selected source",
     sourceGaps: "{{count}} gap variants",
     sourceNoSpecs: "This merchant has no specs",
+    emptySource: "Empty",
+    selectSku: "Select SKU",
+    sourceCost: "Source cost {{price}}",
     sourceSpec: "Source spec",
     specMappingCoverage: " · spec coverage {{coverage}}/{{total}}",
     specTableEmpty: "Spec table not loaded — pick a source spec",

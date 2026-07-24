@@ -1404,6 +1404,7 @@ function LogisticsContent() {
         <WorkbenchPanel
           title={t("logistics.pageTitle")}
           breadcrumbs={breadcrumbs}
+          titleSuffix={<img src="/brand/on-time-guarantee-tag.svg" alt="" className="h-[18px] w-auto" />}
           {...wb.panelProps}
         >
           <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
@@ -1436,6 +1437,7 @@ function LogisticsContent() {
         <WorkbenchPanel
           title={t("logistics.pageTitle")}
           breadcrumbs={breadcrumbs}
+          titleSuffix={<img src="/brand/on-time-guarantee-tag.svg" alt="" className="h-[18px] w-auto" />}
           {...wb.panelProps}
         >
           <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-6 text-sm text-ink-muted">
@@ -1503,6 +1505,7 @@ function LogisticsContent() {
       <WorkbenchPanel
         title={t("logistics.pageTitle")}
         breadcrumbs={breadcrumbs}
+        titleSuffix={<img src="/brand/on-time-guarantee-tag.svg" alt="" className="h-[18px] w-auto" />}
         {...wb.panelProps}
         actions={
           hasSavedTemplate && analysis ? (

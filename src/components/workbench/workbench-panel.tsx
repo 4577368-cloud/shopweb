@@ -27,6 +27,12 @@ interface WorkbenchPanelProps {
   footer?: ReactNode;
   /** Content max width in px (centered). Prototypes sit around 1080. */
   maxWidth?: number;
+  /** Extra classes for the description <p> (e.g. to tune font size per page). */
+  descriptionClassName?: string;
+  /** Extra classes for the title <h1> (e.g. to tune font size per page). */
+  titleClassName?: string;
+  /** Optional element rendered inline after the title text (e.g. badge / tag). */
+  titleSuffix?: ReactNode;
   children: ReactNode;
 }
 
@@ -45,6 +51,9 @@ export function WorkbenchPanel({
   onAssistantToggle,
   footer,
   maxWidth = 1080,
+  descriptionClassName,
+  titleClassName,
+  titleSuffix,
   children,
 }: WorkbenchPanelProps) {
   const showAssistantToggle = typeof onAssistantToggle === "function";
@@ -70,8 +79,9 @@ export function WorkbenchPanel({
             </nav>
           ) : null}
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <h1 className="min-w-0 text-[22px] font-semibold leading-7 tracking-tight text-ink">
+            <h1 className={cn("flex min-w-0 items-center gap-2 text-[22px] font-semibold leading-7 tracking-tight text-ink", titleClassName)}>
               {title}
+              {titleSuffix ? <span className="inline-flex items-center">{titleSuffix}</span> : null}
             </h1>
             {actions || showAssistantToggle ? (
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -86,7 +96,12 @@ export function WorkbenchPanel({
             ) : null}
           </div>
           {description ? (
-            <p className="mt-1 max-w-3xl text-sm leading-5 text-ink-muted">
+            <p
+              className={cn(
+                "mt-1 max-w-3xl text-sm leading-5 text-ink-muted",
+                descriptionClassName,
+              )}
+            >
               {description}
             </p>
           ) : null}

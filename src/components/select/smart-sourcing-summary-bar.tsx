@@ -53,31 +53,10 @@ export function SmartSourcingSummaryBar({
         className
       )}
     >
-      <div className="flex items-center gap-x-2 gap-y-1">
+      <div className="flex items-center justify-between gap-x-2 gap-y-1">
+        <div className="flex min-w-0 flex-1 items-center gap-x-2 gap-y-1">
         {ready ? (
-          <div className="hidden min-w-[12rem] flex-1 overflow-hidden rounded-full bg-surface-muted sm:block">
-            <div className="flex h-1.5 rounded-full">
-              <div
-                className="rounded-l-full bg-[#90AAFF] transition-all duration-500"
-                style={{ width: `${analyzed > 0 ? ((matched - pending) / analyzed) * 100 : 0}%` }}
-                title={t("sourcing.confirmedTooltip", { count: matched - pending })}
-              />
-              <div
-                className="bg-amber-400 transition-all duration-500"
-                style={{ width: `${analyzed > 0 ? (pending / analyzed) * 100 : 0}%` }}
-                title={t("sourcing.pendingTooltip", { count: pending })}
-              />
-              <div
-                className="rounded-r-full bg-slate-400 transition-all duration-500"
-                style={{ width: `${analyzed > 0 ? (unbound / analyzed) * 100 : 0}%` }}
-                title={t("sourcing.unboundTooltip", { count: unbound })}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        <p className="ml-auto hidden shrink-0 text-xs leading-5 text-ink-muted sm:block transition-opacity duration-200">
-          {ready ? (
+          <p className="hidden shrink-0 text-xs leading-5 text-ink-muted sm:block transition-opacity duration-200">
             <>
               {t("sourcing.analyzed")}{" "}
               <span className="font-semibold text-ink">{analyzed}</span>
@@ -109,13 +88,15 @@ export function SmartSourcingSummaryBar({
                 </>
               ) : null}
             </>
-          ) : (
+          </p>
+        ) : (
+          <p className="hidden shrink-0 text-xs leading-5 text-ink-muted sm:block transition-opacity duration-200">
             <span className="inline-flex items-center gap-1.5">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-[#325BE6]" />
               {t("sourcing.analyzing")}
             </span>
-          )}
-        </p>
+          </p>
+        )}
 
         {onSearchChange ? (
           <div className="relative">
@@ -139,29 +120,29 @@ export function SmartSourcingSummaryBar({
           </div>
         ) : null}
 
-        <div className="flex shrink-0 items-center gap-1.5">
           {onViewDetails ? (
             <button
               type="button"
               onClick={onViewDetails}
-              className="hidden text-[11px] font-medium text-link hover:text-link-hover hover:underline sm:inline"
+              className="hidden shrink-0 text-[11px] font-medium text-link hover:text-link-hover hover:underline sm:inline"
             >
               {t("sourcing.viewDetails")}
             </button>
           ) : null}
-          {onRefresh && !batchLinkBusy ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onRefresh}
-              className="h-7 w-7 px-0"
-              title={t("sourcing.refreshTitle")}
-              aria-label={t("sourcing.refreshAria")}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-          ) : null}
         </div>
+
+        {onRefresh && !batchLinkBusy ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onRefresh}
+            className="shrink-0 h-7 w-7 px-0"
+            title={t("sourcing.refreshTitle")}
+            aria-label={t("sourcing.refreshAria")}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        ) : null}
       </div>
 
       <p className="mt-1 text-xs leading-5 text-ink-muted sm:hidden">
@@ -171,8 +152,8 @@ export function SmartSourcingSummaryBar({
       </p>
 
       {ready && pendingNewAnalysis > 0 && !batchLinkBusy ? (
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-sky-200 bg-sky-50/80 px-2.5 py-2">
-          <p className="min-w-0 flex-1 text-[11px] leading-snug text-sky-900">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border px-2.5 py-2" style={{ backgroundColor: '#EEF2FF', borderColor: '#F1F0FF' }}>
+          <p className="min-w-0 flex-1 text-sm font-bold leading-snug" style={{ color: '#333333' }}>
             {t("sourcing.newArrivalsBanner", { count: pendingNewAnalysis })}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -193,7 +174,8 @@ export function SmartSourcingSummaryBar({
               <button
                 type="button"
                 onClick={onViewNewArrivals}
-                className="text-[11px] font-medium text-sky-800 underline underline-offset-2 hover:text-sky-950"
+                className="rounded-[var(--radius-control)] border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-surface-hover"
+                style={{ borderColor: '#333333', color: '#333333' }}
               >
                 {t("sourcing.viewNewArrivals")}
               </button>

@@ -166,10 +166,14 @@ export function ListingPriceConfirmCard({
       </dl>
 
       {loading ? (
-        <p className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-900/80">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          {t("commandUi.loadingVariants")}
-        </p>
+        <div className="mt-2 flex items-center gap-2 rounded-md bg-slate-100/80 px-3 py-2.5">
+          <span className="inline-flex gap-1">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:0ms]" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:150ms]" />
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-400 [animation-delay:300ms]" />
+          </span>
+          <span className="text-[11px] text-slate-500">{t("commandUi.loadingVariants")}</span>
+        </div>
       ) : error ? (
         <p className="mt-2 text-[11px] text-red-700">{error}</p>
       ) : multi ? (
