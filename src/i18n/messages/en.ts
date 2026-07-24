@@ -2214,6 +2214,9 @@ export const en = {
   sidebar: {
     goTo: "Go to {{title}}",
     progress: "Setup progress",
+    upgradeLabel: "Upgrade",
+    upgradeHint: "Dropshipping & plans",
+    upgradeAria: "Open Tangbuy dropshipping portal in a new tab (upgrade and account)",
   },
   sku: {
     acceptPage: "Accept this page",

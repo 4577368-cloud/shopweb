@@ -9,6 +9,7 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { ShopSwitcher } from "@/components/workbench/shop-switcher";
 import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
 import { SidebarAdCarousel } from "@/components/workbench/sidebar-ad-carousel";
+import { SidebarUpgradeCta } from "@/components/workbench/sidebar-upgrade-cta";
 import { SidebarUserMenu } from "@/components/workbench/sidebar-user-menu";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
@@ -175,6 +176,8 @@ export function StepSidebar() {
       </nav>
 
       <SidebarAdCarousel className="px-4 pb-3" />
+
+      <SidebarUpgradeCta />
 
       <div className="flex shrink-0 items-center gap-2 border-t border-hairline px-4 py-2.5">
         <SidebarUserMenu className="min-w-0 flex-1" />

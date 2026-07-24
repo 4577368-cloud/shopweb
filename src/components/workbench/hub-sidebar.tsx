@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { AppLogo } from "@/components/brand/app-logo";
 import { ShopSwitcher } from "@/components/workbench/shop-switcher";
 import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
+import { SidebarUpgradeCta } from "@/components/workbench/sidebar-upgrade-cta";
 import { SidebarUserMenu } from "@/components/workbench/sidebar-user-menu";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
@@ -88,6 +89,8 @@ export function HubSidebar() {
           })}
         </ul>
       </nav>
+
+      <SidebarUpgradeCta />
 
       <div className="flex shrink-0 items-center gap-2 border-t border-hairline px-4 py-2.5">
         <SidebarUserMenu className="min-w-0 flex-1" />
