@@ -460,8 +460,8 @@ export function variantHasQuoteLine(
   return Boolean(line?.lineName?.trim() || line?.lineCode?.trim());
 }
 
-/** 已有线路报价、尚未确认 — 可批量接受（与「待确认」Tab 口径一致） */
-export function variantCanBatchAccept(
+/** 已有有效线路、待用户确认 — 与「待确认」Tab 和批量接受口径一致 */
+export function variantIsAwaitingUserConfirm(
   variant: VariantLogisticsDecision,
   quoteResult?: LogisticsEstimateResult
 ): boolean {
@@ -469,7 +469,21 @@ export function variantCanBatchAccept(
     return false;
   }
   if (variant.decisionStatus === "pending_sku") return false;
-  return variantHasQuoteLine(variant, quoteResult);
+  if (isVariantException(variant)) return false;
+  if (!variantHasQuoteLine(variant, quoteResult)) return false;
+  const status = quoteResult?.quoteStatus ?? variant.quoteStatus;
+  if (status === "INGESTING") return false;
+  if (isGoodsSourceQuoteFailure(quoteResult)) return false;
+  if (isVariantQuoteFailed(variant, quoteResult)) return false;
+  return true;
+}
+
+/** 已有线路报价、尚未确认 — 可批量接受（与「待确认」Tab 口径一致） */
+export function variantCanBatchAccept(
+  variant: VariantLogisticsDecision,
+  quoteResult?: LogisticsEstimateResult
+): boolean {
+  return variantIsAwaitingUserConfirm(variant, quoteResult);
 }
 
 export function countBatchAcceptableVariants(
@@ -528,9 +542,7 @@ export function variantMatchesFilter(
       if (confirmed) return false;
       return !hasQuote;
     case "pending_confirm":
-      if (variant.decisionStatus === "pending_sku") return false;
-      if (confirmed) return false;
-      return hasQuote;
+      return variantIsAwaitingUserConfirm(variant, quoteResult);
     case "quoted":
       return hasQuote;
     case "exceptions":
@@ -1478,10 +1490,10 @@ export function computeLogisticsPlanMetrics(
         skuUnlinkedCount += 1;
       } else if (confirmed) {
         if (hasQuote) quotedCount += 1;
-      } else if (hasQuote) {
+      } else if (variantIsAwaitingUserConfirm(variant, quote)) {
         pendingConfirmCount += 1;
         quotedCount += 1;
-      } else {
+      } else if (!confirmed) {
         pendingQuoteCount += 1;
       }
       if (!confirmed && isVariantException(variant)) {

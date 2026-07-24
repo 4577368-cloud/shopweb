@@ -1,26 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   Boxes,
   CheckCircle2,
   Database,
   LayoutGrid,
-  Link2,
-  Lock,
+  Loader2,
   Search,
-  ShieldCheck,
   Sparkles,
 } from "@/lib/ui/icons";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useOnboarding } from "@/context/onboarding-context";
 import {
   SHOP_STORAGE_KEY,
   launchShopifyInstall,
 } from "@/lib/shopify-install";
+import {
+  ShopDomainConnectField,
+  shopHandleFromDomain,
+} from "@/components/shopify/shop-domain-connect-field";
 
 import { AppLogo } from "@/components/brand/app-logo";
 import { APP_FULL_NAME } from "@/lib/brand";
@@ -28,29 +29,52 @@ import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 
-export default function InstallPage() {
+function InstallPageContent() {
   const { showToast } = useOnboarding();
   const t = useT();
   const locale = useLocale();
-  const [domain, setDomain] = useState("");
+  const searchParams = useSearchParams();
+  const autoShopAttempted = useRef(false);
+  const [handle, setHandle] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [redirecting, setRedirecting] = useState(false);
 
-  // Prefill the remembered shop so returning testers can reconnect in one click.
+  const connectWithDomain = (raw: string) => {
+    setError(null);
+    setRedirecting(true);
+    const result = launchShopifyInstall(raw);
+    if (!result.ok) {
+      setRedirecting(false);
+      setError(result.error ?? t("install.launchError"));
+      if (result.error) showToast(result.error);
+    }
+  };
+
+  const connect = () => connectWithDomain(handle);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const saved = window.localStorage.getItem(SHOP_STORAGE_KEY);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot prefill from localStorage
-    if (saved) setDomain(saved);
+    if (saved) {
+      setHandle(shopHandleFromDomain(saved));
+    }
   }, []);
+
+  useEffect(() => {
+    const shop = searchParams.get("shop")?.trim();
+    if (!shop || autoShopAttempted.current) return;
+    autoShopAttempted.current = true;
+    setHandle(shopHandleFromDomain(shop));
+    connectWithDomain(shop);
+  }, [searchParams]);
 
   const trustSignals = [
     t("install.trustOfficialOAuth"),
-    t("install.trustReadOnly"),
-    t("install.trustNoEdit"),
+    t("install.trustScoped"),
+    t("install.trustRevocable"),
     t("install.trustEncrypted"),
   ];
 
-  // Core value points — only capabilities that already exist in the product.
   const valuePoints: { icon: typeof Database; title: string; desc: string }[] = [
     { icon: Database, title: t("install.valueAutoSync"), desc: t("install.valueAutoSyncDesc") },
     { icon: Search, title: t("install.valueImageSearch"), desc: t("install.valueImageSearchDesc") },
@@ -58,7 +82,6 @@ export default function InstallPage() {
     { icon: Boxes, title: t("install.valuePricing"), desc: t("install.valuePricingDesc") },
   ];
 
-  // Honest preview frames of the real product pages (no fabricated dashboards / fake data).
   const previews: { title: string; desc: string }[] = [
     { title: t("install.previewProducts"), desc: t("install.previewProductsDesc") },
     { title: t("install.previewSku"), desc: t("install.previewSkuDesc") },
@@ -71,27 +94,21 @@ export default function InstallPage() {
     { title: t("install.step3Title"), desc: t("install.step3Desc") },
   ];
 
-  const connect = () => {
-    setError(null);
-    const result = launchShopifyInstall(domain);
-    if (!result.ok) {
-      setError(result.error ?? t("install.launchError"));
-      if (result.error) showToast(result.error);
-    }
-    // On success the browser navigates away to Shopify — nothing else to do here.
-  };
+  if (redirecting && searchParams.get("shop")) {
+    return (
+      <main className="flex min-h-full flex-col items-center justify-center gap-3 bg-canvas px-5">
+        <Loader2 className="h-8 w-8 animate-spin text-brand" />
+        <p className="text-sm font-medium text-ink">{t("install.redirectingToShopify")}</p>
+        <p className="text-xs text-ink-muted">{t("install.shopFromAppHint")}</p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-full bg-canvas">
-      {/* Top bar */}
       <header className="border-b border-hairline bg-surface">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3.5">
-          <div className="flex items-center gap-2.5">
-            <AppLogo variant="header" size="sm" />
-            <span className="ml-0.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-              {t("common.developerPreview")}
-            </span>
-          </div>
+          <AppLogo variant="header" size="sm" />
           <div className="flex items-center gap-3">
             <LanguageSwitcher />
             <Link
@@ -105,7 +122,6 @@ export default function InstallPage() {
       </header>
 
       <div className="mx-auto max-w-5xl px-5 py-8 sm:py-12">
-        {/* Hero */}
         <section className="grid gap-8 lg:grid-cols-[1.1fr_1fr] lg:items-center">
           <div>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-2.5 py-1 text-[11px] font-medium text-ink-muted">
@@ -119,29 +135,13 @@ export default function InstallPage() {
               {t("install.heroSubtitle")}
             </p>
 
-            {/* Domain + primary CTA */}
-            <div className="mt-6 max-w-md space-y-2">
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <div className="relative flex-1">
-                  <Input
-                    value={domain}
-                    onChange={(e) => setDomain(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") connect();
-                    }}
-                    placeholder={t("install.domainPlaceholder")}
-                    className="pr-9"
-                    aria-label={t("install.domainAria")}
-                  />
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-ink-subtle">
-                    <ShieldCheck className="h-4 w-4" />
-                  </span>
-                </div>
-                <Button className="shrink-0 sm:w-auto" onClick={connect}>
-                  <Link2 className="h-4 w-4" />
-                  {t("install.connectButton")}
-                </Button>
-              </div>
+            <div className="mt-6 max-w-lg space-y-2">
+              <ShopDomainConnectField
+                value={handle}
+                onChange={setHandle}
+                onConnect={connect}
+                connecting={redirecting}
+              />
               {error ? (
                 <p className="text-[11px] leading-4 text-red-600">{error}</p>
               ) : (
@@ -151,21 +151,19 @@ export default function InstallPage() {
               )}
             </div>
 
-            {/* Trust strip */}
             <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
               {trustSignals.map((signal) => (
                 <span
                   key={signal}
                   className="inline-flex items-center gap-1.5 text-[11px] text-ink-muted"
                 >
-                  <ShieldCheck className="h-3.5 w-3.5 text-brand" />
+                  <CheckCircle2 className="h-3.5 w-3.5 text-brand" />
                   {signal}
                 </span>
               ))}
             </div>
           </div>
 
-          {/* Hero preview frame (honest product preview, no fake data) */}
           <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 shadow-card">
             <BrowserFrame label={t("install.browserLabelProducts")}>
               <div className="grid gap-2.5 p-3 sm:grid-cols-2">
@@ -186,7 +184,6 @@ export default function InstallPage() {
           </div>
         </section>
 
-        {/* Core value points */}
         <section className="mt-12">
           <h2 className="text-lg font-semibold tracking-tight text-ink">
             {t("install.coreCapabilities")}
@@ -208,7 +205,6 @@ export default function InstallPage() {
           </div>
         </section>
 
-        {/* Product previews */}
         <section className="mt-12">
           <h2 className="text-lg font-semibold tracking-tight text-ink">
             {t("install.pagePreviews")}
@@ -226,7 +222,6 @@ export default function InstallPage() {
           </div>
         </section>
 
-        {/* How it works */}
         <section className="mt-12">
           <h2 className="text-lg font-semibold tracking-tight text-ink">
             {t("install.howItWorks")}
@@ -247,20 +242,6 @@ export default function InstallPage() {
           </div>
         </section>
 
-        {/* Developer preview notice */}
-        <section className="mt-10 rounded-[var(--radius-card)] border border-amber-200 bg-amber-50 px-4 py-4">
-          <div className="flex items-start gap-2.5">
-            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <div>
-              <p className="text-sm font-medium text-amber-900">{t("install.devNoticeTitle")}</p>
-              <p className="mt-1 text-xs leading-5 text-amber-800">
-                {t("install.devNoticeDesc")}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Footer CTA */}
         <section className="mt-10 flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-brand-accent/20 bg-brand-soft px-5 py-8 text-center">
           <h3 className="text-lg font-semibold tracking-tight text-ink">
             {t("install.readyCta")}
@@ -268,38 +249,21 @@ export default function InstallPage() {
           <p className="max-w-md text-xs leading-5 text-ink-muted">
             {t("install.readyCtaDesc")}
           </p>
-          <div className="mt-1 flex w-full max-w-md flex-col gap-2 sm:flex-row">
-            <div className="relative flex-1">
-              <Input
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") connect();
-                }}
-                placeholder={t("install.domainPlaceholder")}
-                className="pr-9 bg-surface"
-                aria-label={t("install.domainAria")}
-              />
-              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-ink-subtle">
-                <ShieldCheck className="h-4 w-4" />
-              </span>
-            </div>
-            <Button className="shrink-0" onClick={connect}>
-              {t("install.connectButton")}
-              <ArrowRight className="h-4 w-4" />
-            </Button>
+          <div className="mt-1 w-full max-w-lg">
+            <ShopDomainConnectField
+              value={handle}
+              onChange={setHandle}
+              onConnect={connect}
+              connecting={redirecting}
+              inputClassName="bg-surface"
+              buttonLabel={
+                <>
+                  {t("install.connectButton")}
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              }
+            />
           </div>
-          <ul className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1">
-            {trustSignals.map((signal) => (
-              <li
-                key={signal}
-                className="inline-flex items-center gap-1 text-[11px] text-ink-muted"
-              >
-                <CheckCircle2 className="h-3 w-3 text-brand" />
-                {signal}
-              </li>
-            ))}
-          </ul>
         </section>
 
         <footer className="mt-10 border-t border-hairline pt-5 text-center text-[11px] text-ink-subtle">
@@ -310,7 +274,21 @@ export default function InstallPage() {
   );
 }
 
-/** A neutral browser-window chrome for honest product previews (no fake data inside). */
+export default function InstallPage() {
+  const t = useT();
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-full items-center justify-center bg-canvas">
+          <Loader2 className="h-7 w-7 animate-spin text-brand" aria-label={t("authorize.loading")} />
+        </main>
+      }
+    >
+      <InstallPageContent />
+    </Suspense>
+  );
+}
+
 function BrowserFrame({
   label,
   children,

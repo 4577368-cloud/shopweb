@@ -1,5 +1,6 @@
 import type { LogisticsEstimateResult } from "@/lib/api";
 import { isGoodsSourceQuoteFailure } from "@/lib/logistics/estimate-goods-block";
+import { readProductSourceIdentity } from "@/lib/product-source-identity";
 import type { LogisticsAnalysis, VariantLogisticsDecision } from "@/lib/types";
 
 const PREFIX = "logistics-quotes:v2:";
@@ -106,6 +107,33 @@ export function applyCatalogIngestQuoteReset(
     }),
   };
 
+  return { analysis: nextAnalysis, quoteResults: nextQuotes };
+}
+
+/** Drop cached goods-block / FAILED rows for products that already have internalGoodsId. */
+export function stripStaleGoodsBlockedQuotesForIdentities(
+  analysis: LogisticsAnalysis,
+  quoteResults: Map<string, LogisticsEstimateResult>,
+  shopName: string
+): {
+  analysis: LogisticsAnalysis;
+  quoteResults: Map<string, LogisticsEstimateResult>;
+} {
+  const shop = shopName.trim();
+  if (!shop || !analysis.productProfiles?.length) {
+    return { analysis, quoteResults };
+  }
+  let nextAnalysis = analysis;
+  let nextQuotes = quoteResults;
+  for (const profile of analysis.productProfiles) {
+    const itemId = profile.thirdPlatformItemId?.trim();
+    if (!itemId) continue;
+    const identity = readProductSourceIdentity(shop, itemId);
+    if (!identity?.internalGoodsId?.trim()) continue;
+    const reset = applyCatalogIngestQuoteReset(nextAnalysis, itemId, nextQuotes);
+    nextAnalysis = reset.analysis ?? nextAnalysis;
+    nextQuotes = reset.quoteResults;
+  }
   return { analysis: nextAnalysis, quoteResults: nextQuotes };
 }
 

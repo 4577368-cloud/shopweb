@@ -62,6 +62,7 @@ import {
   mergeQuoteResultsIntoAnalysis,
   applyCatalogIngestQuoteReset,
   readQuoteCache,
+  stripStaleGoodsBlockedQuotesForIdentities,
   writeQuoteCache,
 } from "@/lib/logistics/quote-cache";
 import { enrichVariantsWithMeasures } from "@/lib/logistics/variant-measures";
@@ -283,12 +284,20 @@ function LogisticsContent() {
     prevScopeKeyRef.current = templateScopeKey;
 
     const cached = readQuoteCache(shopName, templateScopeKey);
-    setQuoteResults(cached);
-    if (cached.size > 0) {
-      setAnalysis((prev) =>
-        prev ? mergeQuoteResultsIntoAnalysis(prev, cached) : prev
-      );
-    }
+    setAnalysis((prev) => {
+      if (!prev) {
+        setQuoteResults(cached);
+        return prev;
+      }
+      const { analysis: stripped, quoteResults: sanitized } =
+        stripStaleGoodsBlockedQuotesForIdentities(prev, cached, shopName);
+      const merged = mergeQuoteResultsIntoAnalysis(stripped, sanitized);
+      setQuoteResults(sanitized);
+      if (sanitized.size > 0 || cached.size > 0) {
+        writeQuoteCache(shopName, templateScopeKey, sanitized);
+      }
+      return merged;
+    });
   }, [templateScopeKey, shopName, activeTemplate, showToast, t]);
 
   // measureOverrides 持久化：重量/尺寸是物理属性，与模板无关，按 shop 维度存储。
@@ -1007,13 +1016,20 @@ function LogisticsContent() {
         });
         if (ready) {
           setQuoteResults((prevQuotes) => {
-            const { analysis: nextAnalysis, quoteResults: nextQuotes } =
-              applyCatalogIngestQuoteReset(analysis, productId, prevQuotes);
-            setAnalysis(nextAnalysis ?? analysis);
-            if (shopName && templateScopeKey) {
-              writeQuoteCache(shopName, templateScopeKey, nextQuotes);
-            }
-            return nextQuotes;
+            setAnalysis((prevAnalysis) => {
+              const { analysis: nextAnalysis, quoteResults: nextQuotes } =
+                applyCatalogIngestQuoteReset(
+                  prevAnalysis,
+                  productId,
+                  prevQuotes
+                );
+              if (shopName && templateScopeKey) {
+                writeQuoteCache(shopName, templateScopeKey, nextQuotes);
+              }
+              setQuoteResults(nextQuotes);
+              return nextAnalysis ?? prevAnalysis;
+            });
+            return prevQuotes;
           });
           showToast(t("logistics.toastIngestSuccess"));
         } else if (ingesting) {
@@ -1035,17 +1051,20 @@ function LogisticsContent() {
         profile.title?.trim() || profile.thirdPlatformItemId;
       const productId = profile.thirdPlatformItemId;
       setQuoteResults((prevQuotes) => {
-        const { analysis: nextAnalysis, quoteResults: nextQuotes } =
-          applyCatalogIngestQuoteReset(analysis, productId, prevQuotes);
-        setAnalysis(nextAnalysis ?? analysis);
-        if (shopName && templateScopeKey) {
-          writeQuoteCache(shopName, templateScopeKey, nextQuotes);
-        }
-        return nextQuotes;
+        setAnalysis((prevAnalysis) => {
+          const { analysis: nextAnalysis, quoteResults: nextQuotes } =
+            applyCatalogIngestQuoteReset(prevAnalysis, productId, prevQuotes);
+          if (shopName && templateScopeKey) {
+            writeQuoteCache(shopName, templateScopeKey, nextQuotes);
+          }
+          setQuoteResults(nextQuotes);
+          return nextAnalysis ?? prevAnalysis;
+        });
+        return prevQuotes;
       });
       showToast(t("logistics.toastIngestReadyForProduct", { title }));
     },
-    [analysis, shopName, templateScopeKey, showToast, t]
+    [shopName, templateScopeKey, showToast, t]
   );
 
   const fetchQuotesForReady = useCallback(async () => {
