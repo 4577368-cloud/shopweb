@@ -773,6 +773,18 @@ function LogisticsContent() {
         }
         return next;
       });
+      setBatchFailedVariantIds((prev) => {
+        if (prev.length === 0) return prev;
+        return prev.filter((id) => {
+          const fresh = resultsMap.get(id);
+          if (!fresh) return true;
+          const hasLine = Boolean(
+            fresh.recommendedLine?.lineName?.trim() ||
+              fresh.recommendedLine?.lineCode?.trim()
+          );
+          return !hasLine;
+        });
+      });
       setAnalysis((prev) =>
         prev ? mergeQuoteResultsIntoAnalysis(prev, resultsMap) : prev
       );
@@ -993,6 +1005,17 @@ function LogisticsContent() {
           profile,
         });
         if (ready) {
+          setQuoteResults((prev) => {
+            const next = new Map(prev);
+            for (const variant of profile.variantDecisions ?? []) {
+              const id = variant.thirdPlatformSkuId;
+              const qr = next.get(id);
+              if (qr && isGoodsSourceQuoteFailure(qr)) {
+                next.delete(id);
+              }
+            }
+            return next;
+          });
           showToast(t("logistics.toastIngestSuccess"));
         } else if (ingesting) {
           showToast(t("logistics.toastIngestPending"));
@@ -1163,6 +1186,7 @@ function LogisticsContent() {
       const CHUNK_SIZE = 10;
       let acceptedTotal = 0;
       let failedTotal = 0;
+      let skippedNoQuote = 0;
 
       for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
         if (opts?.isCancelled?.()) {
@@ -1186,6 +1210,7 @@ function LogisticsContent() {
         const variantIds = chunk
           .map((v) => v.thirdPlatformSkuId)
           .filter((id) => quotes[id]);
+        skippedNoQuote += chunk.length - variantIds.length;
         if (variantIds.length === 0) continue;
 
         try {
@@ -1217,6 +1242,10 @@ function LogisticsContent() {
       setBatchFailedVariantIds(failedIds);
       setFilterMode("all");
       if (opts?.isCancelled?.()) return;
+      if (acceptedTotal === 0 && failedTotal === 0 && skippedNoQuote > 0) {
+        showToast(t("logistics.toastAcceptMissingQuoteLines"));
+        return;
+      }
       showToast(
         acceptedTotal > 0
           ? t("logistics.toastBatchAccepted", { accepted: acceptedTotal })
@@ -1483,14 +1512,14 @@ function LogisticsContent() {
                     void handleAcceptAllReady({ onlyVariantIds: batchFailedVariantIds })
                   }
                   disabled={accepting}
-                  title={t("logistics.actionRetryFailed", {
+                  title={t("logistics.actionRetryAccept", {
                     count: batchFailedVariantIds.length,
                   })}
                 >
                   {accepting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : null}
-                  {t("logistics.actionRetryFailed", {
+                  {t("logistics.actionRetryAccept", {
                     count: batchFailedVariantIds.length,
                   })}
                 </Button>

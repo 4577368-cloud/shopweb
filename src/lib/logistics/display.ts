@@ -1188,10 +1188,13 @@ export function buildAcceptQuotePayload(
   if (!selected) return undefined;
   const key = logisticsLineKey(selected);
   const alternatives = lines.filter((line) => logisticsLineKey(line) !== key);
+  const rawStatus = quoteResult?.quoteStatus ?? variant.quoteStatus;
+  const quoteStatus =
+    rawStatus === "FAILED" || rawStatus === "INGESTING" ? "SUCCESS" : rawStatus;
   return {
     recommendedLine: selected,
     alternativeLines: alternatives,
-    quoteStatus: quoteResult?.quoteStatus ?? variant.quoteStatus,
+    quoteStatus,
   };
 }
 

@@ -43,6 +43,7 @@ import { CatalogIngestingBadge } from "@/components/ui/catalog-ingesting-badge";
 import { Select } from "@/components/ui/select";
 import { useT } from "@/i18n/LocaleProvider";
 import { useCatalogIngestStatus } from "@/hooks/use-catalog-ingest-status";
+import { useProductSourceIdentityVersion } from "@/hooks/use-product-source-identity-version";
 import { readProductSourceIdentity } from "@/lib/product-source-identity";
 import { isProductQuoteIngesting } from "@/lib/tangbuy/catalog-ingest-display";
 import { cn } from "@/lib/utils";
@@ -453,6 +454,17 @@ export function LogisticsProductGroup({
 }) {
   const t = useT();
   const variants = profile.variantDecisions ?? [];
+  const identityVersion = useProductSourceIdentityVersion(
+    shopName,
+    profile.thirdPlatformItemId
+  );
+  const storedInternalGoodsId = useMemo(() => {
+    if (!shopName.trim() || !profile.thirdPlatformItemId.trim()) return null;
+    return (
+      readProductSourceIdentity(shopName, profile.thirdPlatformItemId)
+        ?.internalGoodsId?.trim() || null
+    );
+  }, [shopName, profile.thirdPlatformItemId, identityVersion]);
   const identityIngesting = useCatalogIngestStatus(
     shopName,
     profile.thirdPlatformItemId,
@@ -470,20 +482,9 @@ export function LogisticsProductGroup({
     [variants, quoteResults]
   );
   const catalogIngesting = useMemo(() => {
-    if (shopName.trim() && profile.thirdPlatformItemId.trim()) {
-      const identity = readProductSourceIdentity(
-        shopName,
-        profile.thirdPlatformItemId
-      );
-      if (identity?.internalGoodsId?.trim()) return false;
-    }
+    if (storedInternalGoodsId) return false;
     return identityIngesting || quoteIngesting;
-  }, [
-    shopName,
-    profile.thirdPlatformItemId,
-    identityIngesting,
-    quoteIngesting,
-  ]);
+  }, [storedInternalGoodsId, identityIngesting, quoteIngesting]);
   const busy = correctingId === profile.thirdPlatformItemId;
   const productQuoteAction = useMemo(
     () =>
@@ -492,7 +493,7 @@ export function LogisticsProductGroup({
         shopName,
         thirdPlatformItemId: profile.thirdPlatformItemId,
       }),
-    [t, variants, quoteResults, pipelineActive, shopName, profile.thirdPlatformItemId, identityIngesting, catalogIngesting]
+    [t, variants, quoteResults, pipelineActive, shopName, profile.thirdPlatformItemId, identityIngesting, catalogIngesting, identityVersion, storedInternalGoodsId]
   );
   const productQuoteLabel =
     productQuoteAction?.kind === "wait" ? null : productQuoteAction?.label ?? null;

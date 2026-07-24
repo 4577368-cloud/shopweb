@@ -69,17 +69,18 @@ export function computeSkuRowStatus(
     return "confirmed";
   }
   if (isVariantUnidentified(variant)) return "pending_sku";
+  const hasLine = variantHasQuoteLine(variant, quoteResult);
   const quoteStatus = effectiveQuoteStatus({
     recommendedLine: quoteResult?.recommendedLine ?? variant.recommendedLine,
     quoteStatus: quoteResult?.quoteStatus ?? variant.quoteStatus,
   });
-  if (quoteStatus === "INGESTING" && !quoteResult?.recommendedLine) {
+  if (quoteStatus === "INGESTING" && !hasLine) {
     return "ingesting";
   }
+  if (hasLine) return "pending_review";
   if (quoteStatus === "FAILED" || quoteResult?.errorMessage) {
     return "failed";
   }
-  if (variantHasQuoteLine(variant, quoteResult)) return "pending_review";
   if (isVariantException(variant)) return "pending_review";
   if (variant.decisionStatus === "ready_for_quote") return "ready";
   if (
@@ -118,7 +119,10 @@ export function formatVariantIssueHint(
   if (isVariantUnidentified(variant)) {
     return t("logisticsDisplay.issueHint.skuAlignRequired");
   }
-  if (quoteResult?.errorMessage?.trim()) {
+  if (
+    !variantHasQuoteLine(variant, quoteResult) &&
+    quoteResult?.errorMessage?.trim()
+  ) {
     const quoteStatus = effectiveQuoteStatus({
       recommendedLine: quoteResult.recommendedLine ?? variant.recommendedLine,
       quoteStatus: quoteResult.quoteStatus ?? variant.quoteStatus,
