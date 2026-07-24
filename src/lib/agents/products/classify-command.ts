@@ -10,7 +10,7 @@ import {
   PRODUCT_COMMAND_DEFS,
   PRODUCT_COMMAND_SET,
 } from "@/lib/agents/products/command-schema";
-import { extractProductTitleHint, refersToCurrentProduct } from "@/lib/agents/products/resolve-product-target";
+import { extractProductTitleHint, refersToCurrentProduct, refersToCurrentProductForCopy } from "@/lib/agents/products/resolve-product-target";
 import { extractListingPriceScopeHints } from "@/lib/agents/products/resolve-variant-target";
 import { parseTargetLangFromText } from "@/lib/translate/lang-codes";
 import { detectTitleLocalizationStyle } from "@/lib/translate/localize-product-title";
@@ -138,6 +138,20 @@ function detectCopyField(text: string): "title" | "description" | "all" {
   return "title";
 }
 
+const TITLE_CHANGE_TO_LANG =
+  /(?:修改|改|调整|翻译)(?:为|成|到)|改成|改为|调整为|翻译为|翻译成|译成|译为/i;
+
+const COPY_SUBJECT =
+  /(?:标题|描述|详情|文案|title|description|商品标题|商品)/i;
+
+function hasCopySubject(text: string): boolean {
+  return (
+    refersToCurrentProductForCopy(text) ||
+    refersToBatch(text) ||
+    COPY_SUBJECT.test(text)
+  );
+}
+
 function detectCopyAction(text: string): "translate" | "rewrite" | "optimize" | null {
   if (/翻译|译一下|译出来|翻一下|translate/i.test(text)) {
     return "translate";
@@ -147,6 +161,29 @@ function detectCopyAction(text: string): "translate" | "rewrite" | "optimize" | 
   }
   if (/优化|润色|吸引人|更好听|优化一下|optimize/i.test(text)) {
     return "optimize";
+  }
+  if (/(售价|卖价|上架价|listing\s*price)/i.test(text)) {
+    return null;
+  }
+  const targetLang = parseTargetLangFromText(text);
+  if (targetLang && hasCopySubject(text) && TITLE_CHANGE_TO_LANG.test(text)) {
+    return "translate";
+  }
+  if (/翻译\s*(?:这个|该|当前|此)?\s*商品/i.test(text) && targetLang) {
+    return "translate";
+  }
+  if (/(?:标题|title)/i.test(text) && TITLE_CHANGE_TO_LANG.test(text) && targetLang) {
+    return "translate";
+  }
+  if (refersToCurrentProductForCopy(text) && TITLE_CHANGE_TO_LANG.test(text) && targetLang) {
+    return "translate";
+  }
+  if (
+    /(?:把它|将它|给它)/.test(text) &&
+    /(?:标题|title)/i.test(text) &&
+    TITLE_CHANGE_TO_LANG.test(text)
+  ) {
+    return "translate";
   }
   return null;
 }
@@ -206,7 +243,7 @@ function tryProductStatusCommand(text: string): ProductCommandDraft | null {
 function tryProductCopyCommand(text: string): ProductCommandDraft | null {
   const action = detectCopyAction(text);
   if (!action) return null;
-  if (!/(标题|描述|详情|文案|这个商品|该商品|商品)/i.test(text) && !refersToCurrentProduct(text) && !refersToBatch(text)) {
+  if (!hasCopySubject(text)) {
     return null;
   }
   const copyField = detectCopyField(text);
@@ -233,7 +270,7 @@ function tryProductCopyCommand(text: string): ProductCommandDraft | null {
     );
   }
 
-  const productTitleHint = refersToCurrentProduct(text)
+  const productTitleHint = refersToCurrentProductForCopy(text)
     ? undefined
     : extractProductTitleHint(text) ?? undefined;
   return draft(
@@ -250,6 +287,11 @@ function tryProductCopyCommand(text: string): ProductCommandDraft | null {
       confirmationRequired: true,
     }
   );
+}
+
+/** Rule-based product copy intent — used before LLM and in rule fallback. */
+export function matchProductCopyCommand(text: string): ProductCommandDraft | null {
+  return tryProductCopyCommand(text.trim().slice(0, PRODUCTS_SHORT_INPUT_MAX));
 }
 
 function detectBatchFilter(text: string): "all" | "pending" | "confirmed" | "unbound" {
@@ -724,7 +766,13 @@ ${langBlock}
 2. Distinguish "change listing price" vs "open pricing settings":
    - "Set this product price to 9.9" → update_listing_price
    - "Change exchange rate to 7.2" / "configure pricing" → open_pricing_editor
-3. "Translate title" / "rewrite description" / "optimize copy" → update_product_copy (single product)
+3. Product copy / translation (NOT listing price unless 售价/卖价/金额数字):
+   - Synonyms for translate: 翻译/译/翻, and when a target language is named: 修改为/改成/改为/调整为/翻译为/翻译成/成为/成/为/到 + language
+   - Language names → params.copyTargetLang: 英文/英语→en, 日文/日语/日本语→ja, 韩文/韩语→ko, 中文/中文简体/简体→zh, etc.
+   - Field: 标题/title (default if omitted), 描述/description, 文案/all
+   - Scope: 这个商品/当前商品/这个/当前/把它/将它/翻译这个商品… with no other product name → targetScope=current (use [当前页面上下文] selected product)
+   - Examples: 「标题修改为英文」「把它标题改成韩文」「翻译这个商品成为日语」→ update_product_copy, copyAction=translate
+   - 「改写/优化」→ rewrite or optimize; batch keywords → batch_update_product_copy
    - Default copyStyle=amazon unless user asks for literal translation
 4. Batch ops — keywords like all/every/batch/each → batch_* intents with targetScope=all
 5. "Show pending only" / "show unlinked" → open_filter

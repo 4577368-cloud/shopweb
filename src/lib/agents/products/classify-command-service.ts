@@ -4,9 +4,11 @@ import { createTranslator } from "@/i18n/server";
 import {
   buildCommandClassifySystemPrompt,
   classifyProductCommandByRules,
+  matchProductCopyCommand,
   parseProductCommandDraft,
   type CommandClassifyContext,
 } from "@/lib/agents/products/classify-command";
+import { refersToCurrentProductForCopy } from "@/lib/agents/products/resolve-product-target";
 import { PRODUCTS_SHORT_INPUT_MAX } from "@/lib/agents/products/classify-intent";
 import type {
   ProductCommandClassifyResult,
@@ -49,6 +51,14 @@ function coerceProductCommandDraft(
     }
   }
 
+  if (
+    next.intent === "update_product_copy" &&
+    !next.params.productTitleHint &&
+    refersToCurrentProductForCopy(text)
+  ) {
+    next = { ...next, targetScope: "current" };
+  }
+
   return next;
 }
 
@@ -63,6 +73,15 @@ export async function classifyProductCommand(
 ): Promise<ProductCommandClassifyResult> {
   const t = createTranslator(locale);
   const text = raw.trim().slice(0, PRODUCTS_SHORT_INPUT_MAX);
+
+  const copyRule = matchProductCopyCommand(text);
+  if (copyRule) {
+    return {
+      confidence: "high",
+      source: "rules",
+      draft: coerceProductCommandDraft(text, copyRule),
+    };
+  }
 
   try {
     const content = await chatCompletionJson({

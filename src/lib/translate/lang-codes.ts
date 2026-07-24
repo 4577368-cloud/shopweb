@@ -19,11 +19,16 @@ export const TARGET_LANG_ALIASES: Record<string, string> = {
   russian: "ru",
   日文: "ja",
   日语: "ja",
+  日本语: "ja",
+  日本語: "ja",
   ja: "ja",
   japanese: "ja",
   韩文: "ko",
   韩语: "ko",
   朝鲜语: "ko",
+  中文简体: "zh",
+  简体中文: "zh",
+  简体字: "zh",
   ko: "ko",
   korean: "ko",
   阿拉伯文: "ar",
@@ -100,18 +105,33 @@ export function detectTranslateSourceLang(text: string): string {
   return "en";
 }
 
+function resolveLangAlias(raw: string): string | undefined {
+  const key = raw.trim().toLowerCase();
+  return TARGET_LANG_ALIASES[key] ?? TARGET_LANG_ALIASES[raw.trim()];
+}
+
 export function parseTargetLangFromText(text: string): string | undefined {
   const keys = Object.keys(TARGET_LANG_ALIASES).sort((a, b) => b.length - a.length);
   const langAlt = keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  const m = text.match(
+  const toLangVerb =
+    "翻译成|翻译为|译到|译为|译成|翻成|修改成|修改为|改为|改成|调整为|调整成|调整至|成为|成|为|到|用";
+  const patterns: RegExp[] = [
+    new RegExp(`(?:${toLangVerb})\\s*(${langAlt})`, "i"),
+    new RegExp(`(?:成为|成|为|到)\\s*(${langAlt})`, "i"),
     new RegExp(
-      `(?:翻译成|译到|译为|翻成|成|用|到)(${langAlt})`,
+      `(?:标题|商品标题|商品|文案).*?(?:${toLangVerb})\\s*(${langAlt})`,
       "i"
-    )
-  );
-  if (m) {
-    const key = m[1]!.toLowerCase();
-    return TARGET_LANG_ALIASES[key] ?? TARGET_LANG_ALIASES[m[1]!];
+    ),
+    new RegExp(
+      `翻译\\s*(?:这个|该|当前|此)?\\s*商品.*?(?:${toLangVerb})\\s*(${langAlt})`,
+      "i"
+    ),
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m?.[1]) continue;
+    const code = resolveLangAlias(m[1]);
+    if (code) return code;
   }
   return undefined;
 }

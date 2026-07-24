@@ -82,6 +82,36 @@ const cases: Array<{
     text: "把售价改成 9.9 美元",
     intent: "update_listing_price",
   },
+  {
+    text: "商品标题修改为英文",
+    intent: "update_product_copy",
+    check: (d) => {
+      assert(d.params.copyAction === "translate", "translate");
+      assert(d.params.copyTargetLang === "en", "en");
+      assert(d.params.copyField === "title", "title");
+      assert(d.targetScope === "current", "current");
+    },
+  },
+  {
+    text: "把它标题改成韩文",
+    intent: "update_product_copy",
+    check: (d) => assert(d.params.copyTargetLang === "ko", "ko"),
+  },
+  {
+    text: "翻译这个商品成为日语",
+    intent: "update_product_copy",
+    check: (d) => assert(d.params.copyTargetLang === "ja", "ja"),
+  },
+  {
+    text: "当前商品标题调整为中文简体",
+    intent: "update_product_copy",
+    check: (d) => assert(d.params.copyTargetLang === "zh", "zh"),
+  },
+  {
+    text: "标题翻译为英语",
+    intent: "update_product_copy",
+    check: (d) => assert(d.params.copyTargetLang === "en", "en"),
+  },
 ];
 
 let passed = 0;
