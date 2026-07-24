@@ -133,6 +133,7 @@ async function resolveWithPoolIngest(
     titleHint: input.titleHint,
     shopName,
     existingIdentity: mergedBase,
+    retryPoolSubmit: true,
   });
 
   await persistIdentity(shopName, input.thirdPlatformItemId ?? undefined, afterPool);
@@ -211,7 +212,8 @@ export async function resolveEstimateGoodsId(
 
     if (
       offerFromStored &&
-      isPoolIngestPending((effective ?? stored)?.poolIngestStatus)
+      (isPoolIngestPending((effective ?? stored)?.poolIngestStatus) ||
+        isTerminalPoolIngestStatus((effective ?? stored)?.poolIngestStatus))
     ) {
       return resolveWithPoolIngest(
         input,
@@ -355,12 +357,17 @@ export async function backfillProductSourceIdentity(input: {
   titleHint?: string | null;
   /** Skip slow pool polling on bulk page load — resolve on demand later. */
   skipPoolRetry?: boolean;
+  /** Re-submit pool ingest after failed/skipped (user refresh, page entry). */
+  retryPoolSubmit?: boolean;
 }): Promise<ProductSourceIdentity | null> {
   try {
     const existing = readProductSourceIdentity(input.shopName, input.thirdPlatformItemId);
     if (existing?.internalGoodsId?.trim()) return existing;
 
-    if (isTerminalPoolIngestStatus(existing?.poolIngestStatus)) {
+    if (
+      isTerminalPoolIngestStatus(existing?.poolIngestStatus) &&
+      !input.retryPoolSubmit
+    ) {
       return existing;
     }
 
@@ -397,6 +404,7 @@ export async function backfillProductSourceIdentity(input: {
         titleHint: input.titleHint,
         shopName: input.shopName,
         existingIdentity: retried ?? existing ?? undefined,
+        retryPoolSubmit: input.retryPoolSubmit,
       });
       if (afterPool.internalGoodsId || afterPool.poolIngestStatus) {
         await persistIdentity(input.shopName, input.thirdPlatformItemId, afterPool);

@@ -31,6 +31,14 @@ export interface PreferredPoolAddResult {
 
 const poolAddLogKeys = new Set<string>();
 
+/** Allow one fresh diagnostic when the user explicitly retries pool ingest. */
+export function clearPoolAddDiagnostic(offerId1688: string): void {
+  const prefix = `${offerId1688.trim()}:`;
+  for (const key of poolAddLogKeys) {
+    if (key.startsWith(prefix)) poolAddLogKeys.delete(key);
+  }
+}
+
 function logPoolAddDiagnostic(
   offerId1688: string,
   detail: {
@@ -238,6 +246,8 @@ export async function ensurePoolIngestForLogistics(input: {
   titleHint?: string | null;
   shopName?: string | null;
   existingIdentity?: ProductSourceIdentity | null;
+  /** Re-submit after failed/skipped (user refresh, logistics, SKU bind). */
+  retryPoolSubmit?: boolean;
 }): Promise<ProductSourceIdentity> {
   const offerId = input.offerId1688.trim();
   const now = new Date().toISOString();
@@ -254,17 +264,19 @@ export async function ensurePoolIngestForLogistics(input: {
   }
 
   const pending = input.existingIdentity?.poolIngestStatus;
-  if (isTerminalPoolIngestStatus(pending)) {
+  if (isTerminalPoolIngestStatus(pending) && !input.retryPoolSubmit) {
     return {
       ...(input.existingIdentity ?? base),
       poolIngestStatus: pending,
     };
   }
 
-  const needsSubmit = !pending;
+  const needsSubmit =
+    !pending || (input.retryPoolSubmit && isTerminalPoolIngestStatus(pending));
   let withPool = input.existingIdentity ?? base;
 
   if (needsSubmit) {
+    if (input.retryPoolSubmit) clearPoolAddDiagnostic(offerId);
     const pool = await submitPreferredPoolAdd(offerId);
     withPool = {
       ...base,
@@ -279,8 +291,6 @@ export async function ensurePoolIngestForLogistics(input: {
     if (input.shopName?.trim()) {
       invalidateCatalogOfferMapCache(input.shopName);
     }
-  } else if (pending === "skipped") {
-    return { ...withPool, poolIngestStatus: "skipped" };
   }
 
   const match = await pollResolveGoodsIdAfterPool({
@@ -370,6 +380,7 @@ export async function ensureOfferPoolFor1688Candidate(input: {
       tangbuySkuId: input.candidate.skuId,
       titleHint: input.titleHint ?? input.candidate.title,
       shopName: input.shopName,
+      retryPoolSubmit: true,
     });
   } catch (err) {
     if (typeof console !== "undefined") {

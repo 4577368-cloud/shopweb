@@ -65,6 +65,7 @@ async function resolve1688ToCatalogItem(
     tangbuySkuId: hit.skuId,
     titleHint: hit.title,
     shopName,
+    retryPoolSubmit: true,
   });
 
   const poolStatus = identity.poolIngestStatus ?? "pending_resolve";

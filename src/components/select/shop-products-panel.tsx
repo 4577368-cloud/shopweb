@@ -559,8 +559,9 @@ export function ShopProductsPanel({
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
-  const load = useCallback(async (opts?: { silent?: boolean }): Promise<ShopMirrorProduct[] | null> => {
+  const load = useCallback(async (opts?: { silent?: boolean; retryPoolBackfill?: boolean }): Promise<ShopMirrorProduct[] | null> => {
     const silent = opts?.silent ?? false;
+    const retryPoolBackfill = opts?.retryPoolBackfill ?? !silent;
     if (!silent) {
       // 切语言等整页重 mount 时，若缓存新鲜则直接 hydrate，不触发网关 fetch / skeleton。
       // 列表数据与语言无关，可跨 locale 安全复用；随后后台静默刷新保持新鲜。
@@ -616,8 +617,10 @@ export function ShopProductsPanel({
             const poolStatus =
               storedIdentity?.poolIngestStatus ??
               binding.sourceIdentity?.poolIngestStatus;
-            if (isTerminalPoolIngestStatus(poolStatus)) continue;
-            if (isPoolIngestPending(poolStatus)) continue;
+            if (!retryPoolBackfill) {
+              if (isTerminalPoolIngestStatus(poolStatus)) continue;
+              if (isPoolIngestPending(poolStatus)) continue;
+            }
 
             backfillAttempts += 1;
             try {
@@ -629,7 +632,8 @@ export function ShopProductsPanel({
                 tangbuySkuId: binding.tangbuySkuId,
                 detailUrl: binding.detailUrl,
                 titleHint: product?.title ?? binding.offerTitle,
-                skipPoolRetry: true,
+                skipPoolRetry: !retryPoolBackfill,
+                retryPoolSubmit: retryPoolBackfill,
               });
               if (identity) {
                 updates[itemId] = mergeIdentityIntoBinding(binding, identity);

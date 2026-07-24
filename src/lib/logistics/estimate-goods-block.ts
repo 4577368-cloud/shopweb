@@ -24,7 +24,7 @@ export function isPoolIngestPending(
   );
 }
 
-/** Terminal pool outcomes — do not re-submit on every page load. */
+/** Terminal pool outcomes — skip passive auto-retry (page-load backfill). */
 export function isTerminalPoolIngestStatus(
   status?: PoolIngestStatus | null
 ): boolean {
