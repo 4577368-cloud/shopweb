@@ -94,6 +94,7 @@ import {
 } from "@/lib/sourcing/session";
 import { markCatalogPublished } from "@/lib/batch-link/publish-source";
 import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
+import { prefetchSkuAlignListCache } from "@/lib/sku-align/prefetch-list-cache";
 
 const SmartSourcingSummaryBar = dynamic(() => import("@/components/select/smart-sourcing-summary-bar").then((m) => ({ default: m.SmartSourcingSummaryBar })), { ssr: false });
 const PricingTemplateDrawer = dynamic(() => import("@/components/select/pricing-template-drawer").then((m) => ({ default: m.PricingTemplateDrawer })), { ssr: false });
@@ -132,7 +133,7 @@ function productsEntryShouldSkipCeremony(
 function SelectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, isAuthorized, authBootstrapping, showToast, refreshWorkflowProgress } =
+  const { shop, isAuthorized, authBootstrapping, showToast } =
     useOnboarding();
   const shopName = resolveShopApiName(shop);
   const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
@@ -358,10 +359,9 @@ function SelectContent() {
       });
       setMirrorCache(shopMirrorKey, { items: products, bindings: map });
       refreshNewArrivalAwareness(merged, map);
-      void refreshWorkflowProgress();
       return { products: merged, bindings: map };
     },
-    [shopName, shopMirrorKey, refreshNewArrivalAwareness, refreshWorkflowProgress]
+    [shopName, shopMirrorKey, refreshNewArrivalAwareness]
   );
 
   const finishedRef = useRef(false);
@@ -2173,7 +2173,15 @@ function SelectContent() {
               )}
             </div>
             {statusCta.href ? (
-              <Link href={statusCta.href}>
+              <Link
+                href={statusCta.href}
+                onMouseEnter={() => {
+                  if (isAuthorized && shopName) prefetchSkuAlignListCache(shopName);
+                }}
+                onFocus={() => {
+                  if (isAuthorized && shopName) prefetchSkuAlignListCache(shopName);
+                }}
+              >
                 <Button>
                   {statusCta.label}
                   <ArrowRight className="h-4 w-4" />

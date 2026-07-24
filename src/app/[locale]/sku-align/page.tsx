@@ -41,6 +41,7 @@ import {
   filterProducts,
   matchesSkuProductSearch,
   sortProductsForWorkbench,
+  SkuProductCard,
   type SkuFilterMode,
 } from "@/components/sku-align/sku-binding-panel";
 import {
@@ -59,6 +60,8 @@ import type { SkuPageContext } from "@/lib/agents/sku-align/plan-command";
 import type { SkuCommandPlan } from "@/lib/agents/sku-align/command-schema";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
+import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
+import { workflowScanShopKey } from "@/lib/scan/shop-key";
 import {
   clearSkuAlignMirrorCache,
   getSkuAlignMirrorCache,
@@ -85,7 +88,6 @@ import type { AiPanelContent, PricingTemplate, SkuProductOverview } from "@/lib/
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 
-const SkuProductCard = dynamic(() => import("@/components/sku-align/sku-binding-panel").then((m) => ({ default: m.SkuProductCard })), { ssr: false });
 const SkuLogisticsEntryGate = dynamic(() => import("@/components/sku-align/sku-logistics-entry-gate").then((m) => ({ default: m.SkuLogisticsEntryGate })), { ssr: false });
 const SkuAgentPanel = dynamic(() => import("@/components/sku-align/sku-agent-panel").then((m) => ({ default: m.SkuAgentPanel })), { ssr: false });
 
@@ -98,9 +100,10 @@ type FilterId = SkuFilterMode;
 function SkuAlignContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, showToast, isAuthorized, authBootstrapping, refreshWorkflowProgress } =
+  const { shop, showToast, isAuthorized, authBootstrapping } =
     useOnboarding();
-  const shopName = shop.name;
+  const shopName = resolveShopApiName(shop);
+  const scanShopKey = workflowScanShopKey(shop);
   const wb = useWorkbenchPage("sku-align");
   const t = useT();
   const locale = useLocale();
@@ -197,7 +200,7 @@ function SkuAlignContent() {
     if (scanFinishedRef.current) return;
     scanFinishedRef.current = true;
     cancelScan();
-    markScanned("sku-align", shopName);
+    markScanned("sku-align", scanShopKey);
     skipNextAutoAlignRef.current = true;
     setPhase("result");
     const cached = peekSkuOverviewSession(shopName);
@@ -224,7 +227,7 @@ function SkuAlignContent() {
     const deepProductId = searchParams.get(SKU_ALIGN_PRODUCT_PARAM)?.trim() || null;
 
     if (deepProductId) {
-      markScanned("sku-align", shopName);
+      markScanned("sku-align", scanShopKey);
       router.replace(
         skuAlignProductWorkbenchHref(deepProductId, {
           tab: parseSkuAlignTabParam(searchParams.get(SKU_ALIGN_TAB_PARAM)),
@@ -234,7 +237,7 @@ function SkuAlignContent() {
     }
 
     if (deepFilter && deepFilter !== "all") {
-      markScanned("sku-align", shopName);
+      markScanned("sku-align", scanShopKey);
       setPhase("result");
       setFilter(deepFilter);
       if (deepFilter === "partially_linked") pendingScrollRef.current = true;
@@ -243,14 +246,33 @@ function SkuAlignContent() {
     }
 
     const cachedOverview = peekSkuOverviewSession(shopName);
+    const mirrorFresh = isSkuAlignMirrorCacheFresh(shopName);
+    const productsStepDone = hasScanned("products", scanShopKey);
     const skipScan =
-      hasScanned("sku-align", shopName) || (cachedOverview?.length ?? 0) > 0;
+      hasScanned("sku-align", scanShopKey) ||
+      (cachedOverview?.length ?? 0) > 0 ||
+      mirrorFresh ||
+      productsStepDone;
 
     if (skipScan) {
-      if (!hasScanned("sku-align", shopName)) {
-        markScanned("sku-align", shopName);
+      if (productsStepDone || mirrorFresh || (cachedOverview?.length ?? 0) > 0) {
+        skipNextAutoAlignRef.current = true;
+      }
+      if (!hasScanned("sku-align", scanShopKey)) {
+        markScanned("sku-align", scanShopKey);
       }
       setPhase("result");
+      if (mirrorFresh) {
+        const cached = getSkuAlignMirrorCache(shopName);
+        if (cached) {
+          setProducts(cached.overview);
+          setPricingTemplate(cached.pricingTemplate);
+          setLoading(false);
+          hasLoadedOnceRef.current = true;
+          void load({ silent: true, skipCache: true });
+          return;
+        }
+      }
       if (cachedOverview?.length) {
         setProducts(cachedOverview);
         setLoading(false);
@@ -265,7 +287,7 @@ function SkuAlignContent() {
       setPhase("scan");
       void startScan();
     }
-  }, [isAuthorized, shopName, load, startScan, searchParams, router]);
+  }, [isAuthorized, shopName, scanShopKey, load, startScan, searchParams, router]);
 
   useEffect(() => {
     if (phase !== "scan" || !scanDone || scanFinishScheduledRef.current) return;
@@ -332,14 +354,14 @@ function SkuAlignContent() {
 
   const restartScan = useCallback(() => {
     autoAlignStartedRef.current = null;
-    clearScanned("sku-align", shopName);
+    clearScanned("sku-align", scanShopKey);
     clearSkuAlignMirrorCache(shopName);
     clearSkuOverviewSession(shopName);
     scanFinishScheduledRef.current = false;
     scanFinishedRef.current = false;
     setPhase("scan");
     void startScan();
-  }, [shopName, startScan]);
+  }, [shopName, scanShopKey, startScan]);
 
   const metricsSnapshot = useMemo(
     () => computeSkuAlignMetrics(products),
@@ -641,7 +663,7 @@ function SkuAlignContent() {
                   (p) => p.thirdPlatformItemId === productId
                 );
                 if (found) stashSkuProductHandoff(shopName, found);
-                markScanned("sku-align", shopName);
+                markScanned("sku-align", scanShopKey);
                 router.push(skuAlignProductWorkbenchHref(productId));
               }}
               onSetFilter={setFilter}
@@ -873,7 +895,7 @@ function SkuAlignContent() {
           ) : null}
 
           <FadeSwap
-            loading={loading}
+            loading={loading && products.length === 0}
             minHeightClass="min-h-[420px]"
             skeleton={
               <Card>

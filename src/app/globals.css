@@ -195,6 +195,20 @@ select {
   color: #1e3a8a;
 }
 
+@keyframes tangbuy-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-tangbuy-breathe {
+  animation: tangbuy-breathe 2.2s ease-in-out infinite;
+}
+
 @keyframes fadeInUp {
   from {
     opacity: 0;

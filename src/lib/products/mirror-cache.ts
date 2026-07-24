@@ -92,7 +92,8 @@ export function setMirrorCache(
 export function isMirrorCacheFresh(shopKey: string, now: number = Date.now()): boolean {
   const entry = getMirrorCache(shopKey);
   if (!entry) return false;
-  return now - entry.ts < WORKFLOW_MIRROR_TTL_MS;
+  if (now - entry.ts >= WORKFLOW_MIRROR_TTL_MS) return false;
+  return entry.items.length > 0;
 }
 
 export function clearMirrorCache(shopKey?: string): void {

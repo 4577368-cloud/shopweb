@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2, RefreshCw } from "@/lib/ui/icons";
 import { motion } from "framer-motion";
@@ -49,6 +49,8 @@ export default function SyncPage() {
   const t = useT();
   const locale = useLocale();
   const revisitRef = useRef(readSummaryViewed());
+  const [replayEpoch, setReplayEpoch] = useState(0);
+  const [replaying, setReplaying] = useState(false);
   const [reportInstant, setReportInstant] = useState(
     () => readSummaryViewed() || readCeremonyCelebrated()
   );
@@ -175,10 +177,60 @@ export default function SyncPage() {
     setPhase("summary");
   };
 
+  const replayCeremony = useCallback(async () => {
+    if (replaying) return;
+    setReplaying(true);
+    setLoadError(null);
+    sessionStorage.removeItem(SYNC_CEREMONY_DONE_KEY);
+    sessionStorage.removeItem(SYNC_CEREMONY_SUMMARY_VIEWED_KEY);
+    revisitRef.current = false;
+    setReportInstant(false);
+    setCeremonyPercent(0);
+    setReplayEpoch((n) => n + 1);
+    try {
+      const data =
+        isAuthorized && shopName
+          ? await assembleLaunchSummary(shopName, t)
+          : getLaunchSummary();
+      setSummary(data);
+      setPhase("running");
+    } catch {
+      if (isAuthorized && shopName) {
+        setLoadError(t("sync.loadError"));
+        setPhase("loading");
+      } else {
+        setSummary(getLaunchSummary());
+        setPhase("running");
+      }
+    } finally {
+      setReplaying(false);
+    }
+  }, [isAuthorized, shopName, replaying, t]);
+
+  const replayAction = (
+    <Button
+      type="button"
+      size="sm"
+      variant="secondary"
+      className="h-7 w-7 px-0"
+      onClick={() => void replayCeremony()}
+      disabled={replaying || phase === "loading"}
+      title={t("sync.replayCeremonyTitle")}
+      aria-label={t("sync.replayCeremonyAria")}
+    >
+      {replaying ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <RefreshCw className="h-3.5 w-3.5" />
+      )}
+    </Button>
+  );
+
   if (phase === "complete" && summary) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />}>
-        <div className="flex min-h-[calc(100vh-48px)] items-center justify-center px-[var(--wb-gutter)] py-8">
+        <div className="relative flex min-h-[calc(100vh-48px)] items-center justify-center px-[var(--wb-gutter)] py-8">
+          <div className="absolute right-[var(--wb-gutter)] top-6 z-10">{replayAction}</div>
           <CompletionScreen
             shopDomain={summary.meta.shopDomain || summary.meta.shopName}
             onExportReport={handleExportReport}
@@ -199,6 +251,7 @@ export default function SyncPage() {
             { label: t("sync.title") },
           ]}
           maxWidth={1080}
+          actions={loadError ? undefined : replayAction}
         >
           {loadError ? (
             <div className="flex flex-col items-center justify-center gap-3 py-20 text-sm text-ink-muted">
@@ -238,8 +291,14 @@ export default function SyncPage() {
           { label: t("sync.title") },
         ]}
         maxWidth={1080}
+        actions={replayAction}
       >
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+        <motion.div
+          key={replayEpoch}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="space-y-4"
+        >
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-stretch">
             <div className="flex min-h-0 flex-col gap-3">
               {summary.products.length > 0 ? (
@@ -274,6 +333,7 @@ export default function SyncPage() {
             </div>
 
             <LaunchReportStream
+              key={replayEpoch}
               text={launchReportText}
               percent={ceremonyPercent}
               showFull={showFull}

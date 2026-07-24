@@ -1,6 +1,13 @@
 import { api } from "@/lib/api";
 import { SHOP_STORAGE_KEY } from "@/lib/shopify-install";
 
+const AUTH_SESSION_OK_KEY = "tangbuy.authSessionOk";
+const AUTH_LOCAL_OK_KEY = "tangbuy.authLocalOk";
+/** How long we trust tab-session auth without re-blocking the UI on refresh. */
+const AUTH_SESSION_OK_TTL_MS = 8 * 60 * 60 * 1000;
+/** Cross-refresh / cross-tab: remembered shop was verified with backend. */
+const AUTH_LOCAL_OK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** Synchronous read of remembered shop (client-only). */
 export function readStoredShopDomain(): string | null {
   if (typeof window === "undefined") return null;
@@ -16,6 +23,109 @@ export function shopDisplayNameFromDomain(domain: string): string {
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join(" ") || domain
   );
+}
+
+function readAuthOk(
+  storage: Storage,
+  key: string,
+  domain: string,
+  ttlMs: number
+): boolean {
+  const normalized = domain.trim();
+  if (!normalized) return false;
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { domain?: string; at?: number };
+    if (parsed.domain?.trim() !== normalized) return false;
+    const at = typeof parsed.at === "number" ? parsed.at : 0;
+    return Date.now() - at < ttlMs;
+  } catch {
+    return false;
+  }
+}
+
+function writeAuthOk(storage: Storage, key: string, domain: string): void {
+  const normalized = domain.trim();
+  if (!normalized) return;
+  try {
+    storage.setItem(
+      key,
+      JSON.stringify({ domain: normalized, at: Date.now() })
+    );
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+/** Verified in this browser tab recently (sessionStorage). */
+export function readAuthSessionOk(domain: string): boolean {
+  if (typeof window === "undefined") return false;
+  return readAuthOk(
+    window.sessionStorage,
+    AUTH_SESSION_OK_KEY,
+    domain,
+    AUTH_SESSION_OK_TTL_MS
+  );
+}
+
+export function markAuthSessionOk(domain: string): void {
+  if (typeof window === "undefined") return;
+  writeAuthOk(window.sessionStorage, AUTH_SESSION_OK_KEY, domain);
+}
+
+export function clearAuthSessionOk(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(AUTH_SESSION_OK_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/** Verified with backend recently (localStorage) — survives F5 and new tabs. */
+export function readAuthLocalOk(domain: string): boolean {
+  if (typeof window === "undefined") return false;
+  return readAuthOk(
+    window.localStorage,
+    AUTH_LOCAL_OK_KEY,
+    domain,
+    AUTH_LOCAL_OK_TTL_MS
+  );
+}
+
+export function markAuthLocalOk(domain: string): void {
+  if (typeof window === "undefined") return;
+  writeAuthOk(window.localStorage, AUTH_LOCAL_OK_KEY, domain);
+}
+
+export function clearAuthLocalOk(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(AUTH_LOCAL_OK_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/** Client-only: whether we can show workbench without waiting on getShopStatus (SSR-safe). */
+export function shouldOptimisticAuthFromStoredShop(domain: string | null): boolean {
+  if (!domain?.trim()) return false;
+  return (
+    readAuthSessionOk(domain) ||
+    readAuthLocalOk(domain) ||
+    Boolean(readStoredShopDomain())
+  );
+}
+
+export function markAuthVerified(domain: string): void {
+  markAuthSessionOk(domain);
+  markAuthLocalOk(domain);
+}
+
+export function clearAuthVerified(): void {
+  clearAuthSessionOk();
+  clearAuthLocalOk();
 }
 
 export interface RestoredShopAuth {

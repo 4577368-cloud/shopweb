@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export interface FadeSwapProps {
@@ -43,11 +43,7 @@ export interface FadeSwapProps {
  *    the content in over ~220ms, and waits one frame before unmounting
  *    the skeleton so the two layers overlap briefly (no blank gap).
  *
- * Implementation notes:
- *  - `mounted` defers the first paint to the client (avoids SSR/hydration
- *    flicker when the server-rendered tree differs from the loading tree).
- *  - When `loading` flips from true → false we keep the skeleton in the
- *    DOM for one extra frame so the fade-out is visible.
+ *  - When `loading` is true, skeleton is shown; real content stays mounted but faded out.
  */
 export function FadeSwap({
   loading,
@@ -58,19 +54,7 @@ export function FadeSwap({
   ariaLabel,
   className,
 }: FadeSwapProps) {
-  // First-paint guard: render the skeleton until we are safely on the
-  // client. Avoids hydration mismatches when the server tree is empty
-  // and the client immediately has data.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Show the skeleton during the very first client paint, even if
-  // `loading` is already false. This prevents the "empty → flash →
-  // content" pattern that users see when the panel hydrates with
-  // data already in state.
-  const showSkeleton = !mounted || loading;
+  const showSkeleton = loading;
 
   return (
     <div

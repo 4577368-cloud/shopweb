@@ -1,15 +1,8 @@
 import fs from "fs";
 import path from "path";
-import type { LogisticsLine, QuoteStatus } from "@/lib/types";
+import type { VariantAcceptanceRecord } from "@/lib/logistics/merge-acceptances-into-analysis";
 
-export interface StoredVariantAcceptance {
-  thirdPlatformSkuId: string;
-  thirdPlatformItemId: string;
-  acceptedAt: string;
-  recommendedLine?: LogisticsLine;
-  alternativeLines?: LogisticsLine[];
-  quoteStatus?: QuoteStatus;
-}
+export type StoredVariantAcceptance = VariantAcceptanceRecord;
 
 export interface AcceptDecisionsFile {
   shopName: string;

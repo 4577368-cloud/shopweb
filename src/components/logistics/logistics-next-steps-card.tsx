@@ -122,25 +122,25 @@ export function LogisticsNextStepsCard({
     completionGate.stats.criticalUnquotedCount > 0 &&
     completionGate.stats.missingMeasureCount === 0;
 
-  if (quoteOnlyBlocked && autoReadyCount === 0) {
+  if (completionGate.canProceedToSync) {
+    steps.push({
+      key: "sync",
+      title: t("logisticsUi.goSync"),
+      detail: completionGate.footerHint,
+      actionLabel: t("logisticsUi.goSync"),
+      primary: true,
+      onClick: onSaveAndSync,
+      disabled: saving,
+      loading: saving,
+    });
+  } else if (quoteOnlyBlocked) {
     steps.push({
       key: "quote-blocked",
       title: completionGate.primaryButtonLabel,
       detail: completionGate.footerHint,
       hintOnly: true,
     });
-  } else if (completionGate.tier === "proceed" || completionGate.tier === "confirm") {
-    steps.push({
-      key: "sync",
-      title: completionGate.primaryButtonLabel,
-      detail: completionGate.footerHint,
-      actionLabel: t("logisticsUi.goSync"),
-      primary: completionGate.tier === "proceed",
-      onClick: onSaveAndSync,
-      disabled: saving,
-      loading: saving,
-    });
-  } else if (completionGate.tier === "blocked" && !quoteOnlyBlocked) {
+  } else if (completionGate.tier === "blocked") {
     steps.push({
       key: "blocked",
       title: t("logisticsUi.blockedTitle"),

@@ -4,6 +4,7 @@ import {
   collectAcceptableVariants,
   loadLogisticsAnalysis,
 } from "@/lib/logistics/server-analysis";
+import { mergeAcceptancesIntoAnalysis } from "@/lib/logistics/merge-acceptances-into-analysis";
 import type {
   LogisticsAcceptDecisionRequest,
   LogisticsAcceptDecisionResult,
@@ -79,7 +80,10 @@ export async function POST(request: Request) {
     });
 
     upsertAcceptances(shopName, incoming);
-    const refreshed = await loadLogisticsAnalysis(shopName, false);
+    const refreshed = mergeAcceptancesIntoAnalysis(
+      analysis,
+      readAcceptances(shopName)
+    );
 
     return NextResponse.json({
       acceptedCount: incoming.length,

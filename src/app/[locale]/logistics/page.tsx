@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Loader2, RefreshCw } from "@/lib/ui/icons";
+import { Loader2, RefreshCw, ArrowRight } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -32,6 +32,7 @@ import {
   setLogisticsSession,
 } from "@/lib/logistics/logistics-session-cache";
 import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
+import { workflowScanShopKey } from "@/lib/scan/shop-key";
 import { api, readableError, type LogisticsAcceptDecisionRequest, type LogisticsEstimateResult } from "@/lib/api";
 import type { LogisticsFilterMode, PostalLimitFilter } from "@/lib/logistics/display";
 import {
@@ -58,6 +59,7 @@ import {
   buildAcceptQuotePayload,
 } from "@/lib/logistics/display";
 import { deriveLogisticsWorkbenchState } from "@/lib/logistics/workbench-state";
+import { mergeQuoteAcceptancesIntoAnalysis } from "@/lib/logistics/merge-acceptances-into-analysis";
 import {
   mergeQuoteResultsIntoAnalysis,
   applyCatalogIngestQuoteReset,
@@ -90,11 +92,11 @@ import type {
   VariantLogisticsDecision,
 } from "@/lib/types";
 import type { LogisticsFocusTarget, MeasureOverride } from "@/components/logistics/logistics-decision-list";
+import { LogisticsDecisionList } from "@/components/logistics/logistics-decision-list";
 import type { LogisticsWorkflowStep } from "@/components/logistics/logistics-workflow-steps";
 
 const LogisticsAgentPanel = dynamic(() => import("@/components/logistics/logistics-agent-panel").then((m) => ({ default: m.LogisticsAgentPanel })), { ssr: false });
 const LogisticsTemplateSetupCard = dynamic(() => import("@/components/logistics/logistics-template-setup-card").then((m) => ({ default: m.LogisticsTemplateSetupCard })), { ssr: false });
-const LogisticsDecisionList = dynamic(() => import("@/components/logistics/logistics-decision-list").then((m) => ({ default: m.LogisticsDecisionList })), { ssr: false });
 const LogisticsPlanStatusCard = dynamic(() => import("@/components/logistics/logistics-plan-status-card").then((m) => ({ default: m.LogisticsPlanStatusCard })), { ssr: false });
 const LogisticsSyncConfirmCard = dynamic(() => import("@/components/logistics/logistics-sync-confirm-card").then((m) => ({ default: m.LogisticsSyncConfirmCard })), { ssr: false });
 const LogisticsTemplateDrawer = dynamic(() => import("@/components/logistics/logistics-template-drawer").then((m) => ({ default: m.LogisticsTemplateDrawer })), { ssr: false });
@@ -118,6 +120,7 @@ function LogisticsContent() {
   const { shop, isAuthorized, authBootstrapping, saveLogistics, showToast, skuReadyForNext, workflowSku, logisticsCompleted, publishLogisticsStepSnapshot, publishLogisticsPipelineActive } =
     useOnboarding();
   const shopName = shop.name?.trim() || shop.domain?.trim() || "";
+  const scanShopKey = workflowScanShopKey(shop);
   const wb = useWorkbenchPage("logistics");
   const t = useT();
   const locale = useLocale();
@@ -336,7 +339,9 @@ function LogisticsContent() {
     ) => {
       const silent = opts?.silent ?? false;
       const skipEntryCeremony =
-        !forceClassify && hasScanned("logistics", shopName);
+        !forceClassify &&
+        (hasScanned("logistics", scanShopKey) ||
+          hasScanned("sku-align", scanShopKey));
 
       const hydrateFromCache = (
         cached: NonNullable<ReturnType<typeof getLogisticsMirrorCache>>
@@ -385,7 +390,7 @@ function LogisticsContent() {
         const payload = { analysis: a, templates: ts, pricingTemplate: pt };
         setLogisticsMirrorCache(shopName, payload);
         setLogisticsSession(shopName, payload);
-        markScanned("logistics", shopName);
+        markScanned("logistics", scanShopKey);
       } catch (err) {
         setError(readableError(err));
         const ts = await api.listLogisticsTemplates(shopName).catch(() => []);
@@ -400,7 +405,7 @@ function LogisticsContent() {
         if (!silent) setLoading(false);
       }
     },
-    [shopName, t, applyLogisticsPayload]
+    [shopName, scanShopKey, t, applyLogisticsPayload]
   );
 
   useEffect(() => {
@@ -527,7 +532,7 @@ function LogisticsContent() {
         if (syncExceptionCount && syncExceptionCount > 0) {
           stashLogisticsSyncExceptionCount(syncExceptionCount);
         }
-        router.push("/sync");
+        router.push(localePath(locale, "/sync"));
       }
     } finally {
       setSaving(false);
@@ -535,15 +540,15 @@ function LogisticsContent() {
   };
 
   const handleSaveAndSync = () => {
-    if (completionGate.tier === "blocked") {
-      showToast(completionGate.blockers[0] ?? t("logistics.toastHandleBlocker"));
+    if (!hasSavedTemplate) {
+      showToast(t("completionGate.blockerNoTemplate"));
       return;
     }
-    if (completionGate.tier === "confirm") {
-      setShowSyncConfirm(true);
+    if (pipeline.pipelineActive) {
+      showToast(t("completionGate.blockerPipelineRunning"));
       return;
     }
-    void handleSave(true);
+    void handleSave(true, completionGate.exceptionCount);
   };
 
   const collectQuotableVariants = useCallback(
@@ -1158,15 +1163,33 @@ function LogisticsContent() {
         showToast(t("logistics.toastNoQuoteAvailable"));
         return;
       }
+      const snapshot = analysis;
+      const quotes = quotePayload
+        ? { [variant.thirdPlatformSkuId]: quotePayload }
+        : undefined;
+      if (snapshot && quotes) {
+        setAnalysis(
+          mergeQuoteAcceptancesIntoAnalysis(
+            snapshot,
+            quotes,
+            [variant.thirdPlatformSkuId]
+          )
+        );
+      }
       const result = await api.acceptLogisticsDecision({
         shopName,
         targetScope: "VARIANTS",
         variantIds: [variant.thirdPlatformSkuId],
-        quotes: quotePayload
-          ? { [variant.thirdPlatformSkuId]: quotePayload }
-          : undefined,
+        quotes,
       });
       setAnalysis(result.analysis);
+      const cachePayload = {
+        analysis: result.analysis,
+        templates,
+        pricingTemplate,
+      };
+      setLogisticsMirrorCache(shopName, cachePayload);
+      setLogisticsSession(shopName, cachePayload);
       setFilterMode("all");
       showToast(
         result.acceptedCount > 0 ? t("logistics.toastAcceptAiDone") : t("logistics.toastAcceptAiNone")
@@ -1183,7 +1206,7 @@ function LogisticsContent() {
     isCancelled?: () => boolean;
     onlyVariantIds?: string[];
   }) => {
-    if (accepting) return;
+    if (accepting || !analysis) return;
     const allTargets = collectBatchAcceptableVariants(analysis, quoteResults);
     const targets =
       opts?.onlyVariantIds && opts.onlyVariantIds.length > 0
@@ -1194,83 +1217,74 @@ function LogisticsContent() {
       return;
     }
 
-    const total = targets.length;
+    const quotes: NonNullable<LogisticsAcceptDecisionRequest["quotes"]> = {};
+    const variantIds: string[] = [];
+    for (const variant of targets) {
+      const result = quoteResults.get(variant.thirdPlatformSkuId);
+      const payload = buildAcceptQuotePayload(
+        variant,
+        result,
+        selectedLineByVariant.get(variant.thirdPlatformSkuId)
+      );
+      if (!payload?.recommendedLine) continue;
+      quotes[variant.thirdPlatformSkuId] = payload;
+      variantIds.push(variant.thirdPlatformSkuId);
+    }
+
+    const total = variantIds.length;
+    const skippedNoQuote = targets.length - total;
+    if (total === 0) {
+      showToast(t("logistics.toastAcceptMissingQuoteLines"));
+      return;
+    }
+
     opts?.onProgress?.(0, total, 0, 0);
-
     setAccepting(true);
-    const failedIds: string[] = [];
+    setBatchFailedVariantIds([]);
+
+    const snapshot = analysis;
+    setAnalysis(mergeQuoteAcceptancesIntoAnalysis(snapshot, quotes, variantIds));
+    setFilterMode("all");
+
     try {
-      const CHUNK_SIZE = 10;
-      let acceptedTotal = 0;
-      let failedTotal = 0;
-      let skippedNoQuote = 0;
-
-      for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
-        if (opts?.isCancelled?.()) {
-          showToast(t("logistics.toastBatchAcceptCancelled"));
-          return;
-        }
-
-        const chunk = targets.slice(i, i + CHUNK_SIZE);
-        const quotes: LogisticsAcceptDecisionRequest["quotes"] = {};
-        for (const variant of chunk) {
-          const result = quoteResults.get(variant.thirdPlatformSkuId);
-          const payload = buildAcceptQuotePayload(
-            variant,
-            result,
-            selectedLineByVariant.get(variant.thirdPlatformSkuId)
-          );
-          if (!payload?.recommendedLine) continue;
-          quotes[variant.thirdPlatformSkuId] = payload;
-        }
-
-        const variantIds = chunk
-          .map((v) => v.thirdPlatformSkuId)
-          .filter((id) => quotes[id]);
-        skippedNoQuote += chunk.length - variantIds.length;
-        if (variantIds.length === 0) continue;
-
-        try {
-          const result = await api.acceptLogisticsDecision({
-            shopName,
-            targetScope: "VARIANTS",
-            variantIds,
-            quotes,
-          });
-          setAnalysis(result.analysis);
-          acceptedTotal += result.acceptedCount;
-          if (result.acceptedCount < variantIds.length) {
-            failedTotal += variantIds.length - result.acceptedCount;
-            failedIds.push(...variantIds);
-          }
-        } catch {
-          failedTotal += variantIds.length;
-          failedIds.push(...variantIds);
-        }
-
-        opts?.onProgress?.(
-          Math.min(i + chunk.length, targets.length),
-          total,
-          acceptedTotal,
-          failedTotal
-        );
-      }
-
-      setBatchFailedVariantIds(failedIds);
-      setFilterMode("all");
-      if (opts?.isCancelled?.()) return;
-      if (acceptedTotal === 0 && failedTotal === 0 && skippedNoQuote > 0) {
-        showToast(t("logistics.toastAcceptMissingQuoteLines"));
+      if (opts?.isCancelled?.()) {
+        setAnalysis(snapshot);
+        showToast(t("logistics.toastBatchAcceptCancelled"));
         return;
       }
-      showToast(
-        acceptedTotal > 0
-          ? t("logistics.toastBatchAccepted", { accepted: acceptedTotal })
-          : failedTotal > 0
-            ? t("logistics.toastBatchFailed", { failed: failedTotal })
-            : t("logistics.toastNoAcceptable")
-      );
+
+      const result = await api.acceptLogisticsDecision({
+        shopName,
+        targetScope: "VARIANTS",
+        variantIds,
+        quotes,
+      });
+
+      setAnalysis(result.analysis);
+      const payload = {
+        analysis: result.analysis,
+        templates,
+        pricingTemplate,
+      };
+      setLogisticsMirrorCache(shopName, payload);
+      setLogisticsSession(shopName, payload);
+
+      opts?.onProgress?.(total, total, result.acceptedCount, total - result.acceptedCount);
+
+      if (result.acceptedCount < total) {
+        setBatchFailedVariantIds(variantIds.slice(result.acceptedCount));
+      }
+
+      if (result.acceptedCount > 0) {
+        showToast(t("logistics.toastBatchAccepted", { accepted: result.acceptedCount }));
+      } else if (skippedNoQuote > 0 && total === 0) {
+        showToast(t("logistics.toastAcceptMissingQuoteLines"));
+      } else {
+        showToast(t("logistics.toastBatchFailed", { failed: total }));
+        setAnalysis(snapshot);
+      }
     } catch (err) {
+      setAnalysis(snapshot);
       showToast(readableError(err));
     } finally {
       setAccepting(false);
@@ -1477,50 +1491,7 @@ function LogisticsContent() {
         {...wb.panelProps}
         actions={
           hasSavedTemplate && analysis ? (
-            <>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-7 w-7 px-0"
-                onClick={() => {
-                  clearScanned("logistics", shopName);
-                  clearLogisticsMirrorCache(shopName);
-                  clearLogisticsSession(shopName);
-                  void load(true);
-                }}
-                disabled={loading || classifying}
-                title={t("logistics.refreshWorkflowTitle")}
-                aria-label={t("logistics.refreshWorkflowAria")}
-              >
-                {classifying ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleStartEstimate}
-                disabled={
-                  loading ||
-                  pipeline.pipelineRunning ||
-                  !workbench.actions.canEstimate
-                }
-                title={
-                  planMetrics.pendingQuoteCount > 0
-                    ? t("logistics.estimateTitle", { count: planMetrics.pendingQuoteCount })
-                    : t("logistics.estimatePipelineHint")
-                }
-              >
-                {pipeline.pipelineRunning ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : null}
-              {pipeline.pipelineRunning
-                ? t("logistics.estimating")
-                : planMetrics.pendingQuoteCount > 0
-                  ? t("logistics.estimateWithCount", { count: planMetrics.pendingQuoteCount })
-                  : t("logistics.actionEstimate")}
-              </Button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
               {batchFailedVariantIds.length > 0 ? (
                 <Button
                   size="sm"
@@ -1541,7 +1512,72 @@ function LogisticsContent() {
                   })}
                 </Button>
               ) : null}
-            </>
+              {(planMetrics.pendingQuoteCount > 0 || pipeline.pipelineRunning) ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleStartEstimate}
+                  disabled={
+                    loading ||
+                    pipeline.pipelineRunning ||
+                    !workbench.actions.canEstimate
+                  }
+                  title={
+                    planMetrics.pendingQuoteCount > 0
+                      ? t("logistics.estimateTitle", {
+                          count: planMetrics.pendingQuoteCount,
+                        })
+                      : t("logistics.estimatePipelineHint")
+                  }
+                >
+                  {pipeline.pipelineRunning ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  {pipeline.pipelineRunning
+                    ? t("logistics.estimating")
+                    : planMetrics.pendingQuoteCount > 0
+                      ? t("logistics.estimateWithCount", {
+                          count: planMetrics.pendingQuoteCount,
+                        })
+                      : t("logistics.actionEstimate")}
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => void handleSaveAndSync()}
+                disabled={
+                  saving ||
+                  pipeline.pipelineRunning ||
+                  !completionGate.canProceedToSync
+                }
+                title={completionGate.footerHint}
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {t("logisticsUi.goSync")}
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-7 w-7 px-0"
+                onClick={() => {
+                  clearScanned("logistics", scanShopKey);
+                  clearLogisticsMirrorCache(shopName);
+                  clearLogisticsSession(shopName);
+                  void load(true);
+                }}
+                disabled={loading || classifying}
+                title={t("logistics.refreshWorkflowTitle")}
+                aria-label={t("logistics.refreshWorkflowAria")}
+              >
+                {classifying ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </div>
           ) : null
         }
       >
@@ -1613,7 +1649,7 @@ function LogisticsContent() {
           ) : null}
 
           {loading && !analysis ? (
-            hasScanned("logistics", shopName) && !classifying ? (
+            hasScanned("logistics", scanShopKey) && !classifying ? (
               <FadeSwap
                 loading
                 minHeightClass="min-h-[320px]"

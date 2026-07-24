@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, startTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Check, ChevronDown, Globe } from "@/lib/ui/icons";
 import { useLocale } from "@/i18n/LocaleProvider";
-import { locales, localeCodes, localeLabels, type Locale } from "@/i18n/config";
+import { locales, localeCodes, localeLabels, isLocale, type Locale } from "@/i18n/config";
+import { localePath } from "@/i18n/LocaleLink";
 import { cn } from "@/lib/utils";
 
 /**
@@ -42,17 +43,15 @@ export function LanguageSwitcher({ className }: { className?: string }) {
       return;
     }
     setOpen(false);
-    const segments = pathname.split("/");
-    const rest = segments.slice(2).join("/");
-    const newPath = `/${next}${rest ? `/${rest}` : ""}`;
+    const segments = pathname.split("/").filter(Boolean);
+    const rest = isLocale(segments[0]) ? segments.slice(1) : segments;
+    const newPath = localePath(next, `/${rest.join("/")}`);
     document.cookie = `locale=${next}; path=/; max-age=${60 * 60 * 24 * 365}`;
-    // Warm the target locale route so the navigation doesn't stall on a cold RSC request.
     router.prefetch(newPath);
-    // Defer navigation one tick so the menu unmounts cleanly first; wrap in a
-    // transition so the layout re-render (await params) doesn't block the UI.
     window.setTimeout(() => {
       startTransition(() => {
         router.push(newPath);
+        router.refresh();
       });
     }, 0);
   }

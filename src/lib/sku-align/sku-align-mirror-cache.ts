@@ -42,7 +42,9 @@ export function isSkuAlignMirrorCacheFresh(
 ): boolean {
   const entry = cache.get(shopName);
   if (!entry) return false;
-  return now - entry.ts < WORKFLOW_MIRROR_TTL_MS;
+  if (now - entry.ts >= WORKFLOW_MIRROR_TTL_MS) return false;
+  // Ignore empty snapshots (e.g. prefetch before bindings are ready).
+  return entry.overview.length > 0;
 }
 
 export function clearSkuAlignMirrorCache(shopName?: string): void {

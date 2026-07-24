@@ -1,14 +1,12 @@
 import {
-  aggregateDecisionCounts,
   type LegacyLogisticsAnalysis,
   transformLegacyAnalysis,
 } from "@/lib/logistics/decision-engine";
-import { readAcceptances, type StoredVariantAcceptance } from "@/lib/logistics/accept-decisions-store";
+import { readAcceptances } from "@/lib/logistics/accept-decisions-store";
+import { mergeAcceptancesIntoAnalysis } from "@/lib/logistics/merge-acceptances-into-analysis";
 import type {
   LogisticsAnalysis,
   LogisticsDecisionStatus,
-  ProductLogisticsProfile,
-  QuoteStatus,
   SkuProductOverview,
   VariantLogisticsDecision,
 } from "@/lib/types";
@@ -63,84 +61,6 @@ const ACCEPTABLE: Set<LogisticsDecisionStatus> = new Set([
   "restricted",
   "pending_postal_meta",
 ]);
-
-export function mergeAcceptancesIntoAnalysis(
-  analysis: LogisticsAnalysis,
-  acceptances: StoredVariantAcceptance[]
-): LogisticsAnalysis {
-  if (!acceptances.length) return analysis;
-  const bySku = new Map(
-    acceptances.map((a) => [a.thirdPlatformSkuId, a] as const)
-  );
-
-  const productProfiles = (analysis.productProfiles ?? []).map((product) =>
-    applyAcceptancesToProduct(product, bySku)
-  );
-
-  const totalVariants = productProfiles.reduce(
-    (sum, p) => sum + p.totalVariants,
-    0
-  );
-  const decisionStatusCounts: Record<LogisticsDecisionStatus, number> = {
-    pending_sku: 0,
-    pending_postal_meta: 0,
-    ready_for_quote: 0,
-    confirmed: 0,
-    restricted: 0,
-    needs_review: 0,
-  };
-  for (const p of productProfiles) {
-    for (const [status, count] of Object.entries(p.decisionStatusCounts)) {
-      decisionStatusCounts[status as LogisticsDecisionStatus] += count;
-    }
-  }
-
-  return {
-    ...analysis,
-    productProfiles,
-    totalVariants,
-    decisionStatusCounts,
-  };
-}
-
-function resolveAcceptedQuoteStatus(
-  acceptance: StoredVariantAcceptance,
-  variant: VariantLogisticsDecision
-): QuoteStatus {
-  const line = acceptance.recommendedLine ?? variant.recommendedLine;
-  const hasLine = Boolean(line?.lineName?.trim() || line?.lineCode?.trim());
-  const status = acceptance.quoteStatus ?? variant.quoteStatus;
-  if (hasLine) return status ?? "SUCCESS";
-  if (status === "SUCCESS") return "NOT_REQUESTED";
-  return status ?? "NOT_REQUESTED";
-}
-
-function applyAcceptancesToProduct(
-  product: ProductLogisticsProfile,
-  bySku: Map<string, StoredVariantAcceptance>
-): ProductLogisticsProfile {
-  const variantDecisions = (product.variantDecisions ?? []).map((variant) => {
-    const acceptance = bySku.get(variant.thirdPlatformSkuId);
-    if (!acceptance) return variant;
-    return {
-      ...variant,
-      decisionStatus: "confirmed" as const,
-      decisionReason: "已接受 AI 决策",
-      decisionConfirmed: true,
-      acceptedAt: acceptance.acceptedAt,
-      quoteStatus: resolveAcceptedQuoteStatus(acceptance, variant),
-      recommendedLine: acceptance.recommendedLine ?? variant.recommendedLine,
-      alternativeLines:
-        acceptance.alternativeLines ?? variant.alternativeLines,
-    };
-  });
-
-  return {
-    ...product,
-    variantDecisions,
-    decisionStatusCounts: aggregateDecisionCounts(variantDecisions),
-  };
-}
 
 export async function loadLogisticsAnalysis(
   shopName: string,

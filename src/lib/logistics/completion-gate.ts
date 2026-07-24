@@ -18,16 +18,21 @@ export type CompletionGateStats = {
   missingMeasureCount: number;
   criticalUnquotedCount: number;
   otherUnconfirmedCount: number;
+  /** Variants with at least one preview quote line (local estimate, not Shopify upload). */
+  quotedPreviewCount: number;
 };
 
 export type CompletionGateResult = {
   tier: CompletionGateTier;
+  /** Hard stop — only setup / pipeline (not incomplete quotes). */
   blockers: string[];
   warnings: string[];
   stats: CompletionGateStats;
   exceptionCount: number;
   footerHint: string;
   primaryButtonLabel: string;
+  /** True when user may open sync (template ready, pipeline idle). */
+  canProceedToSync: boolean;
 };
 
 function variantMissingCriticalQuote(
@@ -63,6 +68,15 @@ function variantPendingReview(variant: VariantLogisticsDecision): boolean {
   return isVariantException(variant);
 }
 
+function variantHasPreviewQuote(
+  variant: VariantLogisticsDecision,
+  quoteResults: Map<string, LogisticsEstimateResult>
+): boolean {
+  const quote = quoteResults.get(variant.thirdPlatformSkuId);
+  const line = quote?.recommendedLine ?? variant.recommendedLine;
+  return Boolean(line?.lineName?.trim() || line?.lineCode?.trim());
+}
+
 export function evaluateLogisticsCompletionGate(
   input: {
     hasSavedTemplate: boolean;
@@ -90,6 +104,7 @@ export function evaluateLogisticsCompletionGate(
     missingMeasureCount: 0,
     criticalUnquotedCount: 0,
     otherUnconfirmedCount: 0,
+    quotedPreviewCount: 0,
   };
 
   const blockers: string[] = [];
@@ -122,6 +137,9 @@ export function evaluateLogisticsCompletionGate(
       if (variantMissingCriticalQuote(variant, quoteResults)) {
         stats.criticalUnquotedCount += 1;
       }
+      if (variantHasPreviewQuote(variant, quoteResults)) {
+        stats.quotedPreviewCount += 1;
+      }
     }
   }
 
@@ -131,12 +149,12 @@ export function evaluateLogisticsCompletionGate(
     );
   }
   if (stats.missingMeasureCount > 0) {
-    blockers.push(
+    warnings.push(
       t("completionGate.blockerMissingMeasure", { count: stats.missingMeasureCount })
     );
   }
   if (stats.criticalUnquotedCount > 0) {
-    blockers.push(
+    warnings.push(
       t("completionGate.blockerPendingQuote", { count: stats.criticalUnquotedCount })
     );
   }
@@ -172,6 +190,9 @@ export function evaluateLogisticsCompletionGate(
   const exceptionCount =
     stats.pendingReviewCount + stats.failedQuoteCount + stats.otherUnconfirmedCount;
 
+  const canProceedToSync =
+    hasSavedTemplate && templateMarketsConfigured && !pipelineActive;
+
   let tier: CompletionGateTier = "proceed";
   if (blockers.length > 0) {
     tier = "blocked";
@@ -183,32 +204,25 @@ export function evaluateLogisticsCompletionGate(
   let primaryButtonLabel = t("completionGate.primarySync");
 
   if (tier === "blocked") {
-    const quoteOnlyBlocked =
-      stats.criticalUnquotedCount > 0 &&
-      stats.missingMeasureCount === 0 &&
-      hasSavedTemplate &&
-      templateMarketsConfigured &&
-      !pipelineActive;
-    if (quoteOnlyBlocked) {
-      footerHint = t("completionGate.footerPendingQuote", {
-        count: stats.criticalUnquotedCount,
-      });
-      primaryButtonLabel = t("completionGate.primaryEstimate", {
-        count: stats.criticalUnquotedCount,
-      });
-    } else {
-      footerHint = blockers[0] ?? t("completionGate.footerBlocked");
-      primaryButtonLabel = t("completionGate.primaryBlocked");
-    }
+    footerHint = blockers[0] ?? t("completionGate.footerBlocked");
+    primaryButtonLabel = t("completionGate.primaryBlocked");
   } else if (tier === "confirm") {
-    footerHint =
-      exceptionCount > 0
-        ? t("completionGate.footerExceptions", { count: exceptionCount })
-        : t("completionGate.footerWithExceptions");
-    primaryButtonLabel =
-      exceptionCount > 0
-        ? t("completionGate.primarySyncWithExceptions", { count: exceptionCount })
-        : t("completionGate.primarySyncWithExceptionsGeneric");
+    if (stats.quotedPreviewCount > 0) {
+      footerHint = t("completionGate.footerPreviewPartial", {
+        quoted: stats.quotedPreviewCount,
+        total: stats.totalVariants,
+      });
+    } else if (exceptionCount > 0) {
+      footerHint = t("completionGate.footerExceptions", { count: exceptionCount });
+    } else {
+      footerHint = t("completionGate.footerWithExceptions");
+    }
+    primaryButtonLabel = t("completionGate.primarySync");
+  } else if (stats.quotedPreviewCount > 0) {
+    footerHint = t("completionGate.footerPreviewPartial", {
+      quoted: stats.quotedPreviewCount,
+      total: stats.totalVariants,
+    });
   }
 
   return {
@@ -219,6 +233,7 @@ export function evaluateLogisticsCompletionGate(
     exceptionCount,
     footerHint,
     primaryButtonLabel,
+    canProceedToSync,
   };
 }
 
@@ -276,8 +291,8 @@ export function deriveLogisticsStepSnapshot(
   if (input.gate.tier === "confirm") {
     return {
       display: "warning",
-      label: t("completionGate.stepExceptions"),
-      hint: input.gate.footerHint || t("completionGate.stepExceptionsHint"),
+      label: t("completionGate.stepReady"),
+      hint: input.gate.footerHint || t("completionGate.stepReadyHint"),
     };
   }
   return {

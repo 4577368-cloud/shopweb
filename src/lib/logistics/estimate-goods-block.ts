@@ -67,18 +67,30 @@ export function logEstimateGoodsBlockDiagnostic(
   }
 ): void {
   if (typeof console === "undefined") return;
-  const payload = {
-    reason,
-    offerId: detail.offerId?.trim() || undefined,
-    poolIngestStatus: detail.poolIngestStatus ?? undefined,
-    upstreamError: detail.upstreamError?.trim() || undefined,
-    context: detail.context,
-  };
-  if (reason === "pool_failed" || reason === "pool_not_configured") {
-    console.error("[logistics/goods-block]", payload);
-  } else {
-    console.warn("[logistics/goods-block]", payload);
+  if (process.env.NODE_ENV === "production") return;
+
+  const parts: string[] = [reason];
+  const offerId = detail.offerId?.trim();
+  if (offerId) parts.push(`offer=${offerId}`);
+  if (detail.poolIngestStatus) parts.push(`pool=${detail.poolIngestStatus}`);
+  const upstream = detail.upstreamError?.trim();
+  if (upstream) parts.push(upstream);
+  if (detail.context) parts.push(`ctx=${detail.context}`);
+
+  const line = `[logistics/goods-block] ${parts.join(" ")}`;
+
+  // Expected when catalog internal id is missing — not an app fault; avoid console.error
+  // (Next.js dev overlay treats error as a user-facing failure).
+  if (
+    reason === "ingesting" ||
+    reason === "unresolved_offer" ||
+    reason === "pool_failed" ||
+    reason === "pool_not_configured"
+  ) {
+    console.debug(line);
+    return;
   }
+  console.warn(line);
 }
 
 /** Strip technical pool/token/offer details before showing quote errors in UI. */

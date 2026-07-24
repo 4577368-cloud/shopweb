@@ -31,6 +31,8 @@ import {
   syncSkuAlignProductTabInUrl,
 } from "@/lib/sku-align/deep-link";
 import { markScanned } from "@/lib/scan/gate";
+import { workflowScanShopKey } from "@/lib/scan/shop-key";
+import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import {
   peekSkuProductHandoff,
   takeSkuProductHandoff,
@@ -61,7 +63,8 @@ function SkuAlignProductContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { shop, showToast, isAuthorized, authBootstrapping } = useOnboarding();
-  const shopName = shop.name;
+  const shopName = resolveShopApiName(shop);
+  const scanShopKey = workflowScanShopKey(shop);
   const wb = useWorkbenchPage("sku-align");
   const t = useT();
   const locale = useLocale();
@@ -166,7 +169,7 @@ function SkuAlignProductContent() {
 
   useEffect(() => {
     if (!isAuthorized || !productId) return;
-    markScanned("sku-align", shopName);
+    markScanned("sku-align", scanShopKey);
 
     const loadKey = `${shopName}::${productId}`;
     if (loadedForRef.current === loadKey && productRef.current) {
@@ -203,7 +206,7 @@ function SkuAlignProductContent() {
   }, []);
 
   const goBackToList = useCallback(() => {
-    markScanned("sku-align", shopName);
+    markScanned("sku-align", scanShopKey);
     router.replace(skuAlignHref());
   }, [router, shopName]);
 

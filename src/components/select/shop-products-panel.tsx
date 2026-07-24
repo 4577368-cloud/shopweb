@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { TangbuyWaveLoader } from "@/components/brand/tangbuy-wave-loader";
 import { FadeSwap } from "@/components/ui/fade-swap";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
@@ -549,8 +550,10 @@ export function ShopProductsPanel({
     const cached = peekMirrorCache(
       productsMirrorShopKey(shop.name, shop.domain)
     );
-    return !cached;
+    return !(cached?.items?.length ?? 0);
   });
+  /** First network load for this shop finished — avoids empty copy while fetch is in flight. */
+  const [listSettled, setListSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [batchAcking, setBatchAcking] = useState(false);
   const [products, setProducts] = useState<ShopMirrorProduct[]>(() => {
@@ -582,13 +585,14 @@ export function ShopProductsPanel({
     const silent = opts?.silent ?? false;
     const retryPoolBackfill = opts?.retryPoolBackfill ?? !silent;
     if (!silent) {
-      // 有缓存（含刷新后 sessionStorage）先展示，再后台静默拉新，避免整页空白。
       const cached = peekMirrorCache(shopMirrorKey);
-      if (cached) {
+      // Only hydrate from cache when it has rows; empty cache must not skip the fetch.
+      if (cached && cached.items.length > 0) {
         setProducts(cached.items);
         setBindings(cached.bindings);
         onShopProductsChange?.(cached.items, cached.bindings);
         setLoading(false);
+        setListSettled(true);
         void load({ silent: true });
         return cached.items;
       }
@@ -674,6 +678,7 @@ export function ShopProductsPanel({
       return null;
     } finally {
       if (!silent) setLoading(false);
+      setListSettled(true);
     }
   }, [shopName, shopMirrorKey, onShopProductsChange]);
 
@@ -860,9 +865,11 @@ export function ShopProductsPanel({
   }, [bindings, loading]);
 
   useEffect(() => {
+    if (!shopName?.trim()) return;
+    setListSettled(false);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount / shop change only
-  }, [shopName]);
+  }, [shopName, shop.domain]);
 
   const mirrorRefreshSeen = useRef(0);
   useEffect(() => {
@@ -1162,8 +1169,16 @@ export function ShopProductsPanel({
         </Card>
       ) : null}
 
+      {products.length === 0 && (!listSettled || loading) ? (
+        <div className="min-h-[420px] rounded-[var(--radius-card)] border border-hairline bg-surface">
+          <TangbuyWaveLoader compact label={t("shopProducts.loadingList")} />
+        </div>
+      ) : (
       <FadeSwap
-        loading={loading || newArrivalsAwaitingList}
+        loading={
+          (loading && products.length === 0) ||
+          (newArrivalsAwaitingList && products.length === 0)
+        }
         minHeightClass="min-h-[420px]"
         skeleton={
           <Card>
@@ -1232,6 +1247,7 @@ export function ShopProductsPanel({
           </div>
         )}
       </FadeSwap>
+      )}
 
       {!loading &&
       !newArrivalsAwaitingList &&

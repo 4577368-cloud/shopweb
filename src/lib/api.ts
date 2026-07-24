@@ -125,7 +125,12 @@ const overviewCache = new Map<
   string,
   { at: number; data: SkuProductOverview[] }
 >();
+const shopProductsCache = new Map<
+  string,
+  { at: number; data: ShopMirrorProduct[] }
+>();
 const OVERVIEW_CACHE_MS = 10_000;
+const SHOP_PRODUCTS_CACHE_MS = 10_000;
 
 /** Drop cached SKU overview so the next read reflects recent binds/replaces. */
 export function invalidateSkuOverviewCache(shop: string): void {
@@ -161,6 +166,21 @@ function fetchSkuOverview(shop: string): Promise<SkuProductOverview[]> {
       `/api/plugin/match/sku/overview?shopName=${encodeURIComponent(shop)}`
     ).then((data) => {
       overviewCache.set(shop, { at: Date.now(), data });
+      return data;
+    })
+  );
+}
+
+function fetchShopProducts(shop: string): Promise<ShopMirrorProduct[]> {
+  const cached = shopProductsCache.get(shop);
+  if (cached && Date.now() - cached.at < SHOP_PRODUCTS_CACHE_MS) {
+    return Promise.resolve(cached.data);
+  }
+  return deduped(`shop-products:${shop}`, () =>
+    request<ShopMirrorProduct[]>(
+      `/api/plugin/product/list?shopName=${encodeURIComponent(shop)}`
+    ).then((data) => {
+      shopProductsCache.set(shop, { at: Date.now(), data });
       return data;
     })
   );
@@ -762,10 +782,7 @@ export const api = {
   },
 
   /** List the shop's mirrored on-sale products (read-only; path A display). */
-  getShopProducts: (shop: string) =>
-    request<ShopMirrorProduct[]>(
-      `/api/plugin/product/list?shopName=${encodeURIComponent(shop)}`
-    ),
+  getShopProducts: (shop: string) => fetchShopProducts(shop),
 
   /** Persisted Shopify order headers for shop scan context (webhook-synced). */
   listShopOrders: (shop: string) =>

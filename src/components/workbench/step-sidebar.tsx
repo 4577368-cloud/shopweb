@@ -61,11 +61,13 @@ export function StepSidebar() {
   } = useOnboarding();
 
   useEffect(() => {
+    if (!isAuthorized) return;
+    // Sidebar progress only — page loads own data; debounced in onboarding context.
     const timer = window.setTimeout(() => {
       void refreshWorkflowProgress();
-    }, 120);
+    }, 800);
     return () => window.clearTimeout(timer);
-  }, [pathname, refreshWorkflowProgress]);
+  }, [pathname, isAuthorized, refreshWorkflowProgress]);
 
   const progress = syncCompleted ? 100 : workflowProgressPercent;
   const syncSnapshot = workflowStepSnapshots.sync;

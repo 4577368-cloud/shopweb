@@ -11,6 +11,7 @@ export function peekSkuOverviewSession(
 ): SkuProductOverview[] | null {
   const entry = cache.get(shopName);
   if (!entry || now - entry.at >= WORKFLOW_MIRROR_TTL_MS) return null;
+  if (entry.data.length === 0) return null;
   return entry.data;
 }
 
