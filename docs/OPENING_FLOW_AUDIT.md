@@ -22,7 +22,7 @@
 | **SKU** | **`sku-align/page.tsx`** | **~524** | 编排壳 ✅；H2–H6 hooks + scan/result 视图 |
 | SKU 子页 | `sku-align/product/page.tsx` | ~394 | 可接受 |
 | 同步 | `sync/page.tsx` | ~564 | 仪式 + 摘要，暂不动 |
-| 重 hook | `use-products-commands.ts` | ~1143 | 认知负荷 ⚠️ |
+| 重 hook | `use-products-commands.ts` | **~118** | 编排；预览/执行在 `lib/products/agent-*` ✅ |
 | 重 hook | `use-logistics-quote-estimate.ts` | ~922 | 域内聚，可接受 |
 
 ### 0.3 已提交重构（`dev`，回溯见 [OPENING_FLOW_UPDATES.md](./OPENING_FLOW_UPDATES.md)）
@@ -42,7 +42,7 @@
 | **P0 安全** | Plugin/BFF **shop 与 session 绑定** | 前端 `shopName` 参数仍不可信；与后端威胁模型对齐 |
 | **P1 质量** | 端到端 **手工回归**（§0.5） | 拆页多、无 E2E；发 `main`/大演示前必做 |
 | **P2 架构** | SKU 列表页再拆（H1 深链等） | 批次 H 主拆已完成；仅功能迭代时小 diff |
-| **P2 架构** | `use-products-commands` 拆 preview/executor 纯函数 | 与 SKU 无关，可独立小 PR |
+| **P2 架构** | `use-products-commands` 拆 preview/executor | ✅ `lib/products/agent-*` |
 | **产品** | 首页 `AppShell` vs `WorkbenchShell`（批次 F） | IA 决策，非纯技术 |
 | **工程** | 开店路径 ESLint scope（批次 G） | 随触达文件顺手清 |
 | **不做** | Onboarding E2、物流/产品 page 再拆 | 除非新需求 |
@@ -106,7 +106,7 @@
 
 **Hook 地图（开店编排）**
 
-- **产品**：`use-products-page-tab`、`entry`、`mirror`、`batch-link`、`new-arrivals`、`pricing`、`focus`、`agent-rail`、`commands`、`shop-tab-props`（+ `lib/products/*`）
+- **产品**：`use-products-page-tab`、`entry`、`mirror`、`batch-link`、`new-arrivals`、`pricing`、`focus`、`agent-rail`、`commands`（→ `lib/products/agent-preview-generators`、`agent-command-executors`）、`shop-tab-props`（+ `lib/products/*`）
 - **物流**：`use-logistics-workflow-step`、`workflow-navigation`、`mirror-load`、`quote-estimate`、`page-actions`、`agent-commands`、`incremental-pipeline`（+ `logistics-workflow-*` 组件）
 - **Onboarding**：`use-onboarding-shop-auth`、`use-onboarding-workflow-progress`（+ `lib/onboarding/auth-session-ready`）
 - **SKU 列表**：`use-sku-align-mirror-load`、`use-sku-align-entry`、`use-sku-align-auto-align`、`use-sku-align-agent-commands`（+ `use-sku-align-scan`）+ `sku-align-scan-view` / `sku-align-result-body`
@@ -115,7 +115,7 @@
 
 **好处**：可定位性、行为边界、依赖顺序显式、与 `components/select/products-page/*` 分工、CHANGELOG 可 revert。
 
-**残留风险**：`use-products-commands` 体量大；hook 宽参数面；无自动化回归 — 见下表。
+**残留风险**：产品 Agent 命令已外置 lib；hook 宽参数面；无自动化回归 — 见下表。
 
 | 风险 | 缓解 |
 |------|------|
@@ -175,6 +175,7 @@
 ## 5. 工程质量
 
 - **tsc**：开店改动后应保持 `npx tsc --noEmit` 绿。
+- **产品 Agent 命令**：`npm run test:products`（`src/lib/products/test-agent-commands.ts`）。
 - **ESLint**：全仓仍有存量；开店触达：`shop-products-panel.tsx`、`workflow-step-snapshots.ts`。
 - **测试**：`src/lib/logistics/test-*.ts` 等为 CLI 样本，不打包。
 

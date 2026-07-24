@@ -4,7 +4,8 @@
 
 | 日期 | Commit / 定位 | 摘要 | 涉及路径 | 行为变化 | 回溯 |
 |------|--------|------|----------|----------|------|
-| 2026-07-24 | **`65ccf9e`** | **SKU 对齐 H4–H6**：静默对齐/滚动 + Agent 预览执行 + scan/result 视图 | `use-sku-align-auto-align.ts`、`use-sku-align-agent-commands.ts`、`sku-align-scan-view.tsx`、`sku-align-result-body.tsx`、`sku-align/page.tsx` | **无** | `git revert 65ccf9e` |
+| 2026-07-24 | **`38b5147`** | **产品 Agent 命令拆分**：预览生成 + 执行器 → `lib/products/agent-*` | `agent-preview-generators.ts`、`agent-command-executors.ts`、`agent-command-labels.ts`、`use-products-commands.ts` | **无** | `git revert 38b5147` |
+| 2026-07-24 | **`ebd8649`** | **SKU 对齐 H4–H6**：静默对齐/滚动 + Agent 预览执行 + scan/result 视图 | `use-sku-align-auto-align.ts`、`use-sku-align-agent-commands.ts`、`sku-align-scan-view.tsx`、`sku-align-result-body.tsx`、`sku-align/page.tsx` | **无** | `git revert ebd8649` |
 | 2026-07-24 | **`2218107`** | **SKU 对齐 H2+H3**：mirror 加载 + 进页扫描仪式 | `use-sku-align-mirror-load.ts`、`use-sku-align-entry.ts`、`sku-align/page.tsx` | **无** | `git revert 2218107` |
 | 2026-07-24 | **`6fb5ebc`** | **Onboarding E1**：shop auth 恢复 + workflow 进度 hook | `use-onboarding-shop-auth.ts`、`use-onboarding-workflow-progress.ts`、`onboarding-context.tsx` | **无** | `git revert 6fb5ebc` |
 | 2026-07-24 | **`a62c402`** | **物流页 Step 6**：模板/完成度/onboarding 桥接 + decision workspace props | `use-logistics-page-actions.ts`、`use-logistics-decision-workspace-props.ts`、`logistics/page.tsx` | **无** | `git revert a62c402` |
@@ -36,7 +37,7 @@
 **抽出模块**
 
 - PageContext / `applyAgentAction` / intent / focus / highlight → `src/hooks/use-products-agent-rail.ts`
-- Copilot command 预览生成器 + 执行器 + AI 字段编辑消费 → `src/hooks/use-products-commands.ts`
+- Copilot command 预览生成器 + 执行器 + AI 字段编辑消费 → `use-products-commands.ts`（编排）+ `lib/products/agent-preview-generators.ts`、`agent-command-executors.ts`
 - `resolveTitleCopyStyle` → `src/lib/products/resolve-title-copy-style.ts`
 
 **未改**
