@@ -53,7 +53,7 @@
 |------|--------|------|
 | `src/app/[locale]/products/page.tsx` | ~500（Step 9 后） | **编排壳**：路由三态 + Tab + rail；逻辑在 `use-products-*` |
 | `src/app/[locale]/logistics/page.tsx` | ~565 | 编排壳；逻辑在 mirror/quote/page-actions hooks |
-| `src/context/onboarding-context.tsx` | ~840 | 步骤进度、镜像、物流表单、toast、dashboard 全集中 |
+| `src/context/onboarding-context.tsx` | ~435 | 组合层；auth + workflow 在 onboarding hooks |
 
 **建议方向（分批，每批 tsc + 目视一步）**
 
@@ -136,7 +136,7 @@
 | **B · 安全** | HTML sanitize；梳理 logistics API shop 校验（前后端对齐） | 手工 + plugin 确认 | ✅ sanitize 已做；API 待 plugin |
 | **C · 拆页** | products Step 1–9：hooks + shop tab props | tsc + §3.4 回归清单 | ✅ Step 9 本地（2026-07-24，待提交） |
 | **D · 拆页** | logistics Step 1–6：hooks + workflow body + 报价/模板编排 | tsc + 三步 UI 回归 | ✅ 批次 D 收尾 |
-| **E · Context** | onboarding 拆 shop/progress  hook | tsc + 各步进度条一致 |
+| **E · Context** | onboarding：shop auth + workflow progress hooks | tsc + 侧栏进度一致 | ✅ E1 本地 |
 | **F · UI 统一** | 首页是否迁 Workbench（产品决策） | 目视 |
 | **G · Lint** | 开店目录 `eslint` 清零或 CI scope | lint green |
 
@@ -170,4 +170,4 @@
 
 ---
 
-*下一动：**onboarding 批次 E**（shop hydrate / workflow progress hook）；物流页无刚需可停拆。*
+*下一动：onboarding **E2**（mock 产品/SKU 动作、toast、dashboard 活动可继续外置）；或运营中心设计落地。*
