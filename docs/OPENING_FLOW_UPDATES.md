@@ -4,8 +4,8 @@
 
 | 日期 | Commit / 定位 | 摘要 | 涉及路径 | 行为变化 | 回溯 |
 |------|--------|------|----------|----------|------|
-| 2026-07-24 | **`c27ccb4`** | **产品页 Step 2–9**：hooks + tab 壳 + 审计 §3.4 | 见 OPENING_FLOW_UPDATES Step 2–9 | **无** | `git revert c27ccb4` |
-| 2026-07-24 | _(待提交)_ | **物流页 Step 3**：workflow body + setup + decision workspace | `logistics-workflow-*.tsx`、`logistics/page.tsx` | **无** | revert 本提交 |
+| 2026-07-24 | _(待提交)_ | **物流页 Step 4**：mirror 加载 + agent accept_all_ready hook | `use-logistics-mirror-load.ts`、`use-logistics-agent-commands.ts`、`default-template.ts`、`logistics/page.tsx` | **无** | revert 本提交 |
+| 2026-07-24 | **`e3233d6`** | **物流页 Step 3**：workflow body + setup + decision workspace | `logistics-workflow-*.tsx`、`logistics/page.tsx` | **无** | `git revert e3233d6` |
 | 2026-07-24 | **`b04bf92`** | **物流页 Step 2**：workflow 导航 hook | 见 OPENING_FLOW_UPDATES | **无** | `git revert b04bf92` |
 | 2026-07-24 | **`2690d05`** | **物流页 Step 1**：`?step=` hook + page-constants | 见上 | URL 走 locale 路径 | `git revert 2690d05` |
 | 2026-07-24 | _(待提交)_ | **产品页 Step 8**：定价 hook + focus/AI 编辑 + batch 完成 | `use-products-pricing.ts`、`use-products-focus.ts`、`batch-link-finish.ts`、`products/page.tsx` | **无** | revert 本提交 |

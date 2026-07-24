@@ -135,7 +135,7 @@
 | **A · 清理** | 删 §2 三个 dead 组件；清开店相关 unused export | tsc | ✅ 2026-07-24 |
 | **B · 安全** | HTML sanitize；梳理 logistics API shop 校验（前后端对齐） | 手工 + plugin 确认 | ✅ sanitize 已做；API 待 plugin |
 | **C · 拆页** | products Step 1–9：hooks + shop tab props | tsc + §3.4 回归清单 | ✅ Step 9 本地（2026-07-24，待提交） |
-| **D · 拆页** | logistics Step 1–3：hooks + workflow body 组件 | tsc + 三步 UI 回归 | ✅ Step 3 本地 |
+| **D · 拆页** | logistics Step 1–4：hooks + workflow body；mirror/agent 外置 | tsc + 三步 UI 回归 | ✅ Step 4 本地 |
 | **E · Context** | onboarding 拆 shop/progress  hook | tsc + 各步进度条一致 |
 | **F · UI 统一** | 首页是否迁 Workbench（产品决策） | 目视 |
 | **G · Lint** | 开店目录 `eslint` 清零或 CI scope | lint green |
@@ -170,4 +170,4 @@
 
 ---
 
-*下一动：logistics **Step 4**（quote/load/agent 编排抽 hook，类似 products commands）；或 onboarding 批次 E。*
+*下一动：logistics **Step 5**（`fetchQuotesForVariants` / accept 编排 → `use-logistics-quote-estimate.ts`）；或 onboarding 批次 E。*

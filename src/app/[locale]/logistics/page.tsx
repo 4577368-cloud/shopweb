@@ -13,7 +13,6 @@ import { AssistantRail } from "@/components/workbench/assistant-rail";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { FadeSwap } from "@/components/ui/fade-swap";
-import type { LogisticsCommandPlan } from "@/lib/agents/logistics/command-schema";
 import { codesFromSelections } from "@/components/logistics/market-multi-select";
 import { useOnboarding } from "@/context/onboarding-context";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
@@ -21,21 +20,21 @@ import { localePath } from "@/i18n/LocaleLink";
 import { useLogisticsIncrementalPipeline } from "@/hooks/use-logistics-incremental-pipeline";
 import { useLogisticsWorkflowStep } from "@/hooks/use-logistics-workflow-step";
 import { useLogisticsWorkflowNavigation } from "@/hooks/use-logistics-workflow-navigation";
+import { useLogisticsMirrorLoad } from "@/hooks/use-logistics-mirror-load";
+import { useLogisticsAgentCommands } from "@/hooks/use-logistics-agent-commands";
+import { createDefaultLogisticsTemplate } from "@/lib/logistics/default-template";
 import { hasSavedLogisticsTemplate } from "@/lib/logistics/incremental-pipeline";
 import {
   clearLogisticsMirrorCache,
-  getLogisticsMirrorCache,
-  peekLogisticsMirrorCache,
   setLogisticsMirrorCache,
 } from "@/lib/logistics/logistics-mirror-cache";
 import {
   clearLogisticsSession,
   setLogisticsSession,
 } from "@/lib/logistics/logistics-session-cache";
-import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
+import { clearScanned } from "@/lib/scan/gate";
 import { workflowScanShopKey } from "@/lib/scan/shop-key";
 import { productsMirrorShopKey } from "@/lib/products/mirror-cache";
-import { warmLaunchSummaryPartial } from "@/lib/sync/warm-launch-summary-partial";
 import { api, readableError, type LogisticsAcceptDecisionRequest, type LogisticsEstimateResult } from "@/lib/api";
 import type { LogisticsFilterMode, PostalLimitFilter } from "@/lib/logistics/display";
 import {
@@ -89,7 +88,6 @@ import type {
   LogisticsDecisionStatus,
   LogisticsTemplate,
   LogisticsTypeCode,
-  PricingTemplate,
   ProductLogisticsProfile,
   VariantLogisticsDecision,
 } from "@/lib/types";
@@ -99,16 +97,6 @@ import type { LogisticsFocusTarget, MeasureOverride } from "@/components/logisti
 const LogisticsAgentPanel = dynamic(() => import("@/components/logistics/logistics-agent-panel").then((m) => ({ default: m.LogisticsAgentPanel })), { ssr: false });
 const LogisticsTemplateDrawer = dynamic(() => import("@/components/logistics/logistics-template-drawer").then((m) => ({ default: m.LogisticsTemplateDrawer })), { ssr: false });
 
-const DEFAULT_TEMPLATE = (shopName: string, name = "Default template"): LogisticsTemplate => ({
-  id: "default",
-  shopName,
-  name,
-  packaging: "MINIMAL",
-  speedPreference: "BALANCED",
-  markets: [{ marketGroupId: "north_america", countryCodes: ["US"] }],
-  isActive: true,
-});
-
 function LogisticsContent() {
   const router = useRouter();
   const { shop, isAuthorized, authBootstrapping, saveLogistics, showToast, skuReadyForNext, workflowSku, logisticsCompleted, publishLogisticsStepSnapshot, publishLogisticsPipelineActive } =
@@ -117,9 +105,6 @@ function LogisticsContent() {
   const scanShopKey = workflowScanShopKey(shop);
   const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
 
-  const logisticsCacheBootstrap = shopName
-    ? peekLogisticsMirrorCache(shopName)
-    : undefined;
   const wb = useWorkbenchPage("logistics");
   const t = useT();
   const locale = useLocale();
@@ -131,22 +116,29 @@ function LogisticsContent() {
     { label: t("nav.logistics") },
   ];
 
-  const [analysis, setAnalysis] = useState<LogisticsAnalysis | null>(
-    () => logisticsCacheBootstrap?.analysis ?? null
-  );
-  const [templates, setTemplates] = useState<LogisticsTemplate[]>(
-    () => logisticsCacheBootstrap?.templates ?? []
-  );
-  const [activeTemplate, setActiveTemplate] = useState<LogisticsTemplate | null>(() => {
-    const ts = logisticsCacheBootstrap?.templates;
-    if (ts && ts.length > 0) return ts[0];
-    return null;
+  const {
+    analysis,
+    setAnalysis,
+    templates,
+    setTemplates,
+    activeTemplate,
+    setActiveTemplate,
+    pricingTemplate,
+    loading,
+    classifying,
+    error,
+    load,
+  } = useLogisticsMirrorLoad({
+    shopName,
+    shopDomain: shop.domain,
+    shopMirrorKey,
+    scanShopKey,
+    isAuthorized,
+    t,
   });
-  const [loading, setLoading] = useState(() => !logisticsCacheBootstrap?.analysis);
-  const [classifying, setClassifying] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [correctingId, setCorrectingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [filterMode, setFilterMode] = useState<LogisticsFilterMode>("all");
   const [postalLimitFilter, setPostalLimitFilter] = useState<PostalLimitFilter>("all");
@@ -166,9 +158,6 @@ function LogisticsContent() {
     null
   );
   const [quoteMarketCode, setQuoteMarketCode] = useState<string | null>(null);
-  const [pricingTemplate, setPricingTemplate] = useState<PricingTemplate | null>(
-    () => logisticsCacheBootstrap?.pricingTemplate ?? null
-  );
   const [measureOverrides, setMeasureOverrides] = useState<Map<string, MeasureOverride>>(
     new Map()
   );
@@ -297,102 +286,6 @@ function LogisticsContent() {
     if (shopName) writeMeasureOverrides(shopName, measureOverrides);
   }, [shopName, measureOverrides]);
 
-  const applyLogisticsPayload = useCallback(
-    (
-      a: LogisticsAnalysis,
-      ts: LogisticsTemplate[],
-      pt: PricingTemplate | null
-    ) => {
-      setAnalysis(a);
-      setTemplates(ts);
-      setPricingTemplate(pt);
-      if (ts.length > 0) {
-        setActiveTemplate(ts[0]);
-      } else {
-        setActiveTemplate(
-          DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName"))
-        );
-      }
-    },
-    [shopName, t]
-  );
-
-  const load = useCallback(
-    async (
-      forceClassify: boolean,
-      opts?: { skipCache?: boolean; silent?: boolean }
-    ) => {
-      const silent = opts?.silent ?? false;
-      const skipEntryCeremony =
-        !forceClassify &&
-        (hasScanned("logistics", scanShopKey) ||
-          hasScanned("sku-align", scanShopKey));
-
-      const hydrateFromCache = (
-        cached: NonNullable<ReturnType<typeof getLogisticsMirrorCache>>
-      ) => {
-        applyLogisticsPayload(
-          cached.analysis!,
-          cached.templates,
-          cached.pricingTemplate
-        );
-      };
-
-      if (!forceClassify && !opts?.skipCache) {
-        const cached = peekLogisticsMirrorCache(shopName);
-        if (cached?.analysis) {
-          hydrateFromCache(cached);
-          setLoading(false);
-          void load(false, { skipCache: true, silent: true });
-          return;
-        }
-      }
-
-      if (!silent) {
-        setLoading(true);
-        setClassifying(!skipEntryCeremony);
-      }
-      setError(null);
-      try {
-        const [a, ts, pt] = await Promise.all([
-          forceClassify
-            ? api.analyzeLogistics(shopName, true)
-            : api.analyzeLogistics(shopName, false),
-          api.listLogisticsTemplates(shopName),
-          api.getPricingTemplate(shopName),
-        ]);
-        applyLogisticsPayload(a, ts, pt);
-        const payload = { analysis: a, templates: ts, pricingTemplate: pt };
-        setLogisticsMirrorCache(shopName, payload);
-        setLogisticsSession(shopName, payload);
-        markScanned("logistics", scanShopKey);
-        warmLaunchSummaryPartial(shopMirrorKey, shopName, shop.domain, t, {
-          logisticsAnalysis: a,
-          logisticsTemplates: ts,
-          pricingTemplate: pt ?? undefined,
-        });
-      } catch (err) {
-        setError(readableError(err));
-        const ts = await api.listLogisticsTemplates(shopName).catch(() => []);
-        setTemplates(ts);
-        setActiveTemplate(
-          ts.length > 0
-            ? ts[0]
-            : DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName"))
-        );
-      } finally {
-        setClassifying(false);
-        if (!silent) setLoading(false);
-      }
-    },
-    [shopName, scanShopKey, shopMirrorKey, shop.domain, t, applyLogisticsPayload]
-  );
-
-  useEffect(() => {
-    if (!isAuthorized) return;
-    void load(false);
-  }, [isAuthorized, load]);
-
   const handleCorrect = async (itemId: string, type: LogisticsTypeCode) => {
     if (correctingId) return;
     setCorrectingId(itemId);
@@ -486,7 +379,9 @@ function LogisticsContent() {
       if (activeTemplate?.id === id) {
         const remaining = templates.filter((t) => t.id !== id);
         setActiveTemplate(
-          remaining.length > 0 ? remaining[0] : DEFAULT_TEMPLATE(shopName, t("logistics.defaultTemplateName"))
+          remaining.length > 0
+            ? remaining[0]
+            : createDefaultLogisticsTemplate(shopName, t("logistics.defaultTemplateName"))
         );
       }
       showToast(t("logistics.toastTemplateDeleted"));
@@ -1290,53 +1185,13 @@ function LogisticsContent() {
     setFocusTarget(null);
   }, []);
 
-  const logisticsPreviewGenerators = useMemo(
-    () => ({
-      accept_all_ready: async (_plan: LogisticsCommandPlan) => {
-        const total = workbench.batchAcceptCount;
-        if (total === 0) {
-          throw new Error(t("logistics.previewNoPending"));
-        }
-        return {
-          sections: [
-            {
-              title: t("logistics.previewTitle", { total }),
-              rows: [
-                {
-                  label: t("logistics.previewLabel"),
-                  before: t("logistics.previewBefore"),
-                  after: t("logistics.previewAfter"),
-                },
-              ],
-            },
-          ],
-          impact: {
-            scope: t("logistics.previewScope", { total }),
-            durationHint: t("sku.confirmDuration", { seconds: Math.max(5, total * 2) }),
-            reversible: false,
-          },
-          payload: { totalCount: total },
-        };
-      },
-    }),
-    [workbench.batchAcceptCount]
-  );
-
-  const logisticsCommandExecutors = useMemo(
-    () => ({
-      accept_all_ready: async (payload: Record<string, unknown>) => {
-        batchAcceptCancelRef.current = false;
-        const onProgress = payload.onProgress as
-          | ((current: number, total: number, success: number, failed: number) => void)
-          | undefined;
-        await handleAcceptAllReady({
-          onProgress,
-          isCancelled: () => batchAcceptCancelRef.current,
-        });
-      },
-    }),
-    [handleAcceptAllReady]
-  );
+  const { previewGenerators: logisticsPreviewGenerators, commandExecutors: logisticsCommandExecutors } =
+    useLogisticsAgentCommands({
+      batchAcceptCount: workbench.batchAcceptCount,
+      handleAcceptAllReady,
+      batchAcceptCancelRef,
+      t,
+    });
 
   const showDecisionWorkspace =
     hasSavedTemplate && Boolean(analysis) && workflowStep !== "setup";
