@@ -83,7 +83,6 @@ import {
 import { chunkEstimateVariants, ESTIMATE_CHUNK_CONCURRENCY, mapWithConcurrency } from "@/lib/logistics/estimate-batch";
 import { quoteStatusForGoodsBlock } from "@/lib/logistics/estimate-goods-block";
 import { countCatalogIngestingProducts } from "@/lib/tangbuy/catalog-ingest-display";
-import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
 import { aggregateDecisionCounts } from "@/lib/logistics/decision-engine";
 import type {
   LogisticsAnalysis,
@@ -94,16 +93,11 @@ import type {
   ProductLogisticsProfile,
   VariantLogisticsDecision,
 } from "@/lib/types";
+import { LogisticsWorkflowBody } from "@/components/logistics/logistics-workflow-body";
 import type { LogisticsFocusTarget, MeasureOverride } from "@/components/logistics/logistics-decision-list";
-import { LogisticsDecisionList } from "@/components/logistics/logistics-decision-list";
 
 const LogisticsAgentPanel = dynamic(() => import("@/components/logistics/logistics-agent-panel").then((m) => ({ default: m.LogisticsAgentPanel })), { ssr: false });
-const LogisticsTemplateSetupCard = dynamic(() => import("@/components/logistics/logistics-template-setup-card").then((m) => ({ default: m.LogisticsTemplateSetupCard })), { ssr: false });
-const LogisticsPlanStatusCard = dynamic(() => import("@/components/logistics/logistics-plan-status-card").then((m) => ({ default: m.LogisticsPlanStatusCard })), { ssr: false });
-const LogisticsSyncConfirmCard = dynamic(() => import("@/components/logistics/logistics-sync-confirm-card").then((m) => ({ default: m.LogisticsSyncConfirmCard })), { ssr: false });
 const LogisticsTemplateDrawer = dynamic(() => import("@/components/logistics/logistics-template-drawer").then((m) => ({ default: m.LogisticsTemplateDrawer })), { ssr: false });
-const LogisticsWorkflowSteps = dynamic(() => import("@/components/logistics/logistics-workflow-steps").then((m) => ({ default: m.LogisticsWorkflowSteps })), { ssr: false });
-const LogisticsClassifyStage = dynamic(() => import("@/components/logistics/logistics-classify-stage").then((m) => ({ default: m.LogisticsClassifyStage })), { ssr: false });
 
 const DEFAULT_TEMPLATE = (shopName: string, name = "Default template"): LogisticsTemplate => ({
   id: "default",
@@ -1344,6 +1338,104 @@ function LogisticsContent() {
     [handleAcceptAllReady]
   );
 
+  const showDecisionWorkspace =
+    hasSavedTemplate && Boolean(analysis) && workflowStep !== "setup";
+
+  const logisticsPlanStatus = useMemo(() => {
+    if (!hasSavedTemplate || !analysis || workflowStep === "setup") return null;
+    return {
+      analysis,
+      activeTemplate,
+      filterMode,
+      onFilterModeChange: setFilterMode,
+      postalLimitFilter,
+      onPostalLimitFilterChange: setPostalLimitFilter,
+      quoteMarketCode,
+      onOpenStrategy: () => setShowDrawer(true),
+      pipelineProgress: pipeline.progress,
+      quoteResults,
+    };
+  }, [
+    hasSavedTemplate,
+    analysis,
+    workflowStep,
+    activeTemplate,
+    filterMode,
+    postalLimitFilter,
+    quoteMarketCode,
+    pipeline.progress,
+    quoteResults,
+  ]);
+
+  const logisticsDecisionWorkspace = useMemo(() => {
+    if (!showDecisionWorkspace || !analysis) return null;
+    return {
+      analysis,
+      shopName,
+      filterMode,
+      postalLimitFilter,
+      quoteResults,
+      activeTemplate,
+      correctingId,
+      focusTarget,
+      onCorrect: (id: string, type: LogisticsTypeCode) => void handleCorrect(id, type),
+      onAcceptAi: (v: VariantLogisticsDecision, pid: string) =>
+        void handleAcceptAi(v, pid),
+      onFetchProductQuotes: (productId: string, variants: VariantLogisticsDecision[]) =>
+        handleFetchQuotesForProduct(productId, variants),
+      onIngestProductSource: handleIngestProductSource,
+      onCatalogIngestComplete: handleCatalogIngestComplete,
+      onFetchVariantQuote: (
+        variant: VariantLogisticsDecision,
+        override?: MeasureOverride
+      ) => handleFetchQuoteForVariant(variant, override),
+      onMeasureOverride: (variantId: string, next: MeasureOverride) => {
+        setMeasureOverrides((prev) => {
+          const map = new Map(prev);
+          map.set(variantId, next);
+          return map;
+        });
+      },
+      accepting,
+      quotingProductId,
+      ingestingProductId,
+      quotingVariantId,
+      quoteRevealVariantIds,
+      onClearFocus: () => setFocusTarget(null),
+      pricing: pricingTemplate,
+      pipelineActive: pipeline.pipelineActive,
+      pipelineProgress: pipeline.progress,
+      selectedLineByVariant,
+      onSelectLine: handleSelectLine,
+    };
+  }, [
+    showDecisionWorkspace,
+    analysis,
+    shopName,
+    filterMode,
+    postalLimitFilter,
+    quoteResults,
+    activeTemplate,
+    correctingId,
+    focusTarget,
+    handleCorrect,
+    handleAcceptAi,
+    handleFetchQuotesForProduct,
+    handleIngestProductSource,
+    handleCatalogIngestComplete,
+    handleFetchQuoteForVariant,
+    accepting,
+    quotingProductId,
+    ingestingProductId,
+    quotingVariantId,
+    quoteRevealVariantIds,
+    pricingTemplate,
+    pipeline.pipelineActive,
+    pipeline.progress,
+    selectedLineByVariant,
+    handleSelectLine,
+  ]);
+
   if (authBootstrapping) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
@@ -1545,164 +1637,35 @@ function LogisticsContent() {
           ) : null
         }
       >
-        <div className="space-y-4">
-          {!isMallGatewayConfigured() ? (
-            <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
-              {t("logistics.tokenMissing")}
-            </div>
-          ) : null}
-          {!loading || analysis ? (
-            <LogisticsWorkflowSteps
-              step={workflowStep}
-              onStepChange={handleWorkflowStepChange}
-              hasSavedTemplate={hasSavedTemplate}
-              metrics={planMetrics}
-            />
-          ) : null}
-
-          {workflowStep === "setup" && !hasSavedTemplate && !loading ? (
-            <LogisticsTemplateSetupCard onOpenTemplate={() => setShowDrawer(true)} />
-          ) : null}
-
-          {hasSavedTemplate && analysis && workflowStep !== "setup" ? (
-            <LogisticsPlanStatusCard
-              analysis={analysis}
-              activeTemplate={activeTemplate}
-              filterMode={filterMode}
-              onFilterModeChange={setFilterMode}
-              postalLimitFilter={postalLimitFilter}
-              onPostalLimitFilterChange={setPostalLimitFilter}
-              quoteMarketCode={quoteMarketCode}
-              onOpenStrategy={() => setShowDrawer(true)}
-              pipelineProgress={pipeline.progress}
-              quoteResults={quoteResults}
-            />
-          ) : null}
-
-          {workflowStep === "setup" && hasSavedTemplate && analysis ? (
-            <div className="rounded-[var(--radius-card)] border border-hairline bg-surface-muted/20 px-4 py-6 text-center">
-              <p className="text-sm font-medium text-ink">{t("logistics.strategyConfigured")}</p>
-              <p className="mt-1 text-xs text-ink-subtle">
-                {t("logistics.strategyConfiguredDesc")}
-              </p>
-              <div className="mt-3 flex justify-center gap-2">
-                <Button size="sm" onClick={() => handleWorkflowStepChange("estimate")}>
-                  {t("logistics.actionEstimate")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setShowDrawer(true)}
-                >
-                  {t("logistics.editStrategy")}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {showSyncConfirm ? (
-            <LogisticsSyncConfirmCard
-              gate={completionGate}
-              saving={saving}
-              onConfirm={() => {
-                setShowSyncConfirm(false);
-                void handleSave(true, completionGate.exceptionCount);
-              }}
-              onCancel={() => setShowSyncConfirm(false)}
-            />
-          ) : null}
-
-          {loading && !analysis ? (
-            <LogisticsClassifyStage
-              phase={classifying ? "classifying" : "loading"}
-              productCount={workflowSku?.productCount}
-            />
-          ) : error && !analysis ? (
-            <div className="rounded-[var(--radius-card)] border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
-              {error}
-              <Button
-                size="sm"
-                variant="secondary"
-                className="ml-3"
-                onClick={() => void load(false)}
-              >
-                {t("logistics.retry")}
-              </Button>
-            </div>
-          ) : hasSavedTemplate && analysis && workflowStep !== "setup" ? (
-            <div ref={logisticsListRef} className="scroll-mt-4">
-            {planMetrics.skuUnlinkedCount > 0 ? (
-              <div className="mb-4 rounded-[var(--radius-card)] border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
-                <Link href="/sku-align" className="font-medium text-amber-700 underline">
-                  {t("logistics.pendingSkuWarning", { count: planMetrics.skuUnlinkedCount })}
-                </Link>
-              </div>
-            ) : null}
-            <div className="relative">
-              <LogisticsDecisionList
-                analysis={analysis}
-                shopName={shopName}
-                filterMode={filterMode}
-                postalLimitFilter={postalLimitFilter}
-                quoteResults={quoteResults}
-                activeTemplate={activeTemplate}
-                correctingId={correctingId}
-                focusTarget={focusTarget}
-                onCorrect={(id, type) => void handleCorrect(id, type)}
-                onAcceptAi={(v, pid) => void handleAcceptAi(v, pid)}
-                onFetchProductQuotes={(productId, variants) =>
-                  handleFetchQuotesForProduct(productId, variants)
-                }
-                onIngestProductSource={handleIngestProductSource}
-                onCatalogIngestComplete={handleCatalogIngestComplete}
-                onFetchVariantQuote={(variant, override) =>
-                  handleFetchQuoteForVariant(variant, override)
-                }
-                onMeasureOverride={(variantId, next) => {
-                  setMeasureOverrides((prev) => {
-                    const map = new Map(prev);
-                    map.set(variantId, next);
-                    return map;
-                  });
-                }}
-                accepting={accepting}
-                quotingProductId={quotingProductId}
-                ingestingProductId={ingestingProductId}
-                quotingVariantId={quotingVariantId}
-                quoteRevealVariantIds={quoteRevealVariantIds}
-                onClearFocus={() => setFocusTarget(null)}
-                pricing={pricingTemplate}
-                pipelineActive={pipeline.pipelineActive}
-                pipelineProgress={pipeline.progress}
-                selectedLineByVariant={selectedLineByVariant}
-                onSelectLine={handleSelectLine}
-              />
-              {pipeline.pipelineRunning && pipeline.progress.productTotal > 0 ? (
-                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center rounded-[var(--radius-card)] bg-surface/60 backdrop-blur-[1px]">
-                  <div className="w-full max-w-xs space-y-3 px-4">
-                    <div className="text-center text-sm font-medium text-ink">
-                      {t("logistics.pipelineRunningTitle")}
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
-                      <div
-                        className="h-full rounded-full bg-[#90AAFF] transition-all duration-300"
-                        style={{ width: `${Math.round((pipeline.progress.productIndex / pipeline.progress.productTotal) * 100)}%` }}
-                      />
-                    </div>
-                    <div className="text-center text-xs text-ink-subtle">
-                      {t("logistics.pipelineRunningProgress", {
-                        current: pipeline.progress.productIndex,
-                        total: pipeline.progress.productTotal,
-                        title: pipeline.progress.currentProductTitle ?? "",
-                      })}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-            </div>
-          ) : null}
-        </div>
+        <LogisticsWorkflowBody
+          loading={loading}
+          classifying={classifying}
+          error={error}
+          analysis={analysis}
+          workflowStep={workflowStep}
+          hasSavedTemplate={hasSavedTemplate}
+          planMetrics={planMetrics}
+          onWorkflowStepChange={handleWorkflowStepChange}
+          onOpenTemplateDrawer={() => setShowDrawer(true)}
+          onStartEstimate={() => handleWorkflowStepChange("estimate")}
+          planStatus={logisticsPlanStatus}
+          showSyncConfirm={showSyncConfirm}
+          completionGate={completionGate}
+          saving={saving}
+          onSyncConfirm={() => {
+            setShowSyncConfirm(false);
+            void handleSave(true, completionGate.exceptionCount);
+          }}
+          onSyncCancel={() => setShowSyncConfirm(false)}
+          onRetryLoad={() => void load(false)}
+          workflowSkuProductCount={workflowSku?.productCount}
+          showDecisionWorkspace={showDecisionWorkspace}
+          decisionWorkspace={logisticsDecisionWorkspace}
+          listRef={logisticsListRef}
+          skuUnlinkedCount={planMetrics.skuUnlinkedCount}
+          pipelineRunning={pipeline.pipelineRunning}
+          pipelineProgress={pipeline.progress}
+        />
       </WorkbenchPanel>
 
       {showDrawer ? (
