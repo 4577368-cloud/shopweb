@@ -10,6 +10,7 @@ import {
   computeShopProductBindingStats,
   indexImageBindings,
 } from "@/lib/shop-product-binding-stats";
+import { peekMirrorCache } from "@/lib/products/mirror-cache";
 import type {
   FollowUpItem,
   LaunchProduct,
@@ -457,40 +458,34 @@ function buildPricingStrategy(template: PricingTemplate | null, t: TranslateFn) 
   };
 }
 
-export async function assembleLaunchSummary(
-  shopName: string,
-  t: TranslateFn
-): Promise<LaunchSummary> {
-  const [
+function buildLaunchSummary(params: {
+  shopName: string;
+  shopDomain: string;
+  shopProducts: ShopMirrorProduct[];
+  bindingsMap: Record<string, ImageBindingView>;
+  skuOverview: SkuAlignOverview | null;
+  mergedAnalysis: LogisticsAnalysis | null;
+  logistics: ReturnType<typeof computeLogisticsPlanMetrics>;
+  pricingTemplate: PricingTemplate | null;
+  activeTemplate: LogisticsTemplate | null;
+  t: TranslateFn;
+  loadTier: "fast" | "full";
+}): LaunchSummary {
+  const {
+    shopName,
+    shopDomain,
     shopProducts,
-    bindings,
+    bindingsMap,
     skuOverview,
-    logisticsAnalysis,
+    mergedAnalysis,
+    logistics,
     pricingTemplate,
-    logisticsTemplates,
-  ] = await Promise.all([
-    api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
-    api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
-    api.skuAlignV1Overview(shopName).catch(() => null),
-    api.getLogisticsAnalysis(shopName).catch(() => null),
-    api.getPricingTemplate(shopName).catch(() => null),
-    api.listLogisticsTemplates(shopName).catch(() => [] as LogisticsTemplate[]),
-  ]);
+    activeTemplate,
+    t,
+    loadTier,
+  } = params;
 
-  const bindingsMap = indexImageBindings(bindings);
   const binding = computeShopProductBindingStats(shopProducts, bindingsMap);
-
-  const activeTemplate = logisticsTemplates[0] ?? null;
-  const templateScopeKey = buildLogisticsTemplateScopeKey(activeTemplate);
-  const quoteResults =
-    templateScopeKey && typeof window !== "undefined"
-      ? readQuoteCache(shopName, templateScopeKey)
-      : new Map();
-  const mergedAnalysis =
-    logisticsAnalysis && quoteResults.size > 0
-      ? mergeQuoteResultsIntoAnalysis(logisticsAnalysis, quoteResults)
-      : logisticsAnalysis;
-  const logistics = computeLogisticsPlanMetrics(mergedAnalysis, quoteResults);
   const followUps = buildFollowUps(binding, skuOverview, logistics, t);
   const { tasks, targetPercent } = buildProgressTasks(
     binding,
@@ -527,10 +522,11 @@ export async function assembleLaunchSummary(
   return {
     meta: {
       shopName,
-      shopDomain: shopName,
+      shopDomain,
       completedAt: new Date().toLocaleString(),
       locale: "zh-CN",
       dataSource: "live",
+      loadTier,
     },
     pipeline: {
       currentStepId: "sync-complete",
@@ -571,4 +567,114 @@ export async function assembleLaunchSummary(
     },
     followUps,
   };
+}
+
+const EMPTY_LOGISTICS = computeLogisticsPlanMetrics(null);
+
+/** Hydrate from products mirror cache (0 network). */
+export function assembleLaunchSummaryFastFromMirror(
+  shopMirrorKey: string,
+  shopName: string,
+  shopDomain: string | undefined,
+  t: TranslateFn
+): LaunchSummary | null {
+  const cached = peekMirrorCache(shopMirrorKey);
+  if (!cached?.items.length) return null;
+  return buildLaunchSummary({
+    shopName,
+    shopDomain: shopDomain?.trim() || shopName,
+    shopProducts: cached.items,
+    bindingsMap: cached.bindings,
+    skuOverview: null,
+    mergedAnalysis: null,
+    logistics: EMPTY_LOGISTICS,
+    pricingTemplate: null,
+    activeTemplate: null,
+    t,
+    loadTier: "fast",
+  });
+}
+
+/** Tier-1 APIs: shop products + bindings only. */
+export async function assembleLaunchSummaryFast(
+  shopName: string,
+  t: TranslateFn,
+  shopDomain?: string | null
+): Promise<LaunchSummary> {
+  const [shopProducts, bindings] = await Promise.all([
+    api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
+    api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
+  ]);
+  const bindingsMap = indexImageBindings(bindings);
+  return buildLaunchSummary({
+    shopName,
+    shopDomain: shopDomain?.trim() || shopName,
+    shopProducts,
+    bindingsMap,
+    skuOverview: null,
+    mergedAnalysis: null,
+    logistics: EMPTY_LOGISTICS,
+    pricingTemplate: null,
+    activeTemplate: null,
+    t,
+    loadTier: "fast",
+  });
+}
+
+/** All workflow APIs merged (tier 2). */
+export async function assembleLaunchSummaryFull(
+  shopName: string,
+  t: TranslateFn,
+  shopDomain?: string | null
+): Promise<LaunchSummary> {
+  const [
+    shopProducts,
+    bindings,
+    skuOverview,
+    logisticsAnalysis,
+    pricingTemplate,
+    logisticsTemplates,
+  ] = await Promise.all([
+    api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
+    api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
+    api.skuAlignV1Overview(shopName).catch(() => null),
+    api.getLogisticsAnalysis(shopName).catch(() => null),
+    api.getPricingTemplate(shopName).catch(() => null),
+    api.listLogisticsTemplates(shopName).catch(() => [] as LogisticsTemplate[]),
+  ]);
+
+  const bindingsMap = indexImageBindings(bindings);
+  const activeTemplate = logisticsTemplates[0] ?? null;
+  const templateScopeKey = buildLogisticsTemplateScopeKey(activeTemplate);
+  const quoteResults =
+    templateScopeKey && typeof window !== "undefined"
+      ? readQuoteCache(shopName, templateScopeKey)
+      : new Map();
+  const mergedAnalysis =
+    logisticsAnalysis && quoteResults.size > 0
+      ? mergeQuoteResultsIntoAnalysis(logisticsAnalysis, quoteResults)
+      : logisticsAnalysis;
+  const logistics = computeLogisticsPlanMetrics(mergedAnalysis, quoteResults);
+
+  return buildLaunchSummary({
+    shopName,
+    shopDomain: shopDomain?.trim() || shopName,
+    shopProducts,
+    bindingsMap,
+    skuOverview,
+    mergedAnalysis,
+    logistics,
+    pricingTemplate,
+    activeTemplate,
+    t,
+    loadTier: "full",
+  });
+}
+
+/** @deprecated Prefer explicit Fast then Full on the sync page. */
+export async function assembleLaunchSummary(
+  shopName: string,
+  t: TranslateFn
+): Promise<LaunchSummary> {
+  return assembleLaunchSummaryFull(shopName, t);
 }

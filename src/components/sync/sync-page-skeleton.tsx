@@ -1,10 +1,26 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Loader2 } from "@/lib/ui/icons";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /** Matches sync page 2-col layout so loading does not feel like an empty panel. */
-export function SyncPageSkeleton({ message }: { message: string }) {
+export function SyncPageSkeleton({
+  tierMessages,
+}: {
+  tierMessages: readonly [string, string];
+}) {
+  const [tierIndex, setTierIndex] = useState(0);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setTierIndex((i) => (i + 1) % tierMessages.length);
+    }, 3200);
+    return () => window.clearInterval(id);
+  }, [tierMessages.length]);
+
+  const message = tierMessages[tierIndex] ?? tierMessages[0];
+
   return (
     <div className="space-y-4" aria-busy aria-live="polite">
       <p className="flex items-center gap-2 text-sm text-ink-muted">

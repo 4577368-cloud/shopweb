@@ -75,6 +75,16 @@ export function setLaunchSummaryCache(shopKey: string, summary: LaunchSummary): 
   writePersisted(shopKey, entry);
 }
 
+/** Warm partial summary from earlier steps without overwriting a full cache. */
+export function setLaunchSummaryCacheIfNotFull(
+  shopKey: string,
+  summary: LaunchSummary
+): void {
+  const existing = peekLaunchSummaryCache(shopKey);
+  if (existing?.meta.loadTier === "full") return;
+  setLaunchSummaryCache(shopKey, summary);
+}
+
 export function clearLaunchSummaryCache(shopKey?: string): void {
   if (shopKey) {
     cache.delete(shopKey);

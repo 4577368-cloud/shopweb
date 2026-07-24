@@ -44,6 +44,8 @@ export interface LaunchSummary {
     completedAt: string;
     locale: string;
     dataSource?: "live" | "mock";
+    /** fast = products+bindings only; full = all workflow APIs merged */
+    loadTier?: "fast" | "full";
   };
   pipeline: {
     currentStepId: string;
@@ -101,7 +103,7 @@ export function getLaunchSummary(): LaunchSummary {
   const summary = launchSummaryJson as LaunchSummary;
   return {
     ...summary,
-    meta: { ...summary.meta, dataSource: "mock" },
+    meta: { ...summary.meta, dataSource: "mock", loadTier: "full" },
     stats: summary.stats ?? {
       productsTotal: 42,
       productsInCeremony: summary.products.length,
