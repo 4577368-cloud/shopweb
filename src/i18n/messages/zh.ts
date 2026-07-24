@@ -1260,7 +1260,7 @@ export const zh: Dictionary = {
     view: "查看"
   },
   logisticsWorkflow: {
-    hint: "配置策略 → 运费预估 → 确认方案",
+    hint: "配置物流步骤",
     stepConfirm: "3 · 确认方案",
     stepEstimate: "2 · 运费预估",
     stepSetup: "1 · 配置策略"
@@ -2533,6 +2533,9 @@ export const zh: Dictionary = {
     selectedSourceFallback: "所选货源",
     sourceGaps: "货源缺口 {{count}}",
     sourceNoSpecs: "该货源无规格",
+    emptySource: "空态",
+    selectSku: "选择sku",
+    sourceCost: "货源价 {{price}}",
     sourceSpec: "货源规格",
     specMappingCoverage: " · 规格覆盖 {{coverage}}/{{total}}",
     specTableEmpty: "规格表暂无数据",

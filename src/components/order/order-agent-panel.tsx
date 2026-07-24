@@ -231,7 +231,7 @@ export function OrderAgentPanel({ context, handlers }: OrderAgentPanelProps) {
             type="button"
             onClick={handleSubmit}
             disabled={!input.trim()}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] bg-brand-accent text-white hover:bg-brand-accent-hover disabled:opacity-50"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] bg-brand text-white hover:bg-brand-hover disabled:opacity-50"
             aria-label={t("order.agent.inputPlaceholder")}
           >
             <Send className="h-3.5 w-3.5" />
@@ -240,13 +240,13 @@ export function OrderAgentPanel({ context, handlers }: OrderAgentPanelProps) {
       </div>
 
       {clarify && typeof clarify === "string" ? (
-        <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        <div className="rounded-[var(--radius-card)] border border-warning/30 bg-warning-soft p-3 text-xs text-warning">
           {clarify}
         </div>
       ) : null}
 
       {clarify && typeof clarify !== "string" ? (
-        <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        <div className="rounded-[var(--radius-card)] border border-warning/30 bg-warning-soft p-3 text-xs text-warning">
           <div>{clarify.message}</div>
           {clarify.candidates && clarify.candidates.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -255,7 +255,7 @@ export function OrderAgentPanel({ context, handlers }: OrderAgentPanelProps) {
                   key={c.label}
                   type="button"
                   onClick={() => handleQuick(c.label)}
-                  className="rounded-lg border border-amber-300 bg-white px-2 py-1 text-[11px] font-medium text-amber-800 hover:border-amber-400 hover:bg-amber-100 transition-colors"
+                  className="rounded-lg border border-warning/40 bg-surface px-2 py-1 text-[11px] font-medium text-warning hover:border-warning hover:bg-warning-soft transition-colors"
                 >
                   {c.label}
                 </button>
@@ -291,7 +291,7 @@ export function OrderAgentPanel({ context, handlers }: OrderAgentPanelProps) {
               className={cn(
                 "flex-1 rounded-[var(--radius-control)] px-3 py-1.5 text-xs font-medium",
                 plan.executable
-                  ? "bg-brand-accent text-white hover:bg-brand-accent-hover"
+                  ? "bg-brand text-white hover:bg-brand-hover"
                   : "cursor-not-allowed border border-hairline text-ink-subtle"
               )}
             >
@@ -309,20 +309,20 @@ export function OrderAgentPanel({ context, handlers }: OrderAgentPanelProps) {
             </button>
           </div>
           {!plan.executable && plan.clarify ? (
-            <p className="mt-2 text-[11px] text-amber-700">{plan.clarify}</p>
+            <p className="mt-2 text-[11px] text-warning">{plan.clarify}</p>
           ) : null}
         </div>
       ) : null}
 
       {execState === "done" ? (
-        <div className="flex items-center gap-1.5 rounded-[var(--radius-card)] border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+        <div className="flex items-center gap-1.5 rounded-[var(--radius-card)] border border-success/30 bg-success-soft p-3 text-xs text-success">
           <CheckCircle2 className="h-3.5 w-3.5" />
           {t("order.agent.execDone")}
         </div>
       ) : null}
 
       {execState === "error" ? (
-        <div className="flex items-center gap-1.5 rounded-[var(--radius-card)] border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+        <div className="flex items-center gap-1.5 rounded-[var(--radius-card)] border border-destructive/30 bg-destructive-soft p-3 text-xs text-destructive">
           <AlertTriangle className="h-3.5 w-3.5" />
           {execError ?? t("order.agent.cannotExec")}
         </div>

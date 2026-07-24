@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Send } from "@/lib/ui/icons";
+import { ChevronDown, Globe, Send, Settings } from "@/lib/ui/icons";
 import type { AgentSuggestedAction } from "@/lib/agents/types";
 import {
   PRODUCTS_INTENTS,
@@ -604,13 +604,13 @@ export function ProductsAgentPanel({
             })
           }
           className={cn(
-            "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
+            "inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border px-2.5 py-1.5 text-xs font-medium transition-colors",
             context.pricing.configured
-              ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-              : "border-amber-200 bg-amber-50/80 text-amber-800 hover:bg-amber-100/80"
+              ? "border-brand/20 bg-white text-brand hover:border-brand/40 hover:bg-surface-hover"
+              : "border-warning-soft bg-warning-soft/50 text-warning hover:bg-warning-soft/80"
           )}
         >
-          <span className="text-slate-400">⚙</span>
+          <Settings className={cn("h-3.5 w-3.5", context.pricing.configured ? "text-brand-accent" : "text-warning")} />
           <span>
             {context.pricing.configured
               ? t("productsAgent.pricingConfigured", {
@@ -626,9 +626,9 @@ export function ProductsAgentPanel({
             setInput(t("productsAgent.translateAllEn"));
             setTimeout(() => submitShortInput(), 50);
           }}
-          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border border-brand/20 bg-white px-2.5 py-1.5 text-xs font-medium text-brand hover:border-brand/40 hover:bg-surface-hover transition-colors"
         >
-          <span className="text-slate-400">📝</span>
+          <Globe className="h-3.5 w-3.5 text-brand-accent" />
           <span>{t("productsAgent.translate")}</span>
         </button>
 
@@ -645,7 +645,7 @@ export function ProductsAgentPanel({
                 }),
               })
             }
-            className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50/80 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100/80"
+            className="inline-flex items-center gap-1 rounded-[var(--radius-control)] border border-success-soft bg-success-soft/50 px-2.5 py-1.5 text-xs font-medium text-success hover:bg-success-soft/80 transition-colors"
           >
             <span>{t("productsAgent.batchAckAll", { count: context.pendingCount })}</span>
           </button>
@@ -663,10 +663,10 @@ export function ProductsAgentPanel({
                 }),
               })
             }
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+            className="inline-flex items-center gap-1 rounded-[var(--radius-control)] border border-brand/20 bg-white px-2.5 py-1.5 text-xs font-medium text-brand hover:border-brand/40 hover:bg-surface-hover transition-colors"
           >
             <span>{t("productsAgent.unbound")}</span>
-            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px]">
+            <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-[10px] text-ink-muted">
               {context.unboundCount}
             </span>
           </button>

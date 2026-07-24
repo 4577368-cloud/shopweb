@@ -26,9 +26,9 @@ function shopifyAdminUrl(shopifyOrderId: string, domain: string): string {
 function PaymentStatusPill({ status }: { status?: PaymentStatus }) {
   const t = useT();
   const cfg: Record<PaymentStatus, { className: string; labelKey: string }> = {
-    paid: { className: "bg-emerald-50 text-emerald-700", labelKey: "order.paymentStatus.paid" },
-    unpaid: { className: "bg-slate-100 text-slate-500", labelKey: "order.paymentStatus.unpaid" },
-    partial: { className: "bg-amber-50 text-amber-700", labelKey: "order.paymentStatus.partial" },
+    paid: { className: "bg-success-soft text-success", labelKey: "order.paymentStatus.paid" },
+    unpaid: { className: "bg-muted text-ink-muted", labelKey: "order.paymentStatus.unpaid" },
+    partial: { className: "bg-warning-soft text-warning", labelKey: "order.paymentStatus.partial" },
   };
   const v = cfg[status ?? "unpaid"];
   return (
@@ -84,7 +84,7 @@ export function OrderTable({ orders, selectedOrderId, shopDomain, onRowClick }: 
                 data-focused={isSelected ? "true" : undefined}
                 className={cn(
                   "cursor-pointer",
-                  isSelected && "!bg-brand-soft/60 !ring-1 !ring-inset !ring-brand/40"
+                  isSelected && "!bg-surface-selected !ring-1 !ring-inset !ring-brand"
                 )}
               >
                 {/* 订单信息 */}
@@ -116,14 +116,14 @@ export function OrderTable({ orders, selectedOrderId, shopDomain, onRowClick }: 
                       {(o.lineItems ?? []).slice(0, 2).map((it, i) => (
                         <div
                           key={i}
-                          className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline bg-slate-100 text-[10px] font-semibold text-slate-500"
+                          className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline bg-muted text-[10px] font-semibold text-ink-muted"
                           title={it.title}
                         >
                           {(it.title ?? "?").slice(0, 1)}
                         </div>
                       ))}
                       {(o.lineItems?.length ?? 0) > 2 && (
-                        <div className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline bg-slate-50 text-[10px] font-medium text-slate-500">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline bg-muted text-[10px] font-medium text-ink-muted">
                           +{(o.lineItems?.length ?? 0) - 2}
                         </div>
                       )}

@@ -46,7 +46,7 @@ function TrackBar({
       <div className="mb-1.5 flex items-center justify-between">
         <p className="text-[11px] font-medium text-ink-subtle">{title}</p>
         {abnormal && (
-          <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+          <span className="rounded-full bg-destructive-soft px-1.5 py-0.5 text-[10px] font-medium text-destructive">
             {t("order.track.abnormal")}
           </span>
         )}
@@ -63,7 +63,7 @@ function TrackBar({
                   className={cn(
                     "h-3.5 w-3.5 rounded-full border",
                     isAbnormal
-                      ? "border-red-500 bg-red-500"
+                      ? "border-destructive bg-destructive"
                       : done || active
                       ? "border-brand-accent bg-brand-accent"
                       : "border-hairline bg-surface"
@@ -73,7 +73,7 @@ function TrackBar({
                   className={cn(
                     "mt-1 whitespace-nowrap text-[10px]",
                     isAbnormal
-                      ? "font-medium text-red-700"
+                      ? "font-medium text-destructive"
                       : active
                       ? "font-medium text-ink"
                       : done

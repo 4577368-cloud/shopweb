@@ -70,6 +70,7 @@ export function EditedProfitLine({
   phases,
   className,
   inline = false,
+  valueColor,
 }: {
   label?: string;
   previous?: { amount: number; currency: string } | null;
@@ -77,6 +78,8 @@ export function EditedProfitLine({
   phases?: AiFieldEditPhases;
   className?: string;
   inline?: boolean;
+  /** Override value color (e.g. to match label). Falls back to profitTone when unset. */
+  valueColor?: string;
 }) {
   if (!next) return null;
 
@@ -97,7 +100,7 @@ export function EditedProfitLine({
         )}
       >
         <span className="text-slate-500">{label}</span>
-        <span className={profitTone(next.amount)}>
+        <span className={valueColor ?? profitTone(next.amount)}>
           {formatTargetMoney(next.amount, next.currency)}
         </span>
       </Tag>
@@ -129,7 +132,7 @@ export function EditedProfitLine({
         className={cn(
           "rounded px-0.5 -mx-0.5 tabular-nums transition-colors duration-300",
           phases?.valueHighlight && "ai-field-value-highlight text-sky-700",
-          !phases?.valueHighlight && profitTone(next.amount)
+          !phases?.valueHighlight && (valueColor ?? profitTone(next.amount))
         )}
       >
         {formatTargetMoney(next.amount, next.currency)}

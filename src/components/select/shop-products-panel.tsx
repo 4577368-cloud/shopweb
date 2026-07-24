@@ -2272,7 +2272,6 @@ function ShopProductCard({
             ? "rounded-[var(--radius-card)] border border-surface-border bg-surface shadow-card ring-1 ring-ring/20"
             : focused
               ? selectableCardClassName({
-                  selected: true,
                   interactive: false,
                   className: "shadow-md",
                 })
@@ -2340,7 +2339,7 @@ function ShopProductCard({
               <EditedFieldValue
                 edit={titleEdit}
                 phases={titleEditPhases}
-                className="line-clamp-2 text-sm font-semibold leading-snug text-slate-900"
+                className="line-clamp-2 text-xs font-normal leading-snug text-[#666666]"
               >
                 <span>{displayTitle}</span>
               </EditedFieldValue>
@@ -2358,7 +2357,7 @@ function ShopProductCard({
         </div>
 
         {/* B. AI Match */}
-        <div className="flex w-full min-w-0 flex-col items-center justify-center rounded-lg bg-brand-soft/40 border-y border-brand-accent/10 py-2 md:border-x md:border-y-0 md:px-3 md:py-0">
+        <div className="flex w-full min-w-0 flex-col items-center justify-center rounded-lg bg-brand-soft/40 border border-brand-accent/10 py-2 md:px-3 md:py-0">
           {cardState === "unbound" && !current ? (
             <>
               <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
@@ -2485,13 +2484,16 @@ function ShopProductCard({
                   )}
                 </button>
                 <div className="min-w-0 flex-1">
-                  <p className="line-clamp-2 text-sm font-semibold leading-snug text-slate-900">
+                  <p className="line-clamp-2 text-xs font-normal leading-snug text-[#666666]">
                     {reco.title && !/^货源\s/.test(reco.title)
                       ? reco.title
                       : reco.title ?? t("shopProducts.sourceTitlePending")}
                   </p>
-                  <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-sm font-semibold text-slate-800">
-                    <span>{reco.priceText}</span>
+                  <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-sm font-semibold">
+                    <span className="text-[#333333]">{t("shopProducts.purchaseCost", { price: "​" }).replace(/​/, "").trim()}</span>
+                    <span className="text-[#FF4556] tabular-nums">
+                      {reco.priceText.match(/[¥$€£]?\s*[\d.,]+\s*[A-Za-z]*/)?.[0]?.trim() ?? reco.priceText}
+                    </span>
                     {profit ? (
                       <EditedProfitLine
                         inline
@@ -2499,6 +2501,8 @@ function ShopProductCard({
                         previous={previousProfit}
                         next={profit}
                         phases={listingPriceEditPhases}
+                        className="text-xs"
+                        valueColor="text-slate-500"
                       />
                     ) : recoInventory ? (
                       <span className="text-[11px] font-normal text-slate-500">
@@ -2780,8 +2784,15 @@ function ShopProductCard({
                 ? "border-amber-200 bg-amber-50 text-amber-800"
                 : batchLinkDrive?.state === "done"
                   ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : "border-sky-200 bg-sky-50 text-sky-800"
+                  : ""
           )}
+          style={
+            batchLinkDrive?.state !== "failed" &&
+            batchLinkDrive?.state !== "needs_review" &&
+            batchLinkDrive?.state !== "done"
+              ? { backgroundColor: '#F1F0FF', borderColor: '#E4E3F4', color: '#325BE6' }
+              : undefined
+          }
         >
           {batchQueueLine}
         </div>

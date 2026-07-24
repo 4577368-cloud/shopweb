@@ -1262,7 +1262,7 @@ export const fr: Dictionary = {
     view: "View"
   },
   logisticsWorkflow: {
-    hint: "Stratégie → estimation → confirmation",
+    hint: "Configurer les étapes logistiques",
     stepSetup: "1 · Stratégie",
     stepEstimate: "2 · Estimation",
     stepConfirm: "3 · Confirmation"
@@ -2534,6 +2534,9 @@ export const fr: Dictionary = {
     selectedSourceFallback: "Source sélectionnée",
     sourceGaps: "{{count}} variantes en écart",
     sourceNoSpecs: "Ce marchand n'a pas de specs",
+    emptySource: "Vide",
+    selectSku: "Sélectionner SKU",
+    sourceCost: "Coût source {{price}}",
     sourceSpec: "Spec source",
     specMappingCoverage: " · couverture {{coverage}}/{{total}}",
     specTableEmpty: "Tableau de specs non chargé",
