@@ -6,10 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { ArrowRight, Loader2, Search, X } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { StepSidebar } from "@/components/workbench/step-sidebar";
+import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
 import { AiCopilotScanStage } from "@/components/workbench/ai-copilot-scan-stage";
+import { SCAN_STAGE_PROGRESS_ANIMATION_MS } from "@/components/workbench/scan-stage";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { useProductsScan } from "@/hooks/use-products-scan";
 import { clearScanned, hasScanned, markScanned } from "@/lib/scan/gate";
@@ -41,7 +42,7 @@ import {
 } from "@/lib/shop-product-mirror-baseline";
 import { formatNewArrivalAnalysisSummary } from "@/lib/new-arrival-analysis-result";
 import { mergeProductBaseline } from "@/lib/shop-product-mirror-baseline";
-import { clearMirrorCache } from "@/lib/products/mirror-cache";
+import { clearMirrorCache, getMirrorCache, isMirrorCacheFresh, setMirrorCache } from "@/lib/products/mirror-cache";
 import { formatBatchLinkSummary } from "@/lib/batch-link/types";
 import type { BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
 import { buildNewArrivalResultFromBatch } from "@/lib/batch-link/build-new-arrival-result";
@@ -113,6 +114,10 @@ interface ProductsSummary {
   confirmedProducts: number;
   pendingProducts: number;
 }
+
+const SCAN_COMPLETION_DWELL_MS = 450;
+const SCAN_FINISH_DELAY_MS =
+  SCAN_STAGE_PROGRESS_ANIMATION_MS + SCAN_COMPLETION_DWELL_MS;
 
 function SelectContent() {
   const router = useRouter();
@@ -295,33 +300,60 @@ function SelectContent() {
     [shopName, emptyNewArrivals]
   );
 
-  const loadSummary = useCallback(async () => {
-    void api.backfillPublishedBindings(shopName).catch(() => null);
-    const [products, bindings, tpl] = await Promise.all([
-      api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
-      api.listImageBindings(shopName).catch(() => []),
-      api.getPricingTemplate(shopName).catch(() => null),
-    ]);
-    const map = indexImageBindings(bindings);
-    const stats = computeShopProductBindingStats(products, map);
-    const merged = applyTitleEditsToProducts(
-      applyListingEditsToProducts(products, aiFieldEditsRef.current),
-      aiFieldEditsRef.current
-    );
-    setBindingsMap(map);
-    setShopProducts(merged);
-    setTemplate(tpl);
-    setSummary({
-      shopProducts: stats.analyzed,
-      confirmedProducts: stats.confirmed,
-      pendingProducts: stats.pending,
-    });
-    refreshNewArrivalAwareness(merged, map);
-    void refreshWorkflowProgress();
-    return { products: merged, bindings: map };
-  }, [shopName, refreshNewArrivalAwareness, refreshWorkflowProgress]);
+  const loadSummary = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = opts?.silent ?? false;
+      if (!silent && isMirrorCacheFresh(shopName)) {
+        const cached = getMirrorCache(shopName);
+        if (cached) {
+          const merged = applyTitleEditsToProducts(
+            applyListingEditsToProducts(cached.items, aiFieldEditsRef.current),
+            aiFieldEditsRef.current
+          );
+          const stats = computeShopProductBindingStats(cached.items, cached.bindings);
+          setBindingsMap(cached.bindings);
+          setShopProducts(merged);
+          setSummary({
+            shopProducts: stats.analyzed,
+            confirmedProducts: stats.confirmed,
+            pendingProducts: stats.pending,
+          });
+          refreshNewArrivalAwareness(merged, cached.bindings);
+          void loadSummary({ silent: true });
+          return { products: merged, bindings: cached.bindings };
+        }
+      }
+
+      void api.backfillPublishedBindings(shopName).catch(() => null);
+      const [products, bindings, tpl] = await Promise.all([
+        api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
+        api.listImageBindings(shopName).catch(() => []),
+        api.getPricingTemplate(shopName).catch(() => null),
+      ]);
+      const map = indexImageBindings(bindings);
+      const stats = computeShopProductBindingStats(products, map);
+      const merged = applyTitleEditsToProducts(
+        applyListingEditsToProducts(products, aiFieldEditsRef.current),
+        aiFieldEditsRef.current
+      );
+      setBindingsMap(map);
+      setShopProducts(merged);
+      setTemplate(tpl);
+      setSummary({
+        shopProducts: stats.analyzed,
+        confirmedProducts: stats.confirmed,
+        pendingProducts: stats.pending,
+      });
+      setMirrorCache(shopName, { items: products, bindings: map });
+      refreshNewArrivalAwareness(merged, map);
+      void refreshWorkflowProgress();
+      return { products: merged, bindings: map };
+    },
+    [shopName, refreshNewArrivalAwareness, refreshWorkflowProgress]
+  );
 
   const finishedRef = useRef(false);
+  const scanFinishScheduledRef = useRef(false);
   const finishToResult = useCallback(async () => {
     if (finishedRef.current) return;
     finishedRef.current = true;
@@ -339,21 +371,31 @@ function SelectContent() {
     if (startedForShopRef.current === shopName) return;
     startedForShopRef.current = shopName;
     finishedRef.current = false;
+    scanFinishScheduledRef.current = false;
     void (async () => {
-      const resumed = await resumeActiveJob();
-      if (resumed) {
-        setPhase("scan");
-        return;
-      }
       if (hasScanned("products", shopName)) {
         setPhase("result");
         void loadSummary();
         return;
       }
+      const resumed = await resumeActiveJob();
+      if (resumed) {
+        setPhase("scan");
+        return;
+      }
       setPhase("scan");
       await startScan();
     })();
-  }, [isAuthorized, shopName, loadSummary, startScan, resumeActiveJob, finishToResult]);
+  }, [isAuthorized, shopName, loadSummary, startScan, resumeActiveJob]);
+
+  useEffect(() => {
+    if (phase !== "scan" || !scanDone || scanFinishScheduledRef.current) return;
+    scanFinishScheduledRef.current = true;
+    const timer = window.setTimeout(() => {
+      void finishToResult();
+    }, SCAN_FINISH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [phase, scanDone, finishToResult]);
 
   useEffect(() => {
     if (phase !== "result" || !isAuthorized) return;
@@ -456,6 +498,7 @@ function SelectContent() {
 
   const restartScan = useCallback(() => {
     finishedRef.current = false;
+    scanFinishScheduledRef.current = false;
     clearScanned("products", shopName);
     clearMirrorCache(shopName);
     setPhase("scan");
@@ -1947,7 +1990,7 @@ function SelectContent() {
 
   if (!authSessionReady) {
     return (
-      <WorkbenchShell sidebar={<StepSidebar />} rail={rail} {...wb.shellProps}>
+      <WorkbenchShell sidebar={<HubAwareSidebar />} rail={rail} {...wb.shellProps}>
         <WorkbenchPanel
           title={t("products.title")}
           breadcrumbs={[{ label: t("nav.authorize"), href: localePath(locale, "/authorize") }, { label: t("products.title") }]}
@@ -1969,7 +2012,7 @@ function SelectContent() {
   if (!isAuthorized) {
     return (
       <WorkbenchShell
-        sidebar={<StepSidebar />}
+        sidebar={<HubAwareSidebar />}
         rail={rail}
         {...wb.shellProps}
       >
@@ -1998,7 +2041,7 @@ function SelectContent() {
   if (phase === "scan") {
     return (
       <WorkbenchShell
-        sidebar={<StepSidebar />}
+        sidebar={<HubAwareSidebar />}
         rail={
           <AssistantRail
             assistantContent={
@@ -2040,7 +2083,7 @@ function SelectContent() {
 
   return (
     <WorkbenchShell
-      sidebar={<StepSidebar />}
+      sidebar={<HubAwareSidebar />}
       rail={rail}
       {...wb.shellProps}
     >
@@ -2201,7 +2244,7 @@ function SelectContent() {
 function ProductsPageFallback() {
   const t = useT();
   return (
-    <WorkbenchShell sidebar={<StepSidebar />}>
+    <WorkbenchShell sidebar={<HubAwareSidebar />}>
       <WorkbenchPanel title={t("products.title")}>{null}</WorkbenchPanel>
     </WorkbenchShell>
   );

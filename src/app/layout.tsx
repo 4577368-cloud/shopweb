@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { cookies } from "next/headers";
 import { OnboardingProvider } from "@/context/onboarding-context";
+import { HubModeProvider } from "@/lib/hub/hub-mode";
 import { ToastHost } from "@/components/layout/toast-host";
 import { LocaleProvider } from "@/i18n/LocaleProvider";
 import { messages } from "@/i18n/messages";
@@ -55,8 +56,10 @@ export default async function RootLayout({
       <body className="min-h-full bg-app-shell font-sans text-foreground" translate="no">
         <LocaleProvider locale={initialLocale} messages={messages[initialLocale]}>
           <OnboardingProvider>
-            {children}
-            <ToastHost />
+            <HubModeProvider>
+              {children}
+              <ToastHost />
+            </HubModeProvider>
           </OnboardingProvider>
         </LocaleProvider>
       </body>

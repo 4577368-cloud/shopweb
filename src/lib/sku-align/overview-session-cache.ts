@@ -1,15 +1,16 @@
 import type { SkuProductOverview } from "@/lib/types";
 
-/** Session cache for SKU overview — survives locale remounts within the same tab. */
+import { WORKFLOW_MIRROR_TTL_MS } from "@/lib/workflow/mirror-ttl";
+
+/** Session cache for SKU overview — survives step navigation within the same tab. */
 const cache = new Map<string, { at: number; data: SkuProductOverview[] }>();
-const TTL_MS = 120_000;
 
 export function peekSkuOverviewSession(
   shopName: string,
   now = Date.now()
 ): SkuProductOverview[] | null {
   const entry = cache.get(shopName);
-  if (!entry || now - entry.at >= TTL_MS) return null;
+  if (!entry || now - entry.at >= WORKFLOW_MIRROR_TTL_MS) return null;
   return entry.data;
 }
 

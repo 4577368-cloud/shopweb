@@ -12,7 +12,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { StepSidebar } from "@/components/workbench/step-sidebar";
+import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { SkuProductWorkbench } from "@/components/sku-align/sku-product-workbench";
@@ -255,7 +255,7 @@ function SkuAlignProductContent() {
 
   if (!authSessionReady) {
     return (
-      <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
+      <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
         <WorkbenchPanel title={panelTitle} breadcrumbs={breadcrumbs} {...wb.panelProps}>
           <div className="flex items-center gap-2 text-sm text-ink-muted">
             <Loader2 className="h-4 w-4 animate-spin text-brand" />
@@ -268,7 +268,7 @@ function SkuAlignProductContent() {
 
   if (!isAuthorized) {
     return (
-      <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
+      <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
         <WorkbenchPanel title={panelTitle} breadcrumbs={breadcrumbs} {...wb.panelProps}>
           <EmptyState
             title={t("sku.notConnectedTitle")}
@@ -288,7 +288,7 @@ function SkuAlignProductContent() {
 
   if (!productId) {
     return (
-      <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
+      <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
         <WorkbenchPanel title={panelTitle} breadcrumbs={breadcrumbs} {...wb.panelProps}>
           <EmptyState
             title={t("sku.noProductSpecified")}
@@ -309,7 +309,7 @@ function SkuAlignProductContent() {
   const showBlockingLoader = loading && !product;
 
   return (
-    <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
+    <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
       <WorkbenchPanel
         title={panelTitle}
         description={t("sku.panelDescription")}
@@ -369,7 +369,7 @@ function SkuAlignProductContent() {
 function SkuAlignProductPageFallback() {
   const t = useT();
   return (
-    <WorkbenchShell sidebar={<StepSidebar />}>
+    <WorkbenchShell sidebar={<HubAwareSidebar />}>
       <WorkbenchPanel title={t("sku.breadcrumb")}>
         <div className="flex items-center gap-2 py-16 text-sm text-ink-muted">
           <Loader2 className="h-4 w-4 animate-spin text-brand" />

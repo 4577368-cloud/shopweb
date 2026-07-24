@@ -1,4 +1,4 @@
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import {
   OFFER_TITLE_ENGLISH_COUNTRY,
   imageSearchCountryForLocale,
@@ -46,6 +46,39 @@ export interface ImageSearchPipelineContext {
 
 const PUBLISH_SOURCED_SKIP_MESSAGE =
   "该商品来自 Tangbuy 上架，已对应货源，无需图搜";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientBackendError(err: unknown): boolean {
+  return err instanceof ApiError && [502, 503, 504].includes(err.status);
+}
+
+async function imageSearchWithColdStartRetry(
+  shopName: string,
+  thirdPlatformItemId: string,
+  limit: number,
+  country?: string
+): Promise<ImageSearchResult> {
+  try {
+    return await api.imageSearch(
+      shopName,
+      thirdPlatformItemId,
+      limit,
+      country ? { country } : undefined
+    );
+  } catch (err) {
+    if (!isTransientBackendError(err)) throw err;
+    await sleep(3500);
+    return api.imageSearch(
+      shopName,
+      thirdPlatformItemId,
+      limit,
+      country ? { country } : undefined
+    );
+  }
+}
 
 function imageSearchError(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
@@ -250,11 +283,11 @@ export async function runImageSearchPipeline(
     const country = context?.locale
       ? imageSearchCountryForLocale(context.locale)
       : undefined;
-    const res = await api.imageSearch(
+    const res = await imageSearchWithColdStartRetry(
       shopName,
       item.thirdPlatformItemId,
       limit,
-      country ? { country } : undefined
+      country
     );
 
     const enriched1688 = await Promise.all(

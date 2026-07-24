@@ -65,6 +65,11 @@ export function mapImageMatchConfirmError(
 }
 
 export function mapImageSearchError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 502 || err.status === 503 || err.status === 504) {
+      return "后端服务暂时不可用（可能正在启动），请稍后重试";
+    }
+  }
   const raw = extractBackendErrorMessage(err);
   if (!raw) return "图搜失败";
   if (raw.startsWith("AOP_CRED_MISSING") || raw.startsWith("AK_MISSING")) {

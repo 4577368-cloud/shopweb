@@ -12,7 +12,11 @@ import type {
   VariantLogisticsDecision,
 } from "@/lib/types";
 import type { LogisticsEstimateResult } from "@/lib/api";
-import { userFacingQuoteErrorMessage } from "@/lib/logistics/estimate-goods-block";
+import {
+  isGoodsSourceQuoteFailure,
+  userFacingQuoteErrorMessage,
+} from "@/lib/logistics/estimate-goods-block";
+import { productSourceIngestPhase } from "@/lib/tangbuy/catalog-ingest-display";
 import { codesFromSelections, singleCountryCodeFromMarkets } from "@/components/logistics/market-multi-select";
 import type { Locale } from "@/i18n/config";
 import { localizedCountryLabel } from "@/lib/logistics/markets";
@@ -698,31 +702,91 @@ export function collectProductQuotableVariantIds(
   return ids;
 }
 
+export type ProductQuotePrimaryKind = "ingest" | "quote" | "wait";
+
+export interface ProductQuotePrimaryAction {
+  kind: ProductQuotePrimaryKind;
+  label: string;
+}
+
 export function productQuoteActionLabel(
   t: LogisticsTranslate,
   variants: VariantLogisticsDecision[],
   quoteResults: Map<string, LogisticsEstimateResult>,
   pipelineActive?: boolean
 ): string | null {
+  const action = resolveProductQuotePrimaryAction(
+    t,
+    variants,
+    quoteResults,
+    { pipelineActive }
+  );
+  if (!action || action.kind === "wait") return null;
+  return action.label;
+}
+
+export function resolveProductQuotePrimaryAction(
+  t: LogisticsTranslate,
+  variants: VariantLogisticsDecision[],
+  quoteResults: Map<string, LogisticsEstimateResult>,
+  opts?: {
+    pipelineActive?: boolean;
+    shopName?: string;
+    thirdPlatformItemId?: string;
+  }
+): ProductQuotePrimaryAction | null {
   const targets = collectProductQuotableVariantIds(
     variants,
     quoteResults,
-    pipelineActive
+    opts?.pipelineActive
   );
   if (targets.length === 0) return null;
 
   const decisions = variants.filter((v) =>
     targets.includes(v.thirdPlatformSkuId)
   );
+
+  const anyNonGoodsFailure = decisions.some((v) => {
+    const quoteResult = quoteResults.get(v.thirdPlatformSkuId);
+    if (!isVariantQuoteFailed(v, quoteResult)) return false;
+    return !isGoodsSourceQuoteFailure(quoteResult);
+  });
+  const anyGoodsBlock = decisions.some((v) =>
+    isGoodsSourceQuoteFailure(quoteResults.get(v.thirdPlatformSkuId))
+  );
+
+  if (anyGoodsBlock && !anyNonGoodsFailure) {
+    const phase = productSourceIngestPhase({
+      shopName: opts?.shopName,
+      thirdPlatformItemId: opts?.thirdPlatformItemId,
+      variants: decisions,
+      quoteResults,
+    });
+    if (phase === "ready") {
+      return {
+        kind: "quote",
+        label: t("logisticsDisplay.quoteAction.regenerate"),
+      };
+    }
+    if (phase === "in_progress") {
+      return { kind: "wait", label: "" };
+    }
+    return { kind: "ingest", label: t("logisticsDisplay.quoteAction.ingest") };
+  }
+
   const anyFailed = decisions.some((v) =>
     isVariantQuoteFailed(v, quoteResults.get(v.thirdPlatformSkuId))
   );
   const anyQuoted = decisions.some((v) =>
     variantHasQuoteLine(v, quoteResults.get(v.thirdPlatformSkuId))
   );
-  if (anyFailed) return t("logisticsDisplay.quoteAction.retry");
-  if (!anyQuoted) return t("logisticsDisplay.quoteAction.estimate");
-  return t("logisticsDisplay.quoteAction.reestimate");
+  if (anyFailed) {
+    return { kind: "quote", label: t("logisticsDisplay.quoteAction.retry") };
+  }
+  if (!anyQuoted) {
+    return { kind: "quote", label: t("logisticsDisplay.quoteAction.estimate") };
+  }
+  return { kind: "quote", label: t("logisticsDisplay.quoteAction.reestimate") };
 }
 
 export function isVariantQuoteFailed(

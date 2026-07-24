@@ -2,9 +2,33 @@
 
 import { Check, Loader2, RefreshCw, X } from "@/lib/ui/icons";
 import type { LogisticsPipelineProgress } from "@/lib/logistics/incremental-pipeline";
+import type { PipelineFailureBuckets } from "@/lib/logistics/pipeline-diagnostics";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
+
+function bucketLabels(
+  t: ReturnType<typeof useT>,
+  buckets: PipelineFailureBuckets
+): string[] {
+  const out: string[] = [];
+  if (buckets.ingesting > 0) {
+    out.push(t("logisticsPipeline.bucketIngesting", { count: buckets.ingesting }));
+  }
+  if (buckets.goodsBlock > 0) {
+    out.push(t("logisticsPipeline.bucketGoods", { count: buckets.goodsBlock }));
+  }
+  if (buckets.noLine > 0) {
+    out.push(t("logisticsPipeline.bucketNoLine", { count: buckets.noLine }));
+  }
+  if (buckets.gateway > 0) {
+    out.push(t("logisticsPipeline.bucketGateway", { count: buckets.gateway }));
+  }
+  if (buckets.accept > 0) {
+    out.push(t("logisticsPipeline.bucketAccept", { count: buckets.accept }));
+  }
+  return out;
+}
 
 export function LogisticsPipelineTaskCard({
   progress,
@@ -44,6 +68,23 @@ export function LogisticsPipelineTaskCard({
     step === "quote"
       ? t("logisticsPipeline.stepQuote")
       : t("logisticsPipeline.stepAccept");
+
+  const detailLabel = (() => {
+    switch (progress.currentDetail) {
+      case "resolve_goods":
+        return t("logisticsPipeline.detailResolveGoods");
+      case "gateway_quote":
+        return t("logisticsPipeline.detailGatewayQuote");
+      case "auto_accept":
+        return t("logisticsPipeline.detailAutoAccept");
+      default:
+        return null;
+    }
+  })();
+
+  const buckets = progress.stats.failureBuckets;
+  const bucketSummary = buckets ? bucketLabels(t, buckets) : [];
+  const activeTitles = progress.activeProductTitles ?? [];
 
   return (
     <div
@@ -132,6 +173,14 @@ export function LogisticsPipelineTaskCard({
               })}
       </p>
 
+      {activeTitles.length > 0 && progress.phase === "running" ? (
+        <p className="mt-0.5 line-clamp-2 text-[10px] text-slate-600">
+          {t("logisticsPipeline.activeProducts", {
+            titles: activeTitles.join(" · "),
+          })}
+        </p>
+      ) : null}
+
       {progress.stats.ingestingRetry ? (
         <p className="mt-0.5 text-[10px] text-amber-700">
           {t("logisticsPipeline.ingestingRetryWait", {
@@ -145,6 +194,7 @@ export function LogisticsPipelineTaskCard({
           {t("logisticsPipeline.currentStep", {
             step: stepLabel(progress.currentSkuStep),
           })}
+          {detailLabel ? ` · ${detailLabel}` : ""}
         </p>
       ) : null}
 
@@ -158,7 +208,7 @@ export function LogisticsPipelineTaskCard({
         />
       </div>
 
-      {progress.phase === "running" ? (
+      {progress.phase === "running" || isDone ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500">
           <span>
             {progress.productIndex} / {progress.productTotal}
@@ -170,10 +220,20 @@ export function LogisticsPipelineTaskCard({
           </span>
           {progress.stats.failed > 0 ? (
             <span className="text-red-500">
-              {t("logisticsPipeline.failed", { count: progress.stats.failed })}
+              {t("logisticsPipeline.failedProducts", {
+                count: progress.stats.failed,
+              })}
             </span>
           ) : null}
         </div>
+      ) : null}
+
+      {bucketSummary.length > 0 ? (
+        <p className="mt-1 text-[10px] text-red-600/90">
+          {t("logisticsPipeline.failureBreakdown", {
+            breakdown: bucketSummary.join(" · "),
+          })}
+        </p>
       ) : null}
 
       {progress.error ? (

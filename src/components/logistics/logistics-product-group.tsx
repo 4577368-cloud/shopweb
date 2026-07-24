@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   Loader2,
+  Package,
   RefreshCw,
 } from "@/lib/ui/icons";
 import type { LogisticsEstimateResult } from "@/lib/api";
@@ -19,8 +20,8 @@ import {
   computeOvertimeCompensationDays,
   isVariantException,
   logisticsLineKey,
-  productQuoteActionLabel,
   collectProductQuotableVariantIds,
+  resolveProductQuotePrimaryAction,
   resolveSelectedLogisticsLine,
   shouldShowManualAcceptAction,
   variantCardTone,
@@ -42,6 +43,7 @@ import { CatalogIngestingBadge } from "@/components/ui/catalog-ingesting-badge";
 import { Select } from "@/components/ui/select";
 import { useT } from "@/i18n/LocaleProvider";
 import { useCatalogIngestStatus } from "@/hooks/use-catalog-ingest-status";
+import { readProductSourceIdentity } from "@/lib/product-source-identity";
 import { isProductQuoteIngesting } from "@/lib/tangbuy/catalog-ingest-display";
 import { cn } from "@/lib/utils";
 import type {
@@ -396,11 +398,14 @@ export function LogisticsProductGroup({
   onSaveMeasures,
   onAcceptAi,
   onFetchProductQuotes,
+  onIngestProductSource,
+  onCatalogIngestComplete,
   onFetchVariantQuote,
   onCorrect,
   onMeasureOverride,
   renderMeasureEditPanel,
   quotingProduct = false,
+  ingestingProduct = false,
   quotingVariantId = null,
   quoteRevealVariantIds,
   selectedLineByVariant,
@@ -424,6 +429,8 @@ export function LogisticsProductGroup({
   onSaveMeasures: (variantId: string, next: MeasureOverride) => void;
   onAcceptAi: (variant: VariantLogisticsDecision) => void;
   onFetchProductQuotes: () => void;
+  onIngestProductSource?: () => void;
+  onCatalogIngestComplete?: (profile: ProductLogisticsProfile) => void;
   onFetchVariantQuote?: (
     variant: VariantLogisticsDecision,
     override?: MeasureOverride
@@ -431,6 +438,7 @@ export function LogisticsProductGroup({
   onCorrect: (type: LogisticsTypeCode) => void;
   onMeasureOverride?: (variantId: string, next: MeasureOverride) => void;
   quotingProduct?: boolean;
+  ingestingProduct?: boolean;
   quotingVariantId?: string | null;
   quoteRevealVariantIds?: Set<string>;
   shopName?: string;
@@ -452,18 +460,42 @@ export function LogisticsProductGroup({
     {
       poll: true,
       titleHint: profile.title,
+      onIngestComplete: onCatalogIngestComplete
+        ? () => onCatalogIngestComplete(profile)
+        : undefined,
     }
   );
   const quoteIngesting = useMemo(
     () => isProductQuoteIngesting(variants, quoteResults),
     [variants, quoteResults]
   );
-  const catalogIngesting = identityIngesting || quoteIngesting;
+  const catalogIngesting = useMemo(() => {
+    if (shopName.trim() && profile.thirdPlatformItemId.trim()) {
+      const identity = readProductSourceIdentity(
+        shopName,
+        profile.thirdPlatformItemId
+      );
+      if (identity?.internalGoodsId?.trim()) return false;
+    }
+    return identityIngesting || quoteIngesting;
+  }, [
+    shopName,
+    profile.thirdPlatformItemId,
+    identityIngesting,
+    quoteIngesting,
+  ]);
   const busy = correctingId === profile.thirdPlatformItemId;
-  const productQuoteLabel = useMemo(
-    () => productQuoteActionLabel(t, variants, quoteResults, pipelineActive),
-    [t, variants, quoteResults, pipelineActive]
+  const productQuoteAction = useMemo(
+    () =>
+      resolveProductQuotePrimaryAction(t, variants, quoteResults, {
+        pipelineActive,
+        shopName,
+        thirdPlatformItemId: profile.thirdPlatformItemId,
+      }),
+    [t, variants, quoteResults, pipelineActive, shopName, profile.thirdPlatformItemId, identityIngesting, catalogIngesting]
   );
+  const productQuoteLabel =
+    productQuoteAction?.kind === "wait" ? null : productQuoteAction?.label ?? null;
   const quotableSkuCount = useMemo(
     () =>
       collectProductQuotableVariantIds(variants, quoteResults, pipelineActive)
@@ -539,7 +571,7 @@ export function LogisticsProductGroup({
                 {productShellStatusLabel(t, meta.status)}
               </span>
               {catalogIngesting ? <CatalogIngestingBadge /> : null}
-              {pipelineHighlighted || quotingProduct ? (
+              {pipelineHighlighted || quotingProduct || ingestingProduct ? (
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-600" />
               ) : null}
               <span className="text-[11px] text-ink-subtle">
@@ -570,17 +602,31 @@ export function LogisticsProductGroup({
             className="h-7 shrink-0"
             onClick={(e) => {
               e.stopPropagation();
-              onFetchProductQuotes();
+              if (productQuoteAction?.kind === "ingest") {
+                onIngestProductSource?.();
+              } else {
+                onFetchProductQuotes();
+              }
             }}
-            disabled={busy || quotingProduct || pipelineHighlighted}
+            disabled={
+              busy ||
+              quotingProduct ||
+              ingestingProduct ||
+              pipelineHighlighted ||
+              (productQuoteAction?.kind === "ingest" && !onIngestProductSource)
+            }
             title={
-              meta.status === "failed"
-                ? t("logisticsProduct.retryQuoteTitle", { count: quotableSkuCount })
-                : t("logisticsProduct.estimateQuoteTitle", { count: quotableSkuCount })
+              productQuoteAction?.kind === "ingest"
+                ? t("logisticsProduct.ingestSourceTitle")
+                : meta.status === "failed"
+                  ? t("logisticsProduct.retryQuoteTitle", { count: quotableSkuCount })
+                  : t("logisticsProduct.estimateQuoteTitle", { count: quotableSkuCount })
             }
           >
-            {quotingProduct ? (
+            {quotingProduct || ingestingProduct ? (
               <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : productQuoteAction?.kind === "ingest" ? (
+              <Package className="mr-1 h-3.5 w-3.5" />
             ) : (
               <RefreshCw className="mr-1 h-3.5 w-3.5" />
             )}

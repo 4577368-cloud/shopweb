@@ -16,7 +16,7 @@ import {
   X,
 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { StepSidebar } from "@/components/workbench/step-sidebar";
+import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import {
@@ -60,6 +60,7 @@ import type { SkuCommandPlan } from "@/lib/agents/sku-align/command-schema";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api, readableError } from "@/lib/api";
 import {
+  clearSkuAlignMirrorCache,
   getSkuAlignMirrorCache,
   setSkuAlignMirrorCache,
   isSkuAlignMirrorCacheFresh,
@@ -76,6 +77,7 @@ import {
 } from "@/lib/sku-align/deep-link";
 import { stashSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
 import {
+  clearSkuOverviewSession,
   peekSkuOverviewSession,
   setSkuOverviewSession,
 } from "@/lib/sku-align/overview-session-cache";
@@ -331,6 +333,8 @@ function SkuAlignContent() {
   const restartScan = useCallback(() => {
     autoAlignStartedRef.current = null;
     clearScanned("sku-align", shopName);
+    clearSkuAlignMirrorCache(shopName);
+    clearSkuOverviewSession(shopName);
     scanFinishScheduledRef.current = false;
     scanFinishedRef.current = false;
     setPhase("scan");
@@ -669,7 +673,7 @@ function SkuAlignContent() {
 
   if (!authSessionReady) {
     return (
-      <WorkbenchShell sidebar={<StepSidebar />} {...wb.shellProps}>
+      <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
         <WorkbenchPanel
           title={t("sku.title")}
           breadcrumbs={notAuthBreadcrumbs}
@@ -690,7 +694,7 @@ function SkuAlignContent() {
   if (!isAuthorized) {
     return (
       <WorkbenchShell
-        sidebar={<StepSidebar />}
+        sidebar={<HubAwareSidebar />}
         rail={
           <AssistantRail
             assistantContent={<CopilotCard content={copilot} />}
@@ -722,7 +726,7 @@ function SkuAlignContent() {
   if (phase === "scan") {
     return (
       <WorkbenchShell
-        sidebar={<StepSidebar />}
+        sidebar={<HubAwareSidebar />}
         rail={
           <AssistantRail
             assistantContent={
@@ -766,7 +770,7 @@ function SkuAlignContent() {
   }
 
   return (
-    <WorkbenchShell sidebar={<StepSidebar />} rail={rail} {...wb.shellProps}>
+    <WorkbenchShell sidebar={<HubAwareSidebar />} rail={rail} {...wb.shellProps}>
       <WorkbenchPanel
         title={t("sku.title")}
         breadcrumbs={breadcrumbs}
@@ -929,7 +933,7 @@ export default function SkuAlignPage() {
   return (
     <Suspense
       fallback={
-        <WorkbenchShell sidebar={<StepSidebar />}>
+        <WorkbenchShell sidebar={<HubAwareSidebar />}>
           <WorkbenchPanel title={t("sku.title")}>
             <TableSkeleton rows={5} />
           </WorkbenchPanel>

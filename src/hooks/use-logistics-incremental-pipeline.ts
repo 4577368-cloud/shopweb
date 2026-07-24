@@ -17,11 +17,21 @@ import {
   PIPELINE_PRODUCT_CONCURRENCY,
   sleepMs,
 } from "@/lib/logistics/estimate-batch";
+import {
+  activeProductTitles,
+  bucketsFromProductFailures,
+  countProductsWithIngestingSkus,
+  createEmptyFailureBuckets,
+  mergeProductQuoteFailures,
+  setProductFailure,
+  type PipelineFailureBucket,
+} from "@/lib/logistics/pipeline-diagnostics";
 import type { LogisticsAnalysis, VariantLogisticsDecision } from "@/lib/types";
 
 type FetchQuotesFn = (
   variantIds?: string[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: { bulkMode?: boolean }
 ) => Promise<Map<string, LogisticsEstimateResult> | null>;
 
 type AcceptFn = (
@@ -121,7 +131,10 @@ export function useLogisticsIncrementalPipeline({
         pendingReview: 0,
         failed: 0,
         skipped,
+        failureBuckets: createEmptyFailureBuckets(),
       };
+      const skuToProductId = buildSkuToProductMap(analysis);
+      const productFailures = new Map<string, PipelineFailureBucket>();
       let latestQuotes = new Map(quoteResults);
       let completedProducts = 0;
       const activeProductIds = new Set<string>();
@@ -143,18 +156,33 @@ export function useLogisticsIncrementalPipeline({
         return id ? (workTitleById.get(id) ?? null) : null;
       };
 
+      const syncFailureStats = () => {
+        stats.failureBuckets = bucketsFromProductFailures(productFailures);
+        stats.failed = productFailures.size;
+      };
+
+      const markProductFailed = (productId: string, bucket: PipelineFailureBucket) => {
+        setProductFailure(productFailures, productId, bucket);
+        syncFailureStats();
+      };
+
       const syncProgress = (patch?: Partial<LogisticsPipelineProgress>) => {
         if (isCancelled()) return;
+        const titles = activeProductTitles(
+          [...activeProductIds],
+          workTitleById
+        );
         setProgress((prev) => ({
           ...prev,
           phase: "running",
           productIndex: completedProducts,
           productTotal: works.length,
           activeProductIds: [...activeProductIds],
+          activeProductTitles: titles,
           currentProductId:
             activeProductIds.size === 1 ? [...activeProductIds][0]! : null,
           currentProductTitle: resolveActiveTitle(),
-          stats: { ...stats },
+          stats: { ...stats, failureBuckets: { ...stats.failureBuckets } },
           ...patch,
         }));
       };
@@ -165,6 +193,7 @@ export function useLogisticsIncrementalPipeline({
         activeProductIds.add(work.productId);
         syncProgress({
           currentProductTitle: work.title,
+          currentDetail: null,
           currentSkuStep:
             work.quoteVariantIds.length > 0
               ? "quote"
@@ -176,10 +205,14 @@ export function useLogisticsIncrementalPipeline({
         try {
           if (work.quoteVariantIds.length > 0) {
             if (isCancelled()) return;
-            syncProgress({ currentSkuStep: "quote" });
+            syncProgress({
+              currentSkuStep: "quote",
+              currentDetail: "resolve_goods",
+            });
 
             let fetched: Map<string, LogisticsEstimateResult> | null = null;
             try {
+              syncProgress({ currentDetail: "gateway_quote" });
               fetched = await fetchQuotesForVariants(
                 work.quoteVariantIds,
                 abortRef.current?.signal
@@ -192,23 +225,26 @@ export function useLogisticsIncrementalPipeline({
                 return;
               }
               await withLock(() => {
-                stats.failed += work.quoteVariantIds.length;
+                markProductFailed(work.productId, "gateway");
               });
               return;
             }
 
             await withLock(() => {
               if (fetched === null) {
-                stats.failed += work.quoteVariantIds.length;
+                markProductFailed(work.productId, "gateway");
                 return;
               }
               latestQuotes = new Map([...latestQuotes, ...fetched]);
-              for (const skuId of work.quoteVariantIds) {
-                const result = fetched.get(skuId);
-                if (result?.quoteStatus === "INGESTING") continue;
-                if (!result?.recommendedLine) stats.failed += 1;
-              }
+              mergeProductQuoteFailures(
+                productFailures,
+                work.quoteVariantIds,
+                skuToProductId,
+                fetched
+              );
+              syncFailureStats();
             });
+            syncProgress({ currentDetail: null });
           }
 
           if (isCancelled()) return;
@@ -218,7 +254,7 @@ export function useLogisticsIncrementalPipeline({
           );
 
           if (autoAcceptIds.length > 0) {
-            syncProgress({ currentSkuStep: "accept" });
+            syncProgress({ currentSkuStep: "accept", currentDetail: "auto_accept" });
 
             const quotes: NonNullable<LogisticsAcceptDecisionRequest["quotes"]> =
               {};
@@ -248,7 +284,7 @@ export function useLogisticsIncrementalPipeline({
                   setAnalysis(result.analysis);
                   stats.autoAccepted += result.acceptedCount;
                 } catch {
-                  stats.failed += acceptIds.length;
+                  markProductFailed(work.productId, "accept");
                 }
               });
             }
@@ -256,7 +292,7 @@ export function useLogisticsIncrementalPipeline({
         } finally {
           activeProductIds.delete(work.productId);
           completedProducts += 1;
-          syncProgress({ currentSkuStep: null });
+          syncProgress({ currentSkuStep: null, currentDetail: null });
         }
       };
 
@@ -274,48 +310,75 @@ export function useLogisticsIncrementalPipeline({
 
         const allQuotedIds = works.flatMap((w) => w.quoteVariantIds);
         const ingestingIds = collectIngestingVariantIds(latestQuotes, allQuotedIds);
-        if (ingestingIds.length > 0) {
-          if (!isCancelled()) {
-            showToast(
-              `${ingestingIds.length} 个 SKU 入库中，约 ${Math.round(INGESTING_RETRY_DELAY_MS / 1000)} 秒后自动重试报价`
-            );
-            setProgress((prev) => ({
-              ...prev,
-              currentSkuStep: "quote",
-              currentProductTitle: null,
-              stats: { ...stats, ingestingRetry: ingestingIds.length },
-            }));
-          }
-          try {
-            await sleepMs(INGESTING_RETRY_DELAY_MS, abortRef.current?.signal);
-          } catch {
-            return;
-          }
-          if (!isCancelled()) {
-            try {
-              const retried = await fetchQuotesForVariants(
-                ingestingIds,
-                abortRef.current?.signal
-              );
-              if (retried) {
-                latestQuotes = new Map([...latestQuotes, ...retried]);
-              }
-            } catch {
-              // Ingesting retry is best-effort — main pass already completed.
-            }
-          }
-        }
+        const ingestingProductCount = countProductsWithIngestingSkus(
+          ingestingIds,
+          skuToProductId,
+          latestQuotes
+        );
 
         ranScopeRef.current = templateScopeKey;
         setProgress((prev) => ({
           ...prev,
           phase: "done",
           currentSkuStep: null,
-          stats: { ...stats },
+          currentDetail: null,
+          stats: {
+            ...stats,
+            failureBuckets: { ...stats.failureBuckets },
+            ingestingRetry:
+              ingestingProductCount > 0 ? ingestingProductCount : undefined,
+          },
         }));
 
         if (stats.autoAccepted > 0) {
           showToast(`已自动确认 ${stats.autoAccepted} 个普货 SKU 物流方案`);
+        }
+
+        runningRef.current = false;
+        abortRef.current = null;
+
+        if (ingestingIds.length > 0 && !isCancelled()) {
+          showToast(
+            `${ingestingProductCount} 个商品仍有 SKU 入库中，后台 ${Math.round(INGESTING_RETRY_DELAY_MS / 1000)} 秒后重试`
+          );
+          void (async () => {
+            try {
+              await sleepMs(INGESTING_RETRY_DELAY_MS);
+              if (cancelledRef.current) return;
+              const retried = await fetchQuotesForVariants(ingestingIds, undefined, {
+                bulkMode: false,
+              });
+              if (!retried || cancelledRef.current) return;
+              mergeProductQuoteFailures(
+                productFailures,
+                ingestingIds,
+                skuToProductId,
+                retried
+              );
+              syncFailureStats();
+              const resolvedProducts = ingestingIds.filter(
+                (id) => retried.get(id)?.recommendedLine
+              ).length;
+              if (resolvedProducts > 0) {
+                showToast(`后台重试：${resolvedProducts} 个 SKU 已获得报价`);
+              }
+              setProgress((prev) =>
+                prev.phase === "done"
+                  ? {
+                      ...prev,
+                      stats: {
+                        ...prev.stats,
+                        ...stats,
+                        failureBuckets: { ...stats.failureBuckets },
+                        ingestingRetry: undefined,
+                      },
+                    }
+                  : prev
+              );
+            } catch {
+              // Background retry is best-effort.
+            }
+          })();
         }
       } catch (err) {
         if (isCancelled() || (err instanceof Error && err.name === "AbortError")) {
@@ -330,8 +393,10 @@ export function useLogisticsIncrementalPipeline({
           stats: { ...stats },
         }));
       } finally {
-        runningRef.current = false;
-        abortRef.current = null;
+        if (runningRef.current) {
+          runningRef.current = false;
+          abortRef.current = null;
+        }
       }
     },
     [
@@ -398,4 +463,17 @@ function collectAutoAcceptIds(
     }
   }
   return [...ids];
+}
+
+function buildSkuToProductMap(
+  analysis: LogisticsAnalysis | null
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const product of analysis?.productProfiles ?? []) {
+    const productId = product.thirdPlatformItemId;
+    for (const variant of product.variantDecisions ?? []) {
+      map.set(variant.thirdPlatformSkuId, productId);
+    }
+  }
+  return map;
 }

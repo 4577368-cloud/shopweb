@@ -40,6 +40,7 @@ import {
   COVERAGE_MATCH_THRESHOLD,
   type DrawerPhase,
   autoAssignSupplementGaps,
+  assignSupplementMerchantToVariants,
   filterSupplementCandidates,
   rankCandidatesByCoverage,
   resolveCandidateOfferId,
@@ -316,6 +317,10 @@ export function SkuProductWorkbench({
     new Map()
   );
   const [gapAssignments, setGapAssignments] = useState<Record<string, GapAssignment>>({});
+  /** Sticky default merchant for supplement — first pick applies to all unassigned rows. */
+  const [defaultSupplementMerchantKey, setDefaultSupplementMerchantKey] = useState<string | null>(
+    null
+  );
   const [registering, setRegistering] = useState(false);
 
   const [replaceSearchLoading, setReplaceSearchLoading] = useState(false);
@@ -539,6 +544,24 @@ export function SkuProductWorkbench({
           autoAssignSupplementGaps(supplementGaps, key, matrix)
         );
       }
+
+      const topKey = previewRanked[0]
+        ? candidateKeyOf(previewRanked[0].candidate)
+        : null;
+      if (topKey) {
+        setDefaultSupplementMerchantKey(topKey);
+        const topMatrix = matrices.get(topKey) ?? [];
+        const unassigned = supplementPanelVariants.filter(
+          (v) => !autoAssignments[v.thirdPlatformSkuId]?.candidateKey?.trim()
+        );
+        if (topMatrix.length && unassigned.length > 0) {
+          Object.assign(
+            autoAssignments,
+            assignSupplementMerchantToVariants(unassigned, topKey, topMatrix)
+          );
+        }
+      }
+
       if (Object.keys(autoAssignments).length > 0) {
         setGapAssignments(autoAssignments);
         setSupplementMappingDirty(true);
@@ -553,12 +576,13 @@ export function SkuProductWorkbench({
       setSearchLoading(false);
       setMatrixLoading(false);
     }
-  }, [shopName, product, supplementGaps, tangbuyProductId, detailUrl, v1Detail, showToast, t, locale]);
+  }, [shopName, product, supplementGaps, supplementPanelVariants, tangbuyProductId, detailUrl, v1Detail, showToast, t, locale]);
 
   const clearSupplementWorkspace = useCallback(() => {
     setCandidates([]);
     setCandidateMatrices(new Map());
     setGapAssignments({});
+    setDefaultSupplementMerchantKey(null);
     setSupplementMappingDirty(false);
     setSearchError(null);
     setManualAddInput("");
@@ -625,24 +649,35 @@ export function SkuProductWorkbench({
       });
 
       const auto = autoAssignSupplementGaps(supplementGaps, acceptedKey, matrixRows);
-      const autoCount = Object.keys(auto).length;
-      if (autoCount > 0) {
-        setGapAssignments((prev) => {
-          const next = { ...prev };
-          for (const [variantId, assignment] of Object.entries(auto)) {
-            const existing = next[variantId];
-            if (existing?.candidateKey && existing?.skuId) continue;
-            next[variantId] = assignment;
-          }
-          return next;
-        });
-        setSupplementMappingDirty(true);
-      }
+      let appliedCount = 0;
+      setDefaultSupplementMerchantKey((prev) => prev ?? acceptedKey);
+      setGapAssignments((prev) => {
+        const next = { ...prev };
+        for (const [variantId, assignment] of Object.entries(auto)) {
+          const existing = next[variantId];
+          if (existing?.candidateKey && existing?.skuId) continue;
+          next[variantId] = assignment;
+        }
+        const unassigned = supplementPanelVariants.filter(
+          (v) => !next[v.thirdPlatformSkuId]?.candidateKey?.trim()
+        );
+        if (unassigned.length > 0) {
+          Object.assign(
+            next,
+            assignSupplementMerchantToVariants(unassigned, acceptedKey, matrixRows)
+          );
+        }
+        appliedCount = supplementPanelVariants.filter(
+          (v) => next[v.thirdPlatformSkuId]?.candidateKey?.trim()
+        ).length;
+        return next;
+      });
+      if (appliedCount > 0) setSupplementMappingDirty(true);
 
       setManualAddInput("");
       showToast(
-        autoCount > 0
-          ? t("skuWorkbench.toastAddedWithAuto", { count: autoCount })
+        appliedCount > 0
+          ? t("skuWorkbench.toastAddedWithAuto", { count: appliedCount })
           : t("skuWorkbench.toastAddedManual")
       );
     } catch (err) {
@@ -654,6 +689,7 @@ export function SkuProductWorkbench({
     manualAddInput,
     supplementExcludeCtx,
     supplementGaps,
+    supplementPanelVariants,
     candidates,
     showToast,
     t,
@@ -1029,19 +1065,31 @@ export function SkuProductWorkbench({
         }
       }
 
-      const top = rankSourceSkuRows(matrix ?? [], variant.optionLabel, {
-        variantPrice: variant.price,
-        variantImageUrl: variant.imageUrl,
-      })[0];
-      setGapAssignments((prev) => ({
-        ...prev,
-        [variant.thirdPlatformSkuId]: {
+      const establishingDefault = defaultSupplementMerchantKey === null;
+      if (establishingDefault) {
+        setDefaultSupplementMerchantKey(candidateKey);
+      }
+
+      setGapAssignments((prev) => {
+        const variantsToFill = establishingDefault
+          ? supplementPanelVariants.filter(
+              (v) => !prev[v.thirdPlatformSkuId]?.candidateKey?.trim()
+            )
+          : [variant];
+        const bulk = assignSupplementMerchantToVariants(
+          variantsToFill,
           candidateKey,
-          skuId: top?.skuId ?? "",
-        },
-      }));
+          matrix ?? []
+        );
+        return { ...prev, ...bulk };
+      });
     },
-    [candidateByKey, supplementGaps]
+    [
+      candidateByKey,
+      supplementGaps,
+      supplementPanelVariants,
+      defaultSupplementMerchantKey,
+    ]
   );
 
   const setGapSku = (variantId: string, skuId: string) => {

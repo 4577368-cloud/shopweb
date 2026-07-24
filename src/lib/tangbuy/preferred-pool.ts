@@ -3,6 +3,7 @@ import {
   invalidateCatalogOfferMapCache,
   isInternalGoodsId,
   isOfferId1688,
+  resolveInternalGoodsIdByOffer,
   resolveInternalGoodsIdByOfferSku,
   resolveProductSourceIdentity,
   type ResolveProductSourceInput,
@@ -144,8 +145,8 @@ export async function pollResolveGoodsIdAfterPool(input: {
 
   for (const delay of POLL_DELAYS_MS) {
     if (delay > 0) await sleep(delay);
-    if (sku) {
-      try {
+    try {
+      if (sku) {
         const match = await resolveInternalGoodsIdByOfferSku({
           offerId1688: offerId,
           tangbuySkuId: sku,
@@ -153,9 +154,16 @@ export async function pollResolveGoodsIdAfterPool(input: {
           shopName: input.shopName,
         });
         if (match) return match;
-      } catch {
-        // Gateway offline / CORS — stop polling this round quietly.
       }
+      const byOffer = await resolveInternalGoodsIdByOffer({
+        offerId1688: offerId,
+        tangbuySkuId: sku,
+        titleHint: input.titleHint,
+        shopName: input.shopName,
+      });
+      if (byOffer) return byOffer;
+    } catch {
+      // Gateway offline / CORS — stop polling this round quietly.
     }
   }
   return null;
@@ -248,6 +256,8 @@ export async function ensurePoolIngestForLogistics(input: {
   existingIdentity?: ProductSourceIdentity | null;
   /** Re-submit after failed/skipped (user refresh, logistics, SKU bind). */
   retryPoolSubmit?: boolean;
+  /** Bulk smart-estimate: submit pool but do not poll (saves ~20s/SKU). */
+  skipPoolPoll?: boolean;
 }): Promise<ProductSourceIdentity> {
   const offerId = input.offerId1688.trim();
   const now = new Date().toISOString();
@@ -291,6 +301,10 @@ export async function ensurePoolIngestForLogistics(input: {
     if (input.shopName?.trim()) {
       invalidateCatalogOfferMapCache(input.shopName);
     }
+  }
+
+  if (input.skipPoolPoll) {
+    return { ...withPool, poolIngestStatus: withPool.poolIngestStatus ?? "pending_resolve" };
   }
 
   const match = await pollResolveGoodsIdAfterPool({

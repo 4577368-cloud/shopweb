@@ -8,7 +8,10 @@ import {
   type LogisticsTranslate,
   variantHasQuoteLine,
 } from "@/lib/logistics/display";
-import { userFacingQuoteErrorMessage } from "@/lib/logistics/estimate-goods-block";
+import {
+  isGoodsSourceQuoteFailure,
+  userFacingQuoteErrorMessage,
+} from "@/lib/logistics/estimate-goods-block";
 import {
   isPipelineProductActive,
   type LogisticsPipelineProgress,
@@ -122,6 +125,9 @@ export function formatVariantIssueHint(
     });
     if (quoteStatus === "INGESTING") {
       return t("logisticsDisplay.issueHint.ingesting");
+    }
+    if (isGoodsSourceQuoteFailure(quoteResult)) {
+      return t("logisticsDisplay.issueHint.sourceNotInCatalog");
     }
     const msg =
       userFacingQuoteErrorMessage(quoteResult.errorMessage.trim()) ??

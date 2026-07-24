@@ -4,6 +4,9 @@ export const ESTIMATE_SKU_CHUNK_SIZE = 25;
 /** Max products quoted in parallel during smart-estimate pipeline. */
 export const PIPELINE_PRODUCT_CONCURRENCY = 4;
 
+/** Parallel Tangbuy estimate API calls per product (balance speed vs gateway load). */
+export const ESTIMATE_CHUNK_CONCURRENCY = 2;
+
 export function chunkEstimateVariants<T>(variants: T[], size = ESTIMATE_SKU_CHUNK_SIZE): T[][] {
   if (variants.length <= size) return variants.length ? [variants] : [];
   const chunks: T[][] = [];
@@ -36,8 +39,8 @@ export function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Wait for catalog pool ingest before retrying ingesting SKUs (matches poll window). */
-export const INGESTING_RETRY_DELAY_MS = 22_000;
+/** Brief pause before one ingesting-SKU retry; then pipeline completes without further waits. */
+export const INGESTING_RETRY_DELAY_MS = 3_000;
 
 /** Run async work over items with a fixed concurrency limit. */
 export async function mapWithConcurrency<T>(

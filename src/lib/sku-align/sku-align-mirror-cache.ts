@@ -10,6 +10,8 @@ import { api } from "@/lib/api";
  *
  * Keyed by shopName. Entries expire after TTL_MS.
  */
+import { WORKFLOW_MIRROR_TTL_MS } from "@/lib/workflow/mirror-ttl";
+
 export type SkuAlignMirrorOverview = Awaited<ReturnType<typeof api.getSkuOverview>>;
 export type SkuAlignMirrorPricing = Awaited<ReturnType<typeof api.getPricingTemplate>>;
 
@@ -20,7 +22,6 @@ export interface SkuAlignMirrorCacheEntry {
 }
 
 const cache = new Map<string, SkuAlignMirrorCacheEntry>();
-const TTL_MS = 120_000;
 
 export function getSkuAlignMirrorCache(
   shopName: string
@@ -41,5 +42,10 @@ export function isSkuAlignMirrorCacheFresh(
 ): boolean {
   const entry = cache.get(shopName);
   if (!entry) return false;
-  return now - entry.ts < TTL_MS;
+  return now - entry.ts < WORKFLOW_MIRROR_TTL_MS;
+}
+
+export function clearSkuAlignMirrorCache(shopName?: string): void {
+  if (shopName) cache.delete(shopName);
+  else cache.clear();
 }

@@ -5,7 +5,7 @@ export const GOODS_INGESTING_MESSAGE = "商品入库中";
 
 /** Friendly copy — no offer IDs or admin tokens in the UI. */
 export const GOODS_SOURCE_NOT_READY_USER_MESSAGE =
-  "货源尚未成功入库，请返回选品页重新确认后再试。";
+  "货源尚未入库 Tangbuy 商品库，请点击「入库」后再生成报价。";
 
 /** Why logistics estimate cannot run yet (distinct from real quote API failure). */
 export type EstimateGoodsBlockReason =
@@ -82,6 +82,22 @@ export function logEstimateGoodsBlockDiagnostic(
 }
 
 /** Strip technical pool/token/offer details before showing quote errors in UI. */
+export function isGoodsSourceQuoteFailure(quoteResult?: {
+  quoteStatus?: QuoteStatus;
+  errorMessage?: string | null;
+} | null): boolean {
+  if (!quoteResult) return false;
+  if (quoteResult.quoteStatus === "INGESTING") return true;
+  const raw = quoteResult.errorMessage?.trim();
+  if (!raw) return false;
+  const msg = userFacingQuoteErrorMessage(raw) ?? raw;
+  return (
+    msg === GOODS_INGESTING_MESSAGE ||
+    msg === GOODS_SOURCE_NOT_READY_USER_MESSAGE ||
+    msg.includes("入库")
+  );
+}
+
 export function userFacingQuoteErrorMessage(message?: string | null): string | undefined {
   const raw = message?.trim();
   if (!raw) return undefined;

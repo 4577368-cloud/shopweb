@@ -17,8 +17,9 @@ export interface MirrorCacheEntry {
   ts: number;
 }
 
+import { WORKFLOW_MIRROR_TTL_MS } from "@/lib/workflow/mirror-ttl";
+
 const cache = new Map<string, MirrorCacheEntry>();
-const TTL_MS = 120_000;
 
 export function getMirrorCache(shopName: string): MirrorCacheEntry | undefined {
   return cache.get(shopName);
@@ -34,7 +35,7 @@ export function setMirrorCache(
 export function isMirrorCacheFresh(shopName: string, now: number = Date.now()): boolean {
   const entry = cache.get(shopName);
   if (!entry) return false;
-  return now - entry.ts < TTL_MS;
+  return now - entry.ts < WORKFLOW_MIRROR_TTL_MS;
 }
 
 export function clearMirrorCache(shopName?: string): void {

@@ -3,6 +3,7 @@ import {
   getPreferredPoolServerConfig,
   isPreferredPoolConfigured,
   isPreferredPoolDuplicateMessage,
+  isPreferredPoolUpstreamSuccess,
 } from "@/lib/tangbuy/preferred-pool-config";
 
 export const runtime = "nodejs";
@@ -98,14 +99,16 @@ export async function POST(request: Request) {
       ok: true,
       status: "already_exists",
       msg: msg || "已在商品库",
+      code,
     });
   }
 
-  if (upstream.ok && (code === 200 || code === undefined)) {
+  if (isPreferredPoolUpstreamSuccess(upstream.ok, code, msg)) {
     return NextResponse.json({
       ok: true,
       status: "submitted",
       msg: msg || "成功",
+      code,
     });
   }
 
@@ -122,6 +125,7 @@ export async function POST(request: Request) {
         : msg || `商品库登记失败（${upstream.status}）`,
       upstreamStatus: upstream.status,
       code,
+      upstreamBody: parsed ? undefined : text.slice(0, 500) || undefined,
     },
     { status: isAuthFailure ? 401 : 502 }
   );

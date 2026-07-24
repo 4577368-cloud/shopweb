@@ -166,6 +166,25 @@ export function autoAssignSupplementGaps(
   return out;
 }
 
+/** Apply one supplement merchant to variants — best-effort SKU per row (no score cutoff). */
+export function assignSupplementMerchantToVariants(
+  variants: SkuVariant[],
+  candidateKey: string,
+  matrix: SourceSkuRow[]
+): Record<string, { candidateKey: string; skuId: string }> {
+  const out: Record<string, { candidateKey: string; skuId: string }> = {};
+  const key = candidateKey.trim();
+  if (!key || !matrix.length) return out;
+  for (const variant of variants) {
+    const top = rankSourceSkuRows(matrix, variant.optionLabel, {
+      variantPrice: variant.price,
+      variantImageUrl: variant.imageUrl,
+    })[0];
+    out[variant.thirdPlatformSkuId] = { candidateKey: key, skuId: top?.skuId ?? "" };
+  }
+  return out;
+}
+
 export interface RankedCoverageCandidate {
   candidate: ImageSearchProduct;
   hits: VariantSkuHit[];

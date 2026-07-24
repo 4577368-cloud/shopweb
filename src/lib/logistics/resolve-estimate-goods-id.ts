@@ -22,7 +22,7 @@ import {
   ensurePoolIngestForLogistics,
   retryPendingPoolResolve,
 } from "@/lib/tangbuy/preferred-pool";
-import type { ProductSourceIdentity } from "@/lib/types";
+import type { ProductLogisticsProfile, ProductSourceIdentity } from "@/lib/types";
 
 export interface EstimateGoodsIdInput {
   tangbuyGoodsId: string;
@@ -47,6 +47,11 @@ export interface UnresolvedEstimateGoodsId {
 }
 
 export type EstimateGoodsIdResult = ResolvedEstimateGoodsId | UnresolvedEstimateGoodsId;
+
+export interface EstimateGoodsResolveOptions {
+  /** Smart-estimate pipeline: skip pool polling, dedupe pool submit per product. */
+  bulkMode?: boolean;
+}
 
 function isEstimateReadyGoodsId(
   goodsId: string,
@@ -118,7 +123,8 @@ async function resolveWithPoolIngest(
   input: EstimateGoodsIdInput,
   shopName: string | undefined,
   offerId: string,
-  baseIdentity: ProductSourceIdentity
+  baseIdentity: ProductSourceIdentity,
+  options?: EstimateGoodsResolveOptions
 ): Promise<EstimateGoodsIdResult> {
   const existing =
     shopName && input.thirdPlatformItemId?.trim()
@@ -133,7 +139,8 @@ async function resolveWithPoolIngest(
     titleHint: input.titleHint,
     shopName,
     existingIdentity: mergedBase,
-    retryPoolSubmit: true,
+    retryPoolSubmit: !options?.bulkMode,
+    skipPoolPoll: options?.bulkMode,
   });
 
   await persistIdentity(shopName, input.thirdPlatformItemId ?? undefined, afterPool);
@@ -156,7 +163,8 @@ async function resolveWithPoolIngest(
 
 export async function resolveEstimateGoodsId(
   input: EstimateGoodsIdInput,
-  shopName?: string
+  shopName?: string,
+  options?: EstimateGoodsResolveOptions
 ): Promise<EstimateGoodsIdResult> {
   const rawGoodsId = input.tangbuyGoodsId.trim();
   const tangbuySkuId = input.tangbuySkuId.trim();
@@ -169,13 +177,14 @@ export async function resolveEstimateGoodsId(
 
   if (shopName && input.thirdPlatformItemId?.trim()) {
     const stored = readProductSourceIdentity(shopName, input.thirdPlatformItemId);
-    let effective = stored
-      ? await retryPendingPoolResolve(stored, {
+    let effective = stored;
+    if (stored && !options?.bulkMode) {
+      effective = await retryPendingPoolResolve(stored, {
           tangbuySkuId,
           titleHint: input.titleHint,
           shopName,
-        })
-      : null;
+        });
+    }
 
     if (effective?.internalGoodsId?.trim()) {
       const goodsId = effective.internalGoodsId;
@@ -219,7 +228,8 @@ export async function resolveEstimateGoodsId(
         input,
         shopName,
         offerFromStored,
-        effective ?? stored ?? { offerId1688: offerFromStored }
+        effective ?? stored ?? { offerId1688: offerFromStored },
+        options
       );
     }
   }
@@ -246,7 +256,8 @@ export async function resolveEstimateGoodsId(
         input,
         shopName,
         offerId,
-        cachedIdentity ?? { offerId1688: offerId }
+        cachedIdentity ?? { offerId1688: offerId },
+        options
       );
     }
     return asUnresolvedIngesting(input, rawGoodsId, cachedIdentity ?? undefined);
@@ -291,7 +302,8 @@ export async function resolveEstimateGoodsId(
       input,
       shopName,
       offerId ?? rawGoodsId,
-      identity
+      identity,
+      options
     );
   }
 
@@ -301,12 +313,60 @@ export async function resolveEstimateGoodsId(
   };
 }
 
+/** One pool submit per product during bulk estimate (parallel-safe). */
+async function preloadBulkPoolIngest(
+  variants: EstimateGoodsIdInput[],
+  shopName: string,
+  productMeta?: { thirdPlatformItemId?: string; title?: string | null }
+): Promise<void> {
+  const itemIds = new Set<string>();
+  for (const variant of variants) {
+    const itemId =
+      variant.thirdPlatformItemId?.trim() ||
+      productMeta?.thirdPlatformItemId?.trim();
+    if (itemId) itemIds.add(itemId);
+  }
+
+  await Promise.all(
+    [...itemIds].map(async (itemId) => {
+      const sample =
+        variants.find(
+          (v) =>
+            (v.thirdPlatformItemId?.trim() || productMeta?.thirdPlatformItemId) ===
+            itemId
+        ) ?? variants[0];
+      if (!sample) return;
+
+      const stored = readProductSourceIdentity(shopName, itemId);
+      if (stored?.internalGoodsId?.trim()) return;
+
+      const rawGoodsId = sample.tangbuyGoodsId?.trim() ?? "";
+      const offerId =
+        stored?.offerId1688?.trim() ||
+        extractOfferIdFromUrl(sample.detailUrl) ||
+        (isOfferId1688(rawGoodsId) ? rawGoodsId : null);
+      if (!offerId) return;
+
+      const afterPool = await ensurePoolIngestForLogistics({
+        offerId1688: offerId,
+        tangbuySkuId: sample.tangbuySkuId,
+        titleHint: sample.titleHint ?? productMeta?.title ?? null,
+        shopName,
+        existingIdentity: stored ?? { offerId1688: offerId },
+        skipPoolPoll: true,
+      });
+      await persistIdentity(shopName, itemId, afterPool);
+    })
+  );
+}
+
 export async function enrichVariantsWithEstimateGoodsIds<
   T extends EstimateGoodsIdInput & { thirdPlatformSkuId: string },
 >(
   variants: T[],
   shopName?: string,
-  productMeta?: { thirdPlatformItemId?: string; title?: string | null }
+  productMeta?: { thirdPlatformItemId?: string; title?: string | null },
+  options?: EstimateGoodsResolveOptions
 ): Promise<
   Array<
     T & {
@@ -318,6 +378,10 @@ export async function enrichVariantsWithEstimateGoodsIds<
     }
   >
 > {
+  if (options?.bulkMode && shopName?.trim() && variants.length > 0) {
+    await preloadBulkPoolIngest(variants, shopName, productMeta);
+  }
+
   return Promise.all(
     variants.map(async (variant) => {
       const resolved = await resolveEstimateGoodsId(
@@ -327,7 +391,8 @@ export async function enrichVariantsWithEstimateGoodsIds<
           thirdPlatformItemId:
             variant.thirdPlatformItemId ?? productMeta?.thirdPlatformItemId,
         },
-        shopName
+        shopName,
+        options
       );
       if ("goodsId" in resolved) {
         return {
@@ -431,6 +496,39 @@ export async function backfillProductSourceIdentity(input: {
       readProductSourceIdentity(input.shopName, input.thirdPlatformItemId) ?? null
     );
   }
+}
+
+export async function ingestProductSourceForLogistics(input: {
+  shopName: string;
+  profile: ProductLogisticsProfile;
+}): Promise<{
+  identity: ProductSourceIdentity | null;
+  ready: boolean;
+  ingesting: boolean;
+}> {
+  const variants = input.profile.variantDecisions ?? [];
+  const sample =
+    variants.find((v) => v.tangbuySkuId?.trim() && v.tangbuyGoodsId?.trim()) ??
+    variants.find((v) => v.tangbuySkuId?.trim()) ??
+    variants[0];
+
+  const identity = await backfillProductSourceIdentity({
+    shopName: input.shopName,
+    thirdPlatformItemId: input.profile.thirdPlatformItemId,
+    tangbuyProductId:
+      input.profile.tangbuyProductId ?? sample?.tangbuyGoodsId ?? null,
+    tangbuySkuId: sample?.tangbuySkuId ?? null,
+    detailUrl: input.profile.detailUrl ?? null,
+    titleHint: input.profile.title,
+    retryPoolSubmit: true,
+    skipPoolRetry: false,
+  });
+
+  const ready = Boolean(identity?.internalGoodsId?.trim());
+  const ingesting =
+    !ready && isPoolIngestPending(identity?.poolIngestStatus ?? null);
+
+  return { identity, ready, ingesting };
 }
 
 export { isInternalGoodsId, isOfferId1688, resolveInternalGoodsIdByOfferSku };

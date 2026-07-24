@@ -22,8 +22,9 @@ export interface LogisticsMirrorCacheEntry {
   ts: number;
 }
 
+import { WORKFLOW_MIRROR_TTL_MS } from "@/lib/workflow/mirror-ttl";
+
 const cache = new Map<string, LogisticsMirrorCacheEntry>();
-const TTL_MS = 120_000;
 
 export function getLogisticsMirrorCache(
   shopName: string
@@ -44,5 +45,10 @@ export function isLogisticsMirrorCacheFresh(
 ): boolean {
   const entry = cache.get(shopName);
   if (!entry) return false;
-  return now - entry.ts < TTL_MS;
+  return now - entry.ts < WORKFLOW_MIRROR_TTL_MS;
+}
+
+export function clearLogisticsMirrorCache(shopName?: string): void {
+  if (shopName) cache.delete(shopName);
+  else cache.clear();
 }

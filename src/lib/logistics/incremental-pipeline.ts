@@ -1,4 +1,7 @@
 import type { LogisticsEstimateResult } from "@/lib/api";
+import type {
+  PipelineFailureBuckets,
+} from "@/lib/logistics/pipeline-diagnostics";
 import { isVariantException } from "@/lib/logistics/display";
 import type {
   LogisticsAnalysis,
@@ -31,7 +34,14 @@ export type LogisticsPipelineProgress = {
     failed: number;
     skipped: number;
     ingestingRetry?: number;
+    failureBuckets?: PipelineFailureBuckets;
   };
+  /** Human-readable stage within quote/accept (e.g. resolving goods id). */
+  currentDetail?: string | null;
+  /** SKU progress for the product currently being quoted. */
+  skuProgress?: { done: number; total: number } | null;
+  /** Titles of products currently in flight. */
+  activeProductTitles?: string[];
   error: string | null;
 };
 

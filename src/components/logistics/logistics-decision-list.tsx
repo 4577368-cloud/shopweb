@@ -162,11 +162,14 @@ export function LogisticsDecisionList({
   onCorrect,
   onAcceptAi,
   onFetchProductQuotes,
+  onIngestProductSource,
+  onCatalogIngestComplete,
   onFetchVariantQuote,
   onClearFocus,
   onMeasureOverride,
   accepting,
   quotingProductId,
+  ingestingProductId,
   quotingVariantId,
   quoteRevealVariantIds,
   pricing,
@@ -186,6 +189,11 @@ export function LogisticsDecisionList({
   onCorrect: (itemId: string, type: LogisticsTypeCode) => void;
   onAcceptAi: (variant: VariantLogisticsDecision, productId: string) => void;
   onFetchProductQuotes: (productId: string, variants: VariantLogisticsDecision[]) => void;
+  onIngestProductSource?: (
+    productId: string,
+    profile: ProductLogisticsProfile
+  ) => void;
+  onCatalogIngestComplete?: (profile: ProductLogisticsProfile) => void;
   onFetchVariantQuote?: (
     variant: VariantLogisticsDecision,
     override?: MeasureOverride
@@ -194,6 +202,7 @@ export function LogisticsDecisionList({
   onMeasureOverride?: (variantId: string, next: MeasureOverride) => void;
   accepting?: boolean;
   quotingProductId?: string | null;
+  ingestingProductId?: string | null;
   quotingVariantId?: string | null;
   quoteRevealVariantIds?: Set<string>;
   pricing?: PricingTemplate | null;
@@ -465,6 +474,7 @@ export function LogisticsDecisionList({
             measureOverrides={measureOverrides}
             editingVariantId={editingVariantId}
             quotingProduct={quotingProductId === productId}
+            ingestingProduct={ingestingProductId === productId}
             quotingVariantId={quotingVariantId}
             quoteRevealVariantIds={quoteRevealVariantIds}
             onToggleExpanded={() => toggleExpanded(productId)}
@@ -486,6 +496,13 @@ export function LogisticsDecisionList({
             onFetchProductQuotes={() =>
               onFetchProductQuotes(profile.thirdPlatformItemId, variants)
             }
+            onIngestProductSource={
+              onIngestProductSource
+                ? () =>
+                    onIngestProductSource(profile.thirdPlatformItemId, profile)
+                : undefined
+            }
+            onCatalogIngestComplete={onCatalogIngestComplete}
             onFetchVariantQuote={onFetchVariantQuote}
             onCorrect={(type) => onCorrect(productId, type)}
             onMeasureOverride={onMeasureOverride}

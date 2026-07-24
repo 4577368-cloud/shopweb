@@ -16,7 +16,7 @@ import {
   Sparkles,
 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { StepSidebar } from "@/components/workbench/step-sidebar";
+import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import {
   AssistantRail,
@@ -281,7 +281,7 @@ export default function AuthorizePage() {
 
   return (
     <WorkbenchShell
-      sidebar={<StepSidebar />}
+      sidebar={<HubAwareSidebar />}
       rail={
         <AssistantRail
           assistantContent={
