@@ -85,11 +85,13 @@ import type { CandidateSummary } from "@/lib/agents/products/product-focus-snaps
 import { buildTrayInlineReasons } from "@/lib/agents/products/candidate-tray-explain";
 import {
   fetchItemGetProcurementPrice,
+  findSourceSkuRow,
+  mapItemGetToSourceSkuMatrix,
   resolveSkuDetailUrl,
 } from "@/lib/source-sku-matrix";
 import { ManualMatchDrawer } from "@/components/select/manual-match-drawer";
 import { SourceSupplierConfirmCard } from "@/components/select/source-supplier-confirm-card";
-import { isManualImageBinding } from "@/lib/manual-image-match";
+import { isManualImageBinding, resolveManualHeroImage } from "@/lib/manual-image-match";
 import { fetchItemDetail, isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
 import {
   applyBatchAckToBindings,
@@ -168,7 +170,6 @@ import {
   readPublishRevealQueue,
 } from "@/lib/batch-link/publish-reveal";
 import { isInternalGoodsId, resolveSourceDetailHref } from "@/lib/catalog-product-resolve";
-import { resolveManualHeroImage } from "@/lib/manual-image-match";
 
 export interface AgentIntentRequest {
   intent: ProductsIntentId;
@@ -1540,7 +1541,9 @@ function ShopProductCard({
   const snapImage = binding?.bound ? (binding.offerImageUrl ?? null) : null;
   const snapPrice = binding?.bound ? (binding.offerPrice ?? null) : null;
   const snapTitle = binding?.bound ? (binding.offerTitle ?? null) : null;
-  const hasSnapshot = Boolean(snapImage && snapPrice);
+  const hasSnapshotImage = Boolean(snapImage?.trim());
+  const hasSnapshotPrice = Boolean(snapPrice?.trim());
+  const hasSnapshot = hasSnapshotImage && hasSnapshotPrice;
 
   // Bound cards lazily fetch the real offer detail only when there's no snapshot, so the right tile can
   // still show 货源图/价 for legacy bindings (route B). New bindings skip this call entirely.
@@ -1606,7 +1609,7 @@ function ShopProductCard({
   }, [boundOfferId, boundDetailUrl, snapTitle]);
 
   useEffect(() => {
-    if (!boundOfferId || !boundDetailUrl || snapImage?.trim()) {
+    if (!boundOfferId || !boundDetailUrl || hasSnapshotImage) {
       setItemGetHeroImage(null);
       return;
     }
@@ -1615,8 +1618,15 @@ function ShopProductCard({
     void fetchItemDetail(boundDetailUrl)
       .then((detail) => {
         if (cancelled || !detail) return;
-        const image = resolveManualHeroImage(detail, null);
-        if (image) setItemGetHeroImage(image);
+        const fromDetail = resolveManualHeroImage(detail, null);
+        if (fromDetail) {
+          setItemGetHeroImage(fromDetail);
+          return;
+        }
+        const rows = mapItemGetToSourceSkuMatrix(detail);
+        const row = findSourceSkuRow(rows, binding?.tangbuySkuId);
+        const skuImage = row?.imageUrl?.trim();
+        if (skuImage) setItemGetHeroImage(skuImage);
       })
       .catch(() => {
         if (!cancelled) setItemGetHeroImage(null);
@@ -1624,7 +1634,7 @@ function ShopProductCard({
     return () => {
       cancelled = true;
     };
-  }, [boundOfferId, boundDetailUrl, snapImage]);
+  }, [boundOfferId, boundDetailUrl, binding?.tangbuySkuId, hasSnapshotImage]);
 
   useEffect(() => {
     if (!boundOfferId) {
