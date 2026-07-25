@@ -1,7 +1,16 @@
-// 运营中心 · 营销数据访问层（Phase A：mock 驱动）
-// 所有函数返回统一的 MarketingResponse，模拟网络延迟。用户接通后端（tangbuy-plugin
-// /api/plugin/marketing 代理）后，仅需把下面每个函数的实现替换为真实 fetch，组件与 hook 不动。
+// 运营中心 · 营销数据访问层
+// 默认走 tangbuy-plugin → pipispy；仅当 NEXT_PUBLIC_MARKETING_USE_MOCK=true 时用本地 mock。
 
+import {
+  fetchAdDetailReal,
+  fetchCompetitionReal,
+  fetchCreditsBalanceReal,
+  fetchRankListReal,
+  fetchSearchAdsReal,
+  fetchTtsShopsReal,
+  getReferenceCohortFromSession,
+} from "./marketing-real";
+import { PIPISPY_URI } from "./pipispy-uris";
 import {
   makeAdCards,
   makeAdDetail,
@@ -12,7 +21,7 @@ import {
   MOCK_RANK_META,
 } from "./mock";
 
-// 供发现页洞察面板复用（rank 行 region/category 侧信道，非 RankRow 字段）
+// 供发现页洞察面板复用（rank 行 region/category 侧信道，仅 mock）
 export { MOCK_RANK_META };
 import type {
   AdCard,
@@ -30,21 +39,11 @@ import type {
   CompetitionParams,
 } from "./types";
 
-// pipispy 真实 uri（代理统一 POST /open-api/v1/data，body {key,uri,params}）。
-// 仅作文档参考；mock 阶段不使用。用户接后端时，fetch 目标 = /api/plugin/marketing/data。
-export const PIPISPY_URI = {
-  competition: "/v3/api/open/store/detail/competition",
-  products: "/v3/api/open/store/detail/competition/products",
-  rankList: "/v3/api/open/rank/ad-product/list",
-  productsSearch: "/v3/api/open/ppspy/ad-products/search",
-  productDetail: "/v3/api/open/ppspy/ad-products/detail",
-  tiktokShopList: "/v3/api/open/tiktok-shop/shop/list",
-  aiImageSubmit: "/v3/api/open/ai-search/image/submit",
-  aiImageStatus: "/v3/api/open/ai-search/image/status",
-  aiImageResult: "/v3/api/open/ai-search/image/resultSummary",
-} as const;
+export { PIPISPY_URI } from "./pipispy-uris";
+export { MarketingApiError } from "./marketing-proxy";
 
-export const USE_MOCK = true;
+/** 本地 mock：`NEXT_PUBLIC_MARKETING_USE_MOCK=true` */
+export const USE_MOCK = process.env.NEXT_PUBLIC_MARKETING_USE_MOCK === "true";
 
 const delay = (ms = 380) => new Promise((res) => setTimeout(res, ms));
 
@@ -67,6 +66,7 @@ const ALL_TTS = makeTtsShops(60);
 
 /** 竞品参照集合（mock：全部 40 店；真实模式由后端返回"我的监控竞品"）。用于对标基准/雷达/流量质量分。 */
 export function referenceCohort(): StoreRow[] {
+  if (!USE_MOCK) return getReferenceCohortFromSession();
   return ALL_STORES;
 }
 
@@ -138,6 +138,7 @@ function consumeApi(n: number): number {
 
 // --- 账户级额度查询（对应 /open-api/v1/credits-balance）---
 export async function fetchCreditsBalance(): Promise<CreditsBalance> {
+  if (!USE_MOCK) return fetchCreditsBalanceReal();
   await delay(120);
   const acc = getAccount();
   return {
@@ -156,6 +157,7 @@ export async function fetchCreditsBalance(): Promise<CreditsBalance> {
 export async function fetchCompetition(
   params: CompetitionParams
 ): Promise<MarketingResponse<{ stores: StoreRow[]; products: AdCard[] }>> {
+  if (!USE_MOCK) return fetchCompetitionReal(params);
   await delay();
   const pageSize = params.pageSize ?? 10;
   const start = ((params.currentPage ?? 1) - 1) * pageSize;
@@ -175,6 +177,7 @@ export async function fetchCompetition(
 export async function fetchRankList(
   params: RankParams
 ): Promise<MarketingResponse<{ list: RankRow[]; page: PageMeta }>> {
+  if (!USE_MOCK) return fetchRankListReal(params);
   await delay();
   const pageSize = params.pageSize ?? 20;
   const page = params.page ?? 1;
@@ -216,6 +219,7 @@ export async function fetchSearchAds(
   page = 1,
   pageSize = 20
 ): Promise<MarketingResponse<{ list: AdCard[]; page: PageMeta }>> {
+  if (!USE_MOCK) return fetchSearchAdsReal(q, page, pageSize);
   await delay();
   const kw = q.trim().toLowerCase();
   const filtered = kw ? ALL_ADS.filter((a) => a.title.toLowerCase().includes(kw)) : ALL_ADS;
@@ -234,6 +238,7 @@ export async function fetchSearchAds(
 export async function fetchTtsShops(
   params: TtsShopParams
 ): Promise<MarketingResponse<{ list: TtsShopRow[]; page: PageMeta }>> {
+  if (!USE_MOCK) return fetchTtsShopsReal(params);
   await delay();
   const pageSize = params.pageSize ?? 20;
   const page = params.page ?? 1;
@@ -256,6 +261,7 @@ export async function fetchTtsShops(
 
 // --- 广告详情（ad-products/detail，无创意文案）---
 export async function fetchAdDetail(id: string): Promise<MarketingResponse<AdDetail>> {
+  if (!USE_MOCK) return fetchAdDetailReal(id);
   await delay();
   const consumed = CREDIT_PER_CALL;
   return {

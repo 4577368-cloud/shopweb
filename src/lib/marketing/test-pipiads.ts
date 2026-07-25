@@ -28,7 +28,7 @@ import {
   makeStores,
   makeTtsShops,
 } from "./mock";
-import { PIPISPY_URI } from "./api";
+import { PIPISPY_URI } from "./pipispy-uris";
 
 let passed = 0;
 let failed = 0;
