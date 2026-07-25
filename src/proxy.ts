@@ -5,13 +5,7 @@ const PUBLIC_FILE = /\.[^/]+$/; // static assets like /favicon.ico
 
 /**
  * Path prefixes that require an authenticated user (presence of `tb_access` cookie).
- * This is an *optimistic* check — the JWT itself is verified server-side by
- * JwtAuthFilter. The proxy only avoids rendering a protected page for a clearly
- * unauthenticated request.
- *
- * P2.1: business pages are now protected. Public routes: /login, /register,
- * /install (has its own auth check + redirects to /login), /authorize (reached
- * via OAuth redirect, may have a just-issued cookie).
+ * Root locale home (`/`, `/zh`, …) is the public marketing landing — not listed here.
  */
 const PROTECTED_PREFIXES = [
   "/account",
@@ -23,17 +17,6 @@ const PROTECTED_PREFIXES = [
   "/sku-align",
   "/sync",
 ];
-
-/**
- * Paths that are always public even if they look protected. The root workbench
- * "/" is protected separately below.
- */
-const PUBLIC_EXACT_PATHS: string[] = [];
-
-/** Whether the stripped (locale-removed) path is the root workbench. */
-function isRootWorkbench(stripped: string): boolean {
-  return stripped === "/" || stripped === "";
-}
 
 function detectLocale(req: NextRequest): string {
   // 1) Explicit choice persisted by the language switcher.
@@ -64,9 +47,7 @@ function stripLocale(pathname: string): string {
 
 function isProtected(pathname: string): boolean {
   const stripped = stripLocale(pathname);
-  if (PUBLIC_EXACT_PATHS.includes(stripped)) return false;
-  // Root workbench ("/" after stripping locale) requires login.
-  if (isRootWorkbench(stripped)) return true;
+  if (stripped === "/" || stripped === "") return false;
   return PROTECTED_PREFIXES.some((prefix) =>
     stripped === prefix || stripped.startsWith(prefix + "/")
   );
