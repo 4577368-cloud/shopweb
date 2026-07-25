@@ -18,8 +18,11 @@ import { setLaunchSummaryCacheIfNotFull } from "@/lib/sync/launch-summary-cache"
 import { warmLaunchSummaryPartial } from "@/lib/sync/warm-launch-summary-partial";
 import {
   computeShopProductBindingStats,
-  indexImageBindings,
 } from "@/lib/shop-product-binding-stats";
+import {
+  fetchImageBindingsMap,
+  mergeBindingsOnFetch,
+} from "@/lib/products/fetch-image-bindings-map";
 import type { ImageBindingView, PricingTemplate, ShopMirrorProduct } from "@/lib/types";
 
 type TranslateFn = (
@@ -114,10 +117,10 @@ export function useProductsMirror({
 
       if (silent && !force && isMirrorCacheFresh(shopMirrorKey)) {
         try {
-          const bindings = await api
-            .listImageBindings(shopName)
-            .catch(() => [] as ImageBindingView[]);
-          const map = indexImageBindings(bindings);
+          const fetched = await fetchImageBindingsMap(shopName);
+          const previous =
+            peekMirrorCache(shopMirrorKey)?.bindings ?? bindingsMap;
+          const map = mergeBindingsOnFetch(fetched, previous);
           const cached = peekMirrorCache(shopMirrorKey);
           const products = cached?.items ?? [];
           const { merged } = publishMirrorState(products, map);
@@ -131,12 +134,14 @@ export function useProductsMirror({
       if (!batchLinkBusyRef.current) {
         void api.backfillPublishedBindings(shopName).catch(() => null);
       }
-      const [products, bindings, tpl] = await Promise.all([
+      const [products, fetchedMap, tpl] = await Promise.all([
         api.getShopProducts(shopName).catch(() => [] as ShopMirrorProduct[]),
-        api.listImageBindings(shopName).catch(() => []),
+        fetchImageBindingsMap(shopName),
         api.getPricingTemplate(shopName).catch(() => null),
       ]);
-      const map = indexImageBindings(bindings);
+      const previous =
+        peekMirrorCache(shopMirrorKey)?.bindings ?? bindingsMap;
+      const map = mergeBindingsOnFetch(fetchedMap, previous);
       const { merged } = publishMirrorState(products, map);
       setPricingTemplate(tpl);
       setMirrorCache(shopMirrorKey, { items: products, bindings: map });
@@ -162,6 +167,7 @@ export function useProductsMirror({
       shopMirrorKey,
       shopName,
       t,
+      bindingsMap,
     ]
   );
 

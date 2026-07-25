@@ -48,6 +48,10 @@ import {
   setMirrorCache,
   isMirrorCacheFresh,
 } from "@/lib/products/mirror-cache";
+import {
+  fetchShopPanelBindingsMap,
+  mergeBindingsOnFetch,
+} from "@/lib/products/fetch-image-bindings-map";
 import type {
   ImageBindingView,
   ImageSearchProduct,
@@ -593,17 +597,14 @@ export function ShopProductsPanel({
 
     if (silent && !force && isMirrorCacheFresh(shopMirrorKey)) {
       try {
-        const bound = await api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]);
-        const map: Record<string, ImageBindingView> = {};
-        for (const b of bound) {
-          if (!b.thirdPlatformItemId) continue;
-          map[b.thirdPlatformItemId] = mergeStoredIdentityIntoBinding(
-            shopName,
-            b.thirdPlatformItemId,
-            b
-          );
-        }
-        const ackedMap = await autoAckHighConfidencePendingBindings(shopName, map);
+        const previous =
+          peekMirrorCache(shopMirrorKey)?.bindings ?? bindings;
+        const fetched = await fetchShopPanelBindingsMap(shopName);
+        const mergedMap = mergeBindingsOnFetch(fetched, previous);
+        const ackedMap = await autoAckHighConfidencePendingBindings(
+          shopName,
+          mergedMap
+        );
         const cached = peekMirrorCache(shopMirrorKey);
         const items = cached?.items ?? products;
         setProducts(items);
@@ -632,21 +633,18 @@ export function ShopProductsPanel({
       setError(null);
     }
     try {
-      const [items, bound] = await Promise.all([
+      const previous =
+        peekMirrorCache(shopMirrorKey)?.bindings ?? bindings;
+      const [items, fetchedMap] = await Promise.all([
         api.getShopProducts(shopName),
-        api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
+        fetchShopPanelBindingsMap(shopName),
       ]);
       setProducts(items);
-      const map: Record<string, ImageBindingView> = {};
-      for (const b of bound) {
-        if (!b.thirdPlatformItemId) continue;
-        map[b.thirdPlatformItemId] = mergeStoredIdentityIntoBinding(
-          shopName,
-          b.thirdPlatformItemId,
-          b
-        );
-      }
-      const ackedMap = await autoAckHighConfidencePendingBindings(shopName, map);
+      const mergedMap = mergeBindingsOnFetch(fetchedMap, previous);
+      const ackedMap = await autoAckHighConfidencePendingBindings(
+        shopName,
+        mergedMap
+      );
       setBindings(ackedMap);
       onShopProductsChange?.(items, ackedMap);
       setMirrorCache(shopMirrorKey, { items, bindings: ackedMap });
@@ -712,7 +710,7 @@ export function ShopProductsPanel({
       if (!silent) setLoading(false);
       setListSettled(true);
     }
-  }, [shopName, shopMirrorKey, onShopProductsChange]);
+  }, [shopName, shopMirrorKey, onShopProductsChange, bindings, products]);
 
   const batchLinkBusyRef = useRef(false);
   const batchWasActiveRef = useRef(false);
