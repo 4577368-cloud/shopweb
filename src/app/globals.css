@@ -184,6 +184,11 @@ a {
   text-decoration: none;
 }
 
+/* §3.2.2 — brand primary on <Link>: global `color: inherit` must not mute label on dark fill */
+a.bg-brand {
+  color: var(--brand-foreground);
+}
+
 button,
 input,
 select {

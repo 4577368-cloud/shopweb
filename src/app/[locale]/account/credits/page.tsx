@@ -25,6 +25,8 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { localeHtmlLang } from "@/i18n/config";
 import { cn } from "@/lib/utils";
+import { fetchCreditsBalance } from "@/lib/marketing/api";
+import type { CreditsBalance } from "@/lib/marketing/types";
 import {
   AccountCard,
   AccountEmptyState,
@@ -61,6 +63,11 @@ export default function AccountCreditsPage() {
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewError, setOverviewError] = useState<string | null>(null);
 
+  // pipispy 实时 API 额度（剩余数量，与运营中心顶部一致）。按 API key 维度，是最真实的剩余。
+  const [apiBalance, setApiBalance] = useState<CreditsBalance | null>(null);
+  const [apiBalanceLoading, setApiBalanceLoading] = useState(true);
+  const [apiBalanceError, setApiBalanceError] = useState<string | null>(null);
+
   // ===== Transactions =====
   const [txType, setTxType] = useState<string>("");
   const [transactions, setTransactions] = useState<CreditTransactionItem[]>([]);
@@ -85,9 +92,23 @@ export default function AccountCreditsPage() {
       const o = await billingApi.creditsOverview();
       setOverview(o);
     } catch (err) {
+      setOverview(null);
       setOverviewError(readError(err, t));
     } finally {
       setOverviewLoading(false);
+    }
+  }, [t]);
+
+  const loadApiBalance = useCallback(async () => {
+    setApiBalanceLoading(true);
+    setApiBalanceError(null);
+    try {
+      const b = await fetchCreditsBalance();
+      setApiBalance(b);
+    } catch (err) {
+      setApiBalanceError(readError(err, t));
+    } finally {
+      setApiBalanceLoading(false);
     }
   }, [t]);
 
@@ -141,10 +162,11 @@ export default function AccountCreditsPage() {
   useEffect(() => {
     if (bootstrapping) return;
     if (status !== "authenticated") return;
+    void loadApiBalance();
     void loadOverview();
     void loadTransactions("", 0);
     void loadLots(0);
-  }, [bootstrapping, status, loadOverview, loadTransactions, loadLots]);
+  }, [bootstrapping, status, loadApiBalance, loadOverview, loadTransactions, loadLots]);
 
   if (bootstrapping) {
     return <AccountLoadingState message={t("common.loading")} />;
@@ -172,16 +194,17 @@ export default function AccountCreditsPage() {
             variant="ghost"
             size="sm"
             onClick={() => {
+              void loadApiBalance();
               void loadOverview();
               void loadTransactions(txType, txOffset);
               void loadLots(lotOffset);
             }}
-            disabled={overviewLoading || txLoading || lotLoading}
+            disabled={apiBalanceLoading || overviewLoading || txLoading || lotLoading}
           >
             <RefreshCw
               className={cn(
                 "h-3.5 w-3.5",
-                (overviewLoading || txLoading || lotLoading) && "animate-spin"
+                (apiBalanceLoading || overviewLoading || txLoading || lotLoading) && "animate-spin"
               )}
             />
             {t("accountCredits.refresh")}
@@ -200,44 +223,72 @@ export default function AccountCreditsPage() {
               <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
                 {t("accountCredits.currentBalance")}
               </p>
-              {overviewLoading ? (
+              {apiBalanceLoading ? (
                 <div className="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   {t("accountCredits.loading")}
                 </div>
               ) : (
                 <p className="mt-0.5 text-2xl font-semibold tabular-nums text-foreground">
-                  {overview?.balanceCredits ?? 0}
+                  {apiBalance?.remainingApiCredits ?? 0}
                 </p>
               )}
-              {overviewError ? (
-                <p className="mt-1 text-[11px] text-destructive">{overviewError}</p>
+              {apiBalanceError ? (
+                <p className="mt-1 text-[11px] text-destructive">{apiBalanceError}</p>
+              ) : apiBalance ? (
+                <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground/80">
+                  <p>{t("accountCredits.apiSource")}</p>
+                  <p className="tabular-nums">
+                    {t("accountCredits.monitorRemaining")}:{" "}
+                    {apiBalance.remainingMonitorCredits.toLocaleString()}
+                  </p>
+                </div>
               ) : null}
             </div>
           </div>
         </div>
 
-        {overview ? (
-          <dl className="mt-4 grid grid-cols-3 gap-3">
-            <AccountStatItem
-              label={t("accountCredits.totalGranted")}
-              value={overview.totalGranted}
-              tone="ok"
-              icon={<ArrowUp className="h-3 w-3" />}
-            />
-            <AccountStatItem
-              label={t("accountCredits.totalConsumed")}
-              value={overview.totalConsumed}
-              tone="warn"
-              icon={<ArrowDown className="h-3 w-3" />}
-            />
-            <AccountStatItem
-              label={t("accountCredits.totalExpired")}
-              value={overview.totalExpired}
-              tone="muted"
-            />
-          </dl>
-        ) : null}
+        <div className="mt-4 border-t border-surface-border pt-4">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+            {t("accountCredits.platformLedger")}
+          </p>
+          {overviewLoading ? (
+            <div className="mt-2 flex items-center gap-2 text-[12px] text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {t("accountCredits.loading")}
+            </div>
+          ) : overviewError ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 text-[11px] text-destructive">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {overviewError}
+              </span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => void loadOverview()}>
+                {t("accountCredits.retry")}
+              </Button>
+            </div>
+          ) : overview ? (
+            <dl className="mt-2 grid grid-cols-3 gap-3">
+              <AccountStatItem
+                label={t("accountCredits.totalGranted")}
+                value={overview.totalGranted}
+                tone="ok"
+                icon={<ArrowUp className="h-3 w-3" />}
+              />
+              <AccountStatItem
+                label={t("accountCredits.totalConsumed")}
+                value={overview.totalConsumed}
+                tone="warn"
+                icon={<ArrowDown className="h-3 w-3" />}
+              />
+              <AccountStatItem
+                label={t("accountCredits.totalExpired")}
+                value={overview.totalExpired}
+                tone="muted"
+              />
+            </dl>
+          ) : null}
+        </div>
       </AccountCard>
 
       {/* ===== Transactions ===== */}
@@ -328,7 +379,7 @@ export default function AccountCreditsPage() {
                           {tx.amount}
                         </p>
                         <p className="text-[10px] tabular-nums text-muted-foreground/80">
-                          {t("accountCredits.balanceAfter")}: {tx.balanceAfter}
+                          {t("accountCredits.balanceAfterPlatform")}: {tx.balanceAfter}
                         </p>
                       </div>
                     </div>
@@ -418,9 +469,10 @@ export default function AccountCreditsPage() {
         </div>
       </AccountCard>
 
-      <p className="text-[11px] leading-5 text-muted-foreground/80">
-        {t("accountCredits.footnote")}
-      </p>
+      <div className="space-y-1 text-[11px] leading-5 text-muted-foreground/80">
+        <p>{t("accountCredits.footnote")}</p>
+        <p>{t("accountCredits.footnoteLedger")}</p>
+      </div>
     </section>
   );
 }

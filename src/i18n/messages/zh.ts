@@ -392,7 +392,11 @@ export const zh: Dictionary = {
     signInRequired: "请先登录以管理安全设置。",
     subtitle: "修改密码以保护账户安全。",
     title: "安全设置",
-    toastPasswordChanged: "密码已修改，请重新登录"
+    toastPasswordChanged: "密码已修改，请重新登录",
+    sectionHub: "运营中枢",
+    hubHint: "开启后可展示订单中心、运营中心、履约中心等菜单入口。默认关闭，便于功能调试期间控制可见范围。",
+    hubOn: "已开启",
+    hubOff: "已关闭"
   },
   accountBills: {
     balanceAfter: "余额",
@@ -447,6 +451,12 @@ export const zh: Dictionary = {
   accountCredits: {
     balanceAfter: "余额",
     currentBalance: "当前积分",
+    apiSource: "数据来源：pipispy 实时 API 额度",
+    balanceAfterPlatform: "平台账后余额",
+    monitorRemaining: "监控额度剩余",
+    footnoteLedger:
+      "顶部大数字为 pipispy 实时 API 额度（与运营中心一致）。流水中的「平台账后余额」为 Tangbuy 平台积分账户记账，用于发放与消耗追溯，两者数值可能不同。",
+    retry: "重试",
     errorUnauthenticated: "登录已失效，请重新登录。",
     expiresAt: "过期",
     filterAll: "全部",
@@ -477,6 +487,7 @@ export const zh: Dictionary = {
     title: "积分",
     totalConsumed: "累计消耗",
     totalExpired: "累计过期",
+    platformLedger: "平台积分账户（累计）",
     totalGranted: "累计发放",
     transactionsEmpty: "暂无消耗记录。",
     transactionsHint: "每条记录关联具体接口名（endpoint），便于追查消耗来源。",
@@ -1736,6 +1747,11 @@ export const zh: Dictionary = {
       monitorRemaining: "监控剩余",
       viewUsage: "查看用量明细",
     },
+    fetch: {
+      get: "获取",
+      prompt: "点击右上角「获取」或本页「搜索」后才会拉取广告数据；已获取的结果会缓存在本标签页，刷新不会重复扣点。",
+      staleFilters: "筛选已变更，请点击「获取」或「搜索」更新列表。",
+    },
     pulse: "市场脉搏",
     tabs: { discovery: "发现", competition: "竞店", creatives: "素材", imageSearch: "以图搜" },
     pulseApiBalance: "API 余额",
@@ -1849,6 +1865,11 @@ export const zh: Dictionary = {
         colSales: "销量",
         colGoods: "商品数",
         colVideo: "视频数",
+        detailClose: "关闭",
+        detailId: "店铺 ID",
+        detailFollowers: "粉丝",
+        detailAvgPrice: "均价 (USD)",
+        detailPlays: "播放量",
       },
       board: {
         title: "TikTok 商品榜单",

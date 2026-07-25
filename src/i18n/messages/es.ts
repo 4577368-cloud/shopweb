@@ -392,7 +392,12 @@ export const es: Dictionary = {
     signInRequired: "Inicia sesión para gestionar la seguridad.",
     subtitle: "Cambia tu contraseña para proteger tu cuenta.",
     title: "Seguridad",
-    toastPasswordChanged: "Contraseña cambiada. Inicia sesión de nuevo."
+    toastPasswordChanged: "Contraseña cambiada. Inicia sesión de nuevo.",
+    sectionHub: "Hub de operaciones",
+    hubHint:
+      "Activa los menús del Centro de pedidos, Centro de operaciones y Centro de cumplimiento. Desactivado por defecto para controlar la visibilidad durante el desarrollo.",
+    hubOn: "Activado",
+    hubOff: "Desactivado"
   },
   accountBills: {
     balanceAfter: "Saldo",
@@ -447,6 +452,12 @@ export const es: Dictionary = {
   accountCredits: {
     balanceAfter: "Saldo",
     currentBalance: "Créditos actuales",
+    apiSource: "Fuente: créditos API de pipispy en tiempo real",
+    balanceAfterPlatform: "Saldo de plataforma tras mov.",
+    monitorRemaining: "Créditos de monitoreo restantes",
+    footnoteLedger:
+      "El número principal son los créditos API pipispy en tiempo real (igual que el centro de operaciones). «Saldo de plataforma tras mov.» en el libro es la cuenta de créditos Tangbuy para asignación y auditoría; ambos pueden diferir.",
+    retry: "Reintentar",
     errorUnauthenticated: "Sesión expirada. Inicia sesión de nuevo.",
     expiresAt: "Expira",
     filterAll: "Todo",
@@ -477,6 +488,7 @@ export const es: Dictionary = {
     title: "Créditos",
     totalConsumed: "Total consumido",
     totalExpired: "Total expirado",
+    platformLedger: "Cuenta de créditos de plataforma (acumulado)",
     totalGranted: "Total otorgado",
     transactionsEmpty: "Sin consumo.",
     transactionsHint: "Cada registro está vinculado a un endpoint específico para rastrear el origen del consumo.",
@@ -1736,6 +1748,12 @@ export const es: Dictionary = {
       monitorRemaining: "Monitoreo restante",
       viewUsage: "Ver detalle de uso",
     },
+    fetch: {
+      get: "Obtener",
+      prompt:
+        "Los datos de anuncios solo se cargan al pulsar Obtener (arriba) o Buscar. Los resultados quedan en caché en esta pestaña; actualizar no vuelve a cobrar.",
+      staleFilters: "Filtros cambiados — pulsa Obtener o Buscar para actualizar.",
+    },
     pulse: "Pulso del mercado",
     tabs: { discovery: "Descubrimiento", competition: "Competencia", creatives: "Creativos", imageSearch: "Búsqueda por imagen" },
     pulseApiBalance: "Saldo API",
@@ -1849,6 +1867,11 @@ export const es: Dictionary = {
         colSales: "Vol. ventas",
         colGoods: "Artículos",
         colVideo: "Vídeos",
+        detailClose: "Cerrar",
+        detailId: "ID tienda",
+        detailFollowers: "Seguidores",
+        detailAvgPrice: "Precio medio (USD)",
+        detailPlays: "Reproducciones",
       },
       board: {
         title: "Ránking de productos de TikTok",

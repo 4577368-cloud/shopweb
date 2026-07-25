@@ -182,13 +182,12 @@ export default function AccountShopsPage() {
               <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
               {t("accountShops.refresh")}
             </Button>
-            <Link
-              href={localePath(locale, "/install")}
-              className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-control)] bg-brand px-2 text-xs font-medium text-brand-foreground transition-colors hover:bg-brand-hover"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {t("accountShops.addShop")}
-            </Link>
+            <Button variant="primary" size="sm" asChild>
+              <Link href={localePath(locale, "/install")}>
+                <Plus className="h-3.5 w-3.5" />
+                {t("accountShops.addShop")}
+              </Link>
+            </Button>
           </>
         }
       />
@@ -379,13 +378,12 @@ function EmptyState({
       <h3 className="mt-3 text-sm font-semibold text-foreground">{title}</h3>
       <p className="mx-auto mt-1 max-w-md text-[12px] leading-5 text-muted-foreground">{desc}</p>
       <div className="mt-4">
-        <Link
-          href={ctaHref}
-          className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] bg-brand px-3.5 text-sm font-medium text-brand-foreground hover:bg-brand-hover"
-        >
-          <Plus className="h-4 w-4" />
-          {ctaLabel}
-        </Link>
+        <Button variant="primary" asChild>
+          <Link href={ctaHref}>
+            <Plus className="h-4 w-4" />
+            {ctaLabel}
+          </Link>
+        </Button>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { useT } from "@/i18n/LocaleProvider";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { MarketingContext } from "@/hooks/use-marketing-runner";
 
@@ -12,6 +13,8 @@ interface CreditsIndicatorProps {
   monitorRemaining: number;
   context: MarketingContext;
   onOpenUsage?: () => void;
+  onFetch?: () => void;
+  fetchDisabled?: boolean;
   className?: string;
 }
 
@@ -20,19 +23,22 @@ export function CreditsIndicator({
   monitorRemaining,
   context,
   onOpenUsage,
+  onFetch,
+  fetchDisabled,
   className,
 }: CreditsIndicatorProps) {
   const t = useT();
   const [open, setOpen] = useState(false);
 
   return (
-    <div
-      className={cn("relative", className)}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
-    >
+    <div className={cn("flex items-center gap-2", className)}>
+      <div
+        className="relative"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+      >
       <button
         type="button"
         className="inline-flex items-center gap-2 rounded-full border border-hairline bg-surface px-3 py-1.5 text-xs shadow-sm transition-colors hover:bg-surface-muted"
@@ -81,6 +87,20 @@ export function CreditsIndicator({
             )}
           </div>
         </div>
+      )}
+      </div>
+      {onFetch && (
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          disabled={fetchDisabled}
+          onClick={onFetch}
+          title={t("ops.fetch.get")}
+          aria-label={t("ops.fetch.get")}
+        >
+          {t("ops.fetch.get")}
+        </Button>
       )}
     </div>
   );

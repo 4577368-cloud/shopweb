@@ -180,11 +180,6 @@ export function CatalogProductCard({
           {t("catalogCard.linkBtn")}
         </Button>
       </div>
-        {published && result?.shopifyProductId ? (
-          <p className="mt-1.5 break-all text-[10px] leading-tight text-ink-subtle">
-            {result.shopifyProductId}
-          </p>
-        ) : null}
         {state?.error ? (
           <p className="mt-1.5 text-[10px] leading-tight text-destructive">{state.error}</p>
         ) : null}

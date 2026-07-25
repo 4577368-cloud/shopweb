@@ -12,6 +12,7 @@ import {
 } from "react";
 import { ApiError, registerRefreshHandler } from "@/lib/api";
 import { authApi } from "@/lib/auth/api";
+import { syncRememberedShopForUser } from "@/lib/restore-shop-auth";
 import type {
   AuthError,
   AuthStatus,
@@ -147,6 +148,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(async (payload: RegisterPayload) => {
     const { user: u } = await authApi.register(payload);
+    syncRememberedShopForUser(u.id);
     setUser(u);
     setStatus("authenticated");
     setError(null);
@@ -155,6 +157,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (payload: LoginPayload) => {
     const { user: u } = await authApi.login(payload);
+    syncRememberedShopForUser(u.id);
     setUser(u);
     setStatus("authenticated");
     setError(null);

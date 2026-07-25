@@ -209,12 +209,9 @@ export function AccountSignInState({
           {icon}
           <span>{message}</span>
         </div>
-        <Link
-          href={signInHref}
-          className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] bg-brand px-3.5 text-sm font-medium text-brand-foreground transition-colors hover:bg-brand-hover"
-        >
-          {signInLabel}
-        </Link>
+        <Button variant="primary" asChild>
+          <Link href={signInHref}>{signInLabel}</Link>
+        </Button>
       </div>
     </AccountCard>
   );

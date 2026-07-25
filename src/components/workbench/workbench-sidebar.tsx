@@ -12,7 +12,7 @@ import { SidebarUpgradeCta } from "@/components/workbench/sidebar-upgrade-cta";
 import { SidebarUserMenu } from "@/components/workbench/sidebar-user-menu";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
-import { HUB_ENABLED } from "@/lib/hub/flags";
+import { useHubFeatureFlag } from "@/lib/hub/feature-flag";
 import { cn } from "@/lib/utils";
 import type { WorkflowStepSnapshot, WorkflowStatusKey } from "@/lib/workflow-step-snapshots";
 
@@ -63,7 +63,7 @@ function HubNavIcon({
 }
 
 export interface WorkbenchSidebarProps {
-  /** Extra panel below nav (e.g. 运营中心 Watchlist). */
+  /** Extra panel below nav (e.g. 运营中心用量卡). */
   bottomPanel?: ReactNode;
   /** Hide outer aside chrome when nested (legacy layouts). */
   embedded?: boolean;
@@ -96,7 +96,8 @@ export function WorkbenchSidebar({ bottomPanel, embedded }: WorkbenchSidebarProp
 
   const progress = syncCompleted ? 100 : workflowProgressPercent;
   const flowSectionLabel = syncCompleted ? t("nav.dropship") : t("nav.flow");
-  const hubUnlocked = operationsHubReady && HUB_ENABLED;
+  const { enabled: hubEnabled } = useHubFeatureFlag();
+  const hubUnlocked = operationsHubReady && hubEnabled;
 
   const navItems = steps.map((s) => ({
     id: s.id,
@@ -218,7 +219,7 @@ export function WorkbenchSidebar({ bottomPanel, embedded }: WorkbenchSidebarProp
           {hubItems.map((item) => {
             const current = item.href ? pathname === item.href : false;
             const disabled = !item.href || !hubUnlocked;
-            const disabledHint = !HUB_ENABLED ? t("sidebar.hubUnavailable") : undefined;
+            const disabledHint = !hubEnabled ? t("sidebar.hubUnavailable") : undefined;
 
             if (disabled) {
               return (
@@ -268,7 +269,7 @@ export function WorkbenchSidebar({ bottomPanel, embedded }: WorkbenchSidebarProp
         <div className="min-h-0 flex-1" aria-hidden />
       )}
 
-      <SidebarUpgradeCta className="hidden" />
+      <SidebarUpgradeCta />
 
       <div className="flex shrink-0 items-center gap-2 border-t border-hairline px-4 py-2.5">
         <SidebarUserMenu className="min-w-0 flex-1" />

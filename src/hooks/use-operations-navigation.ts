@@ -36,7 +36,7 @@ function readParams(): OperationsNavigationState {
       discoverySeg: "ads",
       discoveryAdsSeg: "rank",
       competitionQuery: "",
-      creativesQuery: "led strip",
+      creativesQuery: "",
     };
   }
   const params = new URLSearchParams(window.location.search);
@@ -60,7 +60,7 @@ function readParams(): OperationsNavigationState {
     discoverySeg: validDiscoverySeg,
     discoveryAdsSeg: validAdsSeg,
     competitionQuery: params.get(COMPETITION_Q_KEY) ?? "",
-    creativesQuery: params.get(CREATIVES_Q_KEY) ?? "led strip",
+    creativesQuery: params.get(CREATIVES_Q_KEY) ?? "",
   };
 }
 
@@ -91,7 +91,7 @@ function writeParams(state: OperationsNavigationState): void {
     params.delete(ADS_SEG_KEY);
     params.delete(CREATIVES_Q_KEY);
   } else if (state.tab === "creatives") {
-    if (state.creativesQuery !== "led strip") params.set(CREATIVES_Q_KEY, state.creativesQuery);
+    if (state.creativesQuery) params.set(CREATIVES_Q_KEY, state.creativesQuery);
     else params.delete(CREATIVES_Q_KEY);
     params.delete(DISCOVERY_SEG_KEY);
     params.delete(ADS_SEG_KEY);
@@ -125,7 +125,7 @@ export function useOperationsNavigation(): OperationsNavigationState &
     discoverySeg: "ads",
     discoveryAdsSeg: "rank",
     competitionQuery: "",
-    creativesQuery: "led strip",
+    creativesQuery: "",
   });
 
   // 挂载后再从 URL 校正真实视图状态（此时 window 已可用）。首帧两端一致，挂载后校正，避免 hydration 报错。

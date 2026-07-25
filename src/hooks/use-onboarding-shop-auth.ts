@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useState,
   useSyncExternalStore,
   type Dispatch,
@@ -17,10 +16,9 @@ import {
   subscribeAuthSessionReady,
 } from "@/lib/onboarding/auth-session-ready";
 import {
-  clearAuthVerified,
+  clearRememberedShopDomain,
   fetchRestoredShopAuth,
   markAuthVerified,
-  readStoredShopDomain,
   resolveShopDomainToRestore,
 } from "@/lib/restore-shop-auth";
 import { normalizeShopApiName, shopApiNameFromDomain } from "@/lib/resolve-shop-api-name";
@@ -108,18 +106,6 @@ export function useOnboardingShopAuth({
     }, 900);
   }, [shopDomainInput, setOverview, updateStepStatus]);
 
-  useLayoutEffect(() => {
-    const domain = readStoredShopDomain();
-    if (!domain) return;
-    setShopDomainInput(domain);
-    setShop((prev) => ({
-      ...prev,
-      domain,
-      name: shopApiNameFromDomain(domain),
-    }));
-    setAuthStatus("authorized");
-  }, []);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (userBootstrapping) return;
@@ -143,6 +129,15 @@ export function useOnboardingShopAuth({
         }
 
         if (!shopToRestore) {
+          setShopDomainInput("");
+          setShop((prev) => ({
+            ...prev,
+            domain: "",
+            name: "",
+            productCount: 0,
+            authorizedAt: undefined,
+          }));
+          setAuthStatus("waiting_input");
           return;
         }
 
@@ -155,8 +150,16 @@ export function useOnboardingShopAuth({
           return;
         }
 
-        clearAuthVerified();
-        setAuthStatus("ready_to_authorize");
+        clearRememberedShopDomain();
+        setShopDomainInput("");
+        setShop((prev) => ({
+          ...prev,
+          domain: "",
+          name: "",
+          productCount: 0,
+          authorizedAt: undefined,
+        }));
+        setAuthStatus("waiting_input");
       } catch {
         // Keep optimistic session from localStorage; user can retry authorize.
       }

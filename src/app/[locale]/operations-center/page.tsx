@@ -1,14 +1,13 @@
 // 运营中心 · 第二版完整前端交互（Phase A，mock 驱动可点击原型）。
-// 编排：HubSidebar + 左栏(Watchlist + 用量卡) + 中栏(市场脉搏头 + Top Tab + 上下文条 + 视图 + 快捷操作 footer)
-//        + 右栏(营销 Copilot, 引用真实字段) + 统一详情抽屉 + 竞店对比弹窗。
-// 默认落地 Tab = 发现（设计 §8）。HUB_ENABLED 控制是否暴露（同订单中心）。
+// 编排：HubSidebar + 左栏(用量卡) + 中栏(Top Tab + 视图) + 右栏 Copilot + 详情抽屉。
+// 默认落地 Tab = 发现（设计 §8）。Hub 开关见 feature-flag + HubRouteGate。
 //
 // 页面本身只做「组装」：状态与出站逻辑已抽到独立 Hooks（useMarketingRunner / useOperationsNavigation /
 // useOperationsWatchlist），避免页面文件无限膨胀。
 
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { messages } from "@/i18n/messages";
 import { localePath } from "@/i18n/LocaleLink";
@@ -24,16 +23,16 @@ import { fetchAdDetail } from "@/lib/marketing/api";
 import { fmtCompact } from "@/lib/marketing/format";
 import { ctaLabel } from "@/lib/marketing/enums";
 import { isGuardCancel } from "@/lib/marketing/guard";
-import type { AdDetail, StoreRow } from "@/lib/marketing/types";
-import { DiscoveryView } from "@/components/operations/discovery-view";
-import { CompetitionView } from "@/components/operations/competition-view";
-import { CreativesView } from "@/components/operations/creatives-view";
+import type { AdDetail, StoreRow, TtsShopRow } from "@/lib/marketing/types";
+import { DiscoveryView, type DiscoveryViewHandle } from "@/components/operations/discovery-view";
+import { CompetitionView, type CompetitionViewHandle } from "@/components/operations/competition-view";
+import { CreativesView, type CreativesViewHandle } from "@/components/operations/creatives-view";
 import { AiImageSearch } from "@/components/operations/ai-image-search";
 import { AdDetailDrawer } from "@/components/operations/ad-detail-drawer";
 import { CompetitionDetailDrawer } from "@/components/operations/competition-detail-drawer";
+import { TtsShopDetailDrawer } from "@/components/operations/tts-shop-detail-drawer";
 import { CompareStoresModal } from "@/components/operations/compare-stores-modal";
 import { UsageDrawer } from "@/components/operations/usage-drawer";
-import { Watchlist } from "@/components/operations/watchlist";
 import { UsageCard } from "@/components/operations/usage-card";
 import { CreditsIndicator } from "@/components/operations/credits-indicator";
 import {
@@ -88,24 +87,26 @@ function OperationsCenterContent() {
   const ledger = useMarketingLedger();
   const { account, ctx, lastConsume, run } = useMarketingRunner(ledger.record);
   const nav = useOperationsNavigation();
-  const watchlist = useOperationsWatchlist(
-    useCallback(
-      (patch: { tab: "competition" | "creatives" | "discovery"; query: string }) => {
-        if (patch.tab === "competition") {
-          nav.navigate({ tab: "competition", competitionQuery: patch.query });
-        } else if (patch.tab === "creatives") {
-          nav.navigate({ tab: "creatives", creativesQuery: patch.query });
-        } else {
-          nav.navigate({ tab: "discovery" });
-        }
-      },
-      [nav]
-    )
-  );
+  const watchlist = useOperationsWatchlist();
+
+  const discoveryRef = useRef<DiscoveryViewHandle>(null);
+  const competitionRef = useRef<CompetitionViewHandle>(null);
+  const creativesRef = useRef<CreativesViewHandle>(null);
+
+  const handleMarketingFetch = useCallback(() => {
+    if (nav.tab === "discovery") discoveryRef.current?.fetchCurrent();
+    else if (nav.tab === "competition") competitionRef.current?.fetchCurrent();
+    else if (nav.tab === "creatives") creativesRef.current?.fetchCurrent();
+  }, [nav.tab]);
+
+  const fetchDisabled =
+    nav.tab === "imageSearch" ||
+    (nav.tab === "discovery" && nav.discoverySeg === "board");
 
   // 详情抽屉
   const [detailAd, setDetailAd] = useState<AdDetail | null>(null);
   const [detailStore, setDetailStore] = useState<StoreRow | null>(null);
+  const [detailTtsShop, setDetailTtsShop] = useState<TtsShopRow | null>(null);
   const [usageOpen, setUsageOpen] = useState(false);
 
   // 竞店对比弹窗
@@ -122,7 +123,7 @@ function OperationsCenterContent() {
     [nav]
   );
 
-  // 图搜结果卡快捷动作：关注此店（加入左栏竞店清单）/ 看竞店（跳竞店 Tab 以店名搜）。
+  // 图搜：关注竞店（☆ 状态）/ 看竞店（跳竞店 Tab 搜索）。
   const handleFollowStore = useCallback(
     (store: string) => watchlist.toggleCompetitor({ id: store, name: store }),
     [watchlist]
@@ -131,6 +132,11 @@ function OperationsCenterContent() {
     (store: string) => nav.navigate({ tab: "competition", competitionQuery: store }),
     [nav]
   );
+
+  const handleViewTtsDetail = useCallback((row: TtsShopRow) => {
+    setSubject(row.title);
+    setDetailTtsShop(row);
+  }, []);
 
   const handleViewDetail = useCallback(
     async (adId: string) => {
@@ -157,7 +163,7 @@ function OperationsCenterContent() {
     setDetailStore(store);
   }, []);
 
-  // 竞店关注集合：派生自左栏 Watchlist > 竞店组，☆ 按钮 / 详情抽屉 / 左栏 三方共享同一份持久化数据。
+  // 竞店 ☆：localStorage 持久化（无左栏列表 UI）。
   const collectedSet = useMemo(
     () => new Set(watchlist.competitors.map((c) => c.id)),
     [watchlist.competitors]
@@ -242,29 +248,17 @@ function OperationsCenterContent() {
     { id: "imageSearch", label: t("ops.tabs.imageSearch") },
   ];
 
-  const watchlistPanel = (
-    <>
-      <Watchlist
-        tts={watchlist.tts}
-        competitors={watchlist.competitors}
-        ads={watchlist.ads}
-        onSelect={watchlist.onSelect}
-        onSync={watchlist.onSync}
-        onAdd={watchlist.onAdd}
-      />
-      <div className="mt-3">
-        <UsageCard
-          account={account}
-          sessionUsed={ledger.sessionUsed}
-          onOpenDetail={() => setUsageOpen(true)}
-        />
-      </div>
-    </>
+  const sidebarFooter = (
+    <UsageCard
+      account={account}
+      sessionUsed={ledger.sessionUsed}
+      onOpenDetail={() => setUsageOpen(true)}
+    />
   );
 
   return (
     <WorkbenchShell
-      sidebar={<WorkbenchSidebar bottomPanel={watchlistPanel} />}
+      sidebar={<WorkbenchSidebar bottomPanel={sidebarFooter} />}
       rail={
         <AssistantRail
           assistantContent={<SectionGuide tab={nav.tab} />}
@@ -288,6 +282,8 @@ function OperationsCenterContent() {
             monitorRemaining={account?.remainingMonitorCredits ?? 0}
             context={ctx}
             onOpenUsage={() => setUsageOpen(true)}
+            onFetch={handleMarketingFetch}
+            fetchDisabled={fetchDisabled}
           />
         </div>
 
@@ -301,9 +297,11 @@ function OperationsCenterContent() {
 
         {nav.tab === "discovery" && (
           <DiscoveryView
+            ref={discoveryRef}
             run={run}
             shop={shopApiName}
             onViewCompetitor={handleViewCompetitor}
+            onViewTtsDetail={handleViewTtsDetail}
             onViewDetail={handleViewDetail}
             onLearnCreatives={handleLearnCreatives}
             initialSegment={nav.discoverySeg}
@@ -312,6 +310,7 @@ function OperationsCenterContent() {
         )}
         {nav.tab === "competition" && (
           <CompetitionView
+            ref={competitionRef}
             run={run}
             onOpenDetail={onOpenStore}
             onRequestCompare={(stores) => setCompareStores(stores)}
@@ -323,6 +322,7 @@ function OperationsCenterContent() {
         )}
         {nav.tab === "creatives" && (
           <CreativesView
+            ref={creativesRef}
             run={run}
             onOpenDetail={handleViewDetail}
             initialQuery={nav.creativesQuery}
@@ -351,6 +351,11 @@ function OperationsCenterContent() {
         onClose={() => setDetailStore(null)}
         onToggleCollect={handleToggleCollect}
         collected={detailStore ? collectedSet.has(detailStore.id) : false}
+      />
+      <TtsShopDetailDrawer
+        row={detailTtsShop}
+        onClose={() => setDetailTtsShop(null)}
+        onViewCompetitor={handleViewStore}
       />
       <CompareStoresModal
         open={!!compareStores}

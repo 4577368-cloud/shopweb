@@ -2,7 +2,7 @@
 // + 平台分布堆叠条 + 指标网格 + 标签 + 趋势线 + 多选对比。
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import { useT } from "@/i18n/LocaleProvider";
 import { Button } from "@/components/ui/button";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
@@ -10,6 +10,10 @@ import { Search } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { fetchCompetition } from "@/lib/marketing/api";
 import { isGuardCancel } from "@/lib/marketing/guard";
+import {
+  readMarketingViewState,
+  writeMarketingViewState,
+} from "@/lib/marketing/session-cache";
 import { lifecycleStage, platformMatrix } from "@/lib/marketing/analytics";
 import { REGIONS, SHOP_TYPES, PLATFORM_META, regionLabel, shopTypeLabel, categoryLabel } from "@/lib/marketing/enums";
 import type { AdPlatform, StoreAdState, StoreRow, MarketingResponse } from "@/lib/marketing/types";
@@ -26,11 +30,15 @@ interface CompetitionViewProps {
   onRequestCompare: (stores: StoreRow[]) => void;
   initialQuery?: string;
   onQueryChange?: (q: string) => void;
-  /** 已关注的竞店 id 集合（与左栏 Watchlist 共享同一份 watchlist.competitors）。 */
+  /** 已关注的竞店 id 集合（localStorage，竞店卡片 ☆）。 */
   collectedIds: Set<string>;
   /** 点击 ☆ 时调；page.tsx 负责把 store 写入 watchlist.toggleCompetitor。 */
   onToggleCollect: (store: StoreRow) => void;
 }
+
+export type CompetitionViewHandle = {
+  fetchCurrent: () => void;
+};
 
 type PlatSeg = "all" | AdPlatform;
 
@@ -54,7 +62,9 @@ function platformSegments(s: StoreRow): StackSegment[] {
   return segs;
 }
 
-export function CompetitionView({
+export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionViewProps>(
+  function CompetitionView(
+  {
   run,
   onOpenDetail,
   onRequestCompare,
@@ -62,7 +72,9 @@ export function CompetitionView({
   onQueryChange,
   collectedIds,
   onToggleCollect,
-}: CompetitionViewProps) {
+  },
+  ref
+) {
   const t = useT();
   const [query, setQuery] = useState(initialQuery);
   const [platSeg, setPlatSeg] = useState<PlatSeg>("all");
@@ -73,8 +85,24 @@ export function CompetitionView({
   const [data, setData] = useState<{ stores: StoreRow[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [searched, setSearched] = useState(Boolean(initialQuery));
+  const [searched, setSearched] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setQuery(initialQuery);
+  }, [initialQuery]);
+
+  useEffect(() => {
+    const snap = readMarketingViewState<{
+      query: string;
+      data: { stores: StoreRow[] };
+    }>("competition");
+    if (snap?.data) {
+      setQuery(snap.query);
+      setData(snap.data);
+      setSearched(true);
+    }
+  }, []);
 
   const doSearch = useCallback(
     async (id: string) => {
@@ -90,6 +118,7 @@ export function CompetitionView({
           () => fetchCompetition({ id: q, pageSize: 10 })
         );
         setData(res.data);
+        writeMarketingViewState("competition", { query: q, data: res.data });
       } catch (e) {
         if (!isGuardCancel(e)) setError(true);
       } finally {
@@ -99,10 +128,15 @@ export function CompetitionView({
     [run]
   );
 
-  useEffect(() => {
-    if (initialQuery) void doSearch(initialQuery);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useImperativeHandle(
+    ref,
+    () => ({
+      fetchCurrent: () => {
+        void doSearch(query);
+      },
+    }),
+    [doSearch, query]
+  );
 
   const visible = useMemo(() => {
     if (!data) return [];
@@ -253,7 +287,7 @@ export function CompetitionView({
           <Button size="sm" variant="secondary" onClick={() => doSearch(query)}>{t("ops.error.retry")}</Button>
         </div>
       ) : !searched || !data ? (
-        <p className="py-16 text-center text-sm text-ink-subtle">{t("ops.competition.empty")}</p>
+        <p className="py-16 text-center text-sm text-ink-subtle">{t("ops.fetch.prompt")}</p>
       ) : visible.length === 0 ? (
         <p className="py-16 text-center text-sm text-ink-subtle">{t("ops.competition.empty")}</p>
       ) : (
@@ -302,7 +336,7 @@ export function CompetitionView({
       )}
     </div>
   );
-}
+});
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (

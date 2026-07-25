@@ -355,18 +355,16 @@ function AuthorizePageContent() {
               {t("authorize.shopAlreadyBoundDesc", { domain: shopParam })}
             </p>
             <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-              <Link
-                href={localePath(locale, "/account/shops")}
-                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] bg-brand px-3 text-xs font-medium text-brand-foreground hover:bg-brand-hover"
-              >
-                {t("authorize.shopAlreadyBoundViewMine")}
-              </Link>
-              <Link
-                href={localePath(locale, "/install")}
-                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-hairline bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-hover"
-              >
-                {t("authorize.shopAlreadyBoundTryAnother")}
-              </Link>
+              <Button variant="primary" size="sm" asChild>
+                <Link href={localePath(locale, "/account/shops")}>
+                  {t("authorize.shopAlreadyBoundViewMine")}
+                </Link>
+              </Button>
+              <Button variant="secondary" size="sm" asChild>
+                <Link href={localePath(locale, "/install")}>
+                  {t("authorize.shopAlreadyBoundTryAnother")}
+                </Link>
+              </Button>
             </div>
           </div>
         </WorkbenchPanel>

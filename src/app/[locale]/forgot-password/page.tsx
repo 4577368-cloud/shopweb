@@ -88,12 +88,9 @@ export default function ForgotPasswordPage() {
               <p className="text-[13px] leading-5 text-muted-foreground">
                 {t("auth.forgotPasswordSent")}
               </p>
-              <Link
-                href={localePath(locale, "/login")}
-                className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-control)] bg-brand px-3.5 text-sm font-medium text-brand-foreground transition-colors hover:bg-brand-hover"
-              >
-                {t("auth.backToLogin")}
-              </Link>
+              <Button variant="primary" asChild>
+                <Link href={localePath(locale, "/login")}>{t("auth.backToLogin")}</Link>
+              </Button>
             </div>
           ) : (
             <form onSubmit={onSubmit} className="space-y-4">
