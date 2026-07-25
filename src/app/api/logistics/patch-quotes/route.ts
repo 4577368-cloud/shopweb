@@ -42,7 +42,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const existing = readAcceptances(shopName);
+    const existing = await readAcceptances(shopName);
     const bySku = new Map(
       existing.map((row) => [row.thirdPlatformSkuId, row] as const)
     );
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "没有可更新的已确认规格" }, { status: 400 });
     }
 
-    upsertAcceptances(shopName, patches);
+    await upsertAcceptances(shopName, patches);
     const analysis = await loadLogisticsAnalysis(shopName, false);
 
     return NextResponse.json({

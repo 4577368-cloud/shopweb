@@ -679,6 +679,17 @@ export interface ShopOrderHeader {
   currency?: string | null;
   totalPrice?: number | null;
   platformCreatedAt?: string | null;
+  /**
+   * 采购子单快照（plugin 经 listOrderDetail 映射，字段契约见 `src/lib/order/tangbuy/ord-line-snapshot.ts`）。
+   * 与采购系统 `tangbuy-procurement-api` mapper 对齐。
+   */
+  procurementLine?: import("@/lib/order/tangbuy/ord-line-snapshot").MerchantOrdLineSnapshot | null;
+}
+
+/** GET /api/plugin/order/procurement/snapshots — 按 Shopify 外单号批量附采购快照 */
+export interface ShopOrderProcurementSnapshot {
+  outerOrderId: string;
+  procurementLine: NonNullable<ShopOrderHeader["procurementLine"]>;
 }
 
 /** Background image-auto-match queue progress (POST start / GET active / GET {jobId}). */

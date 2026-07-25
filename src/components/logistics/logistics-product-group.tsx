@@ -39,6 +39,7 @@ import {
   type ProductShellMeta,
 } from "@/lib/logistics/product-shell";
 import { Button } from "@/components/ui/button";
+import { AccountManagerContactCta } from "@/components/account-manager/account-manager-contact-cta";
 import { CatalogIngestingBadge } from "@/components/ui/catalog-ingesting-badge";
 import { Select } from "@/components/ui/select";
 import { useT } from "@/i18n/LocaleProvider";
@@ -634,6 +635,7 @@ export function LogisticsProductGroup({
             {productQuoteLabel}
           </Button>
         ) : null}
+        <AccountManagerContactCta context="logistics" className="hidden sm:inline-flex" />
         <button
           type="button"
           onClick={onToggleExpanded}

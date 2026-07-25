@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
+  AlertTriangle,
   ArrowRight,
   Boxes,
   CheckCircle2,
@@ -30,6 +31,7 @@ import {
   SHOP_STORAGE_KEY,
   launchShopifyInstall,
   normalizeShopDomain,
+  resolveInstallError,
 } from "@/lib/shopify-install";
 import {
   ShopDomainConnectField,
@@ -122,8 +124,9 @@ function AuthorizePageContent() {
       const result = launchShopifyInstall(raw);
       if (!result.ok) {
         setRedirecting(false);
-        setConnectError(result.error ?? t("install.launchError"));
-        if (result.error) showToast(result.error);
+        const msg = resolveInstallError(t, result.errorCode, t("install.launchError"));
+        setConnectError(msg);
+        showToast(msg);
       }
     },
     [showToast, t]
@@ -131,6 +134,10 @@ function AuthorizePageContent() {
 
   useEffect(() => {
     if (!authSessionReady || isAuthorized) return;
+    // P2: if the OAuth callback already told us the shop is bound to another account,
+    // don't re-trigger the install loop — the error card handles this case.
+    const statusParam = searchParams.get("status")?.trim();
+    if (statusParam === "SHOP_ALREADY_BOUND") return;
     const shopParam = searchParams.get("shop")?.trim();
     if (!shopParam || autoShopAttempted.current) return;
     autoShopAttempted.current = true;
@@ -328,6 +335,44 @@ function AuthorizePageContent() {
     canConnect,
     onConnect: () => startShopifyInstall(),
   });
+
+  // P2: Shopify OAuth callback may redirect with status=SHOP_ALREADY_BOUND when the shop is
+  // bound to another account. Show a clear error instead of falling through to the normal
+  // "restore" flow (which would call /status — not user-scoped — and falsely show "authorized"
+  // because the other user's auth record still exists).
+  const oauthStatus = searchParams.get("status")?.trim();
+  if (oauthStatus === "SHOP_ALREADY_BOUND") {
+    const shopParam = searchParams.get("shop")?.trim() || "";
+    return (
+      <WorkbenchShell sidebar={<HubAwareSidebar />}>
+        <WorkbenchPanel title={t("authorize.pageTitle")}>
+          <div className="flex flex-col items-center justify-center gap-3 py-16">
+            <AlertTriangle className="h-8 w-8 text-amber-500" />
+            <p className="text-sm font-medium text-ink">
+              {t("authorize.shopAlreadyBoundTitle")}
+            </p>
+            <p className="max-w-md text-center text-xs leading-5 text-ink-muted">
+              {t("authorize.shopAlreadyBoundDesc", { domain: shopParam })}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+              <Link
+                href={localePath(locale, "/account/shops")}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] bg-brand px-3 text-xs font-medium text-brand-foreground hover:bg-brand-hover"
+              >
+                {t("authorize.shopAlreadyBoundViewMine")}
+              </Link>
+              <Link
+                href={localePath(locale, "/install")}
+                className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-hairline bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-hover"
+              >
+                {t("authorize.shopAlreadyBoundTryAnother")}
+              </Link>
+            </div>
+          </div>
+        </WorkbenchPanel>
+      </WorkbenchShell>
+    );
+  }
 
   if (
     redirecting &&

@@ -57,16 +57,26 @@ export function ProductsPageHeaderActions({
       {hasNewProductsToLink ? (
         <Button
           size="sm"
+          className="shrink-0 whitespace-nowrap"
           onClick={onEnqueueNewArrivalsBatchLink}
           disabled={batchLinkActive}
+          title={t("productsPage.batchLinkNewArrivalsTitle", {
+            count: newLinkableCount,
+          })}
         >
           {batchLinkActive ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {batchLinkActive
             ? t("productsPage.batchLinkRunning")
-            : t("productsPage.batchLinkNewArrivals", { count: newLinkableCount })}
+            : t("productsPage.batchLink")}
         </Button>
       ) : pageLinkableCount > 0 ? (
-        <Button size="sm" onClick={onEnqueueUnboundMatch} disabled={batchLinkActive}>
+        <Button
+          size="sm"
+          className="shrink-0 whitespace-nowrap"
+          onClick={onEnqueueUnboundMatch}
+          disabled={batchLinkActive}
+          title={t("productsPage.batchLinkPageTitle", { count: pageLinkableCount })}
+        >
           {batchLinkActive ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {batchLinkActive
             ? t("productsPage.batchLinkRunning")
@@ -78,7 +88,7 @@ export function ProductsPageHeaderActions({
         onMouseEnter={onPrefetchSkuAlign}
         onFocus={onPrefetchSkuAlign}
       >
-        <Button size="sm" variant={skuCtaPrimary ? "primary" : "secondary"}>
+        <Button size="sm" variant={skuCtaPrimary ? "primary" : "secondary"} className="shrink-0 whitespace-nowrap">
           {t("productsPage.skuBindingCta")}
           <ArrowRight className="h-4 w-4" />
         </Button>

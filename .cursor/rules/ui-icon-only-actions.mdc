@@ -1,0 +1,13 @@
+---
+description: Prefer icon-only controls for secondary/utility actions (refresh, close, etc.)
+alwaysApply: true
+---
+
+# Icon-only utility actions
+
+User preference: for secondary / utility controls (refresh, sync, close, retry affordances that sit next to a list or panel title), use a **small icon-only button** — no visible label text.
+
+- Pattern: `h-7 w-7 px-0` secondary button with ~`h-3.5 w-3.5` icon
+- Always set `title` and `aria-label` for accessibility
+- Place next to the content it acts on (e.g. list title row), not as a lone labeled button floating above the section
+- Do not use icon+文案 for these actions unless the user explicitly asks for a labeled CTA

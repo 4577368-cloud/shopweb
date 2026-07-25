@@ -1,0 +1,130 @@
+"use client";
+
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { CyberBackground } from "@/components/landing/cyber-background";
+import { LandingNav } from "@/components/landing/landing-nav";
+import { LandingHero } from "@/components/landing/landing-hero";
+import { LandingFeatures } from "@/components/landing/landing-features";
+import { LandingHowItWorks } from "@/components/landing/landing-how-it-works";
+import { LandingStats } from "@/components/landing/landing-stats";
+import { LandingValueProps } from "@/components/landing/landing-value-props";
+import { LandingUseCases } from "@/components/landing/landing-use-cases";
+import { LandingCtaBand } from "@/components/landing/landing-cta-band";
+import { LandingFooter } from "@/components/landing/landing-footer";
+import { AuthPanel } from "@/components/landing/auth-panel";
+import { useAuth } from "@/context/user-context";
+import { useOnboarding } from "@/context/onboarding-context";
+import { useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
+
+type LandingMode = "hero" | "auth";
+type AuthMode = "login" | "register";
+
+/**
+ * Landing 营销页容器。
+ *
+ * 状态机：
+ * - hero：全屏 Hero + Stats + Features + ValueProps + HowItWorks + UseCases + CtaBand + Footer
+ * - auth：左侧 Hero 缩略 + 右侧 420px 固定面板（登录/注册）
+ *
+ * Nav 按钮根据登录状态分流：
+ * - 未登录 → 显示登录/注册，点击触发 auth 模式
+ * - 已登录 → 显示"进入工作台"，链接到：
+ *   - 未绑店 → /authorize
+ *   - 已绑店 → /products
+ */
+export function LandingPage() {
+  const [mode, setMode] = useState<LandingMode>("hero");
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+
+  const { status: authStatus } = useAuth();
+  const { isAuthorized, operationsHubReady } = useOnboarding();
+  const locale = useLocale();
+
+  const entryHref =
+    authStatus === "authenticated"
+      ? localePath(
+          locale,
+          !isAuthorized ? "/authorize" : operationsHubReady ? "/order-center" : "/products"
+        )
+      : null;
+
+  const showAuth = (m: AuthMode) => {
+    setAuthMode(m);
+    setMode("auth");
+  };
+
+  const hideAuth = () => setMode("hero");
+
+  const startCta = () => {
+    if (authStatus === "authenticated") {
+      // 已登录用户点 CTA 也走工作台入口（不会发生，CTA 主要面向未登录）
+      return;
+    }
+    showAuth("register");
+  };
+
+  return (
+    <div className="landing-root">
+      <CyberBackground />
+
+      <LandingNav onShowAuth={showAuth} entryHref={entryHref} />
+
+      {/* 主内容区：根据模式切换布局 */}
+      <AnimatePresence mode="wait">
+        {mode === "hero" ? (
+          <motion.main
+            key="hero"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="relative z-10 pt-14"
+          >
+            {/* Hero 全屏 */}
+            <section className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-7xl flex-col justify-center px-6 py-20">
+              <LandingHero onStart={startCta} />
+            </section>
+
+            <LandingStats />
+            <LandingFeatures />
+            <LandingValueProps />
+            <LandingHowItWorks />
+            <LandingUseCases />
+            <LandingCtaBand onStart={startCta} />
+            <LandingFooter />
+          </motion.main>
+        ) : (
+          <motion.main
+            key="auth"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="relative z-10 flex min-h-screen pt-14"
+          >
+            {/* 左侧：Hero 缩略 + 功能亮点列表 */}
+            <div className="flex flex-1 flex-col justify-center px-6 py-20 lg:px-12">
+              <LandingHero onStart={startCta} compact />
+            </div>
+
+            {/* 右侧：登录/注册面板 */}
+            <motion.aside
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "tween", duration: 0.3, ease: "easeOut" }}
+              className="w-full max-w-[420px] shrink-0"
+            >
+              <AuthPanel
+                mode={authMode}
+                onModeChange={setAuthMode}
+                onClose={hideAuth}
+              />
+            </motion.aside>
+          </motion.main>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StepStatusBadge } from "@/components/ui/status-badge";
 import { useOnboarding } from "@/context/onboarding-context";
+import { LandingPage } from "@/components/landing/landing-page";
 import type { AiPanelContent } from "@/lib/types";
 import { formatNumber } from "@/lib/utils";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
@@ -30,7 +31,25 @@ function stepKeyFor(id: string): string {
   return id === "sku-align" ? "sku" : id;
 }
 
+/**
+ * 首页：默认渲染营销页（不论登录状态）。
+ *
+ * 营销页 Nav 的"进入工作台"按钮根据绑店状态智能分流：
+ * - 未登录 → 显示登录/注册，触发 AuthPanel
+ * - 已登录未绑店 → 按钮指向 /authorize
+ * - 已登录已绑店 → 按钮指向 /products
+ *
+ * Dashboard 组件代码保留（暂不删除），供后续聚合工作台入口复用。
+ */
 export default function HomePage() {
+  return <LandingPage />;
+}
+
+/**
+ * 原首页工作台 Dashboard。当前默认入口改为营销页，此组件暂保留不删除。
+ * 如需恢复为聚合工作台首页，将 HomePage 改为渲染 <Dashboard /> 即可。
+ */
+function Dashboard() {
   const {
     overview,
     steps,
@@ -226,31 +245,6 @@ export default function HomePage() {
                 <StepStatusBadge status={step.status} />
               </Link>
             ))}
-            <Link
-              href={localePath(locale, "/sync")}
-              className="flex items-center justify-between rounded-md border border-slate-100 px-3 py-2.5 hover:bg-slate-50"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-50 text-xs font-semibold text-slate-600">
-                  {steps.length + 1}
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-slate-800">
-                    {t("steps.sync.title")}
-                  </p>
-                  <p className="text-xs text-slate-500">{t("steps.sync.desc")}</p>
-                </div>
-              </div>
-              <StepStatusBadge
-                status={
-                  syncCompleted
-                    ? "completed"
-                    : syncPhase === "ready" || syncPhase === "syncing"
-                      ? "pending_confirm"
-                      : "not_started"
-                }
-              />
-            </Link>
           </CardContent>
         </Card>
 

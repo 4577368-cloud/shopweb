@@ -17,7 +17,9 @@ const buttonVariants = cva(
         secondary:
           "border border-brand bg-surface text-brand hover:bg-surface-hover active:bg-muted-strong",
         ghost:
-          "text-muted-foreground hover:bg-surface-hover hover:text-foreground active:bg-muted-strong",
+          // §3.2.2 Text Button / Link：文字 #3A40FF（link 色），无底色无边框。
+          // 原用 text-muted-foreground（灰）对比度低且不符合规范，改为 text-link。
+          "text-link hover:bg-surface-hover hover:text-link-hover active:bg-muted-strong",
         danger:
           "bg-destructive text-primary-foreground hover:brightness-95 active:brightness-90",
         link: "h-auto px-0 text-link underline-offset-4 hover:text-link-hover hover:underline active:scale-100",
@@ -36,16 +38,34 @@ const buttonVariants = cva(
 
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {}
+    VariantProps<typeof buttonVariants> {
+  /**
+   * 仿 shadcn Slot 行为：当 asChild 为 true，把唯一子元素（如 <Link>）克隆出来、
+   * 合并按钮样式与 ref，而不是渲染裸 <button>。用于「按钮外观的链接」避免 button>a 嵌套。
+   */
+  asChild?: boolean;
+}
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, ...props }, ref) => (
-    <button
-      ref={ref}
-      className={cn(buttonVariants({ variant, size }), className)}
-      {...props}
-    />
-  )
+  ({ className, variant, size, asChild = false, ...props }, ref) => {
+    const classes = cn(buttonVariants({ variant, size }), className);
+    if (asChild && React.isValidElement(props.children)) {
+      const child = props.children as React.ReactElement<{ className?: string }>;
+      const { children: _omit, ...rest } = props;
+      return React.cloneElement(child, {
+        ...rest,
+        className: cn(classes, child.props.className),
+        ref: ref as never,
+      } as Record<string, unknown>);
+    }
+    return (
+      <button
+        ref={ref}
+        className={classes}
+        {...props}
+      />
+    );
+  }
 );
 Button.displayName = "Button";
 

@@ -87,7 +87,7 @@ export async function loadLogisticsAnalysis(
     const { buildEmptyAnalysis } = await import("@/lib/logistics/decision-engine");
     return mergeAcceptancesIntoAnalysis(
       buildEmptyAnalysis(shopName) as LogisticsAnalysis,
-      readAcceptances(shopName)
+      await readAcceptances(shopName)
     );
   }
 
@@ -148,7 +148,7 @@ export async function loadLogisticsAnalysis(
     highRiskTypes: transformed.highRiskTypes,
   };
 
-  return mergeAcceptancesIntoAnalysis(base, readAcceptances(shopName));
+  return mergeAcceptancesIntoAnalysis(base, await readAcceptances(shopName));
 }
 
 export function collectAcceptableVariants(

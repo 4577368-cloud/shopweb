@@ -20,6 +20,7 @@ import {
   AssistantRail,
   CopilotCard,
 } from "@/components/workbench/assistant-rail";
+import { AccountManagerRailFooter } from "@/components/account-manager/account-manager-contact-cta";
 import { type ScanTaskStatus } from "@/components/workbench/scan-stage";
 import { SkuAlignScanView } from "@/components/sku-align/sku-align-scan-view";
 import { SkuAlignResultBody } from "@/components/sku-align/sku-align-result-body";
@@ -60,17 +61,11 @@ import {
   skuAlignProductWorkbenchHref,
 } from "@/lib/sku-align/deep-link";
 import { stashSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
+import { SkuLogisticsEntryGate } from "@/components/sku-align/sku-logistics-entry-gate";
 import type { AiPanelContent } from "@/lib/types";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 
-const SkuLogisticsEntryGate = dynamic(
-  () =>
-    import("@/components/sku-align/sku-logistics-entry-gate").then((m) => ({
-      default: m.SkuLogisticsEntryGate,
-    })),
-  { ssr: false }
-);
 const SkuAgentPanel = dynamic(
   () =>
     import("@/components/sku-align/sku-agent-panel").then((m) => ({
@@ -443,6 +438,7 @@ function SkuAlignContent() {
           ) : null}
         </>
       }
+      railFooter={<AccountManagerRailFooter context="sku" />}
     />
   );
 
@@ -458,14 +454,16 @@ function SkuAlignContent() {
               <Button
                 size="sm"
                 variant="secondary"
+                className="shrink-0 whitespace-nowrap"
                 onClick={() => void handleConfirmPageNeedsReview()}
                 disabled={confirmingPage || loading || refreshing}
-                title={t("sku.acceptPageTitle")}
+                title={t("sku.acceptPageTitle", { count: needsReviewOnPage })}
+                aria-label={t("sku.acceptPageTitle", { count: needsReviewOnPage })}
               >
                 {confirmingPage ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : null}
-                {t("sku.acceptPage", { count: needsReviewOnPage })}
+                {t("sku.acceptPage")}
               </Button>
             ) : null}
             <SkuLogisticsEntryGate />

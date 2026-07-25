@@ -15,6 +15,7 @@ import {
   X,
 } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
+import { AccountManagerContactCta } from "@/components/account-manager/account-manager-contact-cta";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -51,6 +52,7 @@ import {
 import { rankImageSearchBySkuMapping } from "@/lib/sku-align/image-search-sku-rank";
 import { loadSupplementManualProduct } from "@/lib/sku-align/supplement-manual-add";
 import { filterAvailableSupplementCandidates } from "@/lib/sku-align/supplement-candidate-availability";
+import { warmProductSourceAfterSkuBind } from "@/lib/sku-align/warm-logistics-source";
 import { manualBindWithFallback } from "@/lib/sku-align-v1/compat";
 import { recordBinding } from "@/lib/sku-align/learned-aliases";
 import {
@@ -1159,6 +1161,14 @@ export function SkuProductWorkbench({
         // 反馈沉淀：从人工确认的绑定学习别名（如 深燕麦≈燕麦色）
         recordBinding(variant.optionLabel, specLabel, { shopName });
       }
+      void warmProductSourceAfterSkuBind({
+        shopName,
+        thirdPlatformItemId: product.thirdPlatformItemId,
+        offerId: effectiveTangbuyId,
+        offerSkuId: pendingChanges[0]?.skuId,
+        detailUrl: effectiveDetailUrl,
+        titleHint: product.title ?? undefined,
+      });
       showToast(t("skuWorkbench.toastSavedMappings", { count: pendingChanges.length }));
       setPrimaryMappingDirty(false);
       await onSaved();
@@ -1599,6 +1609,7 @@ function PrimaryComparePanel({
                 {t("skuWorkbench.saveMappings")}
               </Button>
             ) : null}
+            <AccountManagerContactCta context="sku" />
           </div>
         </div>
       </div>

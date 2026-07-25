@@ -6,6 +6,7 @@ import {
   autoAlignUnboundProducts,
   autoConfirmPendingVariants,
 } from "@/lib/sku-align/auto-align-unresolved";
+import { warmLogisticsSourceFromProducts } from "@/lib/sku-align/warm-logistics-source";
 import { scrollToFirstSkuIssueProduct } from "@/lib/sku-align/deep-link";
 import type { SkuProductOverview } from "@/lib/types";
 import type { SkuFilterMode } from "@/components/sku-align/sku-binding-panel";
@@ -60,6 +61,7 @@ export function useSkuAlignAutoAlign({
             await autoConfirmPendingVariants(shopName, next);
             const confirmed = await api.getSkuOverview(shopName);
             setProducts(confirmed);
+            warmLogisticsSourceFromProducts(shopName, confirmed);
           } catch {
             // 自动确认失败不影响用户操作，仍可手动确认
           }

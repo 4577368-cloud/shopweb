@@ -20,14 +20,15 @@ export function SkuAlignAiPanel({
       <Button
         size="sm"
         variant="secondary"
-        className="mt-2 h-8 w-full justify-start text-xs"
+        className="mt-2 h-8 w-full justify-start whitespace-nowrap text-xs"
         disabled={needsReviewOnPage === 0 || confirming}
         onClick={onConfirmPage}
+        title={t("sku.acceptPageTitle", { count: needsReviewOnPage })}
       >
         {confirming ? (
           <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
         ) : null}
-        {t("skuAlignAi.acceptPagePending", { count: needsReviewOnPage })}
+        {t("sku.acceptPage")}
       </Button>
     </section>
   );

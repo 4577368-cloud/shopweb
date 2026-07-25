@@ -42,6 +42,8 @@ export interface ImageSearchPipelineResult {
 export interface ImageSearchPipelineContext {
   binding?: ImageBindingView | null;
   locale?: Locale;
+  /** Tangbuy 上架货源换供应商：仍走 1688 图搜，不跳过。 */
+  allowSupplierSwapSearch?: boolean;
 }
 
 const PUBLISH_SOURCED_SKIP_MESSAGE =
@@ -270,6 +272,7 @@ export async function runImageSearchPipeline(
   context?: ImageSearchPipelineContext
 ): Promise<ImageSearchPipelineResult> {
   if (
+    !context?.allowSupplierSwapSearch &&
     isAlreadySourcedProduct(
       context?.binding,
       shopName,

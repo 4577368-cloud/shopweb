@@ -12,11 +12,50 @@ export type OrderStatus =
   | "canceled";
 
 export interface LineItem {
+  /** Shopify variant id (back from `ThirdPlatformOrderLine.outerVariantId`).
+   *  Needed to deep-link into sku-align from the table's ➕ button. */
+  outerVariantId?: string;
   image?: string;
   title: string;
   sku: string;
   qty: number;
   unitCost: string; // 展示用货币字符串，如 "¥86.00"
+  // 关联货源（Tangbuy / 1688 offer）—— 下单 = 下单此关联商品，而非 Shopify 店铺商品本身。
+  // 真实关联来自 sku-align 的 currentBinding.offerId + sourceRole；mock 阶段由种子数据模拟该形态。
+  linkedOffer?: LinkedOffer;
+}
+
+// 货源平台
+export type OfferSource = "TANGBUY" | "1688";
+
+// 关联货源：Shopify 商品 → Tangbuy/1688 offer 的绑定（对应 sku-align 的 currentBinding）。
+export interface LinkedOffer {
+  offerId: string; // Tangbuy/1688 offerId
+  source: OfferSource; // 货源平台
+  sourceRole: "PRIMARY" | "SUPPLEMENT"; // 主货源 / 补货货源
+  title: string; // 货源商品标题
+  imageUrl?: string;
+  detailUrl?: string; // 货源商品详情（Tangbuy/1688）
+  procurementPrice: string; // 采购单价（CNY 串，如 "¥86.00"）—— 下单金额即此
+  supplier?: string; // 供应商名（可选展示）
+}
+
+// 后端 `GET /api/plugin/order/binding/lines` 返回的原始订单行。
+// 同步时已做「Shopify 行 → Tangbuy 货源」匹配并落库：前半段是 Shopify 行信息，
+// 后半段（tangbuy*）是匹配到的 Tangbuy 货源快照；bindingStatus 标记是否命中。
+export interface OrderBindingLine {
+  outerOrderId?: string | null;
+  outerVariantId?: string | null;
+  /** Shopify variant preview image (optional; backend may sync from variant media). */
+  previewImageUrl?: string | null;
+  outerProductId?: string | null; // Shopify product id (optional; needed to deep-link to sku-align)
+  sku?: string | null;
+  title?: string | null;
+  quantity?: number | null;
+  price?: number | null;
+  tangbuyProductId?: string | null;
+  tangbuySkuId?: string | null;
+  bindingStatus?: "BOUND" | "UNBOUND" | null;
 }
 
 // 支付状态（表格列使用；mock 阶段填写，Phase 4 真实接口替换）
@@ -96,4 +135,12 @@ export interface OrderSummary {
   canceledAt?: string;
   cancelReason?: string;
   refundStatus?: string;
+
+  /** Tangbuy 子单 goodsStatus（Admin ord_line_stat），有则列表状态以此为准 */
+  procurementLineStatus?: number;
+  procurementLineStatusLabel?: string;
+  /** 商家侧履约阶段（i18n：`order.merchantPhase.*`） */
+  merchantFulfillmentPhase?: string;
+  procurementExceptionTag?: string;
+  procurementQueue?: string;
 }

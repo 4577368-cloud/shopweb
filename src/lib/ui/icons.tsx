@@ -5,8 +5,10 @@
 import type { ComponentProps } from "react";
 import {
   AlertTriangleIcon,
+  ArrowDownIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
+  ArrowUpIcon,
   ArrowsOutHorizontalIcon,
   AutomationIcon,
   BlankIcon,
@@ -45,6 +47,7 @@ import {
   MagicIcon,
   MeasurementWeightIcon,
   MinusCircleIcon,
+  MobileIcon,
   PackageIcon,
   PersonIcon,
   PlusIcon,
@@ -66,9 +69,11 @@ import { createPolarisIcon } from "@/lib/ui/polaris-icon";
 import { cn } from "@/lib/utils";
 
 export const AlertTriangle = createPolarisIcon(AlertTriangleIcon, "AlertTriangle");
+export const ArrowDown = createPolarisIcon(ArrowDownIcon, "ArrowDown");
 export const ArrowLeft = createPolarisIcon(ArrowLeftIcon, "ArrowLeft");
 export const ArrowLeftRight = createPolarisIcon(ArrowsOutHorizontalIcon, "ArrowLeftRight");
 export const ArrowRight = createPolarisIcon(ArrowRightIcon, "ArrowRight");
+export const ArrowUp = createPolarisIcon(ArrowUpIcon, "ArrowUp");
 export const Bot = createPolarisIcon(SidekickIcon, "Bot");
 export const Boxes = createPolarisIcon(InventoryIcon, "Boxes");
 export const Check = createPolarisIcon(CheckIcon, "Check");
@@ -96,6 +101,7 @@ export const Link2 = createPolarisIcon(LinkIcon, "Link2");
 export const ListChecks = createPolarisIcon(ClipboardChecklistIcon, "ListChecks");
 export const Lock = createPolarisIcon(LockIcon, "Lock");
 export const MinusCircle = createPolarisIcon(MinusCircleIcon, "MinusCircle");
+export const Mobile = createPolarisIcon(MobileIcon, "Mobile");
 export const MoveRight = createPolarisIcon(ArrowRightIcon, "MoveRight");
 export const Package = createPolarisIcon(PackageIcon, "Package");
 export const PanelRight = createPolarisIcon(LayoutSidebarRightIcon, "PanelRight");

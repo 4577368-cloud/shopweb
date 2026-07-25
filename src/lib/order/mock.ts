@@ -1,7 +1,7 @@
 // 订单中心 mock 数据工厂（Phase 1 数据层）
 // 覆盖 8 状态 + 全部视图；含目的地国 → 线路/模板价派生（预设规则表）。
 // Phase 4 真实接入时用 /api/plugin/order/list 替换 makeMockOrders()。
-import type { DestinationCountry, OrderStatus, OrderSummary, PaymentStatus } from "./types";
+import type { DestinationCountry, LinkedOffer, OrderStatus, OrderSummary, PaymentStatus } from "./types";
 
 const COUNTRIES: Record<string, DestinationCountry> = {
   US: { code: "US", name: "美国" },
@@ -113,6 +113,22 @@ const SEEDS: MockSeed[] = [
   { id: "10", shopOrderNo: "#0942", tangbuyOrderNo: "TB-7550", shopifyOrderId: "5204811432109", title: "Water Bottle Steel", sku: "WB-750", supplierOrderNo: "SUP-3610", cost: "35.00", method: "燕文专线", eta: "9-14 天", remark: "客户取消", country: COUNTRIES.GB, status: "canceled" },
 ];
 
+// 关联货源（Tangbuy offer）mock 注入：模拟 sku-align 的 currentBinding（offerId + 主货源角色）。
+// 真实环境下，此关联应由「订单 variant → sku-align currentBinding.offerId」join 得到（B 轨订单接口 + 共享绑定查找表）。
+// 采购单价 = 我们对货源的进货价 = 下单金额；详情链接指向 Tangbuy offer 页（mock 域名）。
+function buildLinkedOffer(b: MockSeed): LinkedOffer {
+  const offerId = `TB-OFFER-${b.id.padStart(4, "0")}`;
+  return {
+    offerId,
+    source: "TANGBUY",
+    sourceRole: "PRIMARY",
+    title: b.title,
+    detailUrl: `https://www.tangbuy.com/offer/${offerId}`,
+    procurementPrice: `¥${b.cost}`,
+    supplier: "Tangbuy 优选供应链",
+  };
+}
+
 export function makeMockOrders(): OrderSummary[] {
   return SEEDS.map((b) => {
     const dest = b.country;
@@ -127,7 +143,15 @@ export function makeMockOrders(): OrderSummary[] {
       destinationCountry: dest,
       status: b.status,
       paymentStatus: b.paymentStatus ?? DEFAULT_PAYMENT[b.status],
-      lineItems: [{ title: b.title, sku: b.sku, qty: b.qty ?? 1, unitCost: `¥${b.cost}` }],
+      lineItems: [
+        {
+          title: b.title,
+          sku: b.sku,
+          qty: b.qty ?? 1,
+          unitCost: `¥${b.cost}`,
+          linkedOffer: buildLinkedOffer(b),
+        },
+      ],
       supplierOrderNo: b.supplierOrderNo,
       productCost: `¥${b.cost}`,
       logisticsMethod: b.method,

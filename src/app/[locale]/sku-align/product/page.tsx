@@ -14,8 +14,11 @@ import { Loader2 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
+import { AssistantRail } from "@/components/workbench/assistant-rail";
+import { AccountManagerRailFooter } from "@/components/account-manager/account-manager-contact-cta";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { SkuProductWorkbench } from "@/components/sku-align/sku-product-workbench";
+import { SkuLogisticsEntryGate } from "@/components/sku-align/sku-logistics-entry-gate";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useOnboarding } from "@/context/onboarding-context";
@@ -312,7 +315,20 @@ function SkuAlignProductContent() {
   const showBlockingLoader = loading && !product;
 
   return (
-    <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
+    <WorkbenchShell
+      sidebar={<HubAwareSidebar />}
+      rail={
+        <AssistantRail
+          assistantContent={
+            <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-xs leading-5 text-ink-muted">
+              {t("accountManager.skuWorkbenchHint")}
+            </div>
+          }
+          railFooter={<AccountManagerRailFooter context="sku" />}
+        />
+      }
+      {...wb.shellProps}
+    >
       <WorkbenchPanel
         title={panelTitle}
         description={t("sku.panelDescription")}
@@ -321,6 +337,7 @@ function SkuAlignProductContent() {
         breadcrumbs={breadcrumbs}
         maxWidth={1280}
         {...wb.panelProps}
+        actions={<SkuLogisticsEntryGate />}
       >
         {showBlockingLoader ? (
           <div className="flex items-center gap-2 py-16 text-sm text-ink-muted">

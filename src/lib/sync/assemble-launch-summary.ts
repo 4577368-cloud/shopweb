@@ -469,6 +469,7 @@ function buildLaunchSummary(params: {
   logistics: ReturnType<typeof computeLogisticsPlanMetrics>;
   pricingTemplate: PricingTemplate | null;
   activeTemplate: LogisticsTemplate | null;
+  productStatusCounts?: Record<string, number> | null;
   t: TranslateFn;
   loadTier: "fast" | "full";
 }): LaunchSummary {
@@ -482,6 +483,7 @@ function buildLaunchSummary(params: {
     logistics,
     pricingTemplate,
     activeTemplate,
+    productStatusCounts,
     t,
     loadTier,
   } = params;
@@ -520,6 +522,8 @@ function buildLaunchSummary(params: {
   );
   const skuTotal = skuOverview?.totalVariants ?? 0;
 
+  const productStatus = normalizeProductStatus(productStatusCounts);
+
   return {
     meta: {
       shopName,
@@ -541,7 +545,9 @@ function buildLaunchSummary(params: {
       footnote: "sync.shopifyFootnote",
       ctaHref: "/products",
       ctaLabel: "sync.ctaViewListed",
-      showAuditGap: true,
+      // productStatus 存在时使用真实统计；否则回退到 audit gap 占位
+      showAuditGap: !productStatus,
+      productStatus,
     },
     fulfillmentPrep: {
       skuMapped: skuAligned,
@@ -567,6 +573,28 @@ function buildLaunchSummary(params: {
       footnote: LAUNCH_PROGRESS_FOOTNOTE,
     },
     followUps,
+  };
+}
+
+/**
+ * 将后端 productStatusCounts（key 状态字符串）归一化为 LaunchSummary.shopifyWrites.productStatus。
+ * 状态字符串大小写不敏感；未知状态归入 unknown。
+ */
+function normalizeProductStatus(
+  counts: Record<string, number> | null | undefined
+): { active: number; draft: number; archived: number; unknown: number } | undefined {
+  if (!counts) return undefined;
+  const entries = Object.entries(counts);
+  if (entries.length === 0) return undefined;
+  const get = (key: string) =>
+    entries.find(([k]) => k.toUpperCase() === key)?.[1] ?? 0;
+  return {
+    active: get("ACTIVE"),
+    draft: get("DRAFT"),
+    archived: get("ARCHIVED"),
+    unknown: entries
+      .filter(([k]) => !["ACTIVE", "DRAFT", "ARCHIVED"].includes(k.toUpperCase()))
+      .reduce((sum, [, v]) => sum + (Number(v) || 0), 0),
   };
 }
 
@@ -688,6 +716,7 @@ export function assembleLaunchSummaryFromBundle(
     logistics,
     pricingTemplate: bundle.pricingTemplate ?? null,
     activeTemplate,
+    productStatusCounts: bundle.productStatusCounts,
     t,
     loadTier: "full",
   });
@@ -751,6 +780,7 @@ export async function assembleLaunchSummaryFull(
         logisticsAnalysis: bundle.logisticsAnalysis ?? null,
         pricingTemplate: bundle.pricingTemplate ?? null,
         logisticsTemplates,
+        productStatusCounts: bundle.productStatusCounts,
       },
       shopName,
       shopDomain,

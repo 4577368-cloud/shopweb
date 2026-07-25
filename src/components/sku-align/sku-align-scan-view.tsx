@@ -4,8 +4,10 @@ import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
+import { AccountManagerRailFooter } from "@/components/account-manager/account-manager-contact-cta";
 import { InfoCard } from "@/components/workbench/info-card";
 import { ScanStage, type ScanTaskView } from "@/components/workbench/scan-stage";
+import { SkuLogisticsEntryGate } from "@/components/sku-align/sku-logistics-entry-gate";
 import type { AiPanelContent } from "@/lib/types";
 import { useT } from "@/i18n/LocaleProvider";
 
@@ -61,11 +63,17 @@ export function SkuAlignScanView({
               </InfoCard>
             </>
           }
+          railFooter={<AccountManagerRailFooter context="sku" />}
         />
       }
       {...shellProps}
     >
-      <WorkbenchPanel title={t("sku.title")} breadcrumbs={breadcrumbs} {...panelProps}>
+      <WorkbenchPanel
+        title={t("sku.title")}
+        breadcrumbs={breadcrumbs}
+        actions={scanDone ? <SkuLogisticsEntryGate /> : undefined}
+        {...panelProps}
+      >
         <ScanStage
           heading={t("sku.scanStageHeading")}
           description={t("sku.scanStageDesc")}

@@ -46,7 +46,7 @@ export function FieldHint({
   className?: string;
 }) {
   return (
-    <p className={cn("mt-1.5 text-[11px] leading-4 text-ink-subtle", className)}>
+    <p className={cn("mt-1.5 text-[11px] leading-4 text-muted-foreground/80", className)}>
       {children}
     </p>
   );
@@ -68,12 +68,14 @@ export function FieldError({
 
 export function Field({
   label,
+  labelHtmlFor,
   hint,
   error,
   className,
   children,
 }: {
   label?: string;
+  labelHtmlFor?: string;
   hint?: string;
   error?: string;
   className?: string;
@@ -81,7 +83,7 @@ export function Field({
 }) {
   return (
     <div className={cn("min-w-0", className)}>
-      {label ? <FieldLabel>{label}</FieldLabel> : null}
+      {label ? <FieldLabel htmlFor={labelHtmlFor}>{label}</FieldLabel> : null}
       {children}
       {error ? <FieldError>{error}</FieldError> : null}
       {!error && hint ? <FieldHint>{hint}</FieldHint> : null}

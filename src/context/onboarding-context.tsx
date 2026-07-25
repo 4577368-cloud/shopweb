@@ -91,6 +91,7 @@ interface OnboardingState {
   publishLogisticsStepSnapshot: (snapshot: LogisticsStepSnapshot | null) => void;
   publishLogisticsPipelineActive: (active: boolean) => void;
   syncCompleted: boolean;
+  operationsHubReady: boolean;
   shopStatusSummary: ShopStatusSummary | null;
   dashboardActivities: ActivityItem[];
   refreshWorkflowProgress: () => Promise<void>;
@@ -169,6 +170,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     workflowProgressPercent,
     refreshWorkflowProgress,
     syncCompleted,
+    operationsHubReady,
   } = useOnboardingWorkflowProgress({
     shop,
     setShop,
@@ -368,6 +370,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       publishLogisticsStepSnapshot,
       publishLogisticsPipelineActive,
       syncCompleted,
+      operationsHubReady,
       shopStatusSummary,
       dashboardActivities,
       refreshWorkflowProgress,
@@ -413,6 +416,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       publishLogisticsStepSnapshot,
       publishLogisticsPipelineActive,
       syncCompleted,
+      operationsHubReady,
       shopStatusSummary,
       dashboardActivities,
       refreshWorkflowProgress,

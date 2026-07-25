@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   Boxes,
@@ -14,9 +14,11 @@ import {
   Sparkles,
 } from "@/lib/ui/icons";
 import { useOnboarding } from "@/context/onboarding-context";
+import { useUser } from "@/context/user-context";
 import {
   SHOP_STORAGE_KEY,
   launchShopifyInstall,
+  resolveInstallError,
 } from "@/lib/shopify-install";
 import {
   ShopDomainConnectField,
@@ -31,6 +33,8 @@ import { localePath } from "@/i18n/LocaleLink";
 
 function InstallPageContent() {
   const { showToast } = useOnboarding();
+  const { status: authStatus, bootstrapping } = useUser();
+  const router = useRouter();
   const t = useT();
   const locale = useLocale();
   const searchParams = useSearchParams();
@@ -40,13 +44,26 @@ function InstallPageContent() {
   const [redirecting, setRedirecting] = useState(false);
 
   const connectWithDomain = (raw: string) => {
+    // P2: shop binding requires an authenticated user — the backend /install endpoint
+    // is JWT-protected and writes user_shop. Redirect to /login if not signed in yet.
+    if (!bootstrapping && authStatus !== "authenticated") {
+      router.push(localePath(locale, `/login?from=${encodeURIComponent("/install")}`));
+      return;
+    }
+    // During bootstrap we don't yet know the auth state — block the action briefly to avoid
+    // a race where an authenticated user clicks before /me resolves and gets bounced to /login.
+    if (bootstrapping) {
+      showToast(t("install.waitAuth"));
+      return;
+    }
     setError(null);
     setRedirecting(true);
     const result = launchShopifyInstall(raw);
     if (!result.ok) {
       setRedirecting(false);
-      setError(result.error ?? t("install.launchError"));
-      if (result.error) showToast(result.error);
+      const msg = resolveInstallError(t, result.errorCode, t("install.launchError"));
+      setError(msg);
+      showToast(msg);
     }
   };
 

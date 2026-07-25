@@ -63,7 +63,13 @@ export function CompletionScreen({
           </Button>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Link href={localePath(locale, "/order-center")} className="col-span-1 sm:col-span-2">
+            <Button className="h-11 w-full">
+              {t("syncCeremony.enterOperationsHub")}
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
           <Link href={localePath(locale, "/")} className="col-span-1">
             <Button variant="secondary" className="h-10 w-full">
               {t("syncCeremony.enterWorkbench")}

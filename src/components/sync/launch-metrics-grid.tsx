@@ -37,16 +37,44 @@ export function LaunchMetricsGrid({
       <dl className="grid grid-cols-2 gap-3">
         <Metric label={t("sync.mSourceConfirmed")} value={shopify.newListings} />
         <Metric label={t("sync.mSourceLinks")} value={shopify.sourceLinks} />
-        <Metric
-          label={t("sync.mTitleOpt")}
-          value={shopify.showAuditGap ? "—" : shopify.titleOptimizations}
-          hint={shopify.showAuditGap ? t("sync.auditPending") : undefined}
-        />
-        <Metric
-          label={t("sync.mPriceAdj")}
-          value={shopify.showAuditGap ? "—" : shopify.priceAdjustments}
-          hint={shopify.showAuditGap ? t("sync.auditPending") : undefined}
-        />
+        {shopify.productStatus ? (
+          <>
+            <Metric
+              label={t("sync.mPublished")}
+              value={shopify.productStatus.active}
+              tone="success"
+            />
+            <Metric
+              label={t("sync.mDraftCount")}
+              value={shopify.productStatus.draft}
+            />
+            <Metric
+              label={t("sync.mArchived")}
+              value={shopify.productStatus.archived}
+              tone="warning"
+            />
+            {shopify.productStatus.unknown > 0 ? (
+              <Metric
+                label={t("sync.mStatusUnknown")}
+                value={shopify.productStatus.unknown}
+                hint={t("sync.mStatusUnknownHint")}
+              />
+            ) : null}
+          </>
+        ) : (
+          <>
+            <Metric
+              label={t("sync.mTitleOpt")}
+              value={shopify.showAuditGap ? "—" : shopify.titleOptimizations}
+              hint={shopify.showAuditGap ? t("sync.auditPending") : undefined}
+            />
+            <Metric
+              label={t("sync.mPriceAdj")}
+              value={shopify.showAuditGap ? "—" : shopify.priceAdjustments}
+              hint={shopify.showAuditGap ? t("sync.auditPending") : undefined}
+            />
+          </>
+        )}
       </dl>
       <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">{t(shopify.footnote)}</p>
     </section>
@@ -125,17 +153,19 @@ function Metric({
   label: string;
   value: string | number;
   hint?: string;
-  tone?: "warning";
+  tone?: "warning" | "success";
 }) {
+  const toneClass =
+    tone === "warning"
+      ? "text-amber-800"
+      : tone === "success"
+        ? "text-emerald-700"
+        : "text-ink";
   return (
     <div>
       <dt className="text-[10px] text-ink-muted">{label}</dt>
       <dd
-        className={
-          tone === "warning"
-            ? "mt-0.5 text-lg font-semibold tabular-nums text-amber-800"
-            : "mt-0.5 text-lg font-semibold tabular-nums text-ink"
-        }
+        className={`mt-0.5 text-lg font-semibold tabular-nums ${toneClass}`}
       >
         {value}
       </dd>

@@ -23,6 +23,7 @@ import type {
   PublishResult,
   ShopMirrorProduct,
   ShopOrderHeader,
+  ShopOrderProcurementSnapshot,
   ShopProductDetail,
   ShopProductUpdatePayload,
   SkuAutoAlignResult,
@@ -30,6 +31,10 @@ import type {
   UploadedImage,
   MatchJobProgress,
 } from "@/lib/types";
+import type {
+  RankingRow,
+  RankingSnapshot,
+} from "@/lib/marketing/types";
 import type {
   SkuAlignAliasKnowledgeRequest,
   SkuAlignBlockVariantRequest,
@@ -88,6 +93,26 @@ function safeJsonParse(text: string): unknown {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestWithRetry<T>(path, init, false);
+}
+
+/**
+ * P2.1: 401 auto-refresh retry. When a protected endpoint returns 401 (access cookie expired),
+ * transparently call /api/plugin/auth/refresh once, then retry the original request. If the
+ * refresh also fails, surface the original 401 so the caller (and UserProvider) can sign out.
+ *
+ * Dedup: concurrent 401s share a single in-flight refresh promise so we never fire more than
+ * one /refresh at a time. The refresh endpoint rotates the access cookie via Set-Cookie, so
+ * the retried request automatically picks up the new credential.
+ *
+ * Loop guard: {@code retried} ensures we only retry once per call — the retry itself uses
+ * {@code retried=true} so a second 401 surfaces immediately.
+ */
+async function requestWithRetry<T>(
+  path: string,
+  init: RequestInit | undefined,
+  retried: boolean
+): Promise<T> {
   if (!API_BASE && !path.startsWith("/api/plugin/")) {
     throw new ApiError("NEXT_PUBLIC_API_BASE is not configured", 0);
   }
@@ -109,6 +134,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(`Network request failed: ${url}`, 0, cause);
   }
 
+  // 401 on a protected endpoint → try one silent refresh, then retry.
+  if (res.status === 401 && !retried && typeof window !== "undefined") {
+    const refreshed = await refreshAccessCookie();
+    if (refreshed) {
+      return requestWithRetry<T>(path, init, true);
+    }
+    // refresh failed — fall through to throw the original 401
+  }
+
   const text = await res.text();
   const data = text ? safeJsonParse(text) : undefined;
   if (!res.ok) {
@@ -120,6 +154,54 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(message, res.status, data);
   }
   return data as T;
+}
+
+/**
+ * Module-level access-cookie refresh with dedup. Multiple concurrent 401s coalesce into a
+ * single /api/plugin/auth/refresh call. Returns true if the refresh succeeded (access cookie
+ * was rotated and the retried request should pick it up), false otherwise.
+ *
+ * Intentionally does NOT throw — callers fall through to the original 401 on failure so
+ * UserProvider's bootstrap (or the next /me) can surface the sign-out.
+ *
+ * Exported so UserProvider can share the same dedup point — both the /me 401 retry and
+ * api.ts request 401 retries funnel through here, guaranteeing at most one in-flight
+ * /refresh across the whole app.
+ */
+let refreshHandler: () => Promise<boolean> = defaultRefreshAccessCookie;
+let inflightRefresh: Promise<boolean> | null = null;
+
+function defaultRefreshAccessCookie(): Promise<boolean> {
+  if (inflightRefresh) return inflightRefresh;
+  inflightRefresh = (async () => {
+    try {
+      const res = await fetch("/api/plugin/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      inflightRefresh = null;
+    }
+  })();
+  return inflightRefresh;
+}
+
+/** Shared refresh entry point used by {@link requestWithRetry} on 401. */
+export function refreshAccessCookie(): Promise<boolean> {
+  return refreshHandler();
+}
+
+/**
+ * Lets UserProvider register its own dedup-aware refresh so all 401 retries across the app
+ * (api.ts requests AND /me bootstrap) share a single in-flight /refresh.
+ */
+export function registerRefreshHandler(fn: () => Promise<boolean>): void {
+  refreshHandler = fn;
 }
 
 /** Coalesce concurrent identical GETs and briefly cache hot read endpoints. */
@@ -379,6 +461,28 @@ export interface AuthorizedShopSummary {
   productCount?: number;
 }
 
+/**
+ * One row from GET /api/plugin/user/shops — the user's bound shops with auth
+ * status, bind timestamp, and product count. Never includes access_token.
+ *
+ * `authStatus` is the underlying `shopify_store_auth.status` enum name, or
+ * `"MISSING"` when the auth row is gone (e.g. shop uninstalled) but the
+ * user_shop binding still exists.
+ */
+export interface UserShopBinding {
+  shopName: string;
+  shopDomain: string;
+  authStatus: string;
+  authorizedAt?: string;
+  boundAt?: string;
+  productCount?: number;
+}
+
+export interface UnbindShopResult {
+  shopName: string;
+  unbound: boolean;
+}
+
 export const api = {
   /** Backend health probe — used to validate connectivity (and CORS) end to end. */
   getHealth: () => request<HealthResponse>("/api/plugin/health"),
@@ -389,9 +493,20 @@ export const api = {
       `/api/plugin/shopify/auth/status?shop=${encodeURIComponent(shop)}`
     ),
 
-  /** All active authorized shops — sidebar multi-shop switcher. */
+  /** All active authorized shops — sidebar multi-shop switcher (user-scoped). */
   listAuthorizedShops: () =>
     request<AuthorizedShopSummary[]>("/api/plugin/shopify/auth/shops"),
+
+  /** Shops bound to the current user (with auth status + bind timestamp). */
+  listUserShops: () =>
+    request<UserShopBinding[]>("/api/plugin/user/shops"),
+
+  /** Unbind a shop from the current user (user_shop row only; auth retained). */
+  unbindUserShop: (shopName: string) =>
+    request<UnbindShopResult>(
+      `/api/plugin/user/shops/${encodeURIComponent(shopName)}`,
+      { method: "DELETE" }
+    ),
 
   /** Read-only Tangbuy catalog recommendations with backend-computed estimatedSalePrice (M1-5). */
   getRecommendations: (shop: string, limit: number, offset = 0) =>
@@ -815,6 +930,14 @@ export const api = {
     ),
 
   /**
+   * 采购子单快照（可选）。未实现时前端忽略；见 docs/ORDER_CENTER_PROCUREMENT_LINE_CONTRACT.md
+   */
+  listOrderProcurementSnapshots: (shop: string) =>
+    request<ShopOrderProcurementSnapshot[]>(
+      `/api/plugin/order/procurement/snapshots?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  /**
    * 订单行的「Shopify 商品 → Tangbuy 关联货源」匹配结果（同步时已解析并落库）。
    * 返回 ThirdPlatformOrderLine：含 Shopify 行信息 + tangbuy* 绑定快照 + bindingStatus。
    * 订单中心据此展示 Tangbuy 侧货源信息，无需后端再投影 line_items。
@@ -976,4 +1099,33 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, targetLang, sourceLang, style }),
     }),
+
+  // ---------------------------------------------------------------------------
+  // TikTok 商品榜单（/api/plugin/ranking/**，真实落库，不经过 pipispy 计费护栏）
+  // ---------------------------------------------------------------------------
+
+  /** 列出店铺的榜单快照（日期窗口），最新窗口在前。 */
+  fetchRankingSnapshots: (shop: string) =>
+    request<RankingSnapshot[]>(
+      `/api/plugin/ranking/snapshots?shopName=${encodeURIComponent(normalizeShopApiName(shop))}`
+    ),
+
+  /** 取某快照的商品列表，可选按 L1 类目过滤；后端按 GMV 降序返回。 */
+  listRankingProducts: (
+    shop: string,
+    opts?: { snapshotId?: number; categoryL1?: string }
+  ) => {
+    const params = new URLSearchParams({
+      shopName: normalizeShopApiName(shop),
+    });
+    if (opts?.snapshotId != null) {
+      params.set("snapshotId", String(opts.snapshotId));
+    }
+    if (opts?.categoryL1) {
+      params.set("categoryL1", opts.categoryL1);
+    }
+    return request<RankingRow[]>(
+      `/api/plugin/ranking/list?${params.toString()}`
+    );
+  },
 };

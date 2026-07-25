@@ -15,5 +15,7 @@ export function getAuthSessionReadySnapshot(): boolean {
   const domain = readStoredShopDomain();
   if (!domain) return true;
   if (readAuthSessionOk(domain) || readAuthLocalOk(domain)) return true;
-  return true;
+  // 存在已记住的 domain 但 session/local 均未验证 → 视为 bootstrapping，
+  // 等待 use-onboarding-shop-auth 的 restore 流程完成后才会置真。
+  return false;
 }

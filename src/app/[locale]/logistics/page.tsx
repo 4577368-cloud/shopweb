@@ -10,6 +10,7 @@ import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { AssistantRail } from "@/components/workbench/assistant-rail";
+import { AccountManagerRailFooter } from "@/components/account-manager/account-manager-contact-cta";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { FadeSwap } from "@/components/ui/fade-swap";
@@ -420,6 +421,7 @@ function LogisticsContent() {
               catalogIngestingCount={catalogIngestingCount}
             />
           }
+          railFooter={<AccountManagerRailFooter context="logistics" />}
         />
       }
       {...wb.shellProps}

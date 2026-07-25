@@ -20,6 +20,7 @@ import {
   type OrderPlanContext,
 } from "@/lib/agents/order/plan-command";
 import type { OrderCommandPlan } from "@/lib/agents/order/command-schema";
+import { exportOrdersCsv } from "@/lib/order/export";
 
 export interface OrderAgentHandlers {
   onSetTab: (tab: OrderTabKey) => void;
@@ -41,41 +42,6 @@ export interface OrderAgentContext {
 export interface OrderAgentPanelProps {
   context: OrderAgentContext;
   handlers: OrderAgentHandlers;
-}
-
-function csvCell(s: string | undefined): string {
-  const v = (s ?? "").toString();
-  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-}
-
-function exportOrdersCsv(orders: OrderSummary[], t: (k: string) => string): number {
-  const headers = [
-    t("order.table.info"),
-    t("order.columns.tangbuyOrderNo"),
-    t("order.table.status"),
-    t("order.table.paymentStatus"),
-    t("order.table.amount"),
-    t("order.card.createdAt"),
-  ];
-  const rows = orders.map((o) => [
-    o.shopOrderNo,
-    o.tangbuyOrderNo ?? "—",
-    t(`order.tabs.${o.status}`),
-    o.paymentStatus ? t(`order.paymentStatus.${o.paymentStatus}`) : "—",
-    o.productCost ?? "—",
-    o.createdAt,
-  ]);
-  const lines = [headers, ...rows].map((r) => r.map(csvCell).join(",")).join("\n");
-  const blob = new Blob(["﻿" + lines], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `orders-${Date.now()}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  return orders.length;
 }
 
 export function OrderAgentPanel({ context, handlers }: OrderAgentPanelProps) {
@@ -211,7 +177,7 @@ export function OrderAgentPanel({ context, handlers }: OrderAgentPanelProps) {
               key={cmd}
               type="button"
               onClick={() => handleQuick(cmd)}
-              className="rounded-lg border border-hairline px-2 py-1 text-[11px] font-medium text-ink-muted hover:border-brand-soft hover:text-brand transition-colors"
+              className="rounded-lg border border-hairline px-2 py-1 text-[11px] font-medium text-ink-muted hover:border-brand/40 hover:text-brand transition-colors"
             >
               {cmd}
             </button>
@@ -225,7 +191,7 @@ export function OrderAgentPanel({ context, handlers }: OrderAgentPanelProps) {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
             placeholder={t("order.agent.inputPlaceholder")}
-            className="flex-1 rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-1.5 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft"
+            className="flex-1 rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-1.5 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand"
           />
           <button
             type="button"
@@ -268,7 +234,7 @@ export function OrderAgentPanel({ context, handlers }: OrderAgentPanelProps) {
       {plan ? (
         <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 text-xs">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-semibold text-brand">
+            <span className="inline-flex items-center rounded-full bg-info-soft px-2 py-0.5 text-[11px] font-semibold text-info">
               {plan.operation}
             </span>
             <span className="text-ink-muted">{plan.targetLabel}</span>
