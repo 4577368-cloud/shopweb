@@ -4,6 +4,7 @@ import {
   collectNeedsReviewVariantIds,
   countNeedsReviewInProducts,
 } from "@/lib/sku-align/display";
+import { warmLogisticsSourceFromProducts } from "@/lib/sku-align/warm-logistics-source";
 
 /** Promote needs_review variants visible on the current workbench page. */
 export async function confirmPageNeedsReview(
@@ -15,7 +16,7 @@ export async function confirmPageNeedsReview(
   if (legacyPendingVariantIds.length === 0) {
     return { confirmedCount: 0 };
   }
-  return confirmSuggestionsWithFallback(
+  const result = await confirmSuggestionsWithFallback(
     {
       shopName,
       targetScope: "PRODUCT",
@@ -23,6 +24,8 @@ export async function confirmPageNeedsReview(
     },
     legacyPendingVariantIds
   );
+  warmLogisticsSourceFromProducts(shopName, visibleProducts);
+  return result;
 }
 
 /** Promote needs_review variants for one product card. */
@@ -34,7 +37,7 @@ export async function confirmProductNeedsReview(
   if (legacyPendingVariantIds.length === 0) {
     return { confirmedCount: 0 };
   }
-  return confirmSuggestionsWithFallback(
+  const result = await confirmSuggestionsWithFallback(
     {
       shopName,
       targetScope: "PRODUCT",
@@ -42,6 +45,8 @@ export async function confirmProductNeedsReview(
     },
     legacyPendingVariantIds
   );
+  warmLogisticsSourceFromProducts(shopName, [product]);
+  return result;
 }
 
 export { countNeedsReviewInProducts };

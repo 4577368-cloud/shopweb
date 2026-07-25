@@ -52,6 +52,7 @@ import {
   fetchShopPanelBindingsMap,
   mergeBindingsOnFetch,
 } from "@/lib/products/fetch-image-bindings-map";
+import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import type {
   ImageBindingView,
   ImageSearchProduct,
@@ -549,7 +550,7 @@ export function ShopProductsPanel({
   const { shop, showToast } = useOnboarding();
   const t = useT();
   const locale = useLocale();
-  const shopName = shop.name;
+  const shopName = resolveShopApiName(shop);
   const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
 
   const [loading, setLoading] = useState(() => {
@@ -586,6 +587,8 @@ export function ShopProductsPanel({
   );
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  /** Bindings read still in flight — cards must not claim "unlinked" yet. */
+  const [bindingsPending, setBindingsPending] = useState(false);
 
   const load = useCallback(async (opts?: { silent?: boolean; retryPoolBackfill?: boolean; force?: boolean }): Promise<ShopMirrorProduct[] | null> => {
     const silent = opts?.silent ?? false;
@@ -636,11 +639,19 @@ export function ShopProductsPanel({
     try {
       const previous =
         peekMirrorCache(shopMirrorKey)?.bindings ?? bindings;
-      const [items, fetchedMap] = await Promise.all([
-        api.getShopProducts(shopName),
-        fetchShopPanelBindingsMap(shopName),
-      ]);
+      // Bindings are the slow read; don't let them hold the list back, or a cold gateway renders
+      // every card as unlinked. `bindingsPending` keeps the cards honest until they land.
+      setBindingsPending(true);
+      const bindingsRequest = fetchShopPanelBindingsMap(shopName);
+      const items = await api.getShopProducts(shopName);
       setProducts(items);
+      if (!silent) {
+        setLoading(false);
+        setListSettled(true);
+      }
+      const fetchedMap = await bindingsRequest.finally(() =>
+        setBindingsPending(false)
+      );
       const mergedMap = mergeBindingsOnFetch(fetchedMap, previous);
       const ackedMap = await autoAckHighConfidencePendingBindings(
         shopName,
@@ -1272,6 +1283,7 @@ export function ShopProductsPanel({
                   publishRevealStates[p.thirdPlatformItemId]
                 }
                 linkingLocked={linkingLocked}
+                bindingsPending={bindingsPending}
                 locale={locale}
               />
             ))}
@@ -1344,6 +1356,7 @@ function ShopProductCard({
   onTitleEditConsumed,
   batchLinkDrive = undefined,
   linkingLocked = false,
+  bindingsPending = false,
   pricingTemplate = null,
   locale = "zh",
 }: {
@@ -1367,6 +1380,8 @@ function ShopProductCard({
   onTitleEditConsumed?: () => void;
   batchLinkDrive?: BatchLinkCardDrive;
   linkingLocked?: boolean;
+  /** Shop bindings still loading — show a wait state instead of "unlinked". */
+  bindingsPending?: boolean;
   pricingTemplate?: PricingTemplate | null;
   locale?: Locale;
 }) {

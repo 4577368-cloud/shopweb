@@ -46,6 +46,14 @@ export function mergeBindingsOnFetch(
   fetched: Record<string, ImageBindingView> | null,
   previous: Record<string, ImageBindingView>
 ): Record<string, ImageBindingView> {
+  // Request failed — keep whatever we already had (never drop local state on a network error).
   if (fetched === null) return previous;
+  // Empty success (no bindings on the server). Do NOT let it wipe locally-cached history: a refresh
+  // must not silently discard bindings the user previously confirmed. Only fall back to empty when we
+  // also had nothing locally. Unbind is safe because the UI writes { bound: false } into the map on
+  // unbind, so this branch preserves that intent rather than resurrecting a removed link.
+  if (Object.keys(fetched).length === 0 && Object.keys(previous).length > 0) {
+    return previous;
+  }
   return fetched;
 }

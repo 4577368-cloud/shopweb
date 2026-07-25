@@ -2,7 +2,10 @@
 
 import { useEffect, useState, type CSSProperties, type ImgHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
-import { cdnThumbUrl } from "@/lib/images/cdn-thumb-url";
+import {
+  cdnThumbUrl,
+  normalizeAliProductImageUrl,
+} from "@/lib/images/cdn-thumb-url";
 
 type ThumbImageProps = {
   src: string;
@@ -39,10 +42,11 @@ export function ThumbImage({
 
   if (!src) return null;
 
+  const normalizedSrc = normalizeAliProductImageUrl(src);
   const resolvedSrc =
     pixelWidth != null && pixelWidth > 0 && !thumbFailed
-      ? cdnThumbUrl(src, pixelWidth)
-      : src;
+      ? cdnThumbUrl(normalizedSrc, pixelWidth)
+      : normalizedSrc;
 
   const handleError: ImgHTMLAttributes<HTMLImageElement>["onError"] = (e) => {
     if (pixelWidth != null && pixelWidth > 0 && !thumbFailed) {
