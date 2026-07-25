@@ -12,7 +12,7 @@ export const SHOP_DOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i;
 
 /** Strip scheme/trailing slash/whitespace; allow store handle without `.myshopify.com`. */
 export function normalizeShopDomain(input: string): string {
-  let domain = input
+  const domain = input
     .trim()
     .replace(/^https?:\/\//, "")
     .replace(/\/+$/, "")

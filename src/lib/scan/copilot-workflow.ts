@@ -101,8 +101,8 @@ export function deriveCopilotWorkflow(
   const unbound = stats.unboundCount;
   const orders = stats.shopContext;
 
-  let sync = syncStatus(tasks);
-  let features = featuresStatus(tasks);
+  const sync = syncStatus(tasks);
+  const features = featuresStatus(tasks);
   let match = effectiveMatchStatus(tasks, stats);
   let ordersSt = ordersStatus(tasks, stats);
 
