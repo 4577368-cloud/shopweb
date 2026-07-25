@@ -17,7 +17,7 @@ type ThumbImageProps = {
   pixelWidth?: number;
 } & Pick<
   ImgHTMLAttributes<HTMLImageElement>,
-  "loading" | "decoding" | "onClick" | "referrerPolicy"
+  "loading" | "decoding" | "onClick" | "onError" | "referrerPolicy"
 >;
 
 /** Product thumbnail — direct CDN URL (native img, reliable across hosts). */
@@ -29,6 +29,7 @@ export function ThumbImage({
   loading = "lazy",
   pixelWidth,
   sizes: _sizes,
+  onError,
   ...props
 }: ThumbImageProps) {
   const [thumbFailed, setThumbFailed] = useState(false);
@@ -48,7 +49,7 @@ export function ThumbImage({
       setThumbFailed(true);
       return;
     }
-    props.onError?.(e);
+    onError?.(e);
   };
 
   if (fill) {
