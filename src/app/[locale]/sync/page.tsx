@@ -36,6 +36,7 @@ import {
   SYNC_CEREMONY_SUMMARY_VIEWED_KEY,
 } from "@/lib/sync/ceremony-progress";
 import { composeLaunchReport } from "@/lib/sync/compose-launch-report";
+import { consumeLogisticsSyncExceptionCount } from "@/lib/logistics/sync-handoff";
 import { getLaunchSummary, type LaunchSummary } from "@/lib/sync/launch-summary";
 import { Button } from "@/components/ui/button";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
@@ -69,6 +70,8 @@ export default function SyncPage() {
   const locale = useLocale();
   const revisitRef = useRef(readSummaryViewed());
   const phaseRef = useRef<CeremonyPhase>("loading");
+  /** 物流页 stash 的同步异常计数；首次 summary 加载后追加为 followUp。 */
+  const pendingLogisticsSyncExceptionRef = useRef<number | null>(null);
   const [replayEpoch, setReplayEpoch] = useState(0);
   const [replaying, setReplaying] = useState(false);
   const [reportInstant, setReportInstant] = useState(
@@ -135,6 +138,12 @@ export default function SyncPage() {
           setRefreshingSummary(false);
         }
         return;
+      }
+
+      // 消费物流页 stash 的同步异常计数（仅本会话首次加载有效）
+      const logisticsSyncExceptionCount = consumeLogisticsSyncExceptionCount();
+      if (logisticsSyncExceptionCount && logisticsSyncExceptionCount > 0) {
+        pendingLogisticsSyncExceptionRef.current = logisticsSyncExceptionCount;
       }
 
       setLoadError(null);
@@ -243,6 +252,33 @@ export default function SyncPage() {
       cancelled = true;
     };
   }, [loadSummary]);
+
+  // 将物流同步异常计数追加为 followUp（仅一次；消费后清空 ref）
+  useEffect(() => {
+    const count = pendingLogisticsSyncExceptionRef.current;
+    if (count == null || count <= 0) return;
+    if (!summary) return;
+    // 已存在同 id followUp 则不重复追加
+    if (summary.followUps.some((f) => f.id === "logistics-sync-exception")) {
+      pendingLogisticsSyncExceptionRef.current = null;
+      return;
+    }
+    setSummary({
+      ...summary,
+      followUps: [
+        ...summary.followUps,
+        {
+          id: "logistics-sync-exception",
+          count,
+          title: t("launchSummary.followUpLogisticsSyncExceptionTitle", { count }),
+          description: t("launchSummary.followUpLogisticsSyncExceptionDesc"),
+          href: "/logistics",
+          actionLabel: t("launchSummary.followUpLogisticsSyncExceptionAction"),
+        },
+      ],
+    });
+    pendingLogisticsSyncExceptionRef.current = null;
+  }, [summary, t]);
 
   const ceremonyRevisit =
     revisitRef.current || readSummaryViewed() || readCeremonyCelebrated();

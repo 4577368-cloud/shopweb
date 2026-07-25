@@ -692,3 +692,47 @@ export function resolveSourceDetailHref(input: {
     null
   );
 }
+
+function candidateIdentityKey(
+  c: Pick<ImageSearchProduct, "productId" | "internalGoodsId">
+): string {
+  return c.internalGoodsId?.trim() || c.productId.trim();
+}
+
+/** True when a图搜候选与已绑定货源为同一 offer / 商品库 id（含 1688↔internal 交叉）。 */
+export function candidateMatchesBoundSource(
+  candidate: Pick<
+    ImageSearchProduct,
+    "productId" | "internalGoodsId" | "offerId1688" | "detailUrl"
+  >,
+  tangbuyProductId: string | null | undefined,
+  identity?: ProductSourceIdentity | null
+): boolean {
+  const boundId = tangbuyProductId?.trim();
+  if (!boundId) return false;
+
+  const candKey = candidateIdentityKey(candidate);
+  if (candKey === boundId || candidate.productId.trim() === boundId) return true;
+
+  const internal = identity?.internalGoodsId?.trim();
+  const offer =
+    identity?.offerId1688?.trim() ||
+    extractOfferIdFromUrl(identity?.offerDetailUrl);
+
+  if (internal && (candKey === internal || candidate.internalGoodsId?.trim() === internal)) {
+    return true;
+  }
+
+  const candOffer =
+    candidate.offerId1688?.trim() ||
+    extractOfferIdFromUrl(candidate.detailUrl) ||
+    (isOfferId1688(candidate.productId) ? candidate.productId.trim() : null);
+
+  if (offer && candOffer && offer === candOffer) return true;
+  if (isOfferId1688(boundId) && candOffer === boundId) return true;
+  if (isInternalGoodsId(boundId) && (candKey === boundId || internal === boundId)) {
+    return true;
+  }
+
+  return false;
+}

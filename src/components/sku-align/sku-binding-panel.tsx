@@ -41,6 +41,7 @@ import {
   type SkuFilterMode,
   type SkuVariantDisplayState,
 } from "@/lib/sku-align/display";
+import { scheduleSkuAlignV1DetailLoad } from "@/lib/sku-align/v1-detail-load-queue";
 import { useT } from "@/i18n/LocaleProvider";
 
 export type ProductMatchState = "full" | "partial" | "none";
@@ -187,17 +188,6 @@ export function SkuProductCard({
   };
   const workbenchHref = skuAlignProductWorkbenchHref(productId);
 
-  const refreshV1Detail = async () => {
-    setV1DetailLoading(true);
-    try {
-      setV1Detail(await api.skuAlignV1ProductDetail(shopName, productId));
-    } catch {
-      setV1Detail(null);
-    } finally {
-      setV1DetailLoading(false);
-    }
-  };
-
   const pendingCount = countNeedsReview(mergedProduct);
   const unboundCount = countUnbound(mergedProduct);
   const manualCount = mergedProduct.variants.filter(
@@ -231,8 +221,20 @@ export function SkuProductCard({
 
   useEffect(() => {
     if (!cardVisible || !mightNeedV1Detail || v1Detail || v1DetailLoading) return;
-    void refreshV1Detail();
-  }, [cardVisible, mightNeedV1Detail, productId, shopName]);
+    const timer = window.setTimeout(() => {
+      scheduleSkuAlignV1DetailLoad(async () => {
+        setV1DetailLoading(true);
+        try {
+          setV1Detail(await api.skuAlignV1ProductDetail(shopName, productId));
+        } catch {
+          setV1Detail(null);
+        } finally {
+          setV1DetailLoading(false);
+        }
+      });
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [cardVisible, mightNeedV1Detail, v1Detail, v1DetailLoading, productId, shopName]);
 
   const storedSource = readProductSourceIdentity(shopName, productId);
   const productDetailUrl = resolveSkuDetailUrl(

@@ -6,11 +6,13 @@ import {
   ChevronDown,
   Loader2,
   Plus,
+  Settings,
   Store,
 } from "@/lib/ui/icons";
 import Link from "next/link";
 import { useOnboarding } from "@/context/onboarding-context";
-import { api, type AuthorizedShopSummary } from "@/lib/api";
+import { useUser } from "@/context/user-context";
+import { api, ApiError, type AuthorizedShopSummary } from "@/lib/api";
 import { SHOP_STORAGE_KEY } from "@/lib/shopify-install";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
@@ -27,23 +29,58 @@ function fmtAuthorizedAt(locale: string, raw?: string): string {
 
 /**
  * Sidebar shop dropdown: switch among authorized shops, or jump to /install to add another.
+ *
+ * Behavior by auth state:
+ * - bootstrapping: render the trigger with the current shop label (no network call yet).
+ * - authenticated: list shops from /api/plugin/shopify/auth/shops (user-scoped). A 401 here
+ *   triggers a single silent /refresh; persistent 401 falls back to the current shop.
+ * - unauthenticated: keep the dropdown (so a remembered shop from localStorage still works
+ *   during the transition period), but skip the user-scoped list call — show the current
+ *   shop only, with a "sign in" hint at the bottom.
  */
 export function ShopSwitcher() {
   const t = useT();
   const locale = useLocale();
   const { shop, isAuthorized, hydrateAuthorizedShop, showToast } = useOnboarding();
+  const { status: authStatus, bootstrapping } = useUser();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [shops, setShops] = useState<AuthorizedShopSummary[]>([]);
+  const [signInHint, setSignInHint] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const loadShops = useCallback(async () => {
+    // Don't fire the user-scoped endpoint during bootstrap or when clearly unauthenticated —
+    // it would 401 and waste a round-trip. The current shop (from localStorage) still shows.
+    if (bootstrapping) return;
+    if (authStatus !== "authenticated") {
+      setShops(
+        isAuthorized && shop.domain
+          ? [
+              {
+                shopName: shop.name,
+                shopDomain: shop.domain,
+                productCount: shop.productCount,
+              },
+            ]
+          : []
+      );
+      setSignInHint(true);
+      return;
+    }
+    setSignInHint(false);
     setLoading(true);
     try {
       const list = await api.listAuthorizedShops();
       setShops(Array.isArray(list) ? list : []);
-    } catch {
+    } catch (err) {
+      // 401 means the access cookie expired; the UserProvider's bootstrap or the next
+      // user action will trigger /refresh. Until then, fall back to the current shop so
+      // the UI is not empty.
+      if (err instanceof ApiError && err.status === 401) {
+        setSignInHint(true);
+      }
       setShops(
         isAuthorized && shop.domain
           ? [
@@ -58,7 +95,7 @@ export function ShopSwitcher() {
     } finally {
       setLoading(false);
     }
-  }, [isAuthorized, shop.domain, shop.name, shop.productCount]);
+  }, [bootstrapping, authStatus, isAuthorized, shop.domain, shop.name, shop.productCount]);
 
   useEffect(() => {
     if (!open) return;
@@ -184,6 +221,17 @@ export function ShopSwitcher() {
               })
             )}
           </div>
+          {signInHint ? (
+            <div className="border-t border-hairline bg-brand-soft/40 px-3 py-1.5 text-[10px] text-ink-muted">
+              <Link
+                href={localePath(locale, "/login")}
+                onClick={() => setOpen(false)}
+                className="font-medium text-brand underline-offset-2 hover:underline"
+              >
+                {t("shopSwitcher.signInForAllShops")}
+              </Link>
+            </div>
+          ) : null}
           <div className="border-t border-hairline">
             <Link
               href={localePath(locale, "/install")}
@@ -193,6 +241,16 @@ export function ShopSwitcher() {
               <Plus className="h-3.5 w-3.5" />
               {t("shopSwitcher.addShop")}
             </Link>
+            {authStatus === "authenticated" && !bootstrapping ? (
+              <Link
+                href={localePath(locale, "/account/shops")}
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-2 px-3 py-2.5 text-xs text-ink-muted transition-colors hover:bg-slate-50"
+              >
+                <Settings className="h-3.5 w-3.5" />
+                {t("shopSwitcher.manageShops")}
+              </Link>
+            ) : null}
           </div>
         </div>
       ) : null}

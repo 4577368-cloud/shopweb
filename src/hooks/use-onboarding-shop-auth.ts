@@ -16,6 +16,7 @@ import {
   subscribeAuthSessionReady,
 } from "@/lib/onboarding/auth-session-ready";
 import {
+  clearAuthVerified,
   fetchRestoredShopAuth,
   markAuthVerified,
   readStoredShopDomain,

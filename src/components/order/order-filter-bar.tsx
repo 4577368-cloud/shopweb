@@ -6,6 +6,7 @@ import { useT } from "@/i18n/LocaleProvider";
 import { ListChecks, RefreshCw, Search } from "@/lib/ui/icons";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 export type TimeRange = "all" | "7d" | "30d";
 export type ExceptionFilter = "all" | "noQuote" | "stuck";
@@ -28,6 +29,9 @@ export interface OrderFilterBarProps {
   onReset: () => void;
   statusLabel?: string; // 当前 activeTab 对应的中文标签（顶部展示）
   className?: string;
+  // 数据缺失时禁用对应筛选，避免假可用控件（P0-6/P0-8 诚实化）
+  countryDisabled?: boolean;
+  stuckDisabled?: boolean;
 }
 
 export function OrderFilterBar({
@@ -43,6 +47,8 @@ export function OrderFilterBar({
   onReset,
   statusLabel,
   className,
+  countryDisabled,
+  stuckDisabled,
 }: OrderFilterBarProps) {
   const t = useT();
   return (
@@ -79,6 +85,8 @@ export function OrderFilterBar({
         onChange={(e) => onExceptionChange(e.target.value as ExceptionFilter)}
         aria-label={t("order.filter.exception")}
         className="h-8 w-auto text-xs"
+        disabled={stuckDisabled}
+        title={stuckDisabled ? t("order.filter.stuckPending") : undefined}
       >
         <option value="all">{t("order.filter.exAll")}</option>
         <option value="noQuote">{t("order.filter.exNoQuote")}</option>
@@ -90,6 +98,8 @@ export function OrderFilterBar({
         onChange={(e) => onCountryChange(e.target.value)}
         aria-label={t("order.filter.country")}
         className="h-8 w-auto text-xs"
+        disabled={countryDisabled}
+        title={countryDisabled ? t("order.filter.countryPending") : undefined}
       >
         <option value="all">{t("order.filter.countryAll")}</option>
         {countryOptions.map((c) => (
@@ -99,19 +109,19 @@ export function OrderFilterBar({
         ))}
       </Select>
 
-      <div className="flex items-center gap-1.5 rounded-md border border-hairline bg-canvas px-2 py-1 text-xs text-ink-muted">
+      <div className="flex items-center gap-1.5 rounded-md border border-hairline bg-muted px-2 py-1 text-xs text-ink-muted">
         <ListChecks className="h-3.5 w-3.5" />
         <span>{statusLabel ?? t("order.filter.allStatuses")}</span>
       </div>
 
-      <button
-        type="button"
+      <Button
+        size="sm"
+        variant="secondary"
         onClick={onReset}
-        className="inline-flex items-center gap-1 rounded-md border border-hairline bg-surface px-3 py-1.5 text-xs font-medium text-ink-muted hover:border-brand/40 hover:text-ink"
       >
         <RefreshCw className="h-3.5 w-3.5" />
         {t("order.filter.reset")}
-      </button>
+      </Button>
     </div>
   );
 }

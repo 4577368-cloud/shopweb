@@ -9,6 +9,7 @@ import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail } from "@/components/workbench/assistant-rail";
+import { AccountManagerRailFooter } from "@/components/account-manager/account-manager-contact-cta";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { ProductsScanView } from "@/components/select/products-page/products-scan-view";
 import { ProductsPageHeaderActions } from "@/components/select/products-page/products-page-header-actions";
@@ -391,6 +392,7 @@ function SelectContent() {
         />
       }
       strategyCards={null}
+      railFooter={<AccountManagerRailFooter context="products" />}
     />
   );
 

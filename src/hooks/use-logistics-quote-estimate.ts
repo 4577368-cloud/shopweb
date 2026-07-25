@@ -47,6 +47,12 @@ import {
   stripStaleGoodsBlockedQuotesForIdentities,
   writeQuoteCache,
 } from "@/lib/logistics/quote-cache";
+import {
+  batchIngestProductSourcesForLogistics,
+  collectProfilesNeedingCatalogIngest,
+  markLogisticsBatchPreIngestRan,
+  shouldRunLogisticsBatchPreIngest,
+} from "@/lib/logistics/batch-product-source-ingest";
 import { enrichVariantsWithMeasures } from "@/lib/logistics/variant-measures";
 import {
   enrichVariantsWithEstimateGoodsIds,
@@ -109,6 +115,7 @@ export function useLogisticsQuoteEstimate({
   const [ingestingProductId, setIngestingProductId] = useState<string | null>(
     null
   );
+  const [batchPreIngesting, setBatchPreIngesting] = useState(false);
   const [quotingVariantId, setQuotingVariantId] = useState<string | null>(null);
   const [quoteRevealVariantIds, setQuoteRevealVariantIds] = useState<Set<string>>(
     () => new Set()
@@ -157,10 +164,10 @@ export function useLogisticsQuoteEstimate({
     }
 
     if (prevScopeKeyRef.current && prevScopeKeyRef.current !== templateScopeKey) {
-      skipQuoteCacheHydrateRef.current = true;
+      // 切换模板：重置 in-memory 状态 + pipeline，但不清空新模板的报价缓存。
+      // 切回旧模板时 readQuoteCache 会命中之前的缓存，避免重复拉取。
       pendingPipelineResetRef.current = true;
       setQuoteResults(new Map());
-      writeQuoteCache(shopName, templateScopeKey, new Map());
       setAnalysis((prev) => {
         if (!prev) return prev;
         return clearLogisticsQuotesForTemplateSwitch(prev);
@@ -172,9 +179,9 @@ export function useLogisticsQuoteEstimate({
     }
     prevScopeKeyRef.current = templateScopeKey;
 
+    // skipQuoteCacheHydrateRef 已废弃：切换模板时应优先读取缓存。
     if (skipQuoteCacheHydrateRef.current) {
       skipQuoteCacheHydrateRef.current = false;
-      return;
     }
 
     const cached = readQuoteCache(shopName, templateScopeKey);
@@ -201,6 +208,100 @@ export function useLogisticsQuoteEstimate({
   useEffect(() => {
     if (shopName) writeMeasureOverrides(shopName, measureOverrides);
   }, [shopName, measureOverrides]);
+
+  const applyIngestReadyProductIds = useCallback(
+    (productIds: string[]) => {
+      if (productIds.length === 0) return;
+      setQuoteResults((prevQuotes) => {
+        setAnalysis((prevAnalysis) => {
+          let nextAnalysis = prevAnalysis;
+          let nextQuotes = prevQuotes;
+          for (const productId of productIds) {
+            const reset = applyCatalogIngestQuoteReset(
+              nextAnalysis,
+              productId,
+              nextQuotes
+            );
+            nextAnalysis = reset.analysis ?? nextAnalysis;
+            nextQuotes = reset.quoteResults;
+          }
+          if (shopName && templateScopeKey) {
+            writeQuoteCache(shopName, templateScopeKey, nextQuotes);
+          }
+          setQuoteResults(nextQuotes);
+          return nextAnalysis ?? prevAnalysis;
+        });
+        return prevQuotes;
+      });
+    },
+    [shopName, templateScopeKey, setAnalysis]
+  );
+
+  const runBatchPreIngest = useCallback(
+    async (opts?: { force?: boolean }) => {
+      if (!shopName?.trim() || !analysis || batchPreIngesting) return;
+      if (!opts?.force && !shouldRunLogisticsBatchPreIngest(shopName)) return;
+
+      const profiles = collectProfilesNeedingCatalogIngest({
+        shopName,
+        analysis,
+        quoteResults,
+      });
+      if (profiles.length === 0) {
+        markLogisticsBatchPreIngestRan(shopName);
+        if (opts?.force) {
+          showToast(t("logistics.toastBatchPreIngestNone"));
+        }
+        return;
+      }
+
+      setBatchPreIngesting(true);
+      try {
+        const batch = await batchIngestProductSourcesForLogistics({
+          shopName,
+          profiles,
+        });
+        markLogisticsBatchPreIngestRan(shopName);
+        applyIngestReadyProductIds(batch.readyProductIds);
+        if (batch.ready > 0) {
+          showToast(
+            t("logistics.toastBatchPreIngestReady", { count: batch.ready })
+          );
+        } else if (batch.ingesting > 0) {
+          showToast(
+            t("logistics.toastBatchPreIngestPending", { count: batch.ingesting })
+          );
+        } else if (opts?.force) {
+          showToast(t("logistics.toastIngestFailed"));
+        }
+      } catch {
+        if (opts?.force) showToast(t("logistics.toastIngestFailed"));
+      } finally {
+        setBatchPreIngesting(false);
+      }
+    },
+    [
+      shopName,
+      analysis,
+      quoteResults,
+      batchPreIngesting,
+      applyIngestReadyProductIds,
+      showToast,
+      t,
+    ]
+  );
+
+  const runBatchPreIngestRef = useRef(runBatchPreIngest);
+  runBatchPreIngestRef.current = runBatchPreIngest;
+
+  const autoPreIngestShopRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!shopName || !analysis?.productProfiles?.length) return;
+    if (autoPreIngestShopRef.current === shopName) return;
+    if (!shouldRunLogisticsBatchPreIngest(shopName)) return;
+    autoPreIngestShopRef.current = shopName;
+    void runBatchPreIngestRef.current();
+  }, [shopName, analysis?.productProfiles?.length]);
 
   const collectQuotableVariants = useCallback(
     (
@@ -914,6 +1015,8 @@ export function useLogisticsQuoteEstimate({
     handleFetchQuotesForProduct,
     handleIngestProductSource,
     handleCatalogIngestComplete,
+    handleBatchPreIngest: () => void runBatchPreIngest({ force: true }),
+    batchPreIngesting,
     handleAcceptAi,
     handleAcceptAllReady,
     handleStartEstimate,

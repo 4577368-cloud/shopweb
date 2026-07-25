@@ -8,12 +8,12 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
-  ExternalLink,
   Loader2,
   MoveRight,
   RefreshCw,
   Search,
 } from "@/lib/ui/icons";
+import { AccountManagerContactCta } from "@/components/account-manager/account-manager-contact-cta";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -170,7 +170,7 @@ import {
   readPublishDisplaySnapshot,
   readPublishRevealQueue,
 } from "@/lib/batch-link/publish-reveal";
-import { isInternalGoodsId, resolveSourceDetailHref } from "@/lib/catalog-product-resolve";
+import { isInternalGoodsId, resolveSourceDetailHref, candidateMatchesBoundSource } from "@/lib/catalog-product-resolve";
 
 export interface AgentIntentRequest {
   intent: ProductsIntentId;
@@ -1550,6 +1550,12 @@ function ShopProductCard({
     isAlreadySourcedProduct(binding, shopName, item.thirdPlatformItemId);
   const fromManual = isManualImageBinding(binding);
 
+  const storedSourceIdentity = useMemo(
+    () => readProductSourceIdentity(shopName, item.thirdPlatformItemId),
+    [shopName, item.thirdPlatformItemId]
+  );
+  const boundSourceIdentity = binding?.sourceIdentity ?? storedSourceIdentity;
+
   // Snapshot captured at confirm time: the exact candidate image/price the user matched. Preferred for
   // 回显 so we don't depend on (and don't re-hit) offer-detail, whose cross-border payload often has a
   // null white image and an empty SKU matrix.
@@ -1687,10 +1693,6 @@ function ShopProductCard({
 
   const runSearchWithPhases = async () => {
     if (searching) return;
-    if (fromPublish) {
-      setSearchError(t("shopProducts.publishSourcedNoSearch"));
-      return;
-    }
     setSearching(true);
     setSearchError(null);
     setTrayOpen(true);
@@ -1710,7 +1712,7 @@ function ShopProductCard({
         shopName,
         item,
         5,
-        { binding, locale }
+        { binding, locale, allowSupplierSwapSearch: fromPublish }
       );
       if (pipeline.error || !pipeline.result) {
         setResult(null);
@@ -1991,9 +1993,13 @@ function ShopProductCard({
         ? "candidate"
         : "empty";
   const isBoundHere =
-    current != null && boundOfferId != null && boundOfferId === current.productId;
+    current != null &&
+    boundOfferId != null &&
+    candidateMatchesBoundSource(current, boundOfferId, boundSourceIdentity);
   const isRebind =
-    current != null && boundOfferId != null && boundOfferId !== current.productId;
+    current != null &&
+    boundOfferId != null &&
+    !candidateMatchesBoundSource(current, boundOfferId, boundSourceIdentity);
 
   // —— 货源采购价（成本展示；与右侧定价策略无关） ——
   const boundImage =
@@ -2002,7 +2008,9 @@ function ShopProductCard({
     publishDisplaySnapshot?.imageUrl ??
     offerImage(offer);
   const boundCandidate =
-    candidates?.find((c) => c.productId === boundOfferId) ?? null;
+    candidates?.find((c) =>
+      candidateMatchesBoundSource(c, boundOfferId, boundSourceIdentity)
+    ) ?? null;
   const boundTitle = resolveBoundSourceDisplayTitle({
     locale,
     snapTitle,
@@ -2224,19 +2232,14 @@ function ShopProductCard({
     marginPct: null,
   });
 
-  const storedSourceIdentity = useMemo(
-    () => readProductSourceIdentity(shopName, item.thirdPlatformItemId),
-    [shopName, item.thirdPlatformItemId]
-  );
-
   const sourceDetailUrl = useMemo(
     () =>
       resolveSourceDetailHref({
         binding,
         candidate: current ?? null,
-        identity: binding?.sourceIdentity ?? storedSourceIdentity,
+        identity: boundSourceIdentity,
       }),
-    [binding, current, storedSourceIdentity]
+    [binding, current, boundSourceIdentity]
   );
 
   const recoInventory =
@@ -2359,13 +2362,23 @@ function ShopProductCard({
               )}
             </button>
             <div className="min-w-0 flex-1">
-              <EditedFieldValue
-                edit={titleEdit}
-                phases={titleEditPhases}
-                className="line-clamp-2 text-xs font-normal leading-snug text-[#666666]"
+              <button
+                type="button"
+                className="w-full text-left"
+                title={t("shopProducts.editProduct")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenDetail();
+                }}
               >
-                <span>{displayTitle}</span>
-              </EditedFieldValue>
+                <EditedFieldValue
+                  edit={titleEdit}
+                  phases={titleEditPhases}
+                  className="line-clamp-2 text-xs font-normal leading-snug text-[#666666] hover:text-link hover:underline"
+                >
+                  <span>{displayTitle}</span>
+                </EditedFieldValue>
+              </button>
               <EditedFieldValue
                 edit={listingPriceEdit}
                 phases={listingPriceEditPhases}
@@ -2507,11 +2520,26 @@ function ShopProductCard({
                   )}
                 </button>
                 <div className="min-w-0 flex-1">
-                  <p className="line-clamp-2 text-xs font-normal leading-snug text-[#666666]">
-                    {reco.title && !/^货源\s/.test(reco.title)
-                      ? reco.title
-                      : reco.title ?? t("shopProducts.sourceTitlePending")}
-                  </p>
+                  {detailUrl ? (
+                    <a
+                      href={detailUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={t("shopProducts.sourceDetail")}
+                      className="line-clamp-2 text-xs font-normal leading-snug text-[#666666] hover:text-link hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {reco.title && !/^货源\s/.test(reco.title)
+                        ? reco.title
+                        : reco.title ?? t("shopProducts.sourceTitlePending")}
+                    </a>
+                  ) : (
+                    <p className="line-clamp-2 text-xs font-normal leading-snug text-[#666666]">
+                      {reco.title && !/^货源\s/.test(reco.title)
+                        ? reco.title
+                        : reco.title ?? t("shopProducts.sourceTitlePending")}
+                    </p>
+                  )}
                   <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-sm font-semibold">
                     <span className="text-[#333333]">{t("shopProducts.purchaseCost", { price: "​" }).replace(/​/, "").trim()}</span>
                     <span className="text-[#FF4556] tabular-nums">
@@ -2625,128 +2653,68 @@ function ShopProductCard({
         <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[12px]">
           <button
             type="button"
-            className="font-medium text-muted-foreground hover:text-foreground"
+            className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+            disabled={searching || !hasImage}
+            title={
+              !hasImage
+                ? t("shopProducts.noImageNoSearch")
+                : result && result.items.length > 0
+                  ? t("shopProducts.expandLastSearch")
+                  : t("shopProducts.imageSearchMatch")
+            }
             onClick={(e) => {
               e.stopPropagation();
-              onOpenDetail();
+              void openOrRunSearch(false);
             }}
           >
-            {t("shopProducts.editProduct")}
+            {searching ? t("shopProducts.searching") : t("shopProducts.rematch")}
           </button>
-          {detailUrl ? (
+          <span className="text-surface-border">|</span>
+          <button
+            type="button"
+            className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+            disabled={cardActionsLocked || !isMallGatewayConfigured()}
+            title={
+              !isMallGatewayConfigured()
+                ? t("shopProducts.mallUnavailable")
+                : t("shopProducts.manualMatchHint")
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              setManualDrawerOpen(true);
+            }}
+          >
+            {t("shopProducts.manualMatch")}
+          </button>
+          {!fromPublish ? (
             <>
               <span className="text-surface-border">|</span>
-              <a
-                href={detailUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
-                onClick={(e) => e.stopPropagation()}
+              <button
+                type="button"
+                className="font-medium text-muted-foreground hover:text-destructive disabled:opacity-50"
+                disabled={
+                  !boundOfferId ||
+                  (cardState === "pending" ? rejecting || acking : unbinding || acking)
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (cardState === "pending") void rejectBinding();
+                  else void unbindBinding();
+                }}
               >
-                {t("shopProducts.sourceDetail")}
-                <ExternalLink className="h-3 w-3" />
-              </a>
+                {rejecting || unbinding
+                  ? rejecting
+                    ? t("shopProducts.rejecting")
+                    : t("shopProducts.processing")
+                  : t("shopProducts.cancelLink")}
+              </button>
             </>
           ) : null}
-          {cardState !== "unbound" || current ? (
-            !fromPublish ? (
-            <>
-              <span className="text-surface-border">|</span>
-              <button
-                type="button"
-                className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
-                disabled={searching || !hasImage}
-                title={
-                  !hasImage
-                    ? t("shopProducts.noImageNoSearch")
-                    : result && result.items.length > 0
-                      ? t("shopProducts.expandLastSearch")
-                      : t("shopProducts.imageSearchMatch")
-                }
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void openOrRunSearch(false);
-                }}
-              >
-                {searching ? t("shopProducts.searching") : t("shopProducts.rematch")}
-              </button>
-              <span className="text-surface-border">|</span>
-              <button
-                type="button"
-                className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
-                disabled={cardActionsLocked || !isMallGatewayConfigured()}
-                title={
-                  !isMallGatewayConfigured()
-                    ? t("shopProducts.mallUnavailable")
-                    : t("shopProducts.manualMatchHint")
-                }
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setManualDrawerOpen(true);
-                }}
-              >
-                {t("shopProducts.manualMatch")}
-              </button>
-            </>
-            ) : null
-          ) : (
-            !fromPublish ? (
-            <>
-              <span className="text-surface-border">|</span>
-              <button
-                type="button"
-                className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
-                disabled={cardActionsLocked || !isMallGatewayConfigured()}
-                title={
-                  !isMallGatewayConfigured()
-                    ? t("shopProducts.mallUnavailable")
-                    : t("shopProducts.manualMatchHint")
-                }
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setManualDrawerOpen(true);
-                }}
-              >
-                {t("shopProducts.manualMatch")}
-              </button>
-            </>
-            ) : null
-          )}
-          {boundOfferId ? (
-            <>
-              {cardState === "pending" ? (
-                <>
-                  <span className="text-surface-border">|</span>
-                  <button
-                    type="button"
-                    className="font-medium text-muted-foreground hover:text-destructive disabled:opacity-50"
-                    disabled={rejecting || acking}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void rejectBinding();
-                    }}
-                  >
-                    {rejecting ? t("shopProducts.rejecting") : t("shopProducts.reject")}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="text-surface-border">|</span>
-                  <button
-                    type="button"
-                    className="font-medium text-muted-foreground hover:text-destructive disabled:opacity-50"
-                    disabled={unbinding || acking}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void unbindBinding();
-                    }}
-                  >
-                    {t("shopProducts.cancelLink")}
-                  </button>
-                </>
-              )}
-            </>
-          ) : null}
+          <span className="text-surface-border">|</span>
+          <AccountManagerContactCta
+            context="products"
+            className="border-0 bg-transparent px-0 py-0 shadow-none hover:bg-transparent"
+          />
         </div>
         {primaryLabel ? (
           <Button
@@ -2902,8 +2870,11 @@ function ShopProductCard({
                 const imageBlockedHint = imageGateBlockedHint(t, imageScore);
                 const isCurrent = idx === currentIdx;
                 const isTop = idx === recommendedIdx;
-                const isBoundCand =
-                  boundOfferId != null && boundOfferId === c.productId;
+                const isBoundCand = candidateMatchesBoundSource(
+                  c,
+                  boundOfferId,
+                  boundSourceIdentity
+                );
                 const costCny = parseGatewayPrice(c.price);
                 const purchaseCtx = resolvePurchaseCostDisplayContext(
                   shopCurrency,
@@ -2981,7 +2952,9 @@ function ShopProductCard({
                       <div className="absolute left-1 top-1 flex max-w-[calc(100%-0.5rem)] flex-col gap-0.5">
                         {isBoundCand ? (
                           <span className="w-fit rounded bg-amber-600 px-1.5 py-0.5 text-[9px] font-semibold text-white">
-                            {bindPending ? t("shopProducts.boundPending") : t("shopProducts.boundLinked")}
+                            {bindPending
+                              ? t("shopProducts.boundPending")
+                              : t("shopProducts.currentSource")}
                           </span>
                         ) : isTop ? (
                           <span className="w-fit rounded bg-brand-accent px-1.5 py-0.5 text-[9px] font-semibold text-white">

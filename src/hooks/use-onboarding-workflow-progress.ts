@@ -31,6 +31,7 @@ import { buildLogisticsTemplateScopeKey } from "@/lib/logistics/template-scope-k
 import { listTemplateCountryCodes } from "@/lib/logistics/template-params";
 import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import type { AuthStatus, OnboardingStep, OverviewMetrics, ShopInfo, StepId, SyncPhase } from "@/lib/types";
+import { isOperationsHubReady } from "@/lib/hub/unlock";
 import {
   computeWorkflowBindingProgress,
   computeWorkflowSkuProgress,
@@ -240,12 +241,22 @@ export function useOnboardingWorkflowProgress({
         workflowSku
       )
     );
+
+    // sync 步骤状态由 syncPhase 派生，统一由 steps 数组管理
+    const syncStatus: OnboardingStep["status"] =
+      syncPhase === "completed"
+        ? "completed"
+        : syncPhase === "ready" || syncPhase === "syncing"
+          ? "pending_confirm"
+          : "not_started";
+    updateStepStatus("sync", syncStatus);
   }, [
     isAuthorized,
     workflowBinding,
     workflowSku,
     workflowLogistics,
     logisticsCompleted,
+    syncPhase,
     updateStepStatus,
   ]);
 
@@ -269,6 +280,7 @@ export function useOnboardingWorkflowProgress({
   ]);
 
   const syncCompleted = syncPhase === "completed";
+  const operationsHubReady = isOperationsHubReady(workflowBinding);
   const productsComplete = isProductsStepComplete(workflowBinding);
   const logisticsReadyForSync =
     logisticsCompleted ||
@@ -347,5 +359,6 @@ export function useOnboardingWorkflowProgress({
     workflowProgressPercent,
     refreshWorkflowProgress,
     syncCompleted,
+    operationsHubReady,
   };
 }

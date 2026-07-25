@@ -7,10 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "validate:env": "node scripts/validate-env.mjs",
+    "test:images": "npx tsx src/lib/images/test-cdn-thumb-url.ts",
     "test:products": "npx tsx src/lib/products/test-agent-commands.ts",
-    "test:sourcing": "npx tsx src/lib/sourcing/test-classify-rules.ts && npx tsx src/lib/sourcing/test-display-pricing.ts"
+    "test:sourcing": "npx tsx src/lib/sourcing/test-classify-rules.ts && npx tsx src/lib/sourcing/test-display-pricing.ts",
+    "test:pipiads": "npx tsx src/lib/marketing/test-pipiads.ts"
   },
   "dependencies": {
+    "@paypal/react-paypal-js": "^10.1.2",
     "@shopify/polaris-icons": "^9.3.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

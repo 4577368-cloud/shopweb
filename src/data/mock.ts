@@ -50,6 +50,14 @@ export const initialSteps: OnboardingStep[] = [
     href: "/logistics",
     status: "not_started",
   },
+  {
+    id: "sync",
+    order: 5,
+    title: "同步上架",
+    description: "汇总并发布到 Shopify",
+    href: "/sync",
+    status: "not_started",
+  },
 ];
 
 export const mockShop: ShopInfo = {

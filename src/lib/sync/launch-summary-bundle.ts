@@ -16,6 +16,12 @@ export interface LaunchSummaryBundle {
   logisticsAnalysis: LogisticsAnalysis | null;
   pricingTemplate: PricingTemplate | null;
   logisticsTemplates: LogisticsTemplate[];
+  /**
+   * 商品状态分组计数（key 为状态字符串：ACTIVE / DRAFT / ARCHIVED / UNKNOWN）。
+   * 由后端 LaunchSummaryBundleVO 提供，用于 sync 报告真实统计发布上架/下架/草稿数量。
+   * mock 路径下不存在该字段。
+   */
+  productStatusCounts?: Record<string, number> | null;
 }
 
 export type LaunchSummaryBundleInput = LaunchSummaryBundle;

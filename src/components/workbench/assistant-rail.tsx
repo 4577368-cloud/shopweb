@@ -32,6 +32,8 @@ interface AssistantRailProps {
   strategyCards?: ReactNode;
   /** Alias of {@link strategyCards}. */
   railCards?: ReactNode;
+  /** 固定在右侧栏底部（翻页/滚动时位置不变），如客户经理入口。 */
+  railFooter?: ReactNode;
   className?: string;
 }
 
@@ -46,6 +48,7 @@ export function AssistantRail({
   assistantContent,
   strategyCards,
   railCards,
+  railFooter,
   className,
 }: AssistantRailProps) {
   const strategy = strategyCards ?? railCards;
@@ -56,11 +59,14 @@ export function AssistantRail({
     return (
       <aside
         className={cn(
-          "flex h-full flex-col gap-3 overflow-y-auto border-l border-hairline bg-canvas/70 p-3",
+          "flex h-full flex-col overflow-hidden border-l border-hairline bg-canvas/70 p-3",
           className
         )}
       >
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        {hasRailSlot(railFooter) ? (
+          <div className="mt-2 shrink-0 border-t border-hairline pt-2">{railFooter}</div>
+        ) : null}
       </aside>
     );
   }
@@ -88,6 +94,9 @@ export function AssistantRail({
           <div className="flex shrink-0 flex-col gap-2">{strategy}</div>
         ) : null}
       </div>
+      {hasRailSlot(railFooter) ? (
+        <div className="mt-2 shrink-0 border-t border-hairline pt-2">{railFooter}</div>
+      ) : null}
     </aside>
   );
 }

@@ -27,31 +27,40 @@ export function normalizeShopDomain(input: string): string {
   return host;
 }
 
+/**
+ * Machine-readable error codes for {@link launchShopifyInstall}. Callers map these to
+ * i18n strings via {@link resolveInstallError} so this utility stays free of hardcoded copy.
+ */
+export type InstallErrorCode =
+  | "EMPTY_DOMAIN"
+  | "INVALID_DOMAIN"
+  | "API_BASE_UNCONFIGURED"
+  | "API_BASE_MISSING";
+
 export interface LaunchInstallResult {
   ok: boolean;
-  /** Present when validation/config failed; the caller decides how to surface it. */
-  error?: string;
+  /** Present when validation/config failed. Callers should translate via {@link resolveInstallError}. */
+  errorCode?: InstallErrorCode;
 }
 
 /**
  * Validate a shop domain, remember it, and navigate to the backend install endpoint (which 302s to
- * Shopify's consent screen). Returns {ok:false,error} without navigating when the domain is
+ * Shopify's consent screen). Returns {ok:false,errorCode} without navigating when the domain is
  * missing/invalid or the API base is unconfigured, so callers can show an inline/toast message.
  */
 export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
   const shopDomain = normalizeShopDomain(rawDomain);
   if (!shopDomain) {
-    return { ok: false, error: "请先填写店铺域名" };
+    return { ok: false, errorCode: "EMPTY_DOMAIN" };
   }
   if (!SHOP_DOMAIN_PATTERN.test(shopDomain)) {
-    return { ok: false, error: "请输入正确的店铺域名，例如 your-store.myshopify.com" };
+    return { ok: false, errorCode: "INVALID_DOMAIN" };
   }
   try {
     if (typeof window !== "undefined" && !(process.env.NEXT_PUBLIC_API_BASE ?? "").trim()) {
       return {
         ok: false,
-        error:
-          "后端代理未配置：请在 .env.local / Vercel 设置 NEXT_PUBLIC_API_BASE（如 https://shop-x2mw.onrender.com）并重新构建",
+        errorCode: "API_BASE_UNCONFIGURED",
       };
     }
     const url = shopifyInstallUrl(shopDomain);
@@ -61,6 +70,31 @@ export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
     }
     return { ok: true };
   } catch {
-    return { ok: false, error: "后端地址未配置（NEXT_PUBLIC_API_BASE）" };
+    return { ok: false, errorCode: "API_BASE_MISSING" };
+  }
+}
+
+/**
+ * Map a {@link LaunchInstallResult.errorCode} to a translated user-facing string. Callers pass
+ * their i18n {@code t} function so this utility stays free of hardcoded copy and works for all
+ * locales. Returns {@code fallback} when {@code code} is undefined (shouldn't happen, but keeps
+ * the UI safe).
+ */
+export function resolveInstallError(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  code: InstallErrorCode | undefined,
+  fallback: string
+): string {
+  switch (code) {
+    case "EMPTY_DOMAIN":
+      return t("install.errEmptyDomain");
+    case "INVALID_DOMAIN":
+      return t("install.errInvalidDomain");
+    case "API_BASE_UNCONFIGURED":
+      return t("install.errApiBaseUnconfigured");
+    case "API_BASE_MISSING":
+      return t("install.errApiBaseMissing");
+    default:
+      return fallback;
   }
 }

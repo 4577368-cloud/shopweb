@@ -5,6 +5,7 @@ import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
+import { AccountManagerRailFooter } from "@/components/account-manager/account-manager-contact-cta";
 import { AiCopilotScanStage } from "@/components/workbench/ai-copilot-scan-stage";
 import type { ScanTaskView } from "@/components/workbench/scan-stage";
 import type { ScanSummaryStats } from "@/lib/scan/copilot-workflow";
@@ -60,6 +61,7 @@ export function ProductsScanView({
               }}
             />
           }
+          railFooter={<AccountManagerRailFooter context="products" />}
         />
       }
       {...shellProps}

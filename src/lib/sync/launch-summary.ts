@@ -60,6 +60,17 @@ export interface LaunchSummary {
     ctaHref: string;
     ctaLabel: string;
     showAuditGap?: boolean;
+    /**
+     * 商品状态分组计数（来自后端 third_platform_product.status）。
+     * 存在时 LaunchMetricsGrid 优先展示真实统计：发布上架 / 操作到草稿 / 操作下架。
+     * mock 路径下为 undefined，回退到 titleOptimizations/priceAdjustments 占位展示。
+     */
+    productStatus?: {
+      active: number;
+      draft: number;
+      archived: number;
+      unknown: number;
+    };
   };
   fulfillmentPrep: {
     skuMapped: number;
