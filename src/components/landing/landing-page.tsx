@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { CyberBackground } from "@/components/landing/cyber-background";
 import { LandingNav } from "@/components/landing/landing-nav";
@@ -12,11 +13,12 @@ import { LandingValueProps } from "@/components/landing/landing-value-props";
 import { LandingUseCases } from "@/components/landing/landing-use-cases";
 import { LandingCtaBand } from "@/components/landing/landing-cta-band";
 import { LandingFooter } from "@/components/landing/landing-footer";
-import { AuthPanel } from "@/components/landing/auth-panel";
+import { LandingAuthSplit } from "@/components/landing/landing-auth-layout";
 import { useAuth } from "@/context/user-context";
 import { useOnboarding } from "@/context/onboarding-context";
 import { useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
+import { resolvePostLoginPath } from "@/lib/auth/post-login-redirect";
 
 type LandingMode = "hero" | "auth";
 type AuthMode = "login" | "register";
@@ -41,6 +43,7 @@ export function LandingPage() {
   const { status: authStatus } = useAuth();
   const { isAuthorized, operationsHubReady } = useOnboarding();
   const locale = useLocale();
+  const router = useRouter();
 
   const entryHref =
     authStatus === "authenticated"
@@ -64,6 +67,21 @@ export function LandingPage() {
     }
     showAuth("register");
   };
+
+  const postLoginTarget = useMemo(
+    () =>
+      resolvePostLoginPath(locale, null, {
+        isAuthorized,
+        operationsHubReady,
+      }),
+    [locale, isAuthorized, operationsHubReady]
+  );
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || mode !== "auth") return;
+    router.replace(postLoginTarget);
+    router.refresh();
+  }, [authStatus, mode, postLoginTarget, router]);
 
   return (
     <div className="landing-root">
@@ -95,34 +113,26 @@ export function LandingPage() {
             <LandingFooter />
           </motion.main>
         ) : (
-          <motion.main
+          <motion.div
             key="auth"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="relative z-10 flex min-h-screen pt-14"
+            className="relative z-10"
           >
-            {/* 左侧：Hero 缩略 + 功能亮点列表 */}
-            <div className="flex flex-1 flex-col justify-center px-6 py-20 lg:px-12">
-              <LandingHero onStart={startCta} compact />
-            </div>
-
-            {/* 右侧：登录/注册面板 */}
-            <motion.aside
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "tween", duration: 0.3, ease: "easeOut" }}
-              className="w-full max-w-[420px] shrink-0"
-            >
-              <AuthPanel
-                mode={authMode}
-                onModeChange={setAuthMode}
-                onClose={hideAuth}
-              />
-            </motion.aside>
-          </motion.main>
+            <LandingAuthSplit
+              mode={authMode}
+              onModeChange={(m) => {
+                setAuthMode(m);
+                router.replace(
+                  localePath(locale, m === "login" ? "/login" : "/register")
+                );
+              }}
+              onClose={hideAuth}
+              redirectAfterSuccess={postLoginTarget}
+            />
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

@@ -99,6 +99,13 @@ export function UserProvider({ children }: { children: ReactNode }) {
       return u;
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 401) throw err;
+      const code = (err as ApiError & { code?: string }).code;
+      // 从未带 tb_access（营销页访客）— 不必再打 /refresh，避免 NO_REFRESH_TOKEN 噪音。
+      if (code === "UNAUTHENTICATED") {
+        setUser(null);
+        setStatus("unauthenticated");
+        return null;
+      }
       const ok = await refreshAccess();
       if (!ok) {
         setUser(null);

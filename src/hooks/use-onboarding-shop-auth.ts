@@ -9,6 +9,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { useAuth } from "@/context/user-context";
 import { mockShop } from "@/data/mock";
 import { buildOverviewMetrics } from "@/lib/dashboard/overview";
 import {
@@ -50,6 +51,8 @@ export function useOnboardingShopAuth({
     getAuthSessionReadySnapshot,
     () => true
   );
+
+  const { status: userStatus, bootstrapping: userBootstrapping } = useAuth();
 
   const handleSetDomain = useCallback((v: string) => {
     setShopDomainInput(v);
@@ -119,6 +122,9 @@ export function useOnboardingShopAuth({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (userBootstrapping) return;
+    // P2：店铺绑定在用户账号下；未登录时不打 /shopify/auth/status（避免 JWT WARN）。
+    if (userStatus !== "authenticated") return;
 
     let cancelled = false;
 
@@ -159,7 +165,7 @@ export function useOnboardingShopAuth({
     return () => {
       cancelled = true;
     };
-  }, [hydrateAuthorizedShop]);
+  }, [hydrateAuthorizedShop, userBootstrapping, userStatus]);
 
   const isAuthorized = authStatus === "authorized";
   const authBootstrapping = !authSessionReady;

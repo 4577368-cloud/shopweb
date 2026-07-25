@@ -46,14 +46,14 @@ export default function RootLayout({
         translate="no"
         suppressHydrationWarning
       >
-        <OnboardingProvider>
-          <UserProvider>
+        <UserProvider>
+          <OnboardingProvider>
             <HubModeProvider>
               {children}
               <ToastHost />
             </HubModeProvider>
-          </UserProvider>
-        </OnboardingProvider>
+          </OnboardingProvider>
+        </UserProvider>
       </body>
     </html>
   );
