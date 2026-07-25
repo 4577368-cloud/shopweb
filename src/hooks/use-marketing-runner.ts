@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchCreditsBalance } from "@/lib/marketing/api";
+import { fetchCreditsBalance, USE_MOCK } from "@/lib/marketing/api";
+import {
+  readMarketingApiCache,
+  writeMarketingApiCache,
+} from "@/lib/marketing/session-cache";
+import { billingApi } from "@/lib/billing/api";
 import type { CreditsBalance, MarketingResponse } from "@/lib/marketing/types";
 
 export type MarketingLedgerRecord = (
@@ -61,7 +66,14 @@ export function useMarketingRunner(record: MarketingLedgerRecord) {
   const run = useCallback<MarketingRunFn>(
     (endpoint, cacheKey, fn) => {
       const execute = async (): Promise<MarketingResponse<unknown>> => {
-        const cached = cacheRef.current.get(cacheKey);
+        let cached = cacheRef.current.get(cacheKey);
+        if (cached === undefined) {
+          const fromSession = readMarketingApiCache(cacheKey);
+          if (fromSession !== undefined) {
+            cacheRef.current.set(cacheKey, fromSession);
+            cached = fromSession;
+          }
+        }
         if (cached !== undefined) {
           const remaining = accountRef.current?.remainingApiCredits ?? 0;
           record(endpoint, 0, true, remaining);
@@ -72,6 +84,7 @@ export function useMarketingRunner(record: MarketingLedgerRecord) {
 
         const res = await fn();
         cacheRef.current.set(cacheKey, res);
+        writeMarketingApiCache(cacheKey, res);
         const actual = res.consumedCredits ?? 0;
         const remaining =
           res.remainingCredits ?? accountRef.current?.remainingApiCredits ?? 0;
@@ -87,6 +100,23 @@ export function useMarketingRunner(record: MarketingLedgerRecord) {
         record(endpoint, actual, false, remaining);
         setCtx({ estimate: actual, lastActual: actual, cacheHit: false });
         setLastConsume({ estimate: actual, actual, cacheHit: false });
+
+        // 真实计费模式：把本次运营中心 API 消耗写进账户中心积分库（credit_transactions）。
+        // 仅真实模式写库——mock 模式的 consumedCredits 是合成值，写入会污染用户真实 user_credits。
+        // fire-and-forget：pipispy 调用已成功，写库失败（如未登录 401）不应影响用户结果，
+        // 与联邦别名库 skuAlignV1RecordAlias 的 fire-and-forget 策略一致。
+        if (!USE_MOCK && actual > 0) {
+          void billingApi
+            .consumeCredits({
+              endpoint,
+              amount: actual,
+              refType: "marketing_api",
+              refId: cacheKey,
+            })
+            .catch((err) => {
+              console.warn("[marketing-runner] consumeCredits failed (best-effort):", err);
+            });
+        }
         return res;
       };
 

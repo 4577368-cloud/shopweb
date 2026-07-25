@@ -37,7 +37,7 @@ import { markCatalogPublished } from "@/lib/batch-link/publish-source";
 import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
 import type { CatalogRecommendation, PricingTemplate } from "@/lib/types";
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 28;
 
 function money(value?: number | null, currency?: string | null): string {
   if (value == null) return "—";

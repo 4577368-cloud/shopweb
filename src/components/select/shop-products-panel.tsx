@@ -323,13 +323,6 @@ function formatCny(price?: string | null): string {
   return `¥${trimmed}`;
 }
 
-function shortProductId(id: string): string {
-  const m = id.match(/Product\/(\d+)/i);
-  if (m) return m[1]!;
-  if (id.length > 18) return `${id.slice(0, 8)}…${id.slice(-6)}`;
-  return id;
-}
-
 /** Best available source image for a bound offer: white-bg image, else the first per-SKU image. */
 function offerImage(offer: OfferDetail | null): string | null {
   if (offer?.whiteImageUrl) return offer.whiteImageUrl;
@@ -2322,12 +2315,6 @@ function ShopProductCard({
             <p className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               {t("shopProducts.shopifyProduct")}
             </p>
-            <span
-              className="shrink-0 text-[10px] tabular-nums text-muted-foreground"
-              title={item.thirdPlatformItemId}
-            >
-              ID {shortProductId(item.thirdPlatformItemId)}
-            </span>
           </div>
           <div className="flex min-w-0 gap-3">
             <button

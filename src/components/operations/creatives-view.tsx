@@ -1,13 +1,17 @@
 // 素材视图（设计 §2.4 / 原型 v2）：搜索 + 平台筛选 + 创意网格（点赞 / CTA / 趋势）+ 点击开详情抽屉。
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
 import { useT } from "@/i18n/LocaleProvider";
 import { Button } from "@/components/ui/button";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Search } from "@/lib/ui/icons";
 import { fetchSearchAds } from "@/lib/marketing/api";
 import { isGuardCancel } from "@/lib/marketing/guard";
+import {
+  readMarketingViewState,
+  writeMarketingViewState,
+} from "@/lib/marketing/session-cache";
 import type { AdCard, AdPlatform, MarketingResponse, PageMeta } from "@/lib/marketing/types";
 import { CoverThumb } from "./cover-thumb";
 import { PlatformBadge } from "./platform-badge";
@@ -31,34 +35,53 @@ interface CreativesViewProps {
   onQueryChange?: (q: string) => void;
 }
 
+export type CreativesViewHandle = {
+  fetchCurrent: () => void;
+};
+
 type PlatSeg = "all" | AdPlatform;
 
-export function CreativesView({ run, onOpenDetail, initialQuery = "", onQueryChange }: CreativesViewProps) {
+export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>(
+  function CreativesView({ run, onOpenDetail, initialQuery = "", onQueryChange }, ref) {
   const t = useT();
   const [query, setQuery] = useState(initialQuery);
   const [platSeg, setPlatSeg] = useState<PlatSeg>("all");
   const [data, setData] = useState<{ list: AdCard[]; page: PageMeta } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [searched, setSearched] = useState(Boolean(initialQuery));
+  const [searched, setSearched] = useState(false);
 
   useEffect(() => {
-    if (initialQuery) void doSearch(initialQuery);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setQuery(initialQuery);
+  }, [initialQuery]);
+
+  useEffect(() => {
+    const snap = readMarketingViewState<{
+      query: string;
+      data: { list: AdCard[]; page: PageMeta };
+    }>("creatives");
+    if (snap?.data) {
+      setQuery(snap.query);
+      setData(snap.data);
+      setSearched(true);
+    }
   }, []);
 
   const doSearch = useCallback(
     async (q: string) => {
+      const trimmed = q.trim();
+      if (!trimmed) return;
       setLoading(true);
       setError(false);
       setSearched(true);
       try {
         const res = await run(
           "ad-products/search",
-          `creative:${q}`,
-          () => fetchSearchAds(q, 1, 20)
+          `creative:${trimmed}`,
+          () => fetchSearchAds(trimmed, 1, 20)
         );
         setData(res.data);
+        writeMarketingViewState("creatives", { query: trimmed, data: res.data });
       } catch (e) {
         if (!isGuardCancel(e)) setError(true);
       } finally {
@@ -66,6 +89,16 @@ export function CreativesView({ run, onOpenDetail, initialQuery = "", onQueryCha
       }
     },
     [run]
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      fetchCurrent: () => {
+        void doSearch(query);
+      },
+    }),
+    [doSearch, query]
   );
 
   const visible = data?.list.filter((c) => matchesSeg(c, platSeg)) ?? [];
@@ -118,7 +151,7 @@ export function CreativesView({ run, onOpenDetail, initialQuery = "", onQueryCha
           </Button>
         </div>
       ) : !searched ? (
-        <p className="py-16 text-center text-sm text-ink-subtle">{t("ops.creatives.empty")}</p>
+        <p className="py-16 text-center text-sm text-ink-subtle">{t("ops.fetch.prompt")}</p>
       ) : visible.length === 0 ? (
         <p className="py-16 text-center text-sm text-ink-subtle">{t("ops.creatives.empty")}</p>
       ) : (
@@ -166,4 +199,4 @@ export function CreativesView({ run, onOpenDetail, initialQuery = "", onQueryCha
       )}
     </div>
   );
-}
+});

@@ -394,7 +394,11 @@ export const fr: Dictionary = {
     signInRequired: "Veuillez vous connecter pour gérer la sécurité.",
     subtitle: "Modifiez votre mot de passe pour sécuriser votre compte.",
     title: "Sécurité",
-    toastPasswordChanged: "Mot de passe modifié. Veuillez vous reconnecter."
+    toastPasswordChanged: "Mot de passe modifié. Veuillez vous reconnecter.",
+    sectionHub: "Hub opérations",
+    hubHint: "Active les menus Centre de commandes, Centre d'opérations et Centre de logistique. Désactivé par défaut pour contrôler la visibilité pendant le développement.",
+    hubOn: "Activé",
+    hubOff: "Désactivé"
   },
   accountBills: {
     balanceAfter: "Solde",
@@ -449,6 +453,12 @@ export const fr: Dictionary = {
   accountCredits: {
     balanceAfter: "Solde",
     currentBalance: "Crédits actuels",
+    apiSource: "Source : crédits API pipispy en temps réel",
+    balanceAfterPlatform: "Solde plateforme après",
+    monitorRemaining: "Crédits supervision restants",
+    footnoteLedger:
+      "Le chiffre principal correspond aux crédits API pipispy en temps réel (comme le centre opérationnel). « Solde plateforme après » dans le journal est le compte crédits Tangbuy pour attribution et traçabilité—les deux peuvent différer.",
+    retry: "Réessayer",
     errorUnauthenticated: "Session expirée. Veuillez vous reconnecter.",
     expiresAt: "Expire le",
     filterAll: "Tout",
@@ -479,6 +489,7 @@ export const fr: Dictionary = {
     title: "Crédits",
     totalConsumed: "Total consommé",
     totalExpired: "Total expiré",
+    platformLedger: "Compte de crédits plateforme (cumulé)",
     totalGranted: "Total octroyé",
     transactionsEmpty: "Aucune consommation.",
     transactionsHint: "Chaque enregistrement est lié à un endpoint précis pour tracer la source de consommation.",
@@ -1738,6 +1749,12 @@ export const fr: Dictionary = {
       monitorRemaining: "Supervision restante",
       viewUsage: "Voir le détail d'usage",
     },
+    fetch: {
+      get: "Récupérer",
+      prompt:
+        "Les données pub ne se chargent qu’après un clic sur Récupérer (en haut) ou Rechercher. Les résultats restent en cache dans cet onglet — un rafraîchissement ne refacture pas.",
+      staleFilters: "Filtres modifiés — cliquez sur Récupérer ou Rechercher pour mettre à jour.",
+    },
     pulse: "Pulsation marché",
     tabs: { discovery: "Découverte", competition: "Concurrence", creatives: "Créations", imageSearch: "Recherche par image" },
     pulseApiBalance: "Solde API",
@@ -1851,6 +1868,11 @@ export const fr: Dictionary = {
         colSales: "Vol. ventes",
         colGoods: "Articles",
         colVideo: "Vidéos",
+        detailClose: "Fermer",
+        detailId: "ID boutique",
+        detailFollowers: "Abonnés",
+        detailAvgPrice: "Prix moy. (USD)",
+        detailPlays: "Lectures",
       },
       board: {
         title: "Classement des produits TikTok",

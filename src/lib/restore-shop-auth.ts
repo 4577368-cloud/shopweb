@@ -112,11 +112,7 @@ export function clearAuthLocalOk(): void {
 /** Client-only: whether we can show workbench without waiting on getShopStatus (SSR-safe). */
 export function shouldOptimisticAuthFromStoredShop(domain: string | null): boolean {
   if (!domain?.trim()) return false;
-  return (
-    readAuthSessionOk(domain) ||
-    readAuthLocalOk(domain) ||
-    Boolean(readStoredShopDomain())
-  );
+  return readAuthSessionOk(domain) || readAuthLocalOk(domain);
 }
 
 export function markAuthVerified(domain: string): void {
@@ -127,6 +123,34 @@ export function markAuthVerified(domain: string): void {
 export function clearAuthVerified(): void {
   clearAuthSessionOk();
   clearAuthLocalOk();
+}
+
+/** Drop remembered shop (wrong account, revoked OAuth, or user switched). */
+export function clearRememberedShopDomain(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(SHOP_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+  clearAuthVerified();
+}
+
+const SHOP_USER_ID_KEY = "tangbuy.shopUserId";
+
+/** Per-user shop memory: new login on a shared browser must not reuse another account's domain. */
+export function syncRememberedShopForUser(userId: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    const prev = window.localStorage.getItem(SHOP_USER_ID_KEY);
+    const next = String(userId);
+    if (prev && prev !== next) {
+      clearRememberedShopDomain();
+    }
+    window.localStorage.setItem(SHOP_USER_ID_KEY, next);
+  } catch {
+    // ignore
+  }
 }
 
 export interface RestoredShopAuth {
@@ -144,34 +168,36 @@ function fmtAuthorizedAt(iso?: string | null): string {
     : d.toLocaleString("zh-CN", { hour12: false });
 }
 
-/** Resolve which shop domain to probe on cold load (localStorage → URL → first authorized shop). */
+/** Resolve which shop domain to probe on cold load (URL → account shops → stale localStorage). */
 export async function resolveShopDomainToRestore(): Promise<string | null> {
   if (typeof window === "undefined") return null;
 
-  const shopFromUrl = new URLSearchParams(window.location.search).get("shop");
-  const stored = window.localStorage.getItem(SHOP_STORAGE_KEY);
-  let shopToRestore = stored ?? shopFromUrl;
-
-  if (shopFromUrl && !stored) {
+  const shopFromUrl = new URLSearchParams(window.location.search).get("shop")?.trim();
+  if (shopFromUrl) {
     window.localStorage.setItem(SHOP_STORAGE_KEY, shopFromUrl);
+    return shopFromUrl;
   }
 
-  if (shopToRestore) {
-    return shopToRestore;
-  }
+  const stored = window.localStorage.getItem(SHOP_STORAGE_KEY)?.trim() || null;
 
   try {
     const list = await api.listAuthorizedShops();
-    const first = Array.isArray(list) ? list[0] : undefined;
-    if (first?.shopDomain) {
-      window.localStorage.setItem(SHOP_STORAGE_KEY, first.shopDomain);
-      return first.shopDomain;
+    const shops = Array.isArray(list) ? list : [];
+    if (shops.length > 0) {
+      const domain = shops[0]?.shopDomain?.trim();
+      if (domain) {
+        window.localStorage.setItem(SHOP_STORAGE_KEY, domain);
+        return domain;
+      }
     }
+    // Logged-in user has no shops — ignore orphan localStorage from another session.
+    if (stored) {
+      clearRememberedShopDomain();
+    }
+    return null;
   } catch {
-    // Offline / backend unavailable — fall through.
+    return stored;
   }
-
-  return null;
 }
 
 /** Ask backend whether a remembered shop is still authorized. */

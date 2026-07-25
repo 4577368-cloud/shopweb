@@ -395,7 +395,11 @@ export const en = {
     signInRequired: "Please sign in to manage security settings.",
     subtitle: "Change your password to keep your account secure.",
     title: "Security",
-    toastPasswordChanged: "Password changed. Please sign in again."
+    toastPasswordChanged: "Password changed. Please sign in again.",
+    sectionHub: "Operations Hub",
+    hubHint: "Enables Order Center, Operations Center, and Fulfillment Center menus. Off by default to control visibility during feature development.",
+    hubOn: "Enabled",
+    hubOff: "Disabled"
   },
   accountBills: {
     balanceAfter: "Balance",
@@ -450,6 +454,12 @@ export const en = {
   accountCredits: {
     balanceAfter: "Balance",
     currentBalance: "Current credits",
+    apiSource: "Source: pipispy real-time API credits",
+    balanceAfterPlatform: "Platform balance after",
+    monitorRemaining: "Monitor credits remaining",
+    footnoteLedger:
+      "The large number is pipispy real-time API credits (same as the operations center). “Platform balance after” in the ledger is your Tangbuy platform credit account for grants and consumption audit—the two may differ.",
+    retry: "Retry",
     errorUnauthenticated: "Session expired. Please sign in again.",
     expiresAt: "Expires",
     filterAll: "All",
@@ -480,6 +490,7 @@ export const en = {
     title: "Credits",
     totalConsumed: "Total consumed",
     totalExpired: "Total expired",
+    platformLedger: "Platform credit account (cumulative)",
     totalGranted: "Total granted",
     transactionsEmpty: "No consumption records.",
     transactionsHint: "Each record is tied to a specific endpoint so you can trace where credits were spent.",
@@ -1741,6 +1752,12 @@ export const en = {
       monitorRemaining: "Monitor remaining",
       viewUsage: "View usage details",
     },
+    fetch: {
+      get: "Fetch",
+      prompt:
+        "Ad data loads only when you click Fetch (top right) or Search on this page. Results stay cached in this tab so refresh won’t charge again.",
+      staleFilters: "Filters changed — click Fetch or Search to refresh the list.",
+    },
     pulse: "Market pulse",
     tabs: { discovery: "Discovery", competition: "Competition", creatives: "Creatives", imageSearch: "Image search" },
     pulseApiBalance: "API balance",
@@ -1854,6 +1871,11 @@ export const en = {
         colSales: "Sales vol.",
         colGoods: "Goods",
         colVideo: "Videos",
+        detailClose: "Close",
+        detailId: "Shop ID",
+        detailFollowers: "Followers",
+        detailAvgPrice: "Avg price (USD)",
+        detailPlays: "Plays",
       },
       board: {
         title: "TikTok product ranking board",

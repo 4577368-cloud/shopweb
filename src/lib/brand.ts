@@ -9,6 +9,9 @@ export const APP_DESCRIPTION =
 /** Full horizontal brand logo (source: docs/logo60-svg.svg; spec max-height 48px in chrome). */
 export const BRAND_LOGO_FULL = "/brand/logo60-svg.svg";
 
+/** Browser tab / PWA icon (source: docs/logo-60.svg). */
+export const BRAND_FAVICON = "/brand/logo-60.svg";
+
 /** @deprecated Use {@link APP_TAGLINE} */
 export const APP_SUBTITLE = APP_TAGLINE;
 

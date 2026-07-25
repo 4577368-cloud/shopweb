@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { X } from "@/lib/ui/icons";
@@ -15,14 +16,21 @@ interface AuthPanelProps {
   mode: AuthMode;
   onModeChange: (mode: AuthMode) => void;
   onClose: () => void;
+  /** 登录/注册成功后的跳转路径（含 locale 前缀）。 */
+  redirectAfterSuccess?: string;
 }
 
 /**
  * 右侧登录/注册面板。
  * 复用 useAuth().login / register，错误码复用 auth.* i18n。
- * 登录/注册成功后 → router.replace("/") → page.tsx 自动分流到 Dashboard。
+ * 登录/注册成功后 router.replace 到工作台入口（由父组件传入 redirectAfterSuccess）。
  */
-export function AuthPanel({ mode, onModeChange, onClose }: AuthPanelProps) {
+export function AuthPanel({
+  mode,
+  onModeChange,
+  onClose,
+  redirectAfterSuccess,
+}: AuthPanelProps) {
   const t = useT();
   const locale = useLocale();
   const router = useRouter();
@@ -63,7 +71,8 @@ export function AuthPanel({ mode, onModeChange, onClose }: AuthPanelProps) {
       } else {
         await register({ name: name.trim(), email: email.trim(), password });
       }
-      router.replace(localePath(locale, "/"));
+      const target = redirectAfterSuccess ?? localePath(locale, "/authorize");
+      router.replace(target);
       router.refresh();
     } catch (err) {
       setError(errorMessage(err));
@@ -182,6 +191,17 @@ export function AuthPanel({ mode, onModeChange, onClose }: AuthPanelProps) {
                 className="landing-input w-full px-3 py-2 text-sm"
               />
             </div>
+
+            {mode === "login" ? (
+              <div className="flex justify-end">
+                <Link
+                  href={localePath(locale, "/forgot-password")}
+                  className="text-[11px] font-medium text-[--landing-cyan] hover:underline"
+                >
+                  {t("auth.forgotPasswordLink")}
+                </Link>
+              </div>
+            ) : null}
 
             {error ? (
               <p className="text-xs leading-4 text-red-400">{error}</p>

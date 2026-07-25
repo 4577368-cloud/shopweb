@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { OnboardingProvider } from "@/context/onboarding-context";
 import { UserProvider } from "@/context/user-context";
-import { HubModeProvider } from "@/lib/hub/hub-mode";
 import { ToastHost } from "@/components/layout/toast-host";
-import { APP_DESCRIPTION, APP_FULL_NAME } from "@/lib/brand";
+import { APP_DESCRIPTION, APP_FULL_NAME, BRAND_FAVICON } from "@/lib/brand";
 import "./globals.css";
 import "./landing.css";
 
@@ -18,10 +17,14 @@ const displayFont = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: APP_FULL_NAME,
   description: APP_DESCRIPTION,
+  icons: {
+    icon: [{ url: BRAND_FAVICON, type: "image/svg+xml" }],
+    apple: [{ url: BRAND_FAVICON, type: "image/svg+xml" }],
+  },
 };
 
 /**
- * Root layout: global providers that must survive locale changes (onboarding, hub).
+ * Root layout: global providers that must survive locale changes (onboarding).
  * Locale + messages live under app/[locale]/layout.tsx so client language switches
  * remount translations from the URL segment.
  */
@@ -46,14 +49,12 @@ export default function RootLayout({
         translate="no"
         suppressHydrationWarning
       >
-        <OnboardingProvider>
-          <UserProvider>
-            <HubModeProvider>
+        <UserProvider>
+          <OnboardingProvider>
               {children}
               <ToastHost />
-            </HubModeProvider>
-          </UserProvider>
-        </OnboardingProvider>
+          </OnboardingProvider>
+        </UserProvider>
       </body>
     </html>
   );

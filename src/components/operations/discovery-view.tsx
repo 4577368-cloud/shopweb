@@ -2,7 +2,7 @@
 // + 行内趋势 sparkline / CPM 区间 + 结果表 + 分页 + 四态。
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import Link from "next/link";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
@@ -37,25 +37,73 @@ import type {
   TtsShopRow,
 } from "@/lib/marketing/types";
 import { isGuardCancel } from "@/lib/marketing/guard";
+import {
+  readMarketingViewState,
+  writeMarketingViewState,
+} from "@/lib/marketing/session-cache";
 import { CoverThumb } from "./cover-thumb";
 import { PlatformBadge } from "./platform-badge";
-import { RankingProductGrid, RankingDetailDrawer, tCategory } from "./ranking-grid";
+import { RankingProductGrid, RankingDetailDrawer } from "./ranking-grid";
 import { ttsSignals, rankMomentum, normalizeTo100 } from "@/lib/marketing/derived";
 import { fmtCompact, fmtGrowthRate, fmtInt, fmtPercent, fmtUsd } from "@/lib/marketing/format";
 import { Sparkline, MiniBar, ScorePill, Tag } from "./intel";
 import { AdIntelCard } from "./ad-intel-card";
+import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
 
 interface DiscoveryViewProps {
   run: <T extends MarketingResponse<unknown>>(endpoint: string, cacheKey: string, fn: () => Promise<T>) => Promise<T>;
   shop: string;
   onViewCompetitor: (productId: string) => void;
+  onViewTtsDetail: (row: TtsShopRow) => void;
   onViewDetail: (adId: string) => void;
   onLearnCreatives: (adId: string) => void;
   initialSegment?: Segment;
   onSegmentChange?: (segment: Segment) => void;
 }
 
+export type DiscoveryViewHandle = {
+  /** 顶部「获取」：按当前分段/筛选拉取一页（或命中会话缓存）。 */
+  fetchCurrent: () => void;
+};
+
 type Segment = "tts" | "ads" | "board";
+
+function rankFilterKey(
+  period: RankType,
+  sortKey: RankSortKey,
+  region: string,
+  category: string,
+  shopType: string,
+  platform: string,
+  growthMin: string,
+  growthMax: string
+) {
+  const gMin = growthMin ? Number(growthMin) : "";
+  const gMax = growthMax ? Number(growthMax) : "";
+  return `rank:${period}:${sortKey}:${region}:${category}:${shopType}:${platform}:${gMin}:${gMax}`;
+}
+
+function rankCacheKey(
+  p: number,
+  period: RankType,
+  sortKey: RankSortKey,
+  region: string,
+  category: string,
+  shopType: string,
+  platform: string,
+  growthMin: string,
+  growthMax: string
+) {
+  return `${rankFilterKey(period, sortKey, region, category, shopType, platform, growthMin, growthMax)}:${p}`;
+}
+
+function ttsFilterKey(category: string, region: string) {
+  return `tts:${category}:${region}`;
+}
+
+function ttsCacheKey(p: number, category: string, region: string) {
+  return `${ttsFilterKey(category, region)}:${p}`;
+}
 
 // 诚实的"调用价值"条：每次 list 调用只消耗 1 额度，但回传的多个真实字段
 // 被组合派生出多重洞察。这里的字段数/信号数均为真实计数（非夸大）。
@@ -65,15 +113,19 @@ const CALL_VALUE: Record<"tts" | "rank" | "search", { fields: number; signals: n
   search: { fields: 15, signals: 6 },
 };
 
-export function DiscoveryView({
+export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>(function DiscoveryView(
+  {
   run,
   shop,
   onViewCompetitor,
+  onViewTtsDetail,
   onViewDetail,
   onLearnCreatives,
   initialSegment = "ads",
   onSegmentChange,
-}: DiscoveryViewProps) {
+  },
+  ref
+) {
   const t = useT();
   const [segment, setSegment] = useState<Segment>(initialSegment);
   const [committedSearch, setCommittedSearch] = useState("");
@@ -97,6 +149,49 @@ export function DiscoveryView({
   const [error, setError] = useState(false);
   const [page, setPage] = useState(1);
   const [fav, setFav] = useState<Set<string>>(new Set());
+  const [rankLoadedFilter, setRankLoadedFilter] = useState<string | null>(null);
+  const [ttsLoadedFilter, setTtsLoadedFilter] = useState<string | null>(null);
+  const [searchLoadedQuery, setSearchLoadedQuery] = useState<string | null>(null);
+
+  const currentRankFilter = useMemo(
+    () => rankFilterKey(period, sortKey, region, category, shopType, platform, growthMin, growthMax),
+    [period, sortKey, region, category, shopType, platform, growthMin, growthMax]
+  );
+  const currentTtsFilter = useMemo(() => ttsFilterKey(category, region), [category, region]);
+
+  useEffect(() => {
+    const rankSnap = readMarketingViewState<{
+      filterKey: string;
+      page: number;
+      data: { list: RankRow[]; page: PageMeta };
+    }>("discovery:rank");
+    if (rankSnap) {
+      setRank(rankSnap.data);
+      setRankLoadedFilter(rankSnap.filterKey);
+      setPage(rankSnap.page);
+    }
+    const ttsSnap = readMarketingViewState<{
+      filterKey: string;
+      page: number;
+      data: { list: TtsShopRow[]; page: PageMeta };
+    }>("discovery:tts");
+    if (ttsSnap) {
+      setTts(ttsSnap.data);
+      setTtsLoadedFilter(ttsSnap.filterKey);
+    }
+    const searchSnap = readMarketingViewState<{
+      query: string;
+      page: number;
+      data: { list: AdCard[]; page: PageMeta };
+    }>("discovery:search");
+    if (searchSnap) {
+      setCommittedSearch(searchSnap.query);
+      setSearchQ(searchSnap.query);
+      setSearch(searchSnap.data);
+      setSearchLoadedQuery(searchSnap.query);
+      setPage(searchSnap.page);
+    }
+  }, []);
 
   const loadRank = useCallback(
     async (p: number) => {
@@ -105,10 +200,31 @@ export function DiscoveryView({
       setPage(p);
       const gMin = growthMin ? Number(growthMin) : undefined;
       const gMax = growthMax ? Number(growthMax) : undefined;
+      const filterKey = rankFilterKey(
+        period,
+        sortKey,
+        region,
+        category,
+        shopType,
+        platform,
+        growthMin,
+        growthMax
+      );
+      const cacheKey = rankCacheKey(
+        p,
+        period,
+        sortKey,
+        region,
+        category,
+        shopType,
+        platform,
+        growthMin,
+        growthMax
+      );
       try {
         const res = await run(
           "rank/ad-product/list",
-          `rank:${period}:${sortKey}:${region}:${category}:${shopType}:${platform}:${gMin ?? ""}:${gMax ?? ""}:${p}`,
+          cacheKey,
           () =>
             fetchRankList({
               type: period,
@@ -124,6 +240,12 @@ export function DiscoveryView({
             })
         );
         setRank(res.data);
+        setRankLoadedFilter(filterKey);
+        writeMarketingViewState("discovery:rank", {
+          filterKey,
+          page: p,
+          data: res.data,
+        });
       } catch (e) {
         if (!isGuardCancel(e)) setError(true);
       } finally {
@@ -138,10 +260,12 @@ export function DiscoveryView({
       setLoading(true);
       setError(false);
       setPage(p);
+      const filterKey = ttsFilterKey(category, region);
+      const cacheKey = ttsCacheKey(p, category, region);
       try {
         const res = await run(
           "tiktok-shop-list",
-          `tts:${category}:${region}:${p}`,
+          cacheKey,
           () =>
             fetchTtsShops({
               page: p,
@@ -151,6 +275,12 @@ export function DiscoveryView({
             })
         );
         setTts(res.data);
+        setTtsLoadedFilter(filterKey);
+        writeMarketingViewState("discovery:tts", {
+          filterKey,
+          page: p,
+          data: res.data,
+        });
       } catch (e) {
         if (!isGuardCancel(e)) setError(true);
       } finally {
@@ -162,16 +292,24 @@ export function DiscoveryView({
 
   const loadSearch = useCallback(
     async (p: number) => {
+      const q = committedSearch.trim();
+      if (!q) return;
       setLoading(true);
       setError(false);
       setPage(p);
       try {
         const res = await run(
           "ad-products/search",
-          `search:${committedSearch}:${p}`,
-          () => fetchSearchAds(committedSearch, p, 20)
+          `search:${q}:${p}`,
+          () => fetchSearchAds(q, p, 20)
         );
         setSearch(res.data);
+        setSearchLoadedQuery(q);
+        writeMarketingViewState("discovery:search", {
+          query: q,
+          page: p,
+          data: res.data,
+        });
       } catch (e) {
         if (!isGuardCancel(e)) setError(true);
       } finally {
@@ -181,17 +319,27 @@ export function DiscoveryView({
     [run, committedSearch]
   );
 
-  // 切换分段 / 筛选变更时自动重新加载：用户期望「改了筛选即联动下方数据」，而非需手动点按钮。
-  useEffect(() => {
-    if (segment === "tts") {
-      loadTts(1);
-    } else if (segment === "ads" && !hasSearch) {
-      loadRank(1);
-    } else if (segment === "ads" && hasSearch) {
-      loadSearch(1);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segment, hasSearch, committedSearch, period, sortKey, region, category, shopType, platform, growthMin, growthMax]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      fetchCurrent: () => {
+        if (segment === "board") return;
+        if (segment === "tts") void loadTts(1);
+        else if (hasSearch) void loadSearch(1);
+        else void loadRank(1);
+      },
+    }),
+    [segment, hasSearch, loadTts, loadSearch, loadRank]
+  );
+
+  const rankFiltersStale =
+    rank != null && rankLoadedFilter != null && rankLoadedFilter !== currentRankFilter;
+  const ttsFiltersStale =
+    tts != null && ttsLoadedFilter != null && ttsLoadedFilter !== currentTtsFilter;
+  const searchQueryStale =
+    search != null &&
+    searchLoadedQuery != null &&
+    searchLoadedQuery !== committedSearch.trim();
 
   const toggleFav = (id: string) =>
     setFav((prev) => {
@@ -210,7 +358,11 @@ export function DiscoveryView({
     setGrowthMax("");
   };
 
-  const submitSearch = () => setCommittedSearch(searchQ);
+  const submitSearch = () => {
+    const q = searchQ.trim();
+    setCommittedSearch(q);
+    if (q) void loadSearch(1);
+  };
   const backToHot = () => {
     setSearchQ("");
     setCommittedSearch("");
@@ -354,9 +506,9 @@ export function DiscoveryView({
               options={REGIONS.map((r) => ({ value: r.code, label: r.label }))}
               allLabel={t("ops.discovery.filters.all")}
             />
-            <Button variant="secondary" size="sm" onClick={() => loadTts(1)}>
+            <Button variant="secondary" size="sm" onClick={() => void loadTts(1)}>
               <Search className="h-3.5 w-3.5" />
-              {t("ops.discovery.segTts")}
+              {t("ops.fetch.get")}
             </Button>
           </>
         ) : segment === "ads" ? (
@@ -476,28 +628,54 @@ export function DiscoveryView({
           }
         />
       ) : segment === "tts" ? (
-        <TtsTable data={tts} onViewCompetitor={(id) => onViewCompetitor(id)} onPage={loadTts} />
+        <>
+          {ttsFiltersStale && <StaleFiltersBanner />}
+          {!tts ? (
+            <FetchPrompt />
+          ) : (
+            <TtsTable
+              data={tts}
+              onViewCompetitor={onViewCompetitor}
+              onViewTtsDetail={onViewTtsDetail}
+              onPage={loadTts}
+            />
+          )}
+        </>
       ) : !hasSearch ? (
-        <RankTable
-          data={rank}
-          fav={fav}
-          onToggleFav={toggleFav}
-          onViewCompetitor={onViewCompetitor}
-          onViewDetail={onViewDetail}
-          onLearn={onLearnCreatives}
-          onPage={loadRank}
-        />
+        <>
+          {rankFiltersStale && <StaleFiltersBanner />}
+          {!rank ? (
+            <FetchPrompt />
+          ) : (
+            <RankTable
+              data={rank}
+              fav={fav}
+              onToggleFav={toggleFav}
+              onViewCompetitor={onViewCompetitor}
+              onViewDetail={onViewDetail}
+              onLearn={onLearnCreatives}
+              onPage={loadRank}
+            />
+          )}
+        </>
       ) : (
-        <SearchTable
-          data={search}
-          fav={fav}
-          onToggleFav={toggleFav}
-          query={committedSearch}
-          onViewCompetitor={onViewCompetitor}
-          onViewDetail={onViewDetail}
-          onLearn={onLearnCreatives}
-          onPage={loadSearch}
-        />
+        <>
+          {searchQueryStale && <StaleFiltersBanner />}
+          {!search || committedSearch.trim() !== searchLoadedQuery ? (
+            <FetchPrompt />
+          ) : (
+            <SearchTable
+              data={search}
+              fav={fav}
+              onToggleFav={toggleFav}
+              query={committedSearch}
+              onViewCompetitor={onViewCompetitor}
+              onViewDetail={onViewDetail}
+              onLearn={onLearnCreatives}
+              onPage={loadSearch}
+            />
+          )}
+        </>
       )}
 
       {/* 调用价值条：让一次消耗显得"超值"——真实字段数被组合成多重派生信号 */}
@@ -510,6 +688,22 @@ export function DiscoveryView({
         </p>
       )}
     </div>
+  );
+});
+
+function FetchPrompt() {
+  const t = useT();
+  return (
+    <p className="py-16 text-center text-sm text-ink-subtle">{t("ops.fetch.prompt")}</p>
+  );
+}
+
+function StaleFiltersBanner() {
+  const t = useT();
+  return (
+    <p className="mb-2 rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs text-amber-900">
+      {t("ops.fetch.staleFilters")}
+    </p>
   );
 }
 
@@ -823,10 +1017,12 @@ function SearchTable({
 function TtsTable({
   data,
   onViewCompetitor,
+  onViewTtsDetail,
   onPage,
 }: {
   data: { list: TtsShopRow[]; page: PageMeta } | null;
-  onViewCompetitor: (id: string) => void;
+  onViewCompetitor: (shopNameOrId: string) => void;
+  onViewTtsDetail: (row: TtsShopRow) => void;
   onPage: (p: number) => void;
 }) {
   const t = useT();
@@ -838,7 +1034,13 @@ function TtsTable({
     <div>
       <div className="grid gap-3 md:grid-cols-2">
         {data.list.map((row) => (
-          <TtsCard key={row.id} row={row} now={now} onViewCompetitor={onViewCompetitor} />
+          <TtsCard
+            key={row.id}
+            row={row}
+            now={now}
+            onViewCompetitor={onViewCompetitor}
+            onViewDetail={onViewTtsDetail}
+          />
         ))}
       </div>
       <Pager page={data.page} onPage={onPage} meta={data.page} />
@@ -856,16 +1058,32 @@ function TtsCard({
   row,
   now,
   onViewCompetitor,
+  onViewDetail,
 }: {
   row: TtsShopRow;
   now: number;
-  onViewCompetitor: (id: string) => void;
+  onViewCompetitor: (shopNameOrId: string) => void;
+  onViewDetail: (row: TtsShopRow) => void;
 }) {
   const t = useT();
   const s = ttsSignals(row, now);
   const heatTone = s.heatScore >= 70 ? "success" : s.heatScore >= 40 ? "brand" : "muted";
   return (
-    <div className="flex flex-col rounded-[var(--radius-card)] border border-hairline bg-surface p-3 shadow-card">
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={() => onViewDetail(row)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onViewDetail(row);
+        }
+      }}
+      className={cn(
+        selectableCardClassName({ interactive: true }),
+        "flex cursor-pointer flex-col p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+      )}
+    >
       {/* 头部：封面 + 名称 + 价格带/地区 + 热度分 */}
       <div className="flex items-start gap-2">
         <div className="h-10 w-10 shrink-0 overflow-hidden rounded-[var(--radius-control)]">
@@ -954,12 +1172,29 @@ function TtsCard({
         )}
       </div>
 
-      <div className="mt-2 flex justify-end">
-        <button type="button" onClick={() => onViewCompetitor(row.id)} className="rounded px-1.5 py-0.5 text-[11px] text-link hover:underline">
+      <div className="mt-2 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onViewDetail(row);
+          }}
+          className="rounded px-1.5 py-0.5 text-[11px] font-medium text-ink hover:bg-surface-muted"
+        >
+          {t("ops.discovery.actViewDetail")}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onViewCompetitor(row.title);
+          }}
+          className="rounded px-1.5 py-0.5 text-[11px] text-link hover:underline"
+        >
           {t("ops.discovery.actViewComp")}
         </button>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -993,11 +1228,9 @@ function SignalBar({
 // /operations-center/leaderboard/[snapshotId]，避免单一网页代码过长。
 function RankingBoard({ shop }: { shop: string }) {
   const t = useT();
-  const locale = useLocale();
   const [snapshots, setSnapshots] = useState<RankingSnapshot[]>([]);
   const [selectedSnapshot, setSelectedSnapshot] = useState<number | null>(null);
   const [products, setProducts] = useState<RankingRow[]>([]);
-  const [category, setCategory] = useState("all");
   const [searchQ, setSearchQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -1017,7 +1250,6 @@ function RankingBoard({ shop }: { shop: string }) {
       } else {
         setProducts([]);
       }
-      setCategory("all");
     } catch {
       setError(true);
     } finally {
@@ -1037,7 +1269,6 @@ function RankingBoard({ shop }: { shop: string }) {
       try {
         const rows = await api.listRankingProducts(shop, { snapshotId: id });
         setProducts(rows);
-        setCategory("all");
       } catch {
         setError(true);
       } finally {
@@ -1047,53 +1278,11 @@ function RankingBoard({ shop }: { shop: string }) {
     [shop]
   );
 
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    products.forEach((p) => {
-      if (p.categoryL1) set.add(p.categoryL1);
-    });
-    return Array.from(set).sort();
-  }, [products]);
-
   const filtered = useMemo(() => {
     const kw = searchQ.trim().toLowerCase();
-    return products.filter((p) => {
-      if (category !== "all" && p.categoryL1 !== category) return false;
-      if (kw && !(p.productTitle || "").toLowerCase().includes(kw)) return false;
-      return true;
-    });
-  }, [products, category, searchQ]);
-
-  // 类目下钻状态：null 表示"全部分类"，逐层进入直到 L3
-  const [drill, setDrill] = useState<{ l1: string | null; l2: string | null; l3: string | null }>({
-    l1: null,
-    l2: null,
-    l3: null,
-  });
-
-  // 应用下钻：非选中层级的子项必须等于已选层级的值
-  const drilled = useMemo(() => {
-    return filtered.filter((p) => {
-      if (drill.l1 && p.categoryL1 !== drill.l1) return false;
-      if (drill.l2 && p.categoryL2 !== drill.l2) return false;
-      if (drill.l3 && p.categoryL3 !== drill.l3) return false;
-      return true;
-    });
-  }, [filtered, drill]);
-
-  // 排序工具：null 排到末尾，避免空白占位
-  function topBy(getValue: (p: RankingRow) => number | null, n: number): RankingRow[] {
-    return [...drilled]
-      .map((p) => ({ p, v: getValue(p) }))
-      .sort((a, b) => {
-        if (a.v == null && b.v == null) return 0;
-        if (a.v == null) return 1;
-        if (b.v == null) return -1;
-        return b.v - a.v;
-      })
-      .slice(0, n)
-      .map((x) => x.p);
-  }
+    if (!kw) return products;
+    return products.filter((p) => (p.productTitle || "").toLowerCase().includes(kw));
+  }, [products, searchQ]);
 
   if (error && snapshots.length === 0) {
     return (
@@ -1117,14 +1306,8 @@ function RankingBoard({ shop }: { shop: string }) {
     );
   }
 
-  const moreHref =
-    selectedSnapshot != null
-      ? localePath(locale, `/operations-center/leaderboard/${selectedSnapshot}${category !== "all" ? `?category=${encodeURIComponent(category)}` : ""}`)
-      : null;
-
   return (
     <div>
-      {/* 单行控制栏：日期窗口 + 关键词 + 类目（L1>L2>L3）+ 联想搜索，全部 inline 横排 */}
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <Select
           label={t("ops.discovery.board.snapshotLabel")}
@@ -1135,219 +1318,26 @@ function RankingBoard({ shop }: { shop: string }) {
             label: s.dateRange,
           }))}
         />
-        <label className="flex flex-col gap-1">
+        <label className="flex min-w-0 flex-1 flex-col gap-1 sm:max-w-md">
           <span className="text-[11px] text-ink-subtle">{t("ops.discovery.board.searchLabel")}</span>
           <input
             type="search"
             value={searchQ}
             onChange={(e) => setSearchQ(e.target.value)}
             placeholder={t("ops.discovery.board.searchPlaceholder")}
-            className="h-9 min-w-[220px] rounded-[var(--radius-control)] border border-hairline bg-surface px-3 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand"
+            className="h-9 w-full min-w-[200px] rounded-[var(--radius-control)] border border-hairline bg-surface px-3 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </label>
-        <CategoryDrilldown filtered={filtered} drill={drill} onDrill={setDrill} />
       </div>
 
-      {/* 多榜单 2×2：GMV / 增长 / 达人带货 / 转化，每张卡 Top 5 + 查看完整 */}
-      <MultiBoards rows={drilled} snapshotId={selectedSnapshot} onSelect={setSelected} />
+      <MultiBoards rows={filtered} snapshotId={selectedSnapshot} onSelect={setSelected} />
 
-      {/* 完整商品卡列表（多榜单下方，按当前下钻+搜索过滤） */}
       {selectedSnapshot != null && (
-        <RankingProductGrid products={drilled} loading={loading} onSelect={setSelected} />
+        <RankingProductGrid products={filtered} loading={loading} onSelect={setSelected} />
       )}
       <RankingDetailDrawer row={selected} onClose={() => setSelected(null)} />
     </div>
   );
-}
-
-/**
- * 类目下钻：三列联动筛选（L1 > L2 > L3）+ 文字联想检索。
- * - 每列根据"祖先"层（L1 / L1+L2）收窄候选；点击"全部"清除该层及下层。
- * - 顶部搜索框：对当前快照中所有出现过的类目值（跨 L1/L2/L3）做前缀/包含匹配联想，
- *   命中后按最深层级（L3 > L2 > L1）选中并清空搜索框。
- * - 不再使用平铺卡片网格（类目多时太碎、占页面）。
- */
-function CategoryDrilldown({
-  filtered,
-  drill,
-  onDrill,
-}: {
-  filtered: RankingRow[];
-  drill: { l1: string | null; l2: string | null; l3: string | null };
-  onDrill: (next: { l1: string | null; l2: string | null; l3: string | null }) => void;
-}) {
-  const t = useT();
-
-  // 文字联想检索框（仅影响下方下拉联想，不直接改 drill）
-  const [catQ, setCatQ] = useState("");
-
-  // 三列候选：去重 + 计数 + 按"商品数降序、名称字典序"排序
-  const l1List = useMemo(() => buildDrillLevel(filtered, "categoryL1", null, null), [filtered]);
-  const l2List = useMemo(
-    () => buildDrillLevel(filtered, "categoryL2", drill.l1, null),
-    [filtered, drill.l1]
-  );
-  const l3List = useMemo(
-    () => buildDrillLevel(filtered, "categoryL3", drill.l1, drill.l2),
-    [filtered, drill.l1, drill.l2]
-  );
-
-  // 联想源：当前 filtered 里出现过的全部 L1/L2/L3 原值（去重）
-  const allCategories = useMemo(() => {
-    const set = new Set<string>();
-    filtered.forEach((p) => {
-      if (p.categoryL1) set.add(p.categoryL1);
-      if (p.categoryL2) set.add(p.categoryL2);
-      if (p.categoryL3) set.add(p.categoryL3);
-    });
-    return Array.from(set);
-  }, [filtered]);
-
-  const kw = catQ.trim().toLowerCase();
-  const matched = kw
-    ? allCategories
-        .filter((c) => tCategory(c, t).toLowerCase().includes(kw))
-        .slice(0, 8)
-    : [];
-
-  // 选中某层某项：把下层清空，并清空搜索框
-  const pick = (level: 1 | 2 | 3, name: string) => {
-    if (level === 1) onDrill({ l1: name, l2: null, l3: null });
-    else if (level === 2) onDrill({ l1: drill.l1, l2: name, l3: null });
-    else onDrill({ l1: drill.l1, l2: drill.l2, l3: name });
-    setCatQ("");
-  };
-
-  // "全部"：清除该层及下层（但保留上层）
-  const clearLevel = (level: 1 | 2 | 3) => {
-    if (level === 1) onDrill({ l1: null, l2: null, l3: null });
-    else if (level === 2) onDrill({ l1: drill.l1, l2: null, l3: null });
-    else onDrill({ l1: drill.l1, l2: drill.l2, l3: null });
-  };
-
-  // 联想命中：按"最深匹配"选中（L3 > L2 > L1）
-  const pickFromSuggestion = (name: string) => {
-    const level = l3List.find((x) => x.name === name)
-      ? 3
-      : l2List.find((x) => x.name === name)
-      ? 2
-      : 1;
-    pick(level, name);
-  };
-
-  return (
-    <>
-      {/* 一级类目 */}
-      <Select
-        label={t("ops.discovery.board.l1Label")}
-        value={drill.l1 ?? "all"}
-        onChange={(v) => (v === "all" ? clearLevel(1) : pick(1, v))}
-        options={["all", ...l1List.map((it) => it.name)]}
-        labels={l1List.map((it) => tCategory(it.name, t))}
-        allLabel={t("ops.discovery.board.drillAll")}
-      />
-      {/* 二级类目 */}
-      <Select
-        label={t("ops.discovery.board.l2Label")}
-        value={drill.l2 ?? "all"}
-        onChange={(v) => (v === "all" ? clearLevel(2) : pick(2, v))}
-        options={["all", ...l2List.map((it) => it.name)]}
-        labels={l2List.map((it) => tCategory(it.name, t))}
-        allLabel={t("ops.discovery.board.drillAll")}
-      />
-      {/* 三级类目 */}
-      <Select
-        label={t("ops.discovery.board.l3Label")}
-        value={drill.l3 ?? "all"}
-        onChange={(v) => (v === "all" ? clearLevel(3) : pick(3, v))}
-        options={["all", ...l3List.map((it) => it.name)]}
-        labels={l3List.map((it) => tCategory(it.name, t))}
-        allLabel={t("ops.discovery.board.drillAll")}
-      />
-      {/* 联想搜索框（label 复用 drilldown key，与 select 同列对齐） */}
-      <div className="relative flex flex-col gap-1">
-        <span className="text-[11px] text-ink-subtle">{t("ops.discovery.board.drilldown")}</span>
-        <input
-          type="search"
-          value={catQ}
-          onChange={(e) => setCatQ(e.target.value)}
-          placeholder={t("ops.discovery.board.drillSearchPlaceholder")}
-          className="h-9 w-[200px] rounded-[var(--radius-control)] border border-hairline bg-surface px-3 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand"
-        />
-        {matched.length > 0 ? (
-          <ul className="absolute right-0 top-full z-20 mt-1 max-h-[280px] w-[280px] overflow-auto rounded-[var(--radius-control)] border border-hairline bg-surface shadow-md">
-            {matched.map((c) => (
-              <li key={c}>
-                <button
-                  type="button"
-                  onClick={() => pickFromSuggestion(c)}
-                  className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-[12px] text-ink hover:bg-surface-muted"
-                >
-                  <span className="truncate">{tCategory(c, t)}</span>
-                  <span className="shrink-0 text-[10px] text-ink-subtle tabular-nums">
-                    {countOfCategory(filtered, c)}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-      {/* 当前路径 + 清除：仅在已选类目时显示，与 select 同列对齐 */}
-      {drill.l1 || drill.l2 || drill.l3 ? (
-        <div className="flex flex-col gap-1">
-          <span className="text-[11px] text-transparent select-none">.</span>
-          <div className="flex h-9 items-center gap-1.5 text-[11px] text-ink-subtle">
-            <span className="truncate">
-              {drill.l1 ? tCategory(drill.l1, t) : t("ops.discovery.board.drillAll")}
-              {drill.l2 ? ` / ${tCategory(drill.l2, t)}` : ""}
-              {drill.l3 ? ` / ${tCategory(drill.l3, t)}` : ""}
-            </span>
-            <button
-              type="button"
-              onClick={() => onDrill({ l1: null, l2: null, l3: null })}
-              className="shrink-0 text-link hover:underline"
-            >
-              × {t("ops.discovery.board.drillback")}
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {/* 无匹配提示：搜索框非空但联想列表为空时，紧跟其后 inline */}
-      {kw && matched.length === 0 ? (
-        <p className="self-center text-[11px] text-ink-subtle">
-          {t("ops.discovery.board.drillNoMatch")}
-        </p>
-      ) : null}
-    </>
-  );
-}
-
-// 构造某一层的候选列表：去重 + 计数 + 排序（商品数降序、名称字典序）
-function buildDrillLevel(
-  rows: RankingRow[],
-  field: "categoryL1" | "categoryL2" | "categoryL3",
-  ancestorL1: string | null,
-  ancestorL2: string | null
-): { name: string; count: number }[] {
-  const map = new Map<string, number>();
-  rows.forEach((p) => {
-    if (ancestorL1 != null && p.categoryL1 !== ancestorL1) return;
-    if (ancestorL2 != null && p.categoryL2 !== ancestorL2) return;
-    const v = p[field];
-    if (!v) return;
-    map.set(v, (map.get(v) ?? 0) + 1);
-  });
-  return Array.from(map.entries())
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-}
-
-// 跨层级计数（用于联想下拉里展示）
-function countOfCategory(rows: RankingRow[], name: string): number {
-  return rows.filter(
-    (p) => p.categoryL1 === name || p.categoryL2 === name || p.categoryL3 === name
-  ).length;
 }
 
 // --- 多榜单 2×2 网格：GMV / 增长 / 达人带货 / 转化 ---

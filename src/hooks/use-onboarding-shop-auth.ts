@@ -3,12 +3,12 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useState,
   useSyncExternalStore,
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { useAuth } from "@/context/user-context";
 import { mockShop } from "@/data/mock";
 import { buildOverviewMetrics } from "@/lib/dashboard/overview";
 import {
@@ -16,10 +16,9 @@ import {
   subscribeAuthSessionReady,
 } from "@/lib/onboarding/auth-session-ready";
 import {
-  clearAuthVerified,
+  clearRememberedShopDomain,
   fetchRestoredShopAuth,
   markAuthVerified,
-  readStoredShopDomain,
   resolveShopDomainToRestore,
 } from "@/lib/restore-shop-auth";
 import { normalizeShopApiName, shopApiNameFromDomain } from "@/lib/resolve-shop-api-name";
@@ -50,6 +49,8 @@ export function useOnboardingShopAuth({
     getAuthSessionReadySnapshot,
     () => true
   );
+
+  const { status: userStatus, bootstrapping: userBootstrapping } = useAuth();
 
   const handleSetDomain = useCallback((v: string) => {
     setShopDomainInput(v);
@@ -105,20 +106,11 @@ export function useOnboardingShopAuth({
     }, 900);
   }, [shopDomainInput, setOverview, updateStepStatus]);
 
-  useLayoutEffect(() => {
-    const domain = readStoredShopDomain();
-    if (!domain) return;
-    setShopDomainInput(domain);
-    setShop((prev) => ({
-      ...prev,
-      domain,
-      name: shopApiNameFromDomain(domain),
-    }));
-    setAuthStatus("authorized");
-  }, []);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (userBootstrapping) return;
+    // P2：店铺绑定在用户账号下；未登录时不打 /shopify/auth/status（避免 JWT WARN）。
+    if (userStatus !== "authenticated") return;
 
     let cancelled = false;
 
@@ -137,6 +129,15 @@ export function useOnboardingShopAuth({
         }
 
         if (!shopToRestore) {
+          setShopDomainInput("");
+          setShop((prev) => ({
+            ...prev,
+            domain: "",
+            name: "",
+            productCount: 0,
+            authorizedAt: undefined,
+          }));
+          setAuthStatus("waiting_input");
           return;
         }
 
@@ -149,8 +150,16 @@ export function useOnboardingShopAuth({
           return;
         }
 
-        clearAuthVerified();
-        setAuthStatus("ready_to_authorize");
+        clearRememberedShopDomain();
+        setShopDomainInput("");
+        setShop((prev) => ({
+          ...prev,
+          domain: "",
+          name: "",
+          productCount: 0,
+          authorizedAt: undefined,
+        }));
+        setAuthStatus("waiting_input");
       } catch {
         // Keep optimistic session from localStorage; user can retry authorize.
       }
@@ -159,7 +168,7 @@ export function useOnboardingShopAuth({
     return () => {
       cancelled = true;
     };
-  }, [hydrateAuthorizedShop]);
+  }, [hydrateAuthorizedShop, userBootstrapping, userStatus]);
 
   const isAuthorized = authStatus === "authorized";
   const authBootstrapping = !authSessionReady;
