@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api } from "@/lib/api";
+import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import {
   SHOP_STORAGE_KEY,
   launchShopifyInstall,
@@ -189,11 +190,11 @@ function AuthorizePageContent() {
     if (!isAuthorized) return;
     setBoundCount(null);
     setPublishedCount(null);
-    void loadStats(shop.name);
-  }, [isAuthorized, shop.name, loadStats]);
+    void loadStats(resolveShopApiName(shop));
+  }, [isAuthorized, shop.name, shop.domain, loadStats]);
 
   const pullProductMirror = useCallback(async () => {
-    const shopName = shop.name;
+    const shopName = resolveShopApiName(shop);
     const shopDomain = shop.domain;
     if (!shopName || !shopDomain) return null;
 
@@ -263,7 +264,7 @@ function AuthorizePageContent() {
         showToast(t("authorize.toastProductCountFailed"));
         return;
       }
-      await loadStats(shop.name);
+      await loadStats(resolveShopApiName(shop));
     } catch {
       showToast(t("authorize.toastRefreshFailed"));
     } finally {

@@ -48,6 +48,11 @@ import {
   setMirrorCache,
   isMirrorCacheFresh,
 } from "@/lib/products/mirror-cache";
+import {
+  fetchShopPanelBindingsMap,
+  mergeBindingsOnFetch,
+} from "@/lib/products/fetch-image-bindings-map";
+import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import type {
   ImageBindingView,
   ImageSearchProduct,
@@ -81,11 +86,13 @@ import type { CandidateSummary } from "@/lib/agents/products/product-focus-snaps
 import { buildTrayInlineReasons } from "@/lib/agents/products/candidate-tray-explain";
 import {
   fetchItemGetProcurementPrice,
+  findSourceSkuRow,
+  mapItemGetToSourceSkuMatrix,
   resolveSkuDetailUrl,
 } from "@/lib/source-sku-matrix";
 import { ManualMatchDrawer } from "@/components/select/manual-match-drawer";
 import { SourceSupplierConfirmCard } from "@/components/select/source-supplier-confirm-card";
-import { isManualImageBinding } from "@/lib/manual-image-match";
+import { isManualImageBinding, resolveManualHeroImage } from "@/lib/manual-image-match";
 import { fetchItemDetail, isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
 import {
   applyBatchAckToBindings,
@@ -164,7 +171,6 @@ import {
   readPublishRevealQueue,
 } from "@/lib/batch-link/publish-reveal";
 import { isInternalGoodsId, resolveSourceDetailHref } from "@/lib/catalog-product-resolve";
-import { resolveManualHeroImage } from "@/lib/manual-image-match";
 
 export interface AgentIntentRequest {
   intent: ProductsIntentId;
@@ -544,7 +550,7 @@ export function ShopProductsPanel({
   const { shop, showToast } = useOnboarding();
   const t = useT();
   const locale = useLocale();
-  const shopName = shop.name;
+  const shopName = resolveShopApiName(shop);
   const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
 
   const [loading, setLoading] = useState(() => {
@@ -581,6 +587,8 @@ export function ShopProductsPanel({
   );
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  /** Bindings read still in flight — cards must not claim "unlinked" yet. */
+  const [bindingsPending, setBindingsPending] = useState(false);
 
   const load = useCallback(async (opts?: { silent?: boolean; retryPoolBackfill?: boolean; force?: boolean }): Promise<ShopMirrorProduct[] | null> => {
     const silent = opts?.silent ?? false;
@@ -593,17 +601,14 @@ export function ShopProductsPanel({
 
     if (silent && !force && isMirrorCacheFresh(shopMirrorKey)) {
       try {
-        const bound = await api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]);
-        const map: Record<string, ImageBindingView> = {};
-        for (const b of bound) {
-          if (!b.thirdPlatformItemId) continue;
-          map[b.thirdPlatformItemId] = mergeStoredIdentityIntoBinding(
-            shopName,
-            b.thirdPlatformItemId,
-            b
-          );
-        }
-        const ackedMap = await autoAckHighConfidencePendingBindings(shopName, map);
+        const previous =
+          peekMirrorCache(shopMirrorKey)?.bindings ?? bindings;
+        const fetched = await fetchShopPanelBindingsMap(shopName);
+        const mergedMap = mergeBindingsOnFetch(fetched, previous);
+        const ackedMap = await autoAckHighConfidencePendingBindings(
+          shopName,
+          mergedMap
+        );
         const cached = peekMirrorCache(shopMirrorKey);
         const items = cached?.items ?? products;
         setProducts(items);
@@ -632,21 +637,26 @@ export function ShopProductsPanel({
       setError(null);
     }
     try {
-      const [items, bound] = await Promise.all([
-        api.getShopProducts(shopName),
-        api.listImageBindings(shopName).catch(() => [] as ImageBindingView[]),
-      ]);
+      const previous =
+        peekMirrorCache(shopMirrorKey)?.bindings ?? bindings;
+      // Bindings are the slow read; don't let them hold the list back, or a cold gateway renders
+      // every card as unlinked. `bindingsPending` keeps the cards honest until they land.
+      setBindingsPending(true);
+      const bindingsRequest = fetchShopPanelBindingsMap(shopName);
+      const items = await api.getShopProducts(shopName);
       setProducts(items);
-      const map: Record<string, ImageBindingView> = {};
-      for (const b of bound) {
-        if (!b.thirdPlatformItemId) continue;
-        map[b.thirdPlatformItemId] = mergeStoredIdentityIntoBinding(
-          shopName,
-          b.thirdPlatformItemId,
-          b
-        );
+      if (!silent) {
+        setLoading(false);
+        setListSettled(true);
       }
-      const ackedMap = await autoAckHighConfidencePendingBindings(shopName, map);
+      const fetchedMap = await bindingsRequest.finally(() =>
+        setBindingsPending(false)
+      );
+      const mergedMap = mergeBindingsOnFetch(fetchedMap, previous);
+      const ackedMap = await autoAckHighConfidencePendingBindings(
+        shopName,
+        mergedMap
+      );
       setBindings(ackedMap);
       onShopProductsChange?.(items, ackedMap);
       setMirrorCache(shopMirrorKey, { items, bindings: ackedMap });
@@ -712,7 +722,7 @@ export function ShopProductsPanel({
       if (!silent) setLoading(false);
       setListSettled(true);
     }
-  }, [shopName, shopMirrorKey, onShopProductsChange]);
+  }, [shopName, shopMirrorKey, onShopProductsChange, bindings, products]);
 
   const batchLinkBusyRef = useRef(false);
   const batchWasActiveRef = useRef(false);
@@ -1273,6 +1283,7 @@ export function ShopProductsPanel({
                   publishRevealStates[p.thirdPlatformItemId]
                 }
                 linkingLocked={linkingLocked}
+                bindingsPending={bindingsPending}
                 locale={locale}
               />
             ))}
@@ -1345,6 +1356,7 @@ function ShopProductCard({
   onTitleEditConsumed,
   batchLinkDrive = undefined,
   linkingLocked = false,
+  bindingsPending = false,
   pricingTemplate = null,
   locale = "zh",
 }: {
@@ -1368,6 +1380,8 @@ function ShopProductCard({
   onTitleEditConsumed?: () => void;
   batchLinkDrive?: BatchLinkCardDrive;
   linkingLocked?: boolean;
+  /** Shop bindings still loading — show a wait state instead of "unlinked". */
+  bindingsPending?: boolean;
   pricingTemplate?: PricingTemplate | null;
   locale?: Locale;
 }) {
@@ -1542,7 +1556,9 @@ function ShopProductCard({
   const snapImage = binding?.bound ? (binding.offerImageUrl ?? null) : null;
   const snapPrice = binding?.bound ? (binding.offerPrice ?? null) : null;
   const snapTitle = binding?.bound ? (binding.offerTitle ?? null) : null;
-  const hasSnapshot = Boolean(snapImage && snapPrice);
+  const hasSnapshotImage = Boolean(snapImage?.trim());
+  const hasSnapshotPrice = Boolean(snapPrice?.trim());
+  const hasSnapshot = hasSnapshotImage && hasSnapshotPrice;
 
   // Bound cards lazily fetch the real offer detail only when there's no snapshot, so the right tile can
   // still show 货源图/价 for legacy bindings (route B). New bindings skip this call entirely.
@@ -1608,7 +1624,7 @@ function ShopProductCard({
   }, [boundOfferId, boundDetailUrl, snapTitle]);
 
   useEffect(() => {
-    if (!boundOfferId || !boundDetailUrl || snapImage?.trim()) {
+    if (!boundOfferId || !boundDetailUrl || hasSnapshotImage) {
       setItemGetHeroImage(null);
       return;
     }
@@ -1617,8 +1633,15 @@ function ShopProductCard({
     void fetchItemDetail(boundDetailUrl)
       .then((detail) => {
         if (cancelled || !detail) return;
-        const image = resolveManualHeroImage(detail, null);
-        if (image) setItemGetHeroImage(image);
+        const fromDetail = resolveManualHeroImage(detail, null);
+        if (fromDetail) {
+          setItemGetHeroImage(fromDetail);
+          return;
+        }
+        const rows = mapItemGetToSourceSkuMatrix(detail);
+        const row = findSourceSkuRow(rows, binding?.tangbuySkuId);
+        const skuImage = row?.imageUrl?.trim();
+        if (skuImage) setItemGetHeroImage(skuImage);
       })
       .catch(() => {
         if (!cancelled) setItemGetHeroImage(null);
@@ -1626,7 +1649,7 @@ function ShopProductCard({
     return () => {
       cancelled = true;
     };
-  }, [boundOfferId, boundDetailUrl, snapImage]);
+  }, [boundOfferId, boundDetailUrl, binding?.tangbuySkuId, hasSnapshotImage]);
 
   useEffect(() => {
     if (!boundOfferId) {

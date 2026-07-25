@@ -4,6 +4,7 @@ import {
 } from "@/lib/logistics/decision-engine";
 import { readAcceptances } from "@/lib/logistics/accept-decisions-store";
 import { mergeAcceptancesIntoAnalysis } from "@/lib/logistics/merge-acceptances-into-analysis";
+import { normalizeShopApiName } from "@/lib/resolve-shop-api-name";
 import type {
   LogisticsAnalysis,
   LogisticsDecisionStatus,
@@ -50,9 +51,24 @@ async function fetchUpstream(
     }
     await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
   }
-  throw lastError instanceof Error
+    throw lastError instanceof Error
     ? lastError
     : new Error("上游物流服务暂时不可用，请稍后重试");
+}
+
+/** SKU overview enriches variant decisions only — never block logistics analysis on it. */
+async function fetchSkuOverviewOptional(shopKey: string): Promise<Response | null> {
+  const query = new URLSearchParams({
+    shopName: shopKey,
+    thumbWidth: "144",
+    compact: "true",
+  });
+  const url = `${API_BASE}/api/plugin/match/sku/overview?${query.toString()}`;
+  try {
+    return await fetchUpstream(url, { method: "GET" });
+  } catch {
+    return null;
+  }
 }
 
 const ACCEPTABLE: Set<LogisticsDecisionStatus> = new Set([
@@ -75,18 +91,16 @@ export async function loadLogisticsAnalysis(
     );
   }
 
-  const analyzeUrl = `${API_BASE}/api/plugin/logistics/${force ? "analyze" : "analysis"}?shopName=${encodeURIComponent(shopName)}${force ? "&force=true" : ""}`;
-  const skuOverviewUrl = `${API_BASE}/api/plugin/match/sku/overview?shopName=${encodeURIComponent(shopName)}`;
+  const shopKey = normalizeShopApiName(shopName);
+  const analyzeUrl = `${API_BASE}/api/plugin/logistics/${force ? "analyze" : "analysis"}?shopName=${encodeURIComponent(shopKey)}${force ? "&force=true" : ""}`;
 
   const includeSku = options?.includeSkuOverview !== false;
-  const [analysisRes, skuRes] = await Promise.all([
-    fetchUpstream(analyzeUrl, {
-      method: force ? "POST" : "GET",
-    }),
-    includeSku
-      ? fetchUpstream(skuOverviewUrl, { method: "GET" })
-      : Promise.resolve(null),
-  ]);
+  // Sequential: avoid hammering a cold Render instance with two heavy DB calls at once.
+  const analysisRes = await fetchUpstream(analyzeUrl, {
+    method: force ? "POST" : "GET",
+  });
+  const skuRes =
+    includeSku && shopKey ? await fetchSkuOverviewOptional(shopKey) : null;
 
   const analysisText = await analysisRes.text();
   let analysisRaw: unknown;

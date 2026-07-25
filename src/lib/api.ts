@@ -43,6 +43,9 @@ import type {
   SkuAlignRunStatus,
   SkuAlignSupplementSourceRequest,
 } from "@/lib/sku-align-v1/types";
+import type { OrderBindingLine } from "@/lib/order/types";
+import { normalizeSkuOverviewForList } from "@/lib/api/sku-overview-normalize";
+import { normalizeShopApiName } from "@/lib/resolve-shop-api-name";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
 
@@ -157,30 +160,38 @@ function deduped<T>(key: string, run: () => Promise<T>): Promise<T> {
 }
 
 function fetchSkuOverview(shop: string): Promise<SkuProductOverview[]> {
-  const cached = overviewCache.get(shop);
+  const shopKey = normalizeShopApiName(shop);
+  const cached = overviewCache.get(shopKey);
   if (cached && Date.now() - cached.at < OVERVIEW_CACHE_MS) {
     return Promise.resolve(cached.data);
   }
-  return deduped(`sku-overview:${shop}`, () =>
+  const query = new URLSearchParams({
+    shopName: shopKey,
+    thumbWidth: "144",
+    compact: "true",
+  });
+  return deduped(`sku-overview:${shopKey}`, () =>
     request<SkuProductOverview[]>(
-      `/api/plugin/match/sku/overview?shopName=${encodeURIComponent(shop)}`
+      `/api/plugin/match/sku/overview?${query.toString()}`
     ).then((data) => {
-      overviewCache.set(shop, { at: Date.now(), data });
-      return data;
+      const normalized = normalizeSkuOverviewForList(data);
+      overviewCache.set(shopKey, { at: Date.now(), data: normalized });
+      return normalized;
     })
   );
 }
 
 function fetchShopProducts(shop: string): Promise<ShopMirrorProduct[]> {
-  const cached = shopProductsCache.get(shop);
+  const shopKey = normalizeShopApiName(shop);
+  const cached = shopProductsCache.get(shopKey);
   if (cached && Date.now() - cached.at < SHOP_PRODUCTS_CACHE_MS) {
     return Promise.resolve(cached.data);
   }
-  return deduped(`shop-products:${shop}`, () =>
+  return deduped(`shop-products:${shopKey}`, () =>
     request<ShopMirrorProduct[]>(
-      `/api/plugin/product/list?shopName=${encodeURIComponent(shop)}`
+      `/api/plugin/product/list?shopName=${encodeURIComponent(shopKey)}`
     ).then((data) => {
-      shopProductsCache.set(shop, { at: Date.now(), data });
+      shopProductsCache.set(shopKey, { at: Date.now(), data });
       return data;
     })
   );
@@ -336,14 +347,18 @@ export interface LogisticsPatchQuotesResult {
 
 /**
  * Absolute URL of the backend Shopify OAuth install entrypoint for a given shop domain.
- * The browser navigates here directly; the backend answers with a 302 to Shopify's consent screen.
- * Throws when NEXT_PUBLIC_API_BASE is unset so the caller can surface a readable error.
+ * In the browser we use same-origin `/api/plugin/...` so Next rewrites proxy to tangbuy-plugin
+ * (NEXT_PUBLIC_API_BASE is only required at build time for those rewrites).
  */
 export function shopifyInstallUrl(shop: string): string {
+  const q = `shop=${encodeURIComponent(shop)}`;
+  if (typeof window !== "undefined") {
+    return `/api/plugin/shopify/auth/install?${q}`;
+  }
   if (!API_BASE) {
     throw new ApiError("NEXT_PUBLIC_API_BASE is not configured", 0);
   }
-  return `${API_BASE}/api/plugin/shopify/auth/install?shop=${encodeURIComponent(shop)}`;
+  return `${API_BASE}/api/plugin/shopify/auth/install?${q}`;
 }
 
 /** Read-only Shopify auth status for a shop (non-sensitive fields only). */
@@ -504,7 +519,7 @@ export const api = {
   /** A3-2b回显: all live image bindings of a shop (ACTIVE + PENDING), keyed by thirdPlatformItemId. */
   listImageBindings: (shop: string) =>
     request<ImageBindingView[]>(
-      `/api/plugin/match/image-search/bindings?shopName=${encodeURIComponent(shop)}`
+      `/api/plugin/match/image-search/bindings?shopName=${encodeURIComponent(normalizeShopApiName(shop))}`
     ),
 
   /** "确认无误": promote a product's PENDING (AI-suggested) image binding to ACTIVE. */
@@ -799,6 +814,18 @@ export const api = {
       `/api/plugin/order/header/list?shopName=${encodeURIComponent(shop)}`
     ),
 
+  /**
+   * 订单行的「Shopify 商品 → Tangbuy 关联货源」匹配结果（同步时已解析并落库）。
+   * 返回 ThirdPlatformOrderLine：含 Shopify 行信息 + tangbuy* 绑定快照 + bindingStatus。
+   * 订单中心据此展示 Tangbuy 侧货源信息，无需后端再投影 line_items。
+   */
+  listOrderBindingLines: (shop: string, outerOrderId: string) =>
+    request<OrderBindingLine[]>(
+      `/api/plugin/order/binding/lines?shopName=${encodeURIComponent(
+        shop
+      )}&outerOrderId=${encodeURIComponent(outerOrderId)}`
+    ),
+
   /** Phase 1 read-only product detail (SPU + variants + media) from the local mirror. */
   getShopProductDetail: (shop: string, itemId: string) =>
     request<ShopProductDetail>(
@@ -820,7 +847,7 @@ export const api = {
 
   /** Trigger a Shopify product pull into the mirror; omit windowMinutes for a full pull. */
   syncShopProducts: (shop: string, windowMinutes?: number) => {
-    const params = new URLSearchParams({ shopName: shop });
+    const params = new URLSearchParams({ shopName: normalizeShopApiName(shop) });
     if (windowMinutes != null) {
       params.set("windowMinutes", String(windowMinutes));
     }

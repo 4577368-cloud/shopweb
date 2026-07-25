@@ -16,13 +16,12 @@ import {
   subscribeAuthSessionReady,
 } from "@/lib/onboarding/auth-session-ready";
 import {
-  clearAuthVerified,
   fetchRestoredShopAuth,
   markAuthVerified,
   readStoredShopDomain,
   resolveShopDomainToRestore,
-  shopDisplayNameFromDomain,
 } from "@/lib/restore-shop-auth";
+import { normalizeShopApiName, shopApiNameFromDomain } from "@/lib/resolve-shop-api-name";
 import type { AuthStatus, OnboardingStep, OverviewMetrics, ShopInfo, StepId } from "@/lib/types";
 
 export interface UseOnboardingShopAuthParams {
@@ -69,7 +68,7 @@ export function useOnboardingShopAuth({
       setAuthStatus("authorized");
       setShop((prev) => ({
         ...prev,
-        name: info.name,
+        name: normalizeShopApiName(info.name) || shopApiNameFromDomain(info.domain),
         domain: info.domain,
         authorizedAt: info.authorizedAt,
         productCount: info.productCount,
@@ -94,12 +93,7 @@ export function useOnboardingShopAuth({
       setShop((prev) => ({
         ...prev,
         domain,
-        name:
-          domain
-            .split(".")[0]
-            ?.split("-")
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(" ") || prev.name,
+        name: shopApiNameFromDomain(domain),
         authorizedAt: new Date()
           .toLocaleString("zh-CN", { hour12: false })
           .replace(/\//g, "-"),
@@ -117,7 +111,7 @@ export function useOnboardingShopAuth({
     setShop((prev) => ({
       ...prev,
       domain,
-      name: shopDisplayNameFromDomain(domain),
+      name: shopApiNameFromDomain(domain),
     }));
     setAuthStatus("authorized");
   }, []);
@@ -137,7 +131,7 @@ export function useOnboardingShopAuth({
           setShop((prev) => ({
             ...prev,
             domain: shopToRestore,
-            name: shopDisplayNameFromDomain(shopToRestore),
+            name: shopApiNameFromDomain(shopToRestore),
           }));
         }
 

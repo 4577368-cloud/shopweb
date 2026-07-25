@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState, Suspense } from "react";
 import dynamic from "next/dynamic";
-import { Loader2, RefreshCw, ArrowRight } from "@/lib/ui/icons";
+import { Loader2, RefreshCw, ArrowRight, Package } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -40,6 +40,7 @@ import {
 } from "@/lib/logistics/display";
 import { deriveLogisticsWorkbenchState } from "@/lib/logistics/workbench-state";
 import { countCatalogIngestingProducts } from "@/lib/tangbuy/catalog-ingest-display";
+import { collectProfilesNeedingCatalogIngest } from "@/lib/logistics/batch-product-source-ingest";
 import type {
   LogisticsDecisionStatus,
   VariantLogisticsDecision,
@@ -121,6 +122,8 @@ function LogisticsContent() {
     handleFetchQuotesForProduct,
     handleIngestProductSource,
     handleCatalogIngestComplete,
+    handleBatchPreIngest,
+    batchPreIngesting,
     handleAcceptAi,
     handleAcceptAllReady,
     handleStartEstimate,
@@ -220,7 +223,14 @@ function LogisticsContent() {
     });
   }, [analysis, shopName, quoteResults]);
 
-
+  const needsPreIngestCount = useMemo(() => {
+    if (!shopName || !analysis) return 0;
+    return collectProfilesNeedingCatalogIngest({
+      shopName,
+      analysis,
+      quoteResults,
+    }).length;
+  }, [shopName, analysis, quoteResults]);
 
   const handleFocusStatus = (status: LogisticsDecisionStatus) => {
     setFilterMode(decisionStatusToFilterMode(status));
@@ -422,10 +432,33 @@ function LogisticsContent() {
         actions={
           hasSavedTemplate && analysis ? (
             <div className="flex flex-wrap items-center justify-end gap-2">
+              {needsPreIngestCount > 0 || batchPreIngesting ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 w-7 px-0"
+                  onClick={() => void handleBatchPreIngest()}
+                  disabled={batchPreIngesting || pipeline.pipelineRunning}
+                  title={t("logistics.batchPreIngestTitle", {
+                    count: needsPreIngestCount,
+                  })}
+                  aria-label={t("logistics.batchPreIngestTitle", {
+                    count: needsPreIngestCount,
+                  })}
+                >
+                  {batchPreIngesting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Package className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              ) : null}
               {batchFailedVariantIds.length > 0 ? (
                 <Button
                   size="sm"
                   variant="secondary"
+                  className="shrink-0 whitespace-nowrap"
                   onClick={() =>
                     void handleAcceptAllReady({ onlyVariantIds: batchFailedVariantIds })
                   }
@@ -433,19 +466,21 @@ function LogisticsContent() {
                   title={t("logistics.actionRetryAccept", {
                     count: batchFailedVariantIds.length,
                   })}
+                  aria-label={t("logistics.actionRetryAccept", {
+                    count: batchFailedVariantIds.length,
+                  })}
                 >
                   {accepting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : null}
-                  {t("logistics.actionRetryAccept", {
-                    count: batchFailedVariantIds.length,
-                  })}
+                  {t("logistics.actionRetryAcceptShort")}
                 </Button>
               ) : null}
               {(planMetrics.pendingQuoteCount > 0 || pipeline.pipelineRunning) ? (
                 <Button
                   size="sm"
                   variant="secondary"
+                  className="shrink-0 whitespace-nowrap"
                   onClick={handleStartEstimate}
                   disabled={
                     loading ||
@@ -465,11 +500,7 @@ function LogisticsContent() {
                   ) : null}
                   {pipeline.pipelineRunning
                     ? t("logistics.estimating")
-                    : planMetrics.pendingQuoteCount > 0
-                      ? t("logistics.estimateWithCount", {
-                          count: planMetrics.pendingQuoteCount,
-                        })
-                      : t("logistics.actionEstimate")}
+                    : t("logistics.actionEstimate")}
                 </Button>
               ) : null}
               <Button

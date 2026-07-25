@@ -161,13 +161,17 @@ export function SmartSourcingSummaryBar({
               <Button
                 type="button"
                 size="sm"
+                className="shrink-0 whitespace-nowrap"
                 onClick={onBatchLinkNewArrivals}
                 disabled={batchLinkBusy}
+                title={t("productsPage.batchLinkNewArrivalsTitle", {
+                  count: pendingNewAnalysis,
+                })}
               >
                 {batchLinkBusy ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : null}
-                {t("productsPage.batchLinkNewArrivals", { count: pendingNewAnalysis })}
+                {t("productsPage.batchLink")}
               </Button>
             ) : null}
             {onViewNewArrivals ? (

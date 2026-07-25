@@ -47,6 +47,13 @@ export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
     return { ok: false, error: "请输入正确的店铺域名，例如 your-store.myshopify.com" };
   }
   try {
+    if (typeof window !== "undefined" && !(process.env.NEXT_PUBLIC_API_BASE ?? "").trim()) {
+      return {
+        ok: false,
+        error:
+          "后端代理未配置：请在 .env.local / Vercel 设置 NEXT_PUBLIC_API_BASE（如 https://shop-x2mw.onrender.com）并重新构建",
+      };
+    }
     const url = shopifyInstallUrl(shopDomain);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);

@@ -1,3 +1,4 @@
+import { normalizeShopApiName, shopApiNameFromDomain } from "@/lib/resolve-shop-api-name";
 import { api } from "@/lib/api";
 import { SHOP_STORAGE_KEY } from "@/lib/shopify-install";
 
@@ -186,7 +187,7 @@ export async function fetchRestoredShopAuth(
   }
 
   return {
-    name: status.shopName ?? shopDomain.split(".")[0] ?? shopDomain,
+    name: normalizeShopApiName(status.shopName ?? "") || shopApiNameFromDomain(domain),
     domain,
     authorizedAt: fmtAuthorizedAt(status.authorizedAt),
     productCount: status.productCount ?? 0,

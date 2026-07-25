@@ -1,7 +1,11 @@
 "use client";
 
-import type { CSSProperties, ImgHTMLAttributes } from "react";
+import { useEffect, useState, type CSSProperties, type ImgHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
+import {
+  cdnThumbUrl,
+  normalizeAliProductImageUrl,
+} from "@/lib/images/cdn-thumb-url";
 
 type ThumbImageProps = {
   src: string;
@@ -12,7 +16,7 @@ type ThumbImageProps = {
   style?: CSSProperties;
   /** Ignored — next/image compat; sizing comes from layout / className. */
   sizes?: string;
-  /** Ignored — kept for call-site compatibility after reverting CDN resize. */
+  /** Request width for CDN resize (alicdn / Shopify); omit for full URL. */
   pixelWidth?: number;
 } & Pick<
   ImgHTMLAttributes<HTMLImageElement>,
@@ -26,18 +30,39 @@ export function ThumbImage({
   fill,
   className,
   loading = "lazy",
-  pixelWidth: _pixelWidth,
+  pixelWidth,
   sizes: _sizes,
+  onError,
   ...props
 }: ThumbImageProps) {
+  const [thumbFailed, setThumbFailed] = useState(false);
+  useEffect(() => {
+    setThumbFailed(false);
+  }, [src, pixelWidth]);
+
   if (!src) return null;
+
+  const normalizedSrc = normalizeAliProductImageUrl(src);
+  const resolvedSrc =
+    pixelWidth != null && pixelWidth > 0 && !thumbFailed
+      ? cdnThumbUrl(normalizedSrc, pixelWidth)
+      : normalizedSrc;
+
+  const handleError: ImgHTMLAttributes<HTMLImageElement>["onError"] = (e) => {
+    if (pixelWidth != null && pixelWidth > 0 && !thumbFailed) {
+      setThumbFailed(true);
+      return;
+    }
+    onError?.(e);
+  };
 
   if (fill) {
     return (
       <img
-        src={src}
+        src={resolvedSrc}
         alt={alt}
         loading={loading}
+        onError={handleError}
         className={cn("absolute inset-0 h-full w-full", className)}
         {...props}
       />
@@ -46,9 +71,11 @@ export function ThumbImage({
 
   return (
     <img
-      src={src}
+      src={resolvedSrc}
       alt={alt}
       loading={loading}
+      decoding="async"
+      onError={handleError}
       className={className}
       {...props}
     />

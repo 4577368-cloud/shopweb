@@ -61,7 +61,14 @@ export function useSkuAlignMirrorLoad({
       else setRefreshing(true);
       setError(null);
       try {
-        void api.backfillBindingSnapshots(shopName).catch(() => null);
+        const backfillKey = `sku-backfill-snapshots:${shopName}`;
+        if (
+          typeof sessionStorage !== "undefined" &&
+          !sessionStorage.getItem(backfillKey)
+        ) {
+          sessionStorage.setItem(backfillKey, "1");
+          void api.backfillBindingSnapshots(shopName).catch(() => null);
+        }
         const [next, tpl] = await Promise.all([
           api.getSkuOverview(shopName),
           api.getPricingTemplate(shopName).catch(() => null),
