@@ -505,6 +505,8 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
         markCatalogPublished(ctx.shopName, productId);
         queuePublishReveal(ctx.shopName, productId, outcome.catalogItem);
       }
+      await ctx.loadSummary({ silent: true, force: true });
+      ctx.bumpMirrorRefresh();
     },
   };
 }

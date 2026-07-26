@@ -59,6 +59,8 @@ export function CatalogPublishPanel({
   onBindingLinked,
   /** Fired after a catalog item is published to Shopify (for mirror refresh + reveal animation). */
   onPublished,
+  /** Async publish — schedule mirror polls until Shopify product appears. */
+  onPublishInProgress,
 }: {
   onActivity?: () => void;
   recommendedCategories?: RecommendedCategory[];
@@ -75,6 +77,7 @@ export function CatalogPublishPanel({
   /** Called after catalog item is linked to an existing shop product. */
   onBindingLinked?: (thirdPlatformItemId: string) => void;
   onPublished?: (thirdPlatformItemId: string) => void;
+  onPublishInProgress?: () => void;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -400,6 +403,7 @@ export function CatalogPublishPanel({
         }
         showToast(t("catalogPublish.publishSuccess"));
       } else if (result.publishStatus === "PUBLISHING") {
+        onPublishInProgress?.();
         showToast(t("catalogPublish.publishInProgress"));
       } else {
         showToast(

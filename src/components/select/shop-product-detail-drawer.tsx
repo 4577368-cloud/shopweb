@@ -251,6 +251,17 @@ export function ShopProductDetailDrawer({
     );
   }, [form, baseline]);
 
+  const descriptionHtml = useMemo(() => {
+    if (!open) return "";
+    if (form?.description.trim()) return toHtml(form.description);
+    return detail?.description?.trim() || "";
+  }, [open, form?.description, detail?.description]);
+
+  const safeDescriptionHtml = useMemo(
+    () => sanitizeProductDescriptionHtml(descriptionHtml),
+    [descriptionHtml]
+  );
+
   dirtyRef.current = dirty;
   savingRef.current = saving;
 
@@ -487,18 +498,10 @@ export function ShopProductDetailDrawer({
   const active = (detail?.status ?? "").toUpperCase() === "ACTIVE";
   const hero =
     detail?.primaryImageUrl || detail?.media?.[0]?.url || null;
-  const visibleMedia =
-    detail?.media.filter(
-      (m) => !form?.deletedMediaIds.includes(resolveShopMediaId(m))
-    ) ?? [];
-  const htmlDetailImages = extractHtmlImageUrls(detail?.description);
-  const descriptionHtml = form?.description.trim()
-    ? toHtml(form.description)
-    : detail?.description?.trim() || "";
-  const safeDescriptionHtml = useMemo(
-    () => sanitizeProductDescriptionHtml(descriptionHtml),
-    [descriptionHtml]
+  const visibleMedia = (detail?.media ?? []).filter(
+    (m) => !form?.deletedMediaIds.includes(resolveShopMediaId(m))
   );
+  const htmlDetailImages = extractHtmlImageUrls(detail?.description);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">

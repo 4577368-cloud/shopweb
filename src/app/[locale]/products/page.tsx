@@ -165,6 +165,7 @@ function SelectContent() {
     mirrorRefreshSignal,
     bumpMirrorRefresh,
     refreshProductsQuietly,
+    refreshMirrorFromServer,
   } = useProductsMirror({
     shopName,
     shopMirrorKey,
@@ -289,6 +290,12 @@ function SelectContent() {
       highlighted={highlightedArea === "pricing"}
     />
   );
+
+  const schedulePublishMirrorPoll = useCallback(() => {
+    for (const delayMs of [4000, 10000, 20000]) {
+      window.setTimeout(() => refreshMirrorFromServer(), delayMs);
+    }
+  }, [refreshMirrorFromServer]);
 
   const onBatchLinkFinished = useCallback(
     (progress: import("@/lib/batch-link/types").BatchLinkProgress) => {
@@ -514,9 +521,10 @@ function SelectContent() {
 
           {tab === "catalog" ? (
             <ProductsCatalogTab
-              onActivity={refreshProductsQuietly}
-              onBindingLinked={() => bumpMirrorRefresh()}
-              onPublished={() => bumpMirrorRefresh()}
+              onActivity={refreshMirrorFromServer}
+              onBindingLinked={refreshMirrorFromServer}
+              onPublished={refreshMirrorFromServer}
+              onPublishInProgress={schedulePublishMirrorPoll}
               recommendedCategories={recommendedCategories}
               sharedTemplate={template}
               onAppliedFilterSummaryChange={setFilterSummary}
