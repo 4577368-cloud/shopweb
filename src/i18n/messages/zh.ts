@@ -3678,7 +3678,7 @@ export const zh: Dictionary = {
     errSkuNotInMatrix: "所选 SKU 不在货源规格表中",
     errSupplementLimit: "V1 每个商品仅支持 1 个补充货源",
     errSupplementSame: "补充货源不能与主货源相同",
-    fullMatch: "已对齐 {{bound}}/{{total}}",
+    fullMatch: "100% · 已对齐 {{bound}}",
     gapSupplementNeeded: "{{count}} 个需补充货源",
     gapUnmapped: "{{count}} 个未映射",
     goSupplement: "去补充货源",

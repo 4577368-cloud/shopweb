@@ -3686,7 +3686,7 @@ export const en = {
     errSkuNotInMatrix: "SKU not in source spec matrix",
     errSupplementLimit: "Only one supplement source per product (V1)",
     errSupplementSame: "Supplement cannot match the primary source",
-    fullMatch: "{{bound}}/{{total}} aligned",
+    fullMatch: "100% · {{bound}} aligned",
     gapSupplementNeeded: "{{count}} need supplement source",
     gapUnmapped: "{{count}} unmapped",
     goSupplement: "Add supplement",
