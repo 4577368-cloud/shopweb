@@ -2,7 +2,9 @@
 // + 文案不可用降级条 + 视频缩略灰显 + MetricTile 指标网格 + 本条消耗 + 让 Copilot 分析。
 "use client";
 
-import { useT } from "@/i18n/LocaleProvider";
+import { useRouter } from "next/navigation";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 import { Button } from "@/components/ui/button";
 import { Sparkles } from "@/lib/ui/icons";
 import { ctaLabel } from "@/lib/marketing/enums";
@@ -23,6 +25,8 @@ interface AdDetailDrawerProps {
 
 export function AdDetailDrawer({ detail, consume, onClose, onAnalyze }: AdDetailDrawerProps) {
   const t = useT();
+  const locale = useLocale();
+  const router = useRouter();
   return (
     <Drawer open={!!detail} onClose={onClose} title={t("ops.detail.title")} widthClass="max-w-2xl">
       {detail && (
@@ -94,6 +98,14 @@ export function AdDetailDrawer({ detail, consume, onClose, onAnalyze }: AdDetail
               />
             </div>
           )}
+
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={() => router.push(localePath(locale, `/operations-center/product/${detail.id}`))}
+          >
+            {t("ops.productPage.viewFull")}
+          </Button>
 
           <Button variant="primary" className="w-full" onClick={() => onAnalyze(detail)}>
             <Sparkles className="h-3.5 w-3.5" />
