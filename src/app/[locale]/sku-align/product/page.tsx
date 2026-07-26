@@ -247,22 +247,12 @@ function SkuAlignProductContent() {
       null
     : null;
 
-  const breadcrumbs = useMemo(
-    () => [
-      { label: t("nav.workbench"), href: localePath(locale, "/") },
-      { label: t("products.title"), href: localePath(locale, "/products") },
-      { label: t("sku.breadcrumb"), href: skuAlignHref() },
-      { label: product?.title?.trim() || t("sku.compareFallback") },
-    ],
-    [product?.title, t, locale]
-  );
-
   const panelTitle = t("sku.breadcrumb");
 
   if (authBootstrapping) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
-        <WorkbenchPanel title={panelTitle} breadcrumbs={breadcrumbs} {...wb.panelProps}>
+        <WorkbenchPanel title={panelTitle} {...wb.panelProps}>
           <div className="flex items-center gap-2 text-sm text-ink-muted">
             <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
             {t("sku.restoringAuth")}
@@ -275,7 +265,7 @@ function SkuAlignProductContent() {
   if (!isAuthorized) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
-        <WorkbenchPanel title={panelTitle} breadcrumbs={breadcrumbs} {...wb.panelProps}>
+        <WorkbenchPanel title={panelTitle} {...wb.panelProps}>
           <EmptyState
             title={t("sku.notConnectedTitle")}
             description={t("sku.notConnectedDesc")}
@@ -295,7 +285,7 @@ function SkuAlignProductContent() {
   if (!productId) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
-        <WorkbenchPanel title={panelTitle} breadcrumbs={breadcrumbs} {...wb.panelProps}>
+        <WorkbenchPanel title={panelTitle} {...wb.panelProps}>
           <EmptyState
             title={t("sku.noProductSpecified")}
             description={t("sku.noProductSpecifiedDesc")}
@@ -334,7 +324,6 @@ function SkuAlignProductContent() {
         description={t("sku.panelDescription")}
         descriptionClassName="text-xs leading-4"
         titleClassName="text-base font-semibold leading-6"
-        breadcrumbs={breadcrumbs}
         maxWidth={1280}
         {...wb.panelProps}
         actions={<SkuLogisticsEntryGate />}

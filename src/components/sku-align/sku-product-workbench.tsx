@@ -2335,6 +2335,17 @@ function SupplementGapRow({
       ? t("skuWorkbench.pickSpec")
       : t("skuWorkbench.pickMerchantFirst");
 
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const skuPickerLabel = chosenRow
+    ? `${chosenRow.specLabel} · ${formatOptionPrice(chosenRow.procurementPrice, shopCurrency, pricingTemplate)}`
+    : fetchingSpecs
+      ? t("skuWorkbench.loadingSpecs")
+      : !candidateKey
+        ? t("skuWorkbench.pickMerchantFirst")
+        : skuOptions.length === 0
+          ? t("skuWorkbench.sourceNoSpecs")
+          : t("skuWorkbench.pickSpec");
+
   return (
     <div
       className={cn(
@@ -2395,28 +2406,31 @@ function SupplementGapRow({
           <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
             {t("skuWorkbench.sourceSpec")}
           </p>
-          <Select
-            value={skuId}
-            onChange={(e) => onSetSku(e.target.value)}
-            className={COMPARE_SELECT_CLASS}
+          <Button
+            type="button"
+            variant="secondary"
+            className={cn(
+              COMPARE_SELECT_CLASS,
+              "h-9 justify-between px-3 text-left text-xs font-normal"
+            )}
             disabled={!candidateKey || fetchingSpecs || skuOptions.length === 0}
+            onClick={() => setPickerOpen(true)}
           >
-          <option value="">
-            {fetchingSpecs
-              ? t("skuWorkbench.loadingSpecs")
-              : !candidateKey
-              ? t("skuWorkbench.pickMerchantFirst")
-              : skuOptions.length === 0
-                ? t("skuWorkbench.sourceNoSpecs")
-                : t("skuWorkbench.pickSpec")}
-          </option>
-          {skuOptions.map((r) => (
-            <option key={r.skuId} value={r.skuId}>
-              {r.specLabel} · {formatOptionPrice(r.procurementPrice, shopCurrency, pricingTemplate)}
-              {r.matchScore > 0 ? ` · ${Math.round(r.matchScore * 100)}%` : ""}
-            </option>
-          ))}
-          </Select>
+            <span className="min-w-0 truncate">{skuPickerLabel}</span>
+          </Button>
+          <SkuPickerDialog
+            open={pickerOpen}
+            onClose={() => setPickerOpen(false)}
+            variantLabel={variant.optionLabel}
+            rows={skuOptions}
+            selectedSkuId={skuId || null}
+            shopCurrency={shopCurrency}
+            pricingTemplate={pricingTemplate}
+            onConfirm={(id) => {
+              onSetSku(id);
+              setPickerOpen(false);
+            }}
+          />
         </div>
         {resolved ? (
           <div className="flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/80 px-2.5 py-2">
