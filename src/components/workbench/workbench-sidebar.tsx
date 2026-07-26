@@ -100,7 +100,6 @@ export function WorkbenchSidebar({ bottomPanel, embedded }: WorkbenchSidebarProp
   }, [pathname, isAuthorized, refreshWorkflowProgress]);
 
   const progress = syncCompleted ? 100 : workflowProgressPercent;
-  const flowSectionLabel = syncCompleted ? t("nav.dropship") : t("nav.flow");
   const { enabled: hubEnabled } = useHubFeatureFlag();
   const hubUnlocked = operationsHubReady && hubEnabled;
   const productLinkPct = productSourceLinkPercent(workflowBinding);
@@ -171,9 +170,8 @@ export function WorkbenchSidebar({ bottomPanel, embedded }: WorkbenchSidebarProp
 
       <nav
         className="min-h-0 shrink-0 overflow-y-auto px-3 pb-2"
-        aria-label={flowSectionLabel}
+        aria-label={t("nav.workbench")}
       >
-        <p className="mb-2 px-1 text-[11px] font-medium text-ink-subtle">{flowSectionLabel}</p>
         <ul className="space-y-0.5">
           {navItems.map((step, index) => {
             const current = pathname === step.href;

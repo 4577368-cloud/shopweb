@@ -1787,6 +1787,11 @@ export const en = {
       detail: "Usage details",
       points: "pts",
     },
+    cost: {
+      free: "Free",
+      cached: "Cached",
+      paid: "{{n}} pts",
+    },
     usageDrawer: {
       title: "Usage details",
       colTime: "Time",
@@ -1800,7 +1805,6 @@ export const en = {
       empty: "No usage records yet.",
     },
     discovery: {
-      segTts: "TikTok Shops",
       segAds: "Hot products",
       segSearch: "Search",
       backToHot: "Back to hot",
@@ -1842,12 +1846,6 @@ export const en = {
       actViewDetail: "View details",
       actLearn: "Learn creatives",
       summary: {
-        tts: {
-          products: "Products",
-          gmv: "GMV (USD)",
-          avgScore: "Avg score",
-          sales: "Sales vol.",
-        },
         rank: {
           products: "Products",
           growth: "Total growth",
@@ -1940,9 +1938,6 @@ export const en = {
       insights: {
         keySignals: "Highlights",
         momentum: "Market momentum",
-        labelHeat: "Most popular",
-        labelPen: "Driven by ads",
-        labelTop: "Top product share",
         labelMomentumTop: "Top 3 fastest growing",
         labelPriceSweet: "Popular price range",
         priceSweet: "{{lo}}–{{hi}} · {{n}} items · avg up {{mom}}",
@@ -2274,6 +2269,7 @@ export const en = {
       searchPlaceholder: "Store ID / URL",
       queryBtn: "Search competitors",
       productContext: "Who's advertising this product",
+      freeProductsHint: "The store's live product list is free to view",
       segAll: "All",
       segTiktok: "TikTok",
       segFacebook: "Facebook",
@@ -3522,7 +3518,7 @@ export const en = {
     hubLockedUntilProductMatch:
       "Unlock Operations Hub when product source linking reaches {{target}}% (currently {{current}}%).",
     hubUnavailable: "Operations Hub is not enabled in this environment",
-    progress: "Setup progress",
+    progress: "Progress",
     upgradeLabel: "Upgrade",
     upgradeAria: "Open Tangbuy dropshipping in a new tab",
   },
@@ -3932,7 +3928,7 @@ export const en = {
     },
     logistics: {
       desc: "Detect shipping types and set templates",
-      title: "Logistics",
+      title: "Shipping estimate",
     },
     products: {
       desc: "Live linking + catalog listing",
