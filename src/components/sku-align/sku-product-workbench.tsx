@@ -25,7 +25,6 @@ import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { api, readableError } from "@/lib/api";
 import { resolve1688ProductTitle, resolveImageSearchDisplayTitle } from "@/lib/batch-link/1688-title-locale";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
-import { assessImageSearchReliability } from "@/lib/batch-link/image-search-outcome";
 import {
   identityFromSearchCandidate,
   resolveConfirmDetailUrl,
@@ -344,23 +343,6 @@ export function SkuProductWorkbench({
     "weak" | "failed" | null
   >(null);
 
-  const promptAccountManagerForImageSearch = useCallback(
-    (reason: "weak" | "failed") => {
-      setAmImageSearchReason(reason);
-      setAmModalOpen(true);
-    },
-    []
-  );
-
-  const noteImageSearchPipeline = useCallback(
-    (pipeline: Awaited<ReturnType<typeof runImageSearchPipeline>>) => {
-      const reliability = assessImageSearchReliability(pipeline);
-      if (reliability === "failed") promptAccountManagerForImageSearch("failed");
-      else if (reliability === "weak") promptAccountManagerForImageSearch("weak");
-    },
-    [promptAccountManagerForImageSearch]
-  );
-
   const focusRef = useRef<HTMLDivElement>(null);
   const lastImageScoresRef = useRef<Record<string, number>>({});
   const candidateMatricesRef = useRef(candidateMatrices);
@@ -573,10 +555,8 @@ export function SkuProductWorkbench({
       );
       if (pipeline.error) {
         setSearchError(pipeline.error);
-        promptAccountManagerForImageSearch("failed");
         return;
       }
-      noteImageSearchPipeline(pipeline);
       const boundOfferIds = Array.from(
         new Set(
           product.variants
@@ -595,7 +575,6 @@ export function SkuProductWorkbench({
       });
       if (!filtered.length) {
         setSearchError(t("skuWorkbench.errNoAlternateCandidates"));
-        promptAccountManagerForImageSearch("failed");
         return;
       }
 
@@ -607,7 +586,6 @@ export function SkuProductWorkbench({
             ? t("skuWorkbench.errAllCandidatesInvalid")
             : t("skuWorkbench.errNoAlternateCandidates")
         );
-        promptAccountManagerForImageSearch("failed");
         return;
       }
 
@@ -671,7 +649,6 @@ export function SkuProductWorkbench({
       }
     } catch (err) {
       setSearchError(readableError(err));
-      promptAccountManagerForImageSearch("failed");
     } finally {
       setSearchLoading(false);
       setMatrixLoading(false);
@@ -687,8 +664,6 @@ export function SkuProductWorkbench({
     showToast,
     t,
     locale,
-    noteImageSearchPipeline,
-    promptAccountManagerForImageSearch,
   ]);
 
   const clearSupplementWorkspace = useCallback(() => {
@@ -834,15 +809,12 @@ export function SkuProductWorkbench({
       );
       if (pipeline.error) {
         setReplaceSearchError(pipeline.error);
-        promptAccountManagerForImageSearch("failed");
         return;
       }
       if (!pipeline.rankedItems.length) {
         setReplaceSearchError(t("skuWorkbench.errNoReplaceCandidates"));
-        promptAccountManagerForImageSearch("failed");
         return;
       }
-      noteImageSearchPipeline(pipeline);
       const { ranked, rejectedCount } = await rankImageSearchBySkuMapping(
         pipeline.rankedItems.slice(0, 6),
         product.variants,
@@ -854,7 +826,6 @@ export function SkuProductWorkbench({
             ? t("skuWorkbench.errAllCandidatesInvalid")
             : t("skuWorkbench.errNoReplaceCandidates")
         );
-        promptAccountManagerForImageSearch("failed");
         return;
       }
       setReplaceCandidates(ranked);
@@ -863,19 +834,10 @@ export function SkuProductWorkbench({
       }
     } catch (err) {
       setReplaceSearchError(readableError(err));
-      promptAccountManagerForImageSearch("failed");
     } finally {
       setReplaceSearchLoading(false);
     }
-  }, [
-    shopName,
-    product,
-    showToast,
-    t,
-    locale,
-    noteImageSearchPipeline,
-    promptAccountManagerForImageSearch,
-  ]);
+  }, [shopName, product, showToast, t, locale]);
 
   const applyReplacePrimary = async (candidate: ImageSearchProduct) => {
     if (replacingPrimary) return;
