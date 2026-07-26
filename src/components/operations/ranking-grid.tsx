@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useT } from "@/i18n/LocaleProvider";
 import { CoverThumb } from "@/components/operations/cover-thumb";
 import { StackedBar, type StackSegment } from "@/components/operations/charts";
+import { RankingSourcingPanel } from "@/components/operations/ranking-sourcing-panel";
 import { cn } from "@/lib/utils";
 import { fmtGrowthRate, fmtInt, fmtPercent, fmtUsd } from "@/lib/marketing/format";
 import type { RankingRow } from "@/lib/marketing/types";
@@ -99,26 +100,24 @@ export function RankingKpis({ products }: { products: RankingRow[] }) {
   const t = useT();
   const kpis = useMemo(() => {
     if (products.length === 0) return null;
-    const topGmv = products
-      .filter((p) => p.gmvUsd != null)
-      .sort((a, b) => (b.gmvUsd ?? 0) - (a.gmvUsd ?? 0))[0];
+    const gmvSum = products.reduce((a, p) => a + (p.gmvUsd ?? 0), 0);
     const grows = products.filter((p) => p.gmvGrowthRate != null).map((p) => p.gmvGrowthRate!);
     const avgGrowth = grows.length ? grows.reduce((a, b) => a + b, 0) / grows.length : null;
     const creatorSum = products.reduce((a, p) => a + (p.creatorCount ?? 0), 0);
     const comms = products.filter((p) => p.commissionRate != null).map((p) => p.commissionRate!);
     const avgComm = comms.length ? comms.reduce((a, b) => a + b, 0) / comms.length : null;
-    return { topGmv, avgGrowth, creatorSum, avgComm };
+    return { gmvSum, count: products.length, avgGrowth, creatorSum, avgComm };
   }, [products]);
   if (!kpis) return null;
   return (
     <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
       <div className="rounded border border-hairline bg-surface p-2.5">
-        <p className="text-[10px] text-ink-subtle">{t("ops.discovery.board.kpiGmvTop")}</p>
+        <p className="text-[10px] text-ink-subtle">{t("ops.discovery.board.kpiGmvTotal")}</p>
         <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-ink">
-          {kpis.topGmv ? fmtUsd(kpis.topGmv.gmvUsd ?? 0) : "—"}
+          {fmtUsd(kpis.gmvSum)}
         </p>
-        <p className="truncate text-[10px] text-ink-muted" title={kpis.topGmv?.productTitle}>
-          {kpis.topGmv?.productTitle}
+        <p className="truncate text-[10px] text-ink-muted">
+          {t("ops.discovery.board.kpiGmvTotalSub", { n: kpis.count })}
         </p>
       </div>
       <div className="rounded border border-hairline bg-surface p-2.5">
@@ -240,7 +239,15 @@ export function RankingMetric({ label, value, tone }: { label: string; value: st
   );
 }
 
-export function RankingDetailDrawer({ row, onClose }: { row: RankingRow | null; onClose: () => void }) {
+export function RankingDetailDrawer({
+  row,
+  onClose,
+  shopName,
+}: {
+  row: RankingRow | null;
+  onClose: () => void;
+  shopName?: string | null;
+}) {
   const t = useT();
   useEffect(() => {
     if (!row) return;
@@ -290,6 +297,16 @@ export function RankingDetailDrawer({ row, onClose }: { row: RankingRow | null; 
               )}
             </div>
             <p className="mt-1 text-[13px] font-medium leading-snug text-ink">{row.productTitle}</p>
+            {row.tiktokUrl && (
+              <a
+                href={row.tiktokUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-block text-[11px] text-link hover:underline"
+              >
+                {t("ops.discovery.board.tiktok")}
+              </a>
+            )}
           </div>
           <button onClick={onClose} className="shrink-0 rounded p-1 text-ink-subtle hover:bg-surface-muted" aria-label={t("ops.discovery.board.close")}>
             ×
@@ -297,6 +314,14 @@ export function RankingDetailDrawer({ row, onClose }: { row: RankingRow | null; 
         </div>
 
         <div className="space-y-4 p-3">
+          {/* key 按行重置：换商品时清掉上一个商品的图搜结果与上架状态 */}
+          <RankingSourcingPanel
+            key={row.id}
+            shopName={shopName}
+            title={row.productTitle}
+            imageUrl={row.imageUrl}
+          />
+
           <div>
             <p className="mb-1.5 text-[12px] font-medium text-ink">{t("ops.discovery.board.gmvComposition")}</p>
             <StackedBar segments={channels} height={12} />
@@ -345,12 +370,6 @@ export function RankingDetailDrawer({ row, onClose }: { row: RankingRow | null; 
               <p className="mb-0.5 text-[10px] text-ink-subtle">{t("ops.discovery.board.categoryPath")}</p>
               <p className="text-[12px] text-ink">{tCategoryPath(row.categoryPath, t)}</p>
             </div>
-          )}
-
-          {row.tiktokUrl && (
-            <a href={row.tiktokUrl} target="_blank" rel="noreferrer" className="inline-block text-[12px] text-link hover:underline">
-              {t("ops.discovery.board.tiktok")}
-            </a>
           )}
         </div>
       </aside>

@@ -440,12 +440,22 @@ export function AdTrendBlock({ points, t }: { points: StoreAdTrendPoint[]; t: Re
           <span className="tabular-nums text-ink">{fmtCompact(latest)}</span>
         </div>
         <Sparkline data={plays} width={520} height={56} stroke="var(--brand)" fill="var(--brand-soft)" strokeWidth={2} />
+        <div className="mt-1 flex items-center justify-between text-[10px] tabular-nums text-ink-subtle">
+          <span>{fmtDate(points[0].day)}</span>
+          <span>{fmtDate(points[Math.floor(points.length / 2)].day)}</span>
+          <span>{fmtDate(points[points.length - 1].day)}</span>
+        </div>
         <p className="mt-1 text-[10px] text-ink-subtle">
           {t("ops.competition.analysis.adTrend.ads")}: {fmtCompact(totalAds)}
         </p>
       </div>
     </div>
   );
+}
+
+function fmtDate(ts: number): string {
+  if (!ts || ts <= 0) return "—";
+  return new Date(ts * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 export function LongestAdsBlock({ ads, t }: { ads: StoreLongestRunAd[]; t: ReturnType<typeof useT> }) {
@@ -469,6 +479,9 @@ export function LongestAdsBlock({ ads, t }: { ads: StoreLongestRunAd[]; t: Retur
                 <span className="tabular-nums">{t("ops.competition.analysis.longest.days", { n: ad.runDays })}</span>
               </div>
               <p className="mt-0.5 text-[10px] tabular-nums text-ink-muted">{fmtCompact(ad.playCount)} {t("ops.competition.card.plays")}</p>
+              <p className="mt-0.5 text-[9px] tabular-nums text-ink-subtle">
+                {fmtDate(ad.firstSeen)} – {fmtDate(ad.lastSeen)}
+              </p>
             </div>
           </div>
         ))}
@@ -554,6 +567,8 @@ export function DataAnalysisBlock({ data, t }: { data?: StoreDataAnalysis; t: Re
           <MetricTile label={t("ops.competition.analysis.data.ads")} value={fmtCompact(data.totalAdCount)} tone="brand" />
           <MetricTile label={t("ops.competition.analysis.data.days")} value={dash(data.totalAdDays)} />
           <MetricTile label={t("ops.competition.analysis.data.spend")} value={spend} tone="info" />
+          <MetricTile label={t("ops.competition.analysis.data.firstAd")} value={fmtDate(data.firstAdTime)} />
+          <MetricTile label={t("ops.competition.analysis.data.lastAd")} value={fmtDate(data.lastAdTime)} />
         </div>
         {/* 平台占比表 */}
         {data.platforms.length > 0 && (
@@ -606,7 +621,9 @@ export function RegionAnalysisBlock({ rows, t }: { rows: StoreRegionAnalysis[]; 
             <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-muted">
               <div className="h-full rounded-full bg-[var(--brand)]" style={{ width: `${Math.min(100, (r.adCount / total) * 100)}%` }} />
             </div>
-            <span className="w-14 shrink-0 text-right tabular-nums text-ink-muted">{fmtCompact(r.adCount)}</span>
+            <span className="w-14 shrink-0 text-right tabular-nums text-ink-muted">{fmtCompact(r.adCount)} ads</span>
+            <span className="w-14 shrink-0 text-right tabular-nums text-ink">{fmtCompact(r.playCount)} {t("ops.competition.card.plays")}</span>
+            <span className="w-14 shrink-0 text-right tabular-nums text-ink">{fmtCompact(r.likeCount)} {t("ops.creatives.card.likes")}</span>
           </div>
         ))}
       </div>

@@ -200,10 +200,28 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
                     {t("ops.creatives.card.advertiser")} {card.advertiser}
                   </div>
 
-                  <div className="mt-2">
+                  {card.platforms.length > 1 ? (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {card.platforms.map((p) => (
+                        <span key={p} className="rounded bg-surface-muted px-1 py-0.5 text-[9px] text-ink-muted">{p}</span>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-2 flex flex-col gap-1">
                     <Button variant="secondary" size="sm" className="w-full" onClick={() => onViewAdvertiser(card.advertiser)}>
                       {t("ops.creatives.card.viewAdvertiser")}
                     </Button>
+                    {card.advertiserPage ? (
+                      <a
+                        href={card.advertiserPage}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded px-2 py-1 text-center text-[11px] text-link hover:underline"
+                      >
+                        {t("ops.creatives.card.viewPage")} ↗
+                      </a>
+                    ) : null}
                   </div>
                 </div>
               </div>

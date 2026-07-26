@@ -10,8 +10,7 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { Button } from "@/components/ui/button";
 import { CoverThumb } from "@/components/operations/cover-thumb";
-import { RankingKpis } from "@/components/operations/ranking-grid";
-import { StackedBar, type StackSegment } from "@/components/operations/charts";
+import { RankingDetailDrawer, RankingKpis } from "@/components/operations/ranking-grid";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail } from "@/components/workbench/assistant-rail";
@@ -36,11 +35,6 @@ function tCategory(name: string | null | undefined, t: (key: string) => string):
   const translated = t(key);
   return translated === key ? name : translated;
 }
-function tCategoryPath(path: string | null | undefined, t: (key: string) => string): string {
-  if (!path) return "";
-  return path.split(/\s*>\s*/).map((seg) => tCategory(seg, t)).join(" > ");
-}
-
 export default function LeaderboardPage({
   params,
   searchParams,
@@ -329,7 +323,7 @@ function LeaderboardContent({
           </>
         )}
 
-        <RankingDetailDrawer row={selected} onClose={() => setSelected(null)} />
+        <RankingDetailDrawer row={selected} onClose={() => setSelected(null)} shopName={shopApiName} />
       </WorkbenchPanel>
     </WorkbenchShell>
   );
@@ -404,102 +398,3 @@ function RankingMetric({ label, value, tone }: { label: string; value: string; t
   );
 }
 
-function RankingDetailDrawer({ row, onClose }: { row: RankingRow | null; onClose: () => void }) {
-  const t = useT();
-  useEffect(() => {
-    if (!row) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [row, onClose]);
-
-  if (!row) return null;
-
-  const channels: StackSegment[] = [
-    { label: t("ops.discovery.board.liveGmv"), value: row.liveGmvUsd ?? 0, color: "#ef4444" },
-    { label: t("ops.discovery.board.videoGmv"), value: row.videoGmvUsd ?? 0, color: "#3b82f6" },
-    { label: t("ops.discovery.board.cardGmv"), value: row.cardGmvUsd ?? 0, color: "#10b981" },
-  ];
-
-  const fields: { label: string; value: string }[] = [
-    { label: t("ops.discovery.board.price"), value: row.priceUsd != null ? fmtUsd(row.priceUsd) : "—" },
-    { label: t("ops.discovery.board.avgPrice"), value: row.avgPriceUsd != null ? fmtUsd(row.avgPriceUsd) : "—" },
-    { label: t("ops.discovery.board.rating"), value: row.rating != null ? row.rating.toFixed(1) : "—" },
-    { label: t("ops.discovery.board.sales"), value: row.salesVolume != null ? fmtInt(row.salesVolume) : "—" },
-    { label: t("ops.discovery.board.gmv"), value: row.gmvUsd != null ? fmtUsd(row.gmvUsd) : "—" },
-    { label: t("ops.discovery.board.gmvGrowth"), value: row.gmvGrowthRate != null ? fmtGrowthRate(row.gmvGrowthRate, t("ops.discovery.board.growthFactor")) : "—" },
-    { label: t("ops.discovery.board.commission"), value: row.commissionRate != null ? fmtPercent(row.commissionRate) : "—" },
-    { label: t("ops.discovery.board.creators"), value: row.creatorCount != null ? fmtInt(row.creatorCount) : "—" },
-    { label: t("ops.discovery.board.creatorOrderRate"), value: row.creatorOrderRate != null ? fmtPercent(row.creatorOrderRate) : "—" },
-    { label: t("ops.discovery.board.listedAt"), value: row.listedAt ?? "—" },
-  ];
-
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden />
-      <aside className="relative flex h-full w-full max-w-[420px] flex-col overflow-y-auto bg-surface shadow-2xl" role="dialog" aria-modal="true">
-        <div className="flex items-start gap-2 border-b border-hairline p-3">
-          <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded bg-surface-muted">
-            <CoverThumb src={row.imageUrl} label={row.productTitle} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              {row.rankNo != null && (
-                <span className="rounded bg-black/55 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-white">#{row.rankNo}</span>
-              )}
-              {row.categoryL1 && (
-                <span className="truncate rounded bg-surface-muted px-1.5 py-0.5 text-[10px] text-ink-subtle">{tCategory(row.categoryL1, t)}</span>
-              )}
-            </div>
-            <p className="mt-1 text-[13px] font-medium leading-snug text-ink">{row.productTitle}</p>
-          </div>
-          <button onClick={onClose} className="shrink-0 rounded p-1 text-ink-subtle hover:bg-surface-muted" aria-label={t("ops.discovery.board.close")}>
-            ×
-          </button>
-        </div>
-
-        <div className="space-y-4 p-3">
-          <div>
-            <p className="mb-1.5 text-[12px] font-medium text-ink">{t("ops.discovery.board.gmvComposition")}</p>
-            <StackedBar segments={channels} height={12} />
-            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-subtle">
-              {channels.map((c) => {
-                const sum = channels.reduce((a, x) => a + x.value, 0) || 1;
-                return (
-                  <span key={c.label} className="inline-flex items-center gap-1">
-                    <span className="inline-block h-2 w-2 rounded-full" style={{ background: c.color }} />
-                    {c.label}: {fmtUsd(c.value)} ({fmtPercent(c.value / sum)})
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            {fields.map((f) => (
-              <div key={f.label} className="flex flex-col rounded border border-hairline bg-surface p-2">
-                <span className="text-[10px] text-ink-subtle">{f.label}</span>
-                <span className="tabular-nums text-[13px] font-medium text-ink">{f.value}</span>
-              </div>
-            ))}
-          </div>
-
-          {row.categoryPath && (
-            <div>
-              <p className="mb-0.5 text-[10px] text-ink-subtle">{t("ops.discovery.board.categoryPath")}</p>
-              <p className="text-[12px] text-ink">{tCategoryPath(row.categoryPath, t)}</p>
-            </div>
-          )}
-
-          {row.tiktokUrl && (
-            <a href={row.tiktokUrl} target="_blank" rel="noreferrer" className="inline-block text-[12px] text-link hover:underline">
-              {t("ops.discovery.board.tiktok")}
-            </a>
-          )}
-        </div>
-      </aside>
-    </div>
-  );
-}

@@ -17,12 +17,12 @@ import {
 import { lifecycleStage, platformMatrix } from "@/lib/marketing/analytics";
 import { PLATFORM_META, regionLabel, shopTypeLabel, categoryLabel } from "@/lib/marketing/enums";
 import { useReferenceDictionaries } from "@/hooks/use-reference-dictionaries";
-import type { AdPlatform, StoreAdState, StoreRow, StoreSearchResult, MarketingResponse } from "@/lib/marketing/types";
+import type { AdCard, AdPlatform, StoreAdState, StoreRow, StoreSearchResult, MarketingResponse } from "@/lib/marketing/types";
 import { CoverThumb } from "./cover-thumb";
 import { PlatformBadge } from "./platform-badge";
 import { CostBadge } from "./cost-badge";
 import { Sparkline, StackedBar, type StackSegment } from "./charts";
-import { fmtCompact, fmtInt } from "@/lib/marketing/format";
+import { fmtCompact, fmtInt, fmtUsd } from "@/lib/marketing/format";
 import { storeThreat } from "@/lib/marketing/derived";
 import { ScorePill } from "./intel";
 
@@ -94,7 +94,7 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
   const [dramaOnly, setDramaOnly] = useState(false);
   const [region, setRegion] = useState("all");
   const [shopType, setShopType] = useState("all");
-  const [data, setData] = useState<{ stores: StoreRow[] } | null>(null);
+  const [data, setData] = useState<{ stores: StoreRow[]; products?: AdCard[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -109,7 +109,7 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
   useEffect(() => {
     const snap = readMarketingViewState<{
       query: string;
-      data: { stores: StoreRow[] };
+      data: { stores: StoreRow[]; products?: AdCard[] };
     }>("competition");
     if (snap?.data) {
       setQuery(snap.query);
@@ -388,19 +388,44 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
           {searchNotFound ? t("ops.competition.notFound", { q: query }) : t("ops.competition.empty")}
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {visible.map((store) => (
-            <StoreCard
-              key={store.id}
-              store={store}
-              collected={collectedIds.has(store.id)}
-              toggling={!!togglingIds?.has(store.id)}
-              selected={selected.has(store.id)}
-              onCollect={() => onToggleCollect(store)}
-              onToggleSelect={() => toggleSelect(store.id)}
-              onOpen={() => onOpenDetail(store)}
-            />
-          ))}
+        <div className="space-y-3">
+          {activeProductId && data?.products && data.products.length > 0 && (
+            <div>
+              <p className="mb-2 text-[11px] font-medium text-ink">{t("ops.competition.relatedProducts")}</p>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {data.products.map((p) => (
+                  <div key={p.id} className="w-40 shrink-0 overflow-hidden rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">
+                    <div className="relative h-24 w-full overflow-hidden">
+                      <CoverThumb src={p.image} label={p.title} />
+                    </div>
+                    <div className="p-2">
+                      <p className="truncate text-[11px] font-medium text-ink" title={p.title}>{p.title}</p>
+                      <p className="mt-0.5 text-[11px] text-ink-muted">{fmtUsd(p.priceUsd ?? p.price)}</p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {p.adPlatform.map((plat) => (
+                          <PlatformBadge key={plat} platform={plat} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {visible.map((store) => (
+              <StoreCard
+                key={store.id}
+                store={store}
+                collected={collectedIds.has(store.id)}
+                toggling={!!togglingIds?.has(store.id)}
+                selected={selected.has(store.id)}
+                onCollect={() => onToggleCollect(store)}
+                onToggleSelect={() => toggleSelect(store.id)}
+                onOpen={() => onOpenDetail(store)}
+              />
+            ))}
+          </div>
         </div>
       )}
 

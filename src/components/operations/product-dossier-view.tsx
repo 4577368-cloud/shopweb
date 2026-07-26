@@ -62,6 +62,24 @@ export function ProductDossierView({
         <MetricTile label={t("ops.detail.forecast")} value={detail.adForecast || "—"} />
       </div>
 
+      {/* 店铺信息 */}
+      <div className="rounded-[var(--radius-card)] border border-hairline bg-surface-muted/40 px-3 py-2">
+        <p className="mb-1 text-[11px] text-ink-muted">{t("ops.detail.store")}</p>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] font-medium text-ink">{detail.store.name}</span>
+          {detail.store.domain && (
+            <a
+              href={`https://${detail.store.domain}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] text-link hover:underline"
+            >
+              {detail.store.domain}
+            </a>
+          )}
+        </div>
+      </div>
+
       {/* 广告主（外链到广告库） */}
       <div className="rounded-[var(--radius-card)] border border-hairline bg-surface-muted/40 px-3 py-2">
         <p className="mb-1 text-[11px] text-ink-muted">{t("ops.detail.advertiser")}</p>

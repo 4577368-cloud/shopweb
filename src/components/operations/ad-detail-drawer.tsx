@@ -47,10 +47,28 @@ export function AdDetailDrawer({ detail, consume, onClose, onAnalyze }: AdDetail
           {/* 标题 + 平台 */}
           <div>
             <p className="text-[15px] font-semibold text-ink">{detail.product.title}</p>
-            <div className="mt-1.5 flex items-center gap-2">
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <PlatformBadge platform={detail.platform} />
-              <span className="text-[12px] tabular-nums text-ink-muted">${detail.product.usdPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              <span className="text-[12px] tabular-nums text-ink-muted">
+                {detail.product.currency} {fmtUsd(detail.product.price)}
+              </span>
+              <span className="text-[12px] tabular-nums text-ink-muted">
+                · ${detail.product.usdPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>
+              {detail.videoId ? (
+                <a
+                  href={`https://www.tiktok.com/video/${detail.videoId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-link hover:underline"
+                >
+                  {t("ops.detail.viewVideo")} ↗
+                </a>
+              ) : null}
             </div>
+            <p className="mt-1 text-[10px] tabular-nums text-ink-subtle">
+              {t("ops.detail.productId")}: {detail.product.id}
+            </p>
           </div>
 
           {/* 指标网格 */}
@@ -64,6 +82,24 @@ export function AdDetailDrawer({ detail, consume, onClose, onAnalyze }: AdDetail
             <MetricTile label={t("ops.detail.adCost")} value={fmtUsd(detail.adCost)} tone="info" />
             <MetricTile label={t("ops.detail.reach")} value={fmtCompact(detail.adAudienceReach)} />
             <MetricTile label={t("ops.detail.forecast")} value={detail.adForecast || "—"} />
+          </div>
+
+          {/* 店铺信息 */}
+          <div className="rounded-[var(--radius-card)] border border-hairline bg-surface-muted/40 px-3 py-2">
+            <p className="mb-1 text-[11px] text-ink-muted">{t("ops.detail.store")}</p>
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] font-medium text-ink">{detail.store.name}</span>
+              {detail.store.domain && (
+                <a
+                  href={`https://${detail.store.domain}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-link hover:underline"
+                >
+                  {detail.store.domain}
+                </a>
+              )}
+            </div>
           </div>
 
           {/* 广告主（外链到广告库，可看真实广告） */}
