@@ -60,7 +60,7 @@ export function useSkuAlignMirrorLoad({
       if (!silent) setLoading(true);
       else setRefreshing(true);
       setError(null);
-      try {
+        try {
         const backfillKey = `sku-backfill-snapshots:${shopName}`;
         if (
           typeof sessionStorage !== "undefined" &&
@@ -69,13 +69,16 @@ export function useSkuAlignMirrorLoad({
           sessionStorage.setItem(backfillKey, "1");
           void api.backfillBindingSnapshots(shopName).catch(() => null);
         }
-        const publishBindingsKey = `sku-backfill-publish-bindings:${shopName}`;
-        if (
-          typeof sessionStorage !== "undefined" &&
-          !sessionStorage.getItem(publishBindingsKey)
-        ) {
-          sessionStorage.setItem(publishBindingsKey, "1");
-          void api.backfillPublishedBindings(shopName).catch(() => null);
+        const publishBindingsKey = `sku-backfill-publish-bindings:v2:${shopName}`;
+        const shouldRepairPublishBindings =
+          opts?.skipCache ||
+          (typeof sessionStorage !== "undefined" &&
+            !sessionStorage.getItem(publishBindingsKey));
+        if (shouldRepairPublishBindings) {
+          if (typeof sessionStorage !== "undefined" && !opts?.skipCache) {
+            sessionStorage.setItem(publishBindingsKey, "1");
+          }
+          await api.backfillPublishedBindings(shopName).catch(() => null);
         }
         const [next, tpl] = await Promise.all([
           api.getSkuOverview(shopName),
