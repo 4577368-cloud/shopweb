@@ -78,8 +78,8 @@ export function mapImageSearchError(err: unknown): string {
   if (raw.startsWith("AOP_TOKEN_INVALID")) {
     return "Tangbuy 货源授权已失效或过期，请重新授权后重试";
   }
-  if (raw.startsWith("IMAGE_UNREADABLE")) {
-    return "商品主图无法读取或上传，请更换主图后重试";
+  if (raw.startsWith("IMAGE_UNREADABLE") || raw.includes("IMAGE_UNREADABLE")) {
+    return "商品主图无法读取，请换清晰主图或用手动匹配";
   }
   if (raw.startsWith("NO_PRIMARY_IMAGE")) {
     return "该商品无主图，无法进行 Tangbuy 图搜";
@@ -94,4 +94,33 @@ export function mapImageSearchError(err: unknown): string {
     return "Tangbuy 货源网关繁忙或限流，请稍后重试";
   }
   return raw || "图搜失败";
+}
+
+/** Short, UI-safe image-search message (no raw URLs or machine codes). */
+export function userFacingImageSearchMessage(
+  raw: string | null | undefined,
+  fallback = "图搜失败，请稍后重试"
+): string {
+  if (!raw?.trim()) return fallback;
+  const trimmed = raw.trim();
+  if (
+    trimmed.startsWith("IMAGE_UNREADABLE") ||
+    trimmed.includes("IMAGE_UNREADABLE")
+  ) {
+    return "商品主图无法读取，请换清晰主图或用手动匹配";
+  }
+  if (trimmed.startsWith("NO_PRIMARY_IMAGE")) {
+    return "该商品无主图，无法进行图搜";
+  }
+  if (trimmed === "未找到可靠候选" || trimmed.includes("未达关联门槛")) {
+    return trimmed;
+  }
+  const mapped = mapImageSearchError(new Error(trimmed));
+  if (mapped === trimmed && /https?:\/\//i.test(mapped)) {
+    return fallback;
+  }
+  if (mapped.length > 96) {
+    return mapped.slice(0, 96).trimEnd() + "…";
+  }
+  return mapped;
 }

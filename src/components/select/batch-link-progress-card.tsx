@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CheckCircle2, ChevronDown, ChevronUp, Loader2 } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
+import { AccountManagerContactModal } from "@/components/account-manager/account-manager-contact-modal";
 import { formatBatchCardQueueLine } from "@/lib/batch-link/confidence-display";
+import {
+  batchLinkRunKey,
+  buildBatchLinkEscalation,
+} from "@/lib/batch-link/escalation";
 import {
   formatBatchLinkSummary,
   type BatchLinkProgress,
@@ -28,6 +33,8 @@ export function BatchLinkProgressCard({
 }) {
   const t = useT();
   const [queueExpanded, setQueueExpanded] = useState(false);
+  const [escalationOpen, setEscalationOpen] = useState(false);
+  const [dismissedRunKey, setDismissedRunKey] = useState<string | null>(null);
 
   const batchActive = batchLinkProgress?.active ?? false;
   const batchDone = batchLinkProgress?.done ?? false;
@@ -68,6 +75,15 @@ export function BatchLinkProgressCard({
   const sessionOrder = batchLinkProgress?.sessionOrder ?? [];
   const cardStates = batchLinkProgress?.cardStates ?? {};
   const hasQueueDetails = sessionOrder.length > 0;
+
+  const escalation = useMemo(
+    () => buildBatchLinkEscalation(batchLinkProgress),
+    [batchLinkProgress]
+  );
+  const runKey = batchLinkRunKey(batchLinkProgress);
+  // Ask once per run, and only after the queue settles — never mid-run.
+  const showEscalation =
+    batchDone && escalation != null && runKey != null && runKey !== dismissedRunKey;
 
   if (!show) return null;
 
@@ -160,6 +176,49 @@ export function BatchLinkProgressCard({
         <div className="mt-1.5 text-[10px] text-slate-500">
           {queueProcessed} / {queueTotal}
         </div>
+      ) : null}
+
+      {showEscalation && escalation ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-amber-200/80 pt-2">
+          <p className="min-w-0 flex-1 text-[10px] leading-snug text-amber-900">
+            {t("batchLink.escalationHint", { count: escalation.failedCount })}
+            {escalation.topReason ? ` · ${escalation.topReason}` : ""}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-7 shrink-0 text-[11px]"
+            onClick={() => setEscalationOpen(true)}
+          >
+            {t("batchLink.escalationAction")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 shrink-0 px-1.5 text-[11px] text-slate-500"
+            onClick={() => setDismissedRunKey(runKey)}
+          >
+            {t("batchLink.escalationDismiss")}
+          </Button>
+        </div>
+      ) : null}
+
+      {escalation ? (
+        <AccountManagerContactModal
+          open={escalationOpen}
+          onClose={() => {
+            setEscalationOpen(false);
+            setDismissedRunKey(runKey);
+          }}
+          context="products"
+          batchEscalation={{
+            count: escalation.failedCount,
+            titles: escalation.titles,
+            reason: escalation.topReason,
+          }}
+        />
       ) : null}
 
       {queueDone && pendingAckCount > 0 && onBatchAckPending ? (

@@ -35,10 +35,15 @@ export function primaryAccountManager(): AccountManagerContact {
 export type AccountManagerPrefillVariant =
   | "default"
   | "image_search_weak"
-  | "image_search_failed";
+  | "image_search_failed"
+  | "batch_link_failed";
 
 export interface AccountManagerHrefOptions {
   productTitle?: string | null;
+  /** Batch escalation — several products handed over in one message. */
+  productTitles?: string[];
+  /** Shared failure reason, already user-facing. */
+  reason?: string | null;
   prefillVariant?: AccountManagerPrefillVariant;
 }
 
@@ -63,6 +68,22 @@ function buildPrefillMessage(
 ): string {
   const variant = options?.prefillVariant ?? "default";
   const title = options?.productTitle?.trim();
+
+  if (variant === "batch_link_failed") {
+    const titles = (options?.productTitles ?? [])
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const reason = options?.reason?.trim();
+    const lines = [
+      `你好，批量关联有 ${titles.length || "若干"} 个商品没能自动匹配到货源，想请你协助人工寻源。`,
+    ];
+    if (reason) lines.push(`主要原因：${reason}`);
+    if (titles.length > 0) {
+      lines.push("商品：");
+      lines.push(...titles.map((s) => `· ${s}`));
+    }
+    return lines.join("\n");
+  }
 
   if (variant === "image_search_failed" || variant === "image_search_weak") {
     const lead =

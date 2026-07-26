@@ -13,6 +13,7 @@ import {
   resolveTopAutoBindScore,
 } from "@/lib/batch-link/image-match";
 import { isAlreadySourcedProduct } from "@/lib/batch-link/publish-source";
+import { mapImageSearchError } from "@/lib/batch-link/match-errors";
 import {
   enrich1688CandidateWithCatalogIdentity,
   extractOfferIdFromUrl,
@@ -98,9 +99,8 @@ async function requestImageSearch(body: Record<string, unknown>): Promise<ImageS
   );
 }
 
-function imageSearchError(err: unknown): string {
-  if (err instanceof Error && err.message) return err.message;
-  return "图搜失败，请稍后重试";
+function pipelineErrorMessage(err: unknown): string {
+  return mapImageSearchError(err);
 }
 
 function publishSourcedSkipResult(): ImageSearchPipelineResult {
@@ -472,7 +472,7 @@ export async function runImageSearchPipeline(
       imageScores: {},
       rankedItems: [],
       topScore: null,
-      error: imageSearchError(err),
+      error: pipelineErrorMessage(err),
     };
   }
 }

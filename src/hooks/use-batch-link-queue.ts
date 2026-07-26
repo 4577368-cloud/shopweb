@@ -9,6 +9,7 @@ import { confirmCandidateBinding } from "@/lib/batch-link/confirm-binding";
 import {
   isOfferNotFoundError,
   mapImageMatchConfirmError,
+  userFacingImageSearchMessage,
 } from "@/lib/batch-link/match-errors";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
 import { loadVariantImagesForImageSearch } from "@/lib/batch-link/variant-images-for-search";
@@ -243,29 +244,35 @@ export function useBatchLinkQueue({
           : {};
 
         if (pipeline.error || !searchResult || rankedItems.length === 0) {
+          const errMsg = userFacingImageSearchMessage(
+            pipeline.error ?? "未找到可靠候选"
+          );
           setCardState(id, "failed", {
             productTitle: title,
-            errorMessage: pipeline.error ?? "未找到可靠候选",
+            errorMessage: errMsg,
             searchResult: null,
             matchScores: {},
             imageScores: {},
           });
-          bumpProcessed(product, "failed", `${title}：未找到可靠候选`);
+          bumpProcessed(product, "failed", `${title}：${errMsg}`);
           continue;
         }
 
         const tier = classifyMatchConfidence(pipeline.topScore);
         if (tier === "none") {
-          setCardState(id, "failed", {
+          setCardState(id, "needs_review", {
             productTitle: title,
             ...confidencePatch,
             searchResult: searchResult,
             matchScores: pipeline.matchScores,
             imageScores: pipeline.imageScores,
             highlightTopCandidate: true,
-            errorMessage: "标题或图像未达关联门槛，请人工确认",
           });
-          bumpProcessed(product, "failed", `${title}：标题或图像未达门槛`);
+          bumpProcessed(
+            product,
+            "needs_review",
+            `${title}：匹配偏低，请确认货源`
+          );
           continue;
         }
 

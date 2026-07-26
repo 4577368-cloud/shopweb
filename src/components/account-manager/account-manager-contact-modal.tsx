@@ -19,6 +19,12 @@ export interface AccountManagerContactModalProps {
   /** weak = low similarity; failed = no reliable recall */
   imageSearchReason?: "weak" | "failed" | null;
   productTitle?: string | null;
+  /** Batch escalation — one handover for every product a run could not link. */
+  batchEscalation?: {
+    count: number;
+    titles: string[];
+    reason?: string | null;
+  } | null;
   className?: string;
 }
 
@@ -28,6 +34,7 @@ export function AccountManagerContactModal({
   context,
   imageSearchReason = null,
   productTitle,
+  batchEscalation = null,
   className,
 }: AccountManagerContactModalProps) {
   const t = useT();
@@ -44,8 +51,9 @@ export function AccountManagerContactModal({
 
   if (!open) return null;
 
-  const prefillVariant: AccountManagerPrefillVariant =
-    imageSearchReason === "failed"
+  const prefillVariant: AccountManagerPrefillVariant = batchEscalation
+    ? "batch_link_failed"
+    : imageSearchReason === "failed"
       ? "image_search_failed"
       : imageSearchReason === "weak"
         ? "image_search_weak"
@@ -53,15 +61,19 @@ export function AccountManagerContactModal({
 
   const href = accountManagerWhatsAppHref(context, manager, {
     productTitle,
-    prefillVariant: imageSearchReason ? prefillVariant : "default",
+    productTitles: batchEscalation?.titles,
+    reason: batchEscalation?.reason,
+    prefillVariant,
   });
 
-  const titleKey =
-    imageSearchReason != null
+  const titleKey = batchEscalation
+    ? "accountManager.batchLinkModal.title"
+    : imageSearchReason != null
       ? "accountManager.imageSearchModal.title"
       : "accountManager.contactModal.title";
-  const bodyKey =
-    imageSearchReason != null
+  const bodyKey = batchEscalation
+    ? "accountManager.batchLinkModal.body"
+    : imageSearchReason != null
       ? "accountManager.imageSearchModal.body"
       : "accountManager.contactModal.body";
 
@@ -91,8 +103,24 @@ export function AccountManagerContactModal({
               {t(titleKey)}
             </p>
             <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">
-              {t(bodyKey)}
+              {batchEscalation
+                ? t(bodyKey, { count: batchEscalation.count })
+                : t(bodyKey)}
             </p>
+            {batchEscalation?.reason ? (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-subtle">
+                {batchEscalation.reason}
+              </p>
+            ) : null}
+            {batchEscalation && batchEscalation.titles.length > 0 ? (
+              <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto text-[11px] leading-snug text-ink-subtle">
+                {batchEscalation.titles.map((title) => (
+                  <li key={title} className="truncate">
+                    · {title}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             <p className="mt-2 text-[11px] leading-relaxed text-ink-subtle">
               {t("accountManager.imageSearchModal.manualHint")}
             </p>
