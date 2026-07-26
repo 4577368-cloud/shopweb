@@ -57,7 +57,7 @@ export interface SkuCommandClarify {
 }
 
 export interface SkuCommandClassifyResult {
-  confidence: "high" | "none";
+  confidence: "high" | "medium" | "none";
   source: SkuCommandClassifySource;
   draft?: SkuCommandDraft;
   /** Multi-step command (e.g. "show partially linked, then batch confirm"). */
@@ -85,6 +85,7 @@ export type SkuCommandExecution =
   | {
       type: "rerun_auto_align";
       productId?: string;
+      productIds?: string[];
     }
   | {
       type: "set_filter";

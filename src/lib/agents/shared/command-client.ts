@@ -47,18 +47,23 @@ export async function classifyCommandInput<
     const data = await callApi();
     const hasResult =
       !!data &&
-      ((data.confidence === "high" &&
+      (((data.confidence === "high" || data.confidence === "medium") &&
         (data.draft ||
           ((data as { steps?: unknown[] }).steps?.length ?? 0) > 0)) ||
         (data as { clarify?: unknown }).clarify);
     if (hasResult) return data;
+    // LLM 未返回有效结果，回退到规则结果
+    // 如果规则结果是 medium，也返回（由调用方决定是否需要澄清）
     return local;
   }
 
+  // rule-first: high confidence 直接返回，否则走 LLM
   if (local.confidence === "high" && local.draft) return local;
 
   const data = await callApi();
   if (!data) return local;
   if (data?.confidence === "high" && data.draft) return data;
+  // medium confidence 也返回，由调用方处理
+  if (data?.confidence === "medium" && data.draft) return data;
   return data?.clarify ? data : local;
 }

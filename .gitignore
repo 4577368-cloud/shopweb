@@ -33,6 +33,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+env.keys.json
 
 # vercel
 .vercel
@@ -43,3 +44,6 @@ next-env.d.ts
 
 # runtime data
 .data/
+
+# Java backend lives in separate repo (shop.git); local clone only
+/tangbuy-plugin/

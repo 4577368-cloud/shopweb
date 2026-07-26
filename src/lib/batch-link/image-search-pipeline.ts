@@ -24,7 +24,11 @@ import type {
   ImageSearchProduct,
   ImageSearchResult,
   ShopMirrorProduct,
+  SkuVariant,
 } from "@/lib/types";
+import {
+  pickRepresentativeVariantImageUrls,
+} from "@/lib/sku-align/representative-variant-images";
 
 export interface ImageSearchPipelineResult {
   result: ImageSearchResult | null;
@@ -44,6 +48,8 @@ export interface ImageSearchPipelineContext {
   locale?: Locale;
   /** Tangbuy 上架货源换供应商：仍走 1688 图搜，不跳过。 */
   allowSupplierSwapSearch?: boolean;
+  /** When set, run representative variant image searches (up to 3) and merge candidates. */
+  variantImages?: Array<Pick<SkuVariant, "imageUrl" | "price" | "thirdPlatformSkuId">>;
 }
 
 const PUBLISH_SOURCED_SKIP_MESSAGE =
@@ -61,25 +67,35 @@ async function imageSearchWithColdStartRetry(
   shopName: string,
   thirdPlatformItemId: string,
   limit: number,
-  country?: string
+  country?: string,
+  searchImageUrl?: string
 ): Promise<ImageSearchResult> {
+  const body = {
+    shopName,
+    thirdPlatformItemId,
+    limit,
+    ...(country ? { country } : {}),
+    ...(searchImageUrl?.trim() ? { searchImageUrl: searchImageUrl.trim() } : {}),
+  };
   try {
-    return await api.imageSearch(
-      shopName,
-      thirdPlatformItemId,
-      limit,
-      country ? { country } : undefined
-    );
+    return await requestImageSearch(body);
   } catch (err) {
     if (!isTransientBackendError(err)) throw err;
     await sleep(3500);
-    return api.imageSearch(
-      shopName,
-      thirdPlatformItemId,
-      limit,
-      country ? { country } : undefined
-    );
+    return requestImageSearch(body);
   }
+}
+
+async function requestImageSearch(body: Record<string, unknown>): Promise<ImageSearchResult> {
+  return api.imageSearch(
+    String(body.shopName),
+    String(body.thirdPlatformItemId),
+    Number(body.limit) || 5,
+    {
+      country: body.country as string | undefined,
+      searchImageUrl: body.searchImageUrl as string | undefined,
+    }
+  );
 }
 
 function imageSearchError(err: unknown): string {
@@ -97,6 +113,108 @@ function publishSourcedSkipResult(): ImageSearchPipelineResult {
     error: PUBLISH_SOURCED_SKIP_MESSAGE,
     skippedPublishSourced: true,
   };
+}
+
+async function dedupeImageUrlsByPerceptualHash(urls: string[]): Promise<string[]> {
+  if (urls.length <= 1) return urls;
+  try {
+    const res = await fetch("/api/batch-link/dedupe-image-urls", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls }),
+    });
+    if (!res.ok) return urls;
+    const body = (await res.json()) as { urls?: string[] };
+    return body.urls?.length ? body.urls : urls;
+  } catch {
+    return urls;
+  }
+}
+
+function mergeImageSearchItems(
+  batches: ImageSearchProduct[][]
+): ImageSearchProduct[] {
+  const seen = new Set<string>();
+  const merged: ImageSearchProduct[] = [];
+  for (const batch of batches) {
+    for (const item of batch) {
+      const key = candidateStorageKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+    }
+  }
+  return merged;
+}
+
+async function scoreImageCandidatesMaxAcrossQueries(
+  queryImageUrls: string[],
+  items: ImageSearchProduct[]
+): Promise<Record<string, number | null>> {
+  const urls = queryImageUrls.filter((u) => u?.trim());
+  if (!urls.length) {
+    return scoreImageCandidates(items[0]?.imageUrl ?? null, items);
+  }
+  const merged: Record<string, number | null> = {};
+  for (const url of urls) {
+    const partial = await scoreImageCandidates(url, items);
+    for (const c of items) {
+      const key = candidateStorageKey(c);
+      const next = partial[key];
+      const prev = merged[key];
+      if (next == null) continue;
+      if (prev == null || next > prev) merged[key] = next;
+    }
+  }
+  return merged;
+}
+
+async function resolveRepresentativeSearchImageUrls(
+  item: Pick<ShopMirrorProduct, "primaryImageUrl">,
+  context?: ImageSearchPipelineContext
+): Promise<string[]> {
+  const variants = context?.variantImages;
+  if (!variants?.length) {
+    const primary = item.primaryImageUrl?.trim();
+    return primary ? [primary] : [];
+  }
+  return pickRepresentativeVariantImageUrls(
+    variants,
+    item.primaryImageUrl,
+    dedupeImageUrlsByPerceptualHash
+  );
+}
+
+async function fetchMergedImageSearch(
+  shopName: string,
+  thirdPlatformItemId: string,
+  limit: number,
+  country: string | undefined,
+  queryImageUrls: string[]
+): Promise<ImageSearchResult> {
+  const batches: ImageSearchProduct[][] = [];
+  let meta: ImageSearchResult | null = null;
+
+  for (const url of queryImageUrls) {
+    const res = await imageSearchWithColdStartRetry(
+      shopName,
+      thirdPlatformItemId,
+      limit,
+      country,
+      url
+    );
+    if (!meta) meta = res;
+    batches.push(res.items ?? []);
+  }
+
+  const mergedItems = mergeImageSearchItems(batches);
+  const base: ImageSearchResult = meta ?? {
+    items: [],
+    imageSource: "SHOPIFY",
+    querySource: "NONE",
+    appliedQuery: null,
+  };
+  return { ...base, items: mergedItems };
 }
 
 async function scoreTitleCandidates(
@@ -286,12 +404,25 @@ export async function runImageSearchPipeline(
     const country = context?.locale
       ? imageSearchCountryForLocale(context.locale)
       : undefined;
-    const res = await imageSearchWithColdStartRetry(
-      shopName,
-      item.thirdPlatformItemId,
-      limit,
-      country
-    );
+
+    const queryImageUrls = await resolveRepresentativeSearchImageUrls(item, context);
+    const useMultiVariantSearch =
+      Boolean(context?.variantImages?.length) && queryImageUrls.length > 0;
+
+    const res = useMultiVariantSearch
+      ? await fetchMergedImageSearch(
+          shopName,
+          item.thirdPlatformItemId,
+          limit,
+          country,
+          queryImageUrls
+        )
+      : await imageSearchWithColdStartRetry(
+          shopName,
+          item.thirdPlatformItemId,
+          limit,
+          country
+        );
 
     const enriched1688 = await Promise.all(
       res.items.map((c) =>
@@ -305,10 +436,20 @@ export async function runImageSearchPipeline(
     );
 
     const titleScores = await scoreTitleCandidates(item, localizedItems);
-    const imageScores = await scoreImageCandidates(
-      item.primaryImageUrl,
-      localizedItems
-    );
+    const imageQueryUrls =
+      useMultiVariantSearch && queryImageUrls.length
+        ? queryImageUrls
+        : [item.primaryImageUrl ?? ""].filter(Boolean);
+    const imageScores =
+      imageQueryUrls.length > 1
+        ? await scoreImageCandidatesMaxAcrossQueries(
+            imageQueryUrls,
+            localizedItems
+          )
+        : await scoreImageCandidates(
+            imageQueryUrls[0] ?? item.primaryImageUrl,
+            localizedItems
+          );
     const ranked = rankCandidatesWithImageGate(
       localizedItems,
       titleScores,

@@ -25,6 +25,7 @@ export const POSTAL_LIMIT_LABELS: Record<string, string> = {
   FOOD: "食品",
   BLADE: "刀具",
   FRAGILE: "易碎",
+  COSMETIC: "化妆品",
   OTHER: "其他",
 };
 
@@ -35,7 +36,71 @@ export function getPostalLimitLabel(
   return POSTAL_LIMIT_LABELS[postalClass] || postalClass;
 }
 
-const NEEDS_REVIEW_POSTAL_CLASSES = new Set(["BLADE", "OTHER"]);
+// 所有品类都正常走报价流程，不因特殊品类卡住。
+// 后续会拿到匹配邮限的标签数据，每个品类都会匹配对应物流线路。
+
+// ── SKU 级关键词检测 ──────────────────────────────────────────
+// 检测 SKU 规格文本（optionLabel）中的特殊品类信号，覆盖商品级分类。
+// 优先级：BATTERY_MAGNETIC > LIQUID > POWDER > BLADE > COSMETIC > FRAGILE
+const SKU_KEYWORD_MAP: Array<{ keywords: string[]; postalClass: string; label: string }> = [
+  {
+    postalClass: "BATTERY_BUILT_IN",
+    label: "内置电池",
+    keywords: ["磁吸", "带磁", "磁铁", "含电", "带电", "电池", "充电", "无线充", "magnetic", "battery", "rechargeable"],
+  },
+  {
+    postalClass: "LIQUID",
+    label: "液体",
+    keywords: ["液体", "含液", "带液", "液体款", "liquid"],
+  },
+  {
+    postalClass: "POWDER",
+    label: "粉末",
+    keywords: ["粉末", "粉状", "powder"],
+  },
+  {
+    postalClass: "BLADE",
+    label: "刀具",
+    keywords: ["刀片", "刀具", "blade", "knife"],
+  },
+  {
+    postalClass: "COSMETIC",
+    label: "化妆品",
+    keywords: ["化妆品", "口红", "唇膏", "防晒", "面霜", "乳液", "精华", "面膜", "cosmetic", "lipstick", "sunscreen"],
+  },
+  {
+    postalClass: "FRAGILE",
+    label: "易碎",
+    keywords: ["玻璃", "陶瓷", "易碎", "glass", "ceramic", "fragile"],
+  },
+];
+
+/**
+ * 检测 SKU 规格文本是否命中特殊品类关键词。
+ * 返回覆盖后的邮限分类，或 null（无覆盖，沿用商品级分类）。
+ */
+function detectSkuLevelPostalClass(
+  optionLabel: string,
+  productLevelClass: string | undefined
+): { postalClass: string; label: string; confidence: number } | null {
+  const text = optionLabel.toLowerCase();
+  for (const group of SKU_KEYWORD_MAP) {
+    for (const kw of group.keywords) {
+      if (text.includes(kw.toLowerCase())) {
+        // 如果 SKU 级检测结果和商品级一致，无需覆盖
+        if (productLevelClass && productLevelClass.toUpperCase() === group.postalClass) {
+          return null;
+        }
+        return {
+          postalClass: group.postalClass,
+          label: group.label,
+          confidence: 0.9,
+        };
+      }
+    }
+  }
+  return null;
+}
 
 export function computeVariantDecisionStatus(
   variant: Partial<VariantLogisticsDecision> & {
@@ -57,20 +122,7 @@ export function computeVariantDecisionStatus(
     };
   }
 
-  if (variant.postalLimitClass === "RESTRICTED") {
-    return {
-      status: "restricted",
-      reason: "当前邮限标记为受限，请确认线路或调整品类",
-    };
-  }
-
-  if (NEEDS_REVIEW_POSTAL_CLASSES.has(variant.postalLimitClass)) {
-    return {
-      status: "needs_review",
-      reason: "高风险品类，报价后需人工确认线路",
-    };
-  }
-
+  // 所有品类都正常进入报价流程，不因特殊品类卡住
   return {
     status: "ready_for_quote",
     reason: "",
@@ -173,15 +225,24 @@ function transformLegacyProfile(
       const bindingActive =
         hasBindingIds && (!bindStatus || bindStatus === "ACTIVE");
 
+      // SKU 级关键词检测：检查 optionLabel 是否命中特殊品类
+      const skuOverride = detectSkuLevelPostalClass(
+        variant.optionLabel,
+        baseDecision.postalLimitClass
+      );
+      const variantPostalClass = skuOverride?.postalClass ?? baseDecision.postalLimitClass;
+      const variantPostalLabel = skuOverride?.label ?? baseDecision.postalLimitLabel;
+      const variantPostalConfidence = skuOverride?.confidence ?? baseDecision.postalLimitConfidence;
+
       if (hasBindingIds && bindStatus === "PENDING") {
         variantDecisions.push({
           thirdPlatformSkuId: variant.thirdPlatformSkuId,
           optionLabel: variant.optionLabel,
           tangbuySkuId: bound?.tangbuySkuId ?? null,
           tangbuyGoodsId: bound?.tangbuyProductId ?? null,
-          postalLimitClass: baseDecision.postalLimitClass,
-          postalLimitLabel: baseDecision.postalLimitLabel,
-          postalLimitConfidence: baseDecision.postalLimitConfidence,
+          postalLimitClass: variantPostalClass,
+          postalLimitLabel: variantPostalLabel,
+          postalLimitConfidence: variantPostalConfidence,
           decisionStatus: "pending_sku",
           decisionReason: "SKU 绑定待确认，请先在 SKU 对齐页确认后再报价",
           listingPrice: variant.price ?? null,
@@ -194,6 +255,9 @@ function transformLegacyProfile(
         ...baseDecision,
         tangbuySkuId: bindingActive ? (bound?.tangbuySkuId ?? null) : null,
         tangbuyGoodsId: bindingActive ? (bound?.tangbuyProductId ?? null) : null,
+        postalLimitClass: variantPostalClass,
+        postalLimitLabel: variantPostalLabel,
+        postalLimitConfidence: variantPostalConfidence,
       };
 
       const { status, reason } = computeVariantDecisionStatus(decision);

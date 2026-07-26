@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Send, Loader2 } from "@/lib/ui/icons";
-import type { AgentSuggestedAction } from "@/lib/agents/types";
 import type { SkuPageContext } from "@/lib/agents/sku-align/plan-command";
 import {
   type SkuCommandClassifyContext,
@@ -44,7 +43,6 @@ export type SkuCommandExecutor = (payload: Record<string, unknown>) => Promise<v
 export interface SkuAgentPanelProps {
   context: SkuPageContext;
   shopName: string;
-  onApplySuggestedAction?: (action: AgentSuggestedAction) => void;
   onFocusProduct?: (productId: string) => void;
   onSetFilter?: (filter: "all" | "fully_linked" | "partially_linked") => void;
   previewGenerators?: Record<string, SkuPreviewGenerator>;
@@ -54,7 +52,6 @@ export interface SkuAgentPanelProps {
 export function SkuAgentPanel({
   context,
   shopName,
-  onApplySuggestedAction,
   onFocusProduct,
   onSetFilter,
   previewGenerators = {},
@@ -120,8 +117,8 @@ export function SkuAgentPanel({
     }).length,
   }), [context]);
 
-  const handleSubmit = useCallback(async () => {
-    const text = input.trim();
+  const handleSubmit = useCallback(async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     if (!text) return;
 
     setLoading(true);
@@ -134,7 +131,7 @@ export function SkuAgentPanel({
     const seq = ++requestSeq.current;
 
     try {
-      const classifyResult = await classifySkuCommandInput(text, classifyContext, locale);
+      const classifyResult = await classifySkuCommandInput(text, classifyContext, locale, t);
       if (requestSeq.current !== seq) return;
 
       if (
@@ -156,6 +153,16 @@ export function SkuAgentPanel({
         setCommandPlan(plan);
         setCommandSequence(null);
         return;
+      }
+
+      // medium confidence: show the plan for user confirmation instead of executing directly
+      if (classifyResult.confidence === "medium" && classifyResult.draft) {
+        const plan = planSkuCommand(t, classifyResult.draft, context);
+        if (plan.executable) {
+          setCommandPlan(plan);
+          setCommandSequence(null);
+          return;
+        }
       }
 
       setClarify(classifyResult.clarify ?? t("skuAgent.errCannotUnderstand"));
@@ -185,7 +192,7 @@ export function SkuAgentPanel({
     try {
       await applyCommandExecution(plan, execution);
       if (skuCommandBelongsToSkill(plan.draft.intent)) {
-        const feedback = buildSkuSkillFeedback(plan, context);
+        const feedback = buildSkuSkillFeedback(plan, context, t);
         if (feedback) setSkillFeedback(feedback);
       }
     } catch (err) {
@@ -210,8 +217,9 @@ export function SkuAgentPanel({
       return;
     }
     if (execution.type === "rerun_auto_align") {
-      if (productId) {
-        onFocusProduct?.(productId);
+      const targetId = execution.productId ?? productId;
+      if (targetId) {
+        onFocusProduct?.(targetId);
       }
       return;
     }
@@ -246,6 +254,10 @@ export function SkuAgentPanel({
           const executor = commandExecutors[plan.draft.intent];
           if (!executor) throw new Error(t("skuAgent.errNoExecutor"));
           const ui = getSkuCommandUIConfig(plan.draft.intent);
+          if (ui?.direct) {
+            await executor({});
+            continue;
+          }
           if (ui?.requiresPreview || commandRequiresConfirmation(plan)) {
             const gen = previewGenerators[plan.draft.intent];
             if (!gen) throw new Error(t("skuAgent.errNoPreviewGenerator"));
@@ -297,6 +309,8 @@ export function SkuAgentPanel({
 
   useEffect(() => {
     if (!commandPlan) return;
+    // direct commands never trigger preview — execute immediately
+    if (uiConfig?.direct) return;
     if (uiConfig?.requiresPreview || commandRequiresConfirmation(commandPlan)) {
       void generatePreview();
     }
@@ -339,7 +353,7 @@ export function SkuAgentPanel({
       setExecStep("done");
 
       if (belongsToSkill) {
-        const feedback = buildSkuSkillFeedback(commandPlan, context, {
+        const feedback = buildSkuSkillFeedback(commandPlan, context, t, {
           successCount: isBatch ? batchProgress?.success : undefined,
           failedCount: isBatch ? batchProgress?.failed : undefined,
           totalCount: isBatch ? batchProgress?.total : undefined,
@@ -356,7 +370,7 @@ export function SkuAgentPanel({
 
   const handleQuickCommand = useCallback((cmd: string) => {
     setInput(cmd);
-    void handleSubmit();
+    void handleSubmit(cmd);
   }, [handleSubmit]);
 
   const handleNextStep = useCallback(
@@ -397,7 +411,7 @@ export function SkuAgentPanel({
           <Button
             size="sm"
             className="h-7 w-7 px-2"
-            onClick={handleSubmit}
+            onClick={() => void handleSubmit()}
             disabled={loading || !input.trim()}
           >
             {loading ? (
@@ -494,7 +508,9 @@ export function SkuAgentPanel({
         commandPlan={commandPlan}
         uiConfig={uiConfig}
         requiresConfirmation={
-          commandPlan ? commandRequiresConfirmation(commandPlan) : false
+          commandPlan && !uiConfig?.direct
+            ? commandRequiresConfirmation(commandPlan)
+            : false
         }
         execStep={execStep}
         preview={preview}

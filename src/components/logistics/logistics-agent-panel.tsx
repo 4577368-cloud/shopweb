@@ -13,10 +13,10 @@ import {
   commandRequiresConfirmation,
   resolveLogisticsCommandExecution,
 } from "@/lib/agents/logistics/plan-command";
-import type { LogisticsCommandExecution, LogisticsCommandPlan, LogisticsDecisionStatus } from "@/lib/agents/logistics/command-schema";
+import type { LogisticsCommandDraft, LogisticsCommandExecution, LogisticsCommandPlan, LogisticsDecisionStatus } from "@/lib/agents/logistics/command-schema";
 import type { SkillExecutionFeedback } from "@/lib/agents/logistics/skills";
 import { buildLogisticsSkillFeedback, logisticsCommandBelongsToSkill } from "@/lib/agents/logistics/skills";
-import { readableError } from "@/lib/api";
+import { readableError, type LogisticsEstimateResult } from "@/lib/api";
 import { LogisticsPipelineTaskCard } from "@/components/logistics/logistics-pipeline-task-card";
 import { CommandAgentExecution } from "@/components/workbench/command-agent-execution";
 import { SkillFeedbackCard } from "@/components/workbench/skill-feedback-card";
@@ -77,6 +77,14 @@ export interface LogisticsAgentPanelProps {
   /** Signal in-flight batch accept to stop between chunks. */
   onCancelBatchAccept?: () => void;
   catalogIngestingCount?: number;
+  /** 当前列表筛选模式，传给 LLM 作为上下文 */
+  currentFilter?: string | null;
+  /** 当前聚焦商品标题，传给 LLM 作为上下文 */
+  focusProductTitle?: string | null;
+  /** 当前列表聚焦商品 ID（用于解释报价等） */
+  focusProductId?: string | null;
+  quoteResults?: Map<string, LogisticsEstimateResult>;
+  onFocusProduct?: (productId: string) => void;
 }
 
 export function LogisticsAgentPanel({
@@ -111,6 +119,11 @@ export function LogisticsAgentPanel({
   onSetFilter,
   onCancelBatchAccept,
   catalogIngestingCount = 0,
+  currentFilter = null,
+  focusProductTitle = null,
+  focusProductId = null,
+  quoteResults,
+  onFocusProduct,
 }: LogisticsAgentPanelProps) {
   const t = useT();
   const locale = useLocale();
@@ -125,6 +138,9 @@ export function LogisticsAgentPanel({
   const [execStep, setExecStep] = useState<ExecutionStep | null>(null);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [skillFeedback, setSkillFeedback] = useState<SkillExecutionFeedback | null>(null);
+  const [quoteExplainLines, setQuoteExplainLines] = useState<string[] | null>(
+    null
+  );
   const requestSeq = useRef(0);
   const previewSeq = useRef(0);
 
@@ -164,26 +180,29 @@ export function LogisticsAgentPanel({
   }, [batchAcceptCount, pipelineActive, t]);
 
   const classifyContext = useMemo<LogisticsCommandClassifyContext>(() => ({
-    focusProductTitle: null,
-    focusProductId: null,
-    currentFilter: null,
+    focusProductTitle,
+    focusProductId,
+    currentFilter,
     readyAcceptCount: batchAcceptCount,
     pendingCount: pendingQuoteCount + batchAcceptCount + exceptionCount,
     confirmedCount,
     highRiskTypes: activeRiskAlerts.map((a) => a.type),
-  }), [batchAcceptCount, pendingQuoteCount, exceptionCount, confirmedCount, activeRiskAlerts]);
+  }), [focusProductTitle, focusProductId, currentFilter, batchAcceptCount, pendingQuoteCount, exceptionCount, confirmedCount, activeRiskAlerts]);
 
   const pageContext = useMemo(() => ({
-    focusProductTitle: null,
-    focusProductId: null,
-    currentFilter: null,
+    focusProductTitle,
+    focusProductId,
+    currentFilter,
     readyAcceptCount: batchAcceptCount,
     pendingCount: pendingQuoteCount + batchAcceptCount + exceptionCount,
     confirmedCount,
     highRiskTypes: activeRiskAlerts.map((a) => a.type),
     readyVariantIds: [],
     pipelineRunning,
-  }), [batchAcceptCount, pendingQuoteCount, exceptionCount, confirmedCount, activeRiskAlerts, pipelineRunning]);
+    analysis,
+    quoteResults,
+    activeTemplate,
+  }), [focusProductTitle, focusProductId, currentFilter, batchAcceptCount, pendingQuoteCount, exceptionCount, confirmedCount, activeRiskAlerts, pipelineRunning, analysis, quoteResults, activeTemplate]);
 
   const savings = useMemo(() => {
     const tips: string[] = [];
@@ -226,13 +245,14 @@ export function LogisticsAgentPanel({
           onSetFilter?.(execution.filterMode);
           break;
         }
-        case "apply_template": {
-          onOpenTemplate();
+        case "explain_quote": {
+          onFocusProduct?.(execution.productId);
+          setQuoteExplainLines(execution.lines);
           break;
         }
       }
     },
-    [onAcceptAllReady, onFetchQuotes, onOpenTemplate, onFocusStatus, onSetFilter, onStartEstimate]
+    [onAcceptAllReady, onFetchQuotes, onOpenTemplate, onFocusStatus, onSetFilter, onStartEstimate, onFocusProduct]
   );
 
   const executeCommand = useCallback(
@@ -268,6 +288,7 @@ export function LogisticsAgentPanel({
 
     setLoading(true);
     setClarify(null);
+    setQuoteExplainLines(null);
     setCommandPlan(null);
     setPreview(null);
     setSkillFeedback(null);
@@ -285,6 +306,10 @@ export function LogisticsAgentPanel({
           setClarify(plan.clarify ?? t("logisticsAgent.errCannotExecute"));
           return;
         }
+        if (plan.draft.intent === "explain_quote") {
+          await executeCommand(plan);
+          return;
+        }
         // 仅当命令需要确认且提供了预览生成器时才走预览流程
         if (
           commandRequiresConfirmation(plan) &&
@@ -298,7 +323,21 @@ export function LogisticsAgentPanel({
         return;
       }
 
-      setClarify(classifyResult.clarify ?? t("logisticsAgent.errCannotUnderstand"));
+      // medium confidence：展示给用户确认，不直接执行
+      if (classifyResult.confidence === "medium" && classifyResult.draft) {
+        const plan = planLogisticsCommand(t, classifyResult.draft, pageContext);
+        if (plan.executable) {
+          setCommandPlan(plan);
+          return;
+        }
+      }
+
+      // clarify 可能是 i18n key（规则兜底返回 key 而非硬编码文本）
+      const rawClarify = classifyResult.clarify;
+      const clarifyText = rawClarify
+        ? (t(rawClarify) !== rawClarify ? t(rawClarify) : rawClarify)
+        : t("logisticsAgent.errCannotUnderstand");
+      setClarify(clarifyText);
     } catch (err) {
       if (requestSeq.current !== seq) return;
       setClarify(readableError(err) || t("logisticsAgent.errCommandFailed"));
@@ -401,10 +440,63 @@ export function LogisticsAgentPanel({
     }
   }, [commandPlan, commandExecutors, pageContext, preview, batchAcceptCount, batchProgress, t]);
 
+  // 快捷标签 → Draft 映射，跳过分类器直接执行
+  const quickCommandDrafts = useMemo<Record<string, LogisticsCommandDraft>>(() => ({
+    [t("logisticsAgent.exampleBatchAccept")]: {
+      intent: "accept_all_ready",
+      targetScope: "all",
+      params: { filterMode: "all" },
+      confirmationRequired: true,
+    },
+    [t("logisticsAgent.exampleSmartEstimate")]: {
+      intent: "start_estimate",
+      targetScope: "all",
+      params: { filterMode: "all" },
+      confirmationRequired: false,
+    },
+    [t("logisticsAgent.exampleRefreshQuotes")]: {
+      intent: "fetch_quotes",
+      targetScope: "all",
+      params: { filterMode: "all" },
+      confirmationRequired: false,
+    },
+    [t("logisticsAgent.exampleAdjustTemplate")]: {
+      intent: "open_template",
+      targetScope: "none",
+      params: { filterMode: "all" },
+      confirmationRequired: false,
+    },
+    [t("logisticsAgent.exampleViewIssues")]: {
+      intent: "focus_status",
+      targetScope: "all",
+      params: { filterMode: "all", listFilter: "issues" },
+      confirmationRequired: false,
+    },
+  }), [t]);
+
   const handleQuickCommand = useCallback((cmd: string) => {
+    const draft = quickCommandDrafts[cmd];
+    if (draft) {
+      // 直接构造 Plan 执行，跳过分类器
+      const plan = planLogisticsCommand(t, draft, pageContext);
+      if (!plan.executable) {
+        setClarify(plan.clarify ?? t("logisticsAgent.errCannotExecute"));
+        return;
+      }
+      if (
+        commandRequiresConfirmation(plan) &&
+        !previewGenerators[plan.draft.intent]
+      ) {
+        void executeCommand(plan);
+        return;
+      }
+      setCommandPlan(plan);
+      return;
+    }
+    // 未匹配到快捷标签，回退到分类器
     setInput(cmd);
     void handleSubmit(cmd);
-  }, [handleSubmit]);
+  }, [quickCommandDrafts, pageContext, previewGenerators, executeCommand, handleSubmit, t]);
 
   const handleNextStep = useCallback(
     (step: { label: string; kind?: string; filterMode?: string }) => {
@@ -506,6 +598,21 @@ export function LogisticsAgentPanel({
       {clarify ? (
         <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
           {clarify}
+        </div>
+      ) : null}
+
+      {quoteExplainLines && quoteExplainLines.length > 0 ? (
+        <div className="rounded-[var(--radius-card)] border border-sky-200 bg-sky-50/90 p-3 text-xs text-sky-950">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-sky-800">
+            {t("agentLogistics.opExplainQuote")}
+          </p>
+          <ul className="space-y-1">
+            {quoteExplainLines.map((line, i) => (
+              <li key={i} className="leading-relaxed">
+                {line}
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
 

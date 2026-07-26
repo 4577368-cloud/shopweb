@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
-import { buildLogisticsClassifyPrompt, parseLogisticsCommandDraft, classifyLogisticsCommandByRules, type LogisticsCommandClassifyContext } from "@/lib/agents/logistics/classify-command";
+import {
+  buildLogisticsClassifyPrompt,
+  parseLogisticsCommandDraft,
+  classifyLogisticsCommandByRules,
+  normalizeLogisticsCommandDraft,
+  type LogisticsCommandClassifyContext,
+} from "@/lib/agents/logistics/classify-command";
+import {
+  calibrateLogisticsLlmConfidence,
+} from "@/lib/agents/logistics/llm-classify-calibration";
 import { buildResponseLanguageRule } from "@/lib/agents/runtime/response-language";
 import type { LogisticsCommandClassifyResult } from "@/lib/agents/logistics/command-schema";
 import { chatCompletionJson } from "@/lib/agents/llm/openai-compatible";
@@ -21,10 +30,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const local = classifyLogisticsCommandByRules(text);
-    if (local.confidence === "high" && local.draft) {
-      return NextResponse.json(local);
-    }
+    const local = classifyLogisticsCommandByRules(text, context);
 
     try {
       const prompt = buildLogisticsClassifyPrompt(
@@ -41,10 +47,24 @@ export async function POST(req: Request) {
         temperature: 0.1,
       });
 
-      const draft = parseLogisticsCommandDraft(llmResult);
-      if (draft) {
+      const parsed = parseLogisticsCommandDraft(llmResult);
+      if (parsed) {
+        const draft = normalizeLogisticsCommandDraft(parsed);
+        const confidence = calibrateLogisticsLlmConfidence(
+          text,
+          draft,
+          local,
+          context
+        );
+        if (confidence === "none") {
+          return NextResponse.json({
+            confidence: "none" as const,
+            source: "llm" as const,
+            clarify: localized("api.errCannotUnderstand"),
+          } as LogisticsCommandClassifyResult);
+        }
         return NextResponse.json({
-          confidence: "high" as const,
+          confidence,
           source: "llm" as const,
           draft,
         } as LogisticsCommandClassifyResult);

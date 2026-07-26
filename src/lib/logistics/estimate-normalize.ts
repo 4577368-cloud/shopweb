@@ -411,16 +411,15 @@ export function normalizeTangbuyEstimateResponse(
 
   const bySkuId = indexResultsBySkuId(rawResults);
 
-  const results: LogisticsEstimateResult[] = requestVariants.map((variant, index) => {
-    const rawResult =
-      bySkuId.get(variant.tangbuySkuId) ??
-      (requestVariants.length === rawResults.length ? rawResults[index] : undefined);
+  const results: LogisticsEstimateResult[] = requestVariants.map((variant) => {
+    // 严格按 skuId 匹配，不再按数组索引 fallback，避免顺序不一致导致报价错配
+    const rawResult = bySkuId.get(variant.tangbuySkuId);
 
     if (!rawResult) {
       return {
         thirdPlatformSkuId: variant.thirdPlatformSkuId,
         quoteStatus: "FAILED",
-        errorMessage: emptyDataMessage ?? "未获取到报价结果",
+        errorMessage: emptyDataMessage ?? "未匹配到该 SKU 的报价结果（skuId 不一致）",
       };
     }
 

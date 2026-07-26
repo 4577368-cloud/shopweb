@@ -3,9 +3,8 @@ export type LogisticsCommandId =
   | "start_estimate"
   | "fetch_quotes"
   | "open_template"
-  | "focus_issues"
   | "focus_status"
-  | "apply_template";
+  | "explain_quote";
 
 export type LogisticsCommandTargetScope = "current" | "explicit" | "none" | "all";
 
@@ -30,6 +29,8 @@ export interface LogisticsCommandParams {
   exceptionType?: string;
   needsMeasure?: boolean;
   quoteStatus?: "quoted" | "unquoted";
+  /** Substring or product title for explain_quote (e.g. 拖鞋). */
+  productTitleHint?: string;
 }
 
 export interface LogisticsCommandDraft {
@@ -43,7 +44,7 @@ export interface LogisticsCommandDraft {
 export type LogisticsCommandClassifySource = "rules" | "llm" | "default";
 
 export interface LogisticsCommandClassifyResult {
-  confidence: "high" | "none";
+  confidence: "high" | "medium" | "none";
   source: LogisticsCommandClassifySource;
   draft?: LogisticsCommandDraft;
   clarify?: string;
@@ -85,8 +86,9 @@ export type LogisticsCommandExecution =
       filterMode: string;
     }
   | {
-      type: "apply_template";
-      templateId: string;
+      type: "explain_quote";
+      productId: string;
+      lines: string[];
     };
 
 export const LOGISTICS_COMMAND_IDS: LogisticsCommandId[] = [
@@ -94,9 +96,8 @@ export const LOGISTICS_COMMAND_IDS: LogisticsCommandId[] = [
   "start_estimate",
   "fetch_quotes",
   "open_template",
-  "focus_issues",
   "focus_status",
-  "apply_template",
+  "explain_quote",
 ];
 
 export const LOGISTICS_COMMAND_SET = new Set<LogisticsCommandId>(LOGISTICS_COMMAND_IDS);
@@ -139,23 +140,16 @@ export const LOGISTICS_COMMAND_DEFS: {
     sensitivity: "low",
   },
   {
-    id: "focus_issues",
-    label: "查看问题",
-    description: "只显示需要人工确认的问题项",
-    defaultConfirmation: false,
-    sensitivity: "low",
-  },
-  {
     id: "focus_status",
     label: "聚焦状态",
-    description: "聚焦特定决策状态的商品",
+    description: "聚焦特定决策状态或问题项",
     defaultConfirmation: false,
     sensitivity: "low",
   },
   {
-    id: "apply_template",
-    label: "打开模板",
-    description: "打开物流模板配置抽屉（不自动套用）",
+    id: "explain_quote",
+    label: "解释报价",
+    description: "解释指定商品的线路报价与依据（只读）",
     defaultConfirmation: false,
     sensitivity: "low",
   },

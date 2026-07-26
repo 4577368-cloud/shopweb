@@ -192,6 +192,10 @@ export type LogisticsTypeCode =
   | "FOOD"
   | "BATTERY_MAGNETIC"
   | "BLADE"
+  | "LIQUID"
+  | "POWDER"
+  | "FRAGILE"
+  | "COSMETIC"
   | "OTHER";
 
 export type LogisticsDecisionStatus =

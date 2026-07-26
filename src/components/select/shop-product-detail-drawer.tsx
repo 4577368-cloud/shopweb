@@ -2,7 +2,7 @@
 
 import { ThumbImage } from "@/components/ui/thumb-image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, X } from "@/lib/ui/icons";
+import { ArrowDown, ArrowUp, Loader2, X } from "@/lib/ui/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
@@ -45,32 +45,6 @@ function optionLabel(v: {
   return v.title || "Default";
 }
 
-function stripHtml(html?: string | null): string {
-  if (!html) return "";
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .trim();
-}
-
-function toHtml(text: string): string {
-  const escaped = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  return escaped
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => `<p>${line}</p>`)
-    .join("");
-}
-
 interface VariantEdit {
   thirdPlatformSkuId: string;
   price: string;
@@ -79,7 +53,7 @@ interface VariantEdit {
 
 interface EditForm {
   title: string;
-  description: string;
+  descriptionHtml: string;
   status: string;
   variants: VariantEdit[];
   deletedVariantIds: string[];
@@ -89,7 +63,7 @@ interface EditForm {
 function formFromDetail(d: ShopProductDetail): EditForm {
   return {
     title: d.title ?? "",
-    description: stripHtml(d.description),
+    descriptionHtml: d.description?.trim() ?? "",
     status: (d.status ?? "ACTIVE").toUpperCase(),
     variants: (d.variants ?? []).map((v) => ({
       thirdPlatformSkuId: v.thirdPlatformSkuId,
@@ -173,6 +147,7 @@ export function ShopProductDetailDrawer({
   const dirtyRef = useRef(false);
   const mirrorUpdatedAtRef = useRef<string | null | undefined>(null);
   const savingRef = useRef(false);
+  const descEditorRef = useRef<HTMLDivElement>(null);
 
   const applyDetail = (d: ShopProductDetail, resetForm: boolean) => {
     setDetail(d);
@@ -244,22 +219,16 @@ export function ShopProductDetailDrawer({
     if (!form || !baseline) return false;
     return (
       form.title !== baseline.title ||
-      form.description !== baseline.description ||
+      form.descriptionHtml !== baseline.descriptionHtml ||
       form.status !== baseline.status ||
       !variantsEqual(form.variants, baseline.variants) ||
       !deletionsEqual(form, baseline)
     );
   }, [form, baseline]);
 
-  const descriptionHtml = useMemo(() => {
-    if (!open) return "";
-    if (form?.description.trim()) return toHtml(form.description);
-    return detail?.description?.trim() || "";
-  }, [open, form?.description, detail?.description]);
-
   const safeDescriptionHtml = useMemo(
-    () => sanitizeProductDescriptionHtml(descriptionHtml),
-    [descriptionHtml]
+    () => sanitizeProductDescriptionHtml(form?.descriptionHtml ?? detail?.description ?? ""),
+    [form?.descriptionHtml, detail?.description]
   );
 
   dirtyRef.current = dirty;
@@ -441,7 +410,7 @@ export function ShopProductDetailDrawer({
       const saved = await api.updateShopProduct(shopName, {
         itemId,
         title,
-        description: toHtml(form.description),
+        description: form.descriptionHtml,
         status: form.status,
         ...(variantResult.variants.length
           ? {
@@ -501,7 +470,9 @@ export function ShopProductDetailDrawer({
   const visibleMedia = (detail?.media ?? []).filter(
     (m) => !form?.deletedMediaIds.includes(resolveShopMediaId(m))
   );
-  const htmlDetailImages = extractHtmlImageUrls(detail?.description);
+  const htmlDetailImages = extractHtmlImageUrls(
+    form?.descriptionHtml ?? detail?.description
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -676,13 +647,17 @@ export function ShopProductDetailDrawer({
                     </button>
                   </div>
                   {descriptionView === "edit" ? (
-                    <textarea
-                      value={form.description}
-                      onChange={(e) => patchForm({ description: e.target.value })}
-                      disabled={saving}
-                      rows={5}
-                      className="w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
-                      placeholder={t("productDetail.descPlaceholder")}
+                    <div
+                      ref={descEditorRef}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) =>
+                        patchForm({ descriptionHtml: e.currentTarget.innerHTML })
+                      }
+                      className="min-h-[120px] w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand prose prose-sm max-w-none [&_img]:my-2 [&_img]:max-h-48 [&_img]:rounded-md"
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizeProductDescriptionHtml(form.descriptionHtml),
+                      }}
                     />
                   ) : (
                     <div className="rounded-[var(--radius-control)] border border-hairline bg-surface-muted/30 px-3 py-2">
@@ -931,22 +906,92 @@ export function ShopProductDetailDrawer({
                     {t("productDetail.htmlDetailHint")}
                   </p>
                   <div className="mt-1.5 grid grid-cols-4 gap-2">
-                    {htmlDetailImages.map((url) => (
-                      <div
-                        key={url}
-                        className="relative aspect-square overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted"
-                      >
-                        <ThumbImage
-                          src={url}
-                          alt=""
-                          fill
-                          sizes="120px"
-                          pixelWidth={240}
-                          className="object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                      </div>
-                    ))}
+                    {htmlDetailImages.map((url, idx) => {
+                      const canUp = idx > 0;
+                      const canDown = idx < htmlDetailImages.length - 1;
+                      const handleRemove = () => {
+                        if (!descEditorRef.current) return;
+                        const img = descEditorRef.current.querySelector(
+                          `img[src="${CSS.escape(url)}"]`
+                        );
+                        if (img) {
+                          img.remove();
+                          patchForm({
+                            descriptionHtml: descEditorRef.current.innerHTML,
+                          });
+                        }
+                      };
+                      const handleMove = (dir: "up" | "down") => {
+                        if (!descEditorRef.current) return;
+                        const imgs = Array.from(
+                          descEditorRef.current.querySelectorAll("img")
+                        );
+                        const i = imgs.findIndex(
+                          (img) => img.getAttribute("src") === url
+                        );
+                        if (i === -1) return;
+                        const target =
+                          dir === "up"
+                            ? i - 1
+                            : i + 1;
+                        if (target < 0 || target >= imgs.length) return;
+                        const cur = imgs[i];
+                        const swap = imgs[target];
+                        if (dir === "up") {
+                          swap.parentNode?.insertBefore(cur, swap);
+                        } else {
+                          swap.parentNode?.insertBefore(cur, swap.nextSibling);
+                        }
+                        patchForm({
+                          descriptionHtml: descEditorRef.current.innerHTML,
+                        });
+                      };
+                      return (
+                        <div
+                          key={url}
+                          className="group relative aspect-square overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted"
+                        >
+                          <ThumbImage
+                            src={url}
+                            alt=""
+                            fill
+                            sizes="120px"
+                            pixelWidth={240}
+                            className="object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-0.5 bg-ink/60 py-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                            <button
+                              type="button"
+                              disabled={!canUp || saving}
+                              onClick={() => handleMove("up")}
+                              className="flex h-5 w-5 items-center justify-center rounded text-white/90 hover:text-white disabled:opacity-30"
+                              title={t("productDetail.moveUp")}
+                            >
+                              <ArrowUp className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!canDown || saving}
+                              onClick={() => handleMove("down")}
+                              className="flex h-5 w-5 items-center justify-center rounded text-white/90 hover:text-white disabled:opacity-30"
+                              title={t("productDetail.moveDown")}
+                            >
+                              <ArrowDown className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={handleRemove}
+                              className="flex h-5 w-5 items-center justify-center rounded text-white/90 hover:text-red-300 disabled:opacity-30"
+                              title={t("productDetail.deleteImage")}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </section>
               ) : null}

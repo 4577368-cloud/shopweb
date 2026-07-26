@@ -11,6 +11,7 @@ import {
   mapImageMatchConfirmError,
 } from "@/lib/batch-link/match-errors";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
+import { loadVariantImagesForImageSearch } from "@/lib/batch-link/variant-images-for-search";
 import { rerankForShopMirrorProduct } from "@/lib/sku-align/image-search-sku-rank";
 import {
   INITIAL_BATCH_LINK_PROGRESS,
@@ -210,9 +211,14 @@ export function useBatchLinkQueue({
           doneFlash: false,
         });
 
-        const pipeline = await runImageSearchPipeline(shopName, product, undefined, {
-          locale,
-        });
+        const variantImages = await loadVariantImagesForImageSearch(shopName, id);
+
+        const pipeline = await runImageSearchPipeline(
+          shopName,
+          product,
+          5,
+          { locale, variantImages }
+        );
         if (runId !== runIdRef.current) break;
 
         let rankedItems = pipeline.rankedItems;
@@ -385,7 +391,7 @@ export function useBatchLinkQueue({
         runningRef.current = false;
       }
     },
-    [onBound, onScrollToProduct, patchCard, setCardState, shopName]
+    [locale, onBound, onScrollToProduct, patchCard, setCardState, shopName]
   );
 
   const reset = useCallback(() => {

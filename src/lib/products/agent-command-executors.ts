@@ -18,6 +18,10 @@ import {
   type ShopifyListingStatusTarget,
 } from "@/lib/shop-product-status";
 import { mergeListingPriceRow, writeShopListingPrice } from "@/lib/shop-product-write";
+import {
+  isAbortError,
+  throwIfAborted,
+} from "@/lib/products/command-run-abort";
 
 export function applyLocalProductStatus(
   ctx: ProductsCommandRuntime,
@@ -169,18 +173,26 @@ export async function executeBatchProductCopyUpdate(ctx: ProductsCommandRuntime,
       targetLang?: string;
       copyStyle?: "amazon" | "literal";
       tone?: string;
+      signal?: AbortSignal;
       onProgress?: (current: number, total: number, success: number, failed: number) => void;
     }) {
-      const { productIds, copyField, copyAction, targetLang, copyStyle, onProgress } = req;
+      const { productIds, copyField, copyAction, targetLang, copyStyle, onProgress, signal } =
+        req;
       const style = resolveTitleCopyStyle(copyAction, copyStyle);
       const total = productIds.length;
       let success = 0;
       let failed = 0;
+      let aborted = false;
 
       for (let i = 0; i < total; i++) {
+        throwIfAborted(signal);
         const productId = productIds[i];
         try {
-          const detail = await api.getShopProductDetail(ctx.shopName, productId);
+          const detail = await api.getShopProductDetail(
+            ctx.shopName,
+            productId,
+            signal
+          );
           const originalTitle = detail.title ?? "";
           let newText = "";
 
@@ -189,7 +201,8 @@ export async function executeBatchProductCopyUpdate(ctx: ProductsCommandRuntime,
               originalTitle,
               targetLang,
               undefined,
-              style
+              style,
+              signal
             );
             if (result.success && result.unchanged) {
               success++;
@@ -206,10 +219,14 @@ export async function executeBatchProductCopyUpdate(ctx: ProductsCommandRuntime,
           }
 
           if (copyField === "title" || copyField === "all") {
-            const updateResult = await api.updateShopProduct(ctx.shopName, {
-              itemId: productId,
-              title: newText,
-            });
+            const updateResult = await api.updateShopProduct(
+              ctx.shopName,
+              {
+                itemId: productId,
+                title: newText,
+              },
+              signal
+            );
             const nextTitle = updateResult.title ?? newText;
             const editRecord: AiFieldEditRecord = {
               productId,
@@ -234,11 +251,26 @@ export async function executeBatchProductCopyUpdate(ctx: ProductsCommandRuntime,
           }
 
           success++;
-        } catch {
+        } catch (err) {
+          if (isAbortError(err) || signal?.aborted) {
+            aborted = true;
+            break;
+          }
           failed++;
         }
 
         onProgress?.(i + 1, total, success, failed);
+      }
+
+      if (aborted) {
+        if (success > 0) {
+          ctx.bumpMirrorRefresh();
+          await ctx.loadSummary();
+        }
+        ctx.showToast(
+          ctx.t("productsPage.toastBatchCommandCancelled", { success, failed })
+        );
+        throw new DOMException("Aborted", "AbortError");
       }
 
       ctx.bumpMirrorRefresh();
@@ -258,17 +290,24 @@ export async function executeBatchListingPriceUpdate(ctx: ProductsCommandRuntime
       productIds: string[];
       batchPriceMultiplier?: number;
       batchPriceFixed?: number;
+      signal?: AbortSignal;
       onProgress?: (current: number, total: number, success: number, failed: number) => void;
     }) {
-      const { productIds, batchPriceMultiplier, batchPriceFixed, onProgress } = req;
+      const { productIds, batchPriceMultiplier, batchPriceFixed, onProgress, signal } = req;
       const total = productIds.length;
       let success = 0;
       let failed = 0;
+      let aborted = false;
 
       for (let i = 0; i < total; i++) {
+        throwIfAborted(signal);
         const productId = productIds[i];
         try {
-          const detail = await api.getShopProductDetail(ctx.shopName, productId);
+          const detail = await api.getShopProductDetail(
+            ctx.shopName,
+            productId,
+            signal
+          );
           let targetPrice = 0;
 
           if (batchPriceFixed) {
@@ -280,13 +319,34 @@ export async function executeBatchListingPriceUpdate(ctx: ProductsCommandRuntime
           }
 
           const target = { scope: "all" } as const;
-          await writeShopListingPrice(ctx.shopName, productId, targetPrice, target);
+          await writeShopListingPrice(
+            ctx.shopName,
+            productId,
+            targetPrice,
+            target,
+            signal
+          );
           success++;
-        } catch {
+        } catch (err) {
+          if (isAbortError(err) || signal?.aborted) {
+            aborted = true;
+            break;
+          }
           failed++;
         }
 
         onProgress?.(i + 1, total, success, failed);
+      }
+
+      if (aborted) {
+        if (success > 0) {
+          ctx.bumpMirrorRefresh();
+          await ctx.loadSummary();
+        }
+        ctx.showToast(
+          ctx.t("productsPage.toastBatchCommandCancelled", { success, failed })
+        );
+        throw new DOMException("Aborted", "AbortError");
       }
 
       ctx.bumpMirrorRefresh();
@@ -330,29 +390,56 @@ export async function executeProductStatusUpdate(ctx: ProductsCommandRuntime, re
 export async function executeBatchProductStatusUpdate(ctx: ProductsCommandRuntime, req: {
       productIds: string[];
       targetStatus: ShopifyListingStatusTarget;
+      signal?: AbortSignal;
       onProgress?: (current: number, total: number, success: number, failed: number) => void;
     }) {
-      const { productIds, targetStatus, onProgress } = req;
+      const { productIds, targetStatus, onProgress, signal } = req;
       const total = productIds.length;
       let success = 0;
       let failed = 0;
+      let aborted = false;
 
       for (let i = 0; i < total; i++) {
+        throwIfAborted(signal);
         const productId = productIds[i]!;
         try {
-          const detail = await api.getShopProductDetail(ctx.shopName, productId);
+          const detail = await api.getShopProductDetail(
+            ctx.shopName,
+            productId,
+            signal
+          );
           if (normalizeShopStatus(detail.status) === targetStatus) {
             success++;
             onProgress?.(i + 1, total, success, failed);
             continue;
           }
-          await writeShopProductStatus(ctx.shopName, productId, targetStatus);
+          await writeShopProductStatus(
+            ctx.shopName,
+            productId,
+            targetStatus,
+            signal
+          );
           applyLocalProductStatus(ctx, productId, targetStatus);
           success++;
-        } catch {
+        } catch (err) {
+          if (isAbortError(err) || signal?.aborted) {
+            aborted = true;
+            break;
+          }
           failed++;
         }
         onProgress?.(i + 1, total, success, failed);
+      }
+
+      if (aborted) {
+        if (success > 0) {
+          ctx.bumpMirrorRefresh();
+          await ctx.loadSummary();
+        }
+        ctx.showToast(
+          ctx.t("productsPage.toastBatchCommandCancelled", { success, failed })
+        );
+        throw new DOMException("Aborted", "AbortError");
       }
 
       ctx.bumpMirrorRefresh();
@@ -413,6 +500,7 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
         copyStyle?: "amazon" | "literal";
         tone?: string;
         totalCount: number;
+        signal?: AbortSignal;
         onProgress?: (current: number, total: number, success: number, failed: number) => void;
       };
       await executeBatchProductCopyUpdate(ctx, {
@@ -422,6 +510,7 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
         targetLang: p.targetLang,
         copyStyle: p.copyStyle,
         tone: p.tone,
+        signal: p.signal,
         onProgress: p.onProgress,
       });
     },
@@ -431,12 +520,14 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
         batchPriceMultiplier?: number;
         batchPriceFixed?: number;
         totalCount: number;
+        signal?: AbortSignal;
         onProgress?: (current: number, total: number, success: number, failed: number) => void;
       };
       await executeBatchListingPriceUpdate(ctx, {
         productIds: p.productIds,
         batchPriceMultiplier: p.batchPriceMultiplier,
         batchPriceFixed: p.batchPriceFixed,
+        signal: p.signal,
         onProgress: p.onProgress,
       });
     },
@@ -460,11 +551,13 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
       const p = payload as {
         productIds: string[];
         targetStatus: ShopifyListingStatusTarget;
+        signal?: AbortSignal;
         onProgress?: (current: number, total: number, success: number, failed: number) => void;
       };
       await executeBatchProductStatusUpdate(ctx, {
         productIds: p.productIds,
         targetStatus: p.targetStatus,
+        signal: p.signal,
         onProgress: p.onProgress,
       });
     },
@@ -472,11 +565,13 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
       const p = payload as {
         productIds: string[];
         targetStatus: ShopifyListingStatusTarget;
+        signal?: AbortSignal;
         onProgress?: (current: number, total: number, success: number, failed: number) => void;
       };
       await executeBatchProductStatusUpdate(ctx, {
         productIds: p.productIds,
         targetStatus: p.targetStatus,
+        signal: p.signal,
         onProgress: p.onProgress,
       });
     },

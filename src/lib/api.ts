@@ -607,7 +607,7 @@ export const api = {
     shopName: string,
     thirdPlatformItemId: string,
     limit = 4,
-    opts?: { country?: string }
+    opts?: { country?: string; searchImageUrl?: string }
   ) =>
     request<ImageSearchResult>("/api/plugin/match/image-search", {
       method: "POST",
@@ -617,6 +617,9 @@ export const api = {
         thirdPlatformItemId,
         limit,
         ...(opts?.country ? { country: opts.country } : {}),
+        ...(opts?.searchImageUrl?.trim()
+          ? { searchImageUrl: opts.searchImageUrl.trim() }
+          : {}),
       }),
     }),
 
@@ -950,21 +953,27 @@ export const api = {
     ),
 
   /** Phase 1 read-only product detail (SPU + variants + media) from the local mirror. */
-  getShopProductDetail: (shop: string, itemId: string) =>
+  getShopProductDetail: (shop: string, itemId: string, signal?: AbortSignal) =>
     request<ShopProductDetail>(
       `/api/plugin/product/detail?shopName=${encodeURIComponent(
         shop
-      )}&itemId=${encodeURIComponent(itemId)}`
+      )}&itemId=${encodeURIComponent(itemId)}`,
+      signal ? { signal } : undefined
     ),
 
   /** Phase 2: write editable fields back to Shopify and refresh the local mirror. */
-  updateShopProduct: (shop: string, body: ShopProductUpdatePayload) =>
+  updateShopProduct: (
+    shop: string,
+    body: ShopProductUpdatePayload,
+    signal?: AbortSignal
+  ) =>
     request<ShopProductDetail>(
       `/api/plugin/product/detail?shopName=${encodeURIComponent(shop)}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        ...(signal ? { signal } : {}),
       }
     ),
 
@@ -1084,7 +1093,8 @@ export const api = {
     text: string,
     targetLang?: string,
     sourceLang?: string,
-    style?: "amazon" | "literal"
+    style?: "amazon" | "literal",
+    signal?: AbortSignal
   ) =>
     localRequest<{
       success: boolean;
@@ -1098,6 +1108,7 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, targetLang, sourceLang, style }),
+      ...(signal ? { signal } : {}),
     }),
 
   // ---------------------------------------------------------------------------

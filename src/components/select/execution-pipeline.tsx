@@ -298,7 +298,7 @@ export function ExecutionPipeline({
       ) : null}
 
       {/* Cancel — preview countdown or batch in progress */}
-      {(showCountdown || isBatchRunning || step === "preview_ready") ? (
+      {(showCountdown || isBatchRunning || step === "preview_ready" || step === "executing" || step === "applying") ? (
         <div className="mt-2">
           <Button
             size="sm"

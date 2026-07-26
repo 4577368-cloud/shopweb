@@ -49,6 +49,10 @@ const VALUE_TRANSLATION: Record<string, string> = {
   // 颜色（缺口）
   酒红: "wine red",
   酒红色: "wine red",
+  雾霾蓝: "haze blue",
+  雾蓝: "haze blue",
+  脏粉: "dusty pink",
+  脏粉色: "dusty pink",
   玫红: "rose red",
   玫红色: "rose red",
   橘红: "orange red",

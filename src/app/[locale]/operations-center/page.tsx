@@ -19,11 +19,10 @@ import { HubRouteGate } from "@/components/workbench/hub-route-gate";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { useMarketingLedger } from "@/lib/marketing/ledger";
-import { fetchAdDetail } from "@/lib/marketing/api";
 import { fmtCompact } from "@/lib/marketing/format";
 import { ctaLabel } from "@/lib/marketing/enums";
 import { isGuardCancel } from "@/lib/marketing/guard";
-import type { AdDetail, StoreRow, TtsShopRow } from "@/lib/marketing/types";
+import type { AdDetail, CompetitionProductRow, StoreRow, TtsShopDetail, TtsShopRow } from "@/lib/marketing/types";
 import { DiscoveryView, type DiscoveryViewHandle } from "@/components/operations/discovery-view";
 import { CompetitionView, type CompetitionViewHandle } from "@/components/operations/competition-view";
 import { CreativesView, type CreativesViewHandle } from "@/components/operations/creatives-view";
@@ -46,6 +45,7 @@ import { useOperationsNavigation, type OperationsTab } from "@/hooks/use-operati
 import { useOperationsWatchlist } from "@/hooks/use-operations-watchlist";
 import { useOnboarding } from "@/context/onboarding-context";
 import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
+import { fetchAdDetail, fetchCompetitionProducts, fetchTtsShopDetail } from "@/lib/marketing/api";
 
 // Copilot 意图关键词：按意图分语言存于 i18n（ops.copilot.keywords.*），运行时并集所有语言的同义词，
 // 使任意语言的用户输入都能命中正确意图，且新增语言只需补 i18n 无需改逻辑。
@@ -85,9 +85,10 @@ function OperationsCenterContent() {
   const shopApiName = resolveShopApiName(shop);
 
   const ledger = useMarketingLedger();
-  const { account, ctx, lastConsume, run } = useMarketingRunner(ledger.record);
+  const { account, ctx, lastConsume, consumeError, run } = useMarketingRunner(ledger.record);
   const nav = useOperationsNavigation();
   const watchlist = useOperationsWatchlist();
+  const competitorTogglingIds = watchlist.togglingIds;
 
   const discoveryRef = useRef<DiscoveryViewHandle>(null);
   const competitionRef = useRef<CompetitionViewHandle>(null);
@@ -106,7 +107,9 @@ function OperationsCenterContent() {
   // 详情抽屉
   const [detailAd, setDetailAd] = useState<AdDetail | null>(null);
   const [detailStore, setDetailStore] = useState<StoreRow | null>(null);
+  const [detailStoreProducts, setDetailStoreProducts] = useState<CompetitionProductRow[] | null>(null);
   const [detailTtsShop, setDetailTtsShop] = useState<TtsShopRow | null>(null);
+  const [detailTtsShopDetail, setDetailTtsShopDetail] = useState<TtsShopDetail | null>(null);
   const [usageOpen, setUsageOpen] = useState(false);
 
   // 竞店对比弹窗
@@ -118,8 +121,15 @@ function OperationsCenterContent() {
     { id: "seed", role: "bot", text: t("ops.copilot.welcome") },
   ]);
 
+  // 发现/榜行「看竞店」：带 product_id 进入产品视角（谁在投这款品）。
   const handleViewCompetitor = useCallback(
-    (productId: string) => nav.navigate({ tab: "competition", competitionQuery: productId }),
+    (productId: string) => nav.navigate({ tab: "competition", competitionProductId: productId, competitionQuery: "" }),
+    [nav]
+  );
+
+  // TikTok 店铺 / 图搜来的「看竞店」：按店铺名/ID 搜（store 视角），清掉 product 上下文。
+  const handleViewCompetitorStore = useCallback(
+    (store: string) => nav.navigate({ tab: "competition", competitionQuery: store, competitionProductId: "" }),
     [nav]
   );
 
@@ -129,14 +139,22 @@ function OperationsCenterContent() {
     [watchlist]
   );
   const handleViewStore = useCallback(
-    (store: string) => nav.navigate({ tab: "competition", competitionQuery: store }),
+    (store: string) => nav.navigate({ tab: "competition", competitionQuery: store, competitionProductId: "" }),
     [nav]
   );
 
-  const handleViewTtsDetail = useCallback((row: TtsShopRow) => {
-    setSubject(row.title);
-    setDetailTtsShop(row);
-  }, []);
+  const handleViewTtsDetail = useCallback(
+    (row: TtsShopRow) => {
+      setSubject(row.title);
+      setDetailTtsShop(row);
+      // 列表行已含大部分指标；详情端点补「投放花费区间/域名/广告商品率/佣金/落地页」等。
+      // 经 run 护栏：享 3 天免费窗口（按店铺 id），首拉 1 积分，3 天内复看 0 积分；并计入计费账本。
+      run("tiktok-shop/detail", `ttsDetail:${row.id}`, () => fetchTtsShopDetail({ id: row.id }))
+        .then((res) => setDetailTtsShopDetail(res.data))
+        .catch(() => setDetailTtsShopDetail(null));
+    },
+    [run]
+  );
 
   const handleViewDetail = useCallback(
     async (adId: string) => {
@@ -158,10 +176,24 @@ function OperationsCenterContent() {
     [nav]
   );
 
-  const onOpenStore = useCallback((store: StoreRow) => {
-    setSubject(store.name);
-    setDetailStore(store);
-  }, []);
+  const onOpenStore = useCallback(
+    async (store: StoreRow) => {
+      setSubject(store.name);
+      setDetailStore(store);
+      // 免费端点：拉该店在投 SKU（0 点），供用户先选哪款再分析。
+      try {
+        const res = await run(
+          "store/detail/competition/products",
+          `compprod:${store.id}`,
+          () => fetchCompetitionProducts({ id: store.id })
+        );
+        setDetailStoreProducts(res.data.list);
+      } catch {
+        setDetailStoreProducts([]);
+      }
+    },
+    [run]
+  );
 
   // 竞店 ☆：localStorage 持久化（无左栏列表 UI）。
   const collectedSet = useMemo(
@@ -281,6 +313,7 @@ function OperationsCenterContent() {
             apiRemaining={account?.remainingApiCredits ?? 0}
             monitorRemaining={account?.remainingMonitorCredits ?? 0}
             context={ctx}
+            consumeError={consumeError}
             onOpenUsage={() => setUsageOpen(true)}
             onFetch={handleMarketingFetch}
             fetchDisabled={fetchDisabled}
@@ -301,6 +334,7 @@ function OperationsCenterContent() {
             run={run}
             shop={shopApiName}
             onViewCompetitor={handleViewCompetitor}
+            onViewCompetitorStore={handleViewCompetitorStore}
             onViewTtsDetail={handleViewTtsDetail}
             onViewDetail={handleViewDetail}
             onLearnCreatives={handleLearnCreatives}
@@ -315,16 +349,18 @@ function OperationsCenterContent() {
             onOpenDetail={onOpenStore}
             onRequestCompare={(stores) => setCompareStores(stores)}
             initialQuery={nav.competitionQuery}
+            initialProductId={nav.competitionProductId}
             onQueryChange={nav.setCompetitionQuery}
             collectedIds={collectedSet}
             onToggleCollect={handleToggleCollect}
+            togglingIds={competitorTogglingIds}
           />
         )}
         {nav.tab === "creatives" && (
           <CreativesView
             ref={creativesRef}
             run={run}
-            onOpenDetail={handleViewDetail}
+            onViewAdvertiser={handleViewCompetitorStore}
             initialQuery={nav.creativesQuery}
             onQueryChange={nav.setCreativesQuery}
           />
@@ -348,13 +384,23 @@ function OperationsCenterContent() {
       />
       <CompetitionDetailDrawer
         store={detailStore}
-        onClose={() => setDetailStore(null)}
+        products={detailStoreProducts}
+        onClose={() => {
+          setDetailStore(null);
+          setDetailStoreProducts(null);
+        }}
         onToggleCollect={handleToggleCollect}
         collected={detailStore ? collectedSet.has(detailStore.id) : false}
+        toggling={detailStore ? competitorTogglingIds.has(detailStore.id) : false}
+        run={run}
       />
       <TtsShopDetailDrawer
         row={detailTtsShop}
-        onClose={() => setDetailTtsShop(null)}
+        detail={detailTtsShopDetail}
+        onClose={() => {
+          setDetailTtsShop(null);
+          setDetailTtsShopDetail(null);
+        }}
         onViewCompetitor={handleViewStore}
       />
       <CompareStoresModal

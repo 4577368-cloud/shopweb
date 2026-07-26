@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ExternalTextLink } from "@/components/ui/external-text-link";
 import { AccountManagerContactCta } from "@/components/account-manager/account-manager-contact-cta";
+import { AccountManagerContactModal } from "@/components/account-manager/account-manager-contact-modal";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -24,6 +25,7 @@ import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { api, readableError } from "@/lib/api";
 import { resolve1688ProductTitle, resolveImageSearchDisplayTitle } from "@/lib/batch-link/1688-title-locale";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
+import { assessImageSearchReliability } from "@/lib/batch-link/image-search-outcome";
 import {
   identityFromSearchCandidate,
   resolveConfirmDetailUrl,
@@ -50,6 +52,8 @@ import {
   type RankedCoverageCandidate,
 } from "@/lib/sku-align/drawer-helpers";
 import { rankImageSearchBySkuMapping } from "@/lib/sku-align/image-search-sku-rank";
+import { fetchSkuRowVisualScores, prefetchSupplementMatrixVision } from "@/lib/sku-align/source-sku-image-score";
+import { recordSpecMatchFeedback } from "@/lib/sku-align/spec-match-feedback";
 import { loadSupplementManualProduct } from "@/lib/sku-align/supplement-manual-add";
 import { filterAvailableSupplementCandidates } from "@/lib/sku-align/supplement-candidate-availability";
 import { warmProductSourceAfterSkuBind } from "@/lib/sku-align/warm-logistics-source";
@@ -296,6 +300,12 @@ export function SkuProductWorkbench({
   const [selections, setSelections] = useState<Record<string, string>>({});
   /** 灰区 LLM 复核置信度（pairKey→0-1）。 */
   const [llmScores, setLlmScores] = useState<Record<string, number>>({});
+  const [visionByVariant, setVisionByVariant] = useState<
+    Record<string, Record<string, number>>
+  >({});
+  const [supplementVisionByCandidate, setSupplementVisionByCandidate] = useState<
+    Map<string, Record<string, Record<string, number>>>
+  >(new Map());
   const [matchAnimating, setMatchAnimating] = useState(false);
   const [matchProgress, setMatchProgress] = useState({ done: 0, total: 0 });
   const matchAnimTokenRef = useRef(0);
@@ -329,6 +339,28 @@ export function SkuProductWorkbench({
   const [replaceCandidates, setReplaceCandidates] = useState<RankedCoverageCandidate[]>([]);
   const [replacingPrimary, setReplacingPrimary] = useState(false);
 
+  const [amModalOpen, setAmModalOpen] = useState(false);
+  const [amImageSearchReason, setAmImageSearchReason] = useState<
+    "weak" | "failed" | null
+  >(null);
+
+  const promptAccountManagerForImageSearch = useCallback(
+    (reason: "weak" | "failed") => {
+      setAmImageSearchReason(reason);
+      setAmModalOpen(true);
+    },
+    []
+  );
+
+  const noteImageSearchPipeline = useCallback(
+    (pipeline: Awaited<ReturnType<typeof runImageSearchPipeline>>) => {
+      const reliability = assessImageSearchReliability(pipeline);
+      if (reliability === "failed") promptAccountManagerForImageSearch("failed");
+      else if (reliability === "weak") promptAccountManagerForImageSearch("weak");
+    },
+    [promptAccountManagerForImageSearch]
+  );
+
   const focusRef = useRef<HTMLDivElement>(null);
   const lastImageScoresRef = useRef<Record<string, number>>({});
   const candidateMatricesRef = useRef(candidateMatrices);
@@ -354,20 +386,33 @@ export function SkuProductWorkbench({
     [product, v1Detail]
   );
   const supplementGaps = useMemo(
-    () => supplementGapVariantsFromOverview(displayProduct.variants, matrix, v1Detail),
-    [displayProduct.variants, matrix, v1Detail]
+    () =>
+      supplementGapVariantsFromOverview(
+        displayProduct.variants,
+        matrix,
+        v1Detail,
+        visionByVariant
+      ),
+    [displayProduct.variants, matrix, v1Detail, visionByVariant]
   );
   /** 补充 Tab 列出全部规格，用户可自由为任意行指定补充货源。 */
   const supplementPanelVariants = product.variants;
 
   const autoSuggestions = useMemo(
-    () => buildAutoSuggestions(product.variants, matrix, selections, llmScores),
-    [product.variants, matrix, selections, llmScores]
+    () =>
+      buildAutoSuggestions(
+        product.variants,
+        matrix,
+        selections,
+        llmScores,
+        visionByVariant
+      ),
+    [product.variants, matrix, selections, llmScores, visionByVariant]
   );
 
   const previewMatches = useMemo(
-    () => buildPreviewMatches(product.variants, matrix, llmScores),
-    [product.variants, matrix, llmScores]
+    () => buildPreviewMatches(product.variants, matrix, llmScores, visionByVariant),
+    [product.variants, matrix, llmScores, visionByVariant]
   );
 
   const suggestCount = Object.keys(autoSuggestions).length;
@@ -423,6 +468,8 @@ export function SkuProductWorkbench({
     setGapAssignments({});
     setRegistering(false);
     setLlmScores({});
+    setVisionByVariant({});
+    setSupplementVisionByCandidate(new Map());
     setReplaceSearchLoading(false);
     setReplaceSearchError(null);
     setReplaceCandidates([]);
@@ -431,16 +478,37 @@ export function SkuProductWorkbench({
     setSourceRevision(0);
   }, []);
 
+  const prefetchVariantVisionScores = useCallback(
+    async (rows: SourceSkuRow[]) => {
+      if (!rows.length) return;
+      const patch: Record<string, Record<string, number>> = {};
+      await Promise.all(
+        product.variants.map(async (variant) => {
+          if (!variant.imageUrl?.trim()) return;
+          const scores = await fetchSkuRowVisualScores(variant.imageUrl, rows);
+          if (Object.keys(scores).length) {
+            patch[variant.thirdPlatformSkuId] = scores;
+          }
+        })
+      );
+      if (Object.keys(patch).length) {
+        setVisionByVariant((prev) => ({ ...prev, ...patch }));
+      }
+    },
+    [product.variants]
+  );
+
   /** 灰区 LLM 复核：仅对结构分模糊的候选调用一次模型，结果融入建议/排序。旁路增强。 */
   const refineGrayZone = useCallback(
     async (rows: SourceSkuRow[]) => {
+      void prefetchVariantVisionScores(rows);
       if (!rows.length) return;
       const pairs: Array<{ variantLabel: string; specLabel: string }> = [];
       for (const variant of product.variants) {
         if (variant.bound?.tangbuySkuId?.trim()) continue;
         const ranked = rankSourceSkuRows(rows, variant.optionLabel, {
-          variantPrice: variant.price,
           variantImageUrl: variant.imageUrl,
+          imageScoreBySkuId: visionByVariant[variant.thirdPlatformSkuId],
         });
         for (const r of grayZoneRows(variant.optionLabel, ranked)) {
           pairs.push({ variantLabel: variant.optionLabel, specLabel: r.specLabel });
@@ -453,7 +521,7 @@ export function SkuProductWorkbench({
         setLlmScores((prev) => ({ ...prev, ...scores }));
       }
     },
-    [product.variants]
+    [product.variants, visionByVariant, prefetchVariantVisionScores]
   );
 
   const loadMatrix = useCallback(
@@ -501,12 +569,14 @@ export function SkuProductWorkbench({
           primaryImageUrl: product.imageUrl,
         },
         5,
-        { locale }
+        { locale, variantImages: product.variants }
       );
       if (pipeline.error) {
         setSearchError(pipeline.error);
+        promptAccountManagerForImageSearch("failed");
         return;
       }
+      noteImageSearchPipeline(pipeline);
       const boundOfferIds = Array.from(
         new Set(
           product.variants
@@ -525,6 +595,7 @@ export function SkuProductWorkbench({
       });
       if (!filtered.length) {
         setSearchError(t("skuWorkbench.errNoAlternateCandidates"));
+        promptAccountManagerForImageSearch("failed");
         return;
       }
 
@@ -536,15 +607,22 @@ export function SkuProductWorkbench({
             ? t("skuWorkbench.errAllCandidatesInvalid")
             : t("skuWorkbench.errNoAlternateCandidates")
         );
+        promptAccountManagerForImageSearch("failed");
         return;
       }
 
       lastImageScoresRef.current = pipeline.matchScores ?? {};
+      const supplementVision = await prefetchSupplementMatrixVision(
+        supplementGaps,
+        matrices
+      );
+      setSupplementVisionByCandidate(supplementVision);
       const previewRanked = rankCandidatesByCoverage(
         accepted,
         supplementGaps,
         matrices,
-        lastImageScoresRef.current
+        lastImageScoresRef.current,
+        { visionByVariant, supplementVisionByCandidate: supplementVision }
       );
       setCandidateMatrices(matrices);
       setCandidates(previewRanked);
@@ -556,7 +634,13 @@ export function SkuProductWorkbench({
         if (!matrix?.length) continue;
         Object.assign(
           autoAssignments,
-          autoAssignSupplementGaps(supplementGaps, key, matrix)
+          autoAssignSupplementGaps(
+            supplementGaps,
+            key,
+            matrix,
+            visionByVariant,
+            supplementVision.get(key)
+          )
         );
       }
 
@@ -587,11 +671,25 @@ export function SkuProductWorkbench({
       }
     } catch (err) {
       setSearchError(readableError(err));
+      promptAccountManagerForImageSearch("failed");
     } finally {
       setSearchLoading(false);
       setMatrixLoading(false);
     }
-  }, [shopName, product, supplementGaps, supplementPanelVariants, tangbuyProductId, detailUrl, v1Detail, showToast, t, locale]);
+  }, [
+    shopName,
+    product,
+    supplementGaps,
+    supplementPanelVariants,
+    tangbuyProductId,
+    detailUrl,
+    v1Detail,
+    showToast,
+    t,
+    locale,
+    noteImageSearchPipeline,
+    promptAccountManagerForImageSearch,
+  ]);
 
   const clearSupplementWorkspace = useCallback(() => {
     setCandidates([]);
@@ -600,6 +698,7 @@ export function SkuProductWorkbench({
     setDefaultSupplementMerchantKey(null);
     setSupplementMappingDirty(false);
     setSearchError(null);
+    setSupplementVisionByCandidate(new Map());
     setManualAddInput("");
     setManualAddError(null);
     setMatchAnimating(false);
@@ -657,13 +756,19 @@ export function SkuProductWorkbench({
             [...prevCandidates.map((c) => c.candidate), accepted],
             supplementGaps,
             next,
-            lastImageScoresRef.current
+            lastImageScoresRef.current,
+            { visionByVariant, supplementVisionByCandidate }
           )
         );
         return next;
       });
 
-      const auto = autoAssignSupplementGaps(supplementGaps, acceptedKey, matrixRows);
+      const auto = autoAssignSupplementGaps(
+        supplementGaps,
+        acceptedKey,
+        matrixRows,
+        visionByVariant
+      );
       let appliedCount = 0;
       setDefaultSupplementMerchantKey((prev) => prev ?? acceptedKey);
       setGapAssignments((prev) => {
@@ -708,6 +813,8 @@ export function SkuProductWorkbench({
     candidates,
     showToast,
     t,
+    visionByVariant,
+    supplementVisionByCandidate,
   ]);
 
   const runReplacePrimarySearch = useCallback(async () => {
@@ -723,16 +830,19 @@ export function SkuProductWorkbench({
           primaryImageUrl: product.imageUrl,
         },
         6,
-        { locale }
+        { locale, variantImages: product.variants }
       );
       if (pipeline.error) {
         setReplaceSearchError(pipeline.error);
+        promptAccountManagerForImageSearch("failed");
         return;
       }
       if (!pipeline.rankedItems.length) {
         setReplaceSearchError(t("skuWorkbench.errNoReplaceCandidates"));
+        promptAccountManagerForImageSearch("failed");
         return;
       }
+      noteImageSearchPipeline(pipeline);
       const { ranked, rejectedCount } = await rankImageSearchBySkuMapping(
         pipeline.rankedItems.slice(0, 6),
         product.variants,
@@ -744,6 +854,7 @@ export function SkuProductWorkbench({
             ? t("skuWorkbench.errAllCandidatesInvalid")
             : t("skuWorkbench.errNoReplaceCandidates")
         );
+        promptAccountManagerForImageSearch("failed");
         return;
       }
       setReplaceCandidates(ranked);
@@ -752,10 +863,19 @@ export function SkuProductWorkbench({
       }
     } catch (err) {
       setReplaceSearchError(readableError(err));
+      promptAccountManagerForImageSearch("failed");
     } finally {
       setReplaceSearchLoading(false);
     }
-  }, [shopName, product, showToast, t, locale]);
+  }, [
+    shopName,
+    product,
+    showToast,
+    t,
+    locale,
+    noteImageSearchPipeline,
+    promptAccountManagerForImageSearch,
+  ]);
 
   const applyReplacePrimary = async (candidate: ImageSearchProduct) => {
     if (replacingPrimary) return;
@@ -971,6 +1091,10 @@ export function SkuProductWorkbench({
     setSelections((prev) => ({ ...prev, [variantId]: skuId }));
     if (trimmed && trimmed !== current) {
       setPrimaryMappingDirty(true);
+      const row = findSourceSkuRow(matrix, trimmed);
+      if (row?.specLabel?.trim()) {
+        recordSpecMatchFeedback(variant.optionLabel, row.specLabel);
+      }
     }
   };
 
@@ -1070,7 +1194,8 @@ export function SkuProductWorkbench({
                 prevCandidates.map((c) => c.candidate),
                 supplementGaps,
                 next,
-                lastImageScoresRef.current
+                lastImageScoresRef.current,
+                { visionByVariant, supplementVisionByCandidate }
               )
             );
             return next;
@@ -1385,6 +1510,7 @@ export function SkuProductWorkbench({
             showSave={primaryMappingDirty && pendingChanges.length > 0}
             saving={saving}
             onGoSupplement={() => onPhaseChange("supplement")}
+            visionByVariant={visionByVariant}
           />
         ) : phase === "replace" ? (
           <ReplacePrimaryPanel
@@ -1418,6 +1544,10 @@ export function SkuProductWorkbench({
             pricingTemplate={pricingTemplate}
             locale={locale}
             onSearch={() => void runSupplementSearch()}
+            onContactAccountManager={() => {
+              setAmImageSearchReason("failed");
+              setAmModalOpen(true);
+            }}
             onManualAddInputChange={setManualAddInput}
             onManualAdd={() => void runManualSupplementAdd()}
             onClearManualInput={() => {
@@ -1481,6 +1611,13 @@ export function SkuProductWorkbench({
           </div>
         </div>
       </footer>
+      <AccountManagerContactModal
+        open={amModalOpen}
+        onClose={() => setAmModalOpen(false)}
+        context="sku"
+        imageSearchReason={amImageSearchReason}
+        productTitle={product.title}
+      />
     </div>
   );
 }
@@ -1516,6 +1653,7 @@ function PrimaryComparePanel({
   showSave,
   saving,
   onGoSupplement,
+  visionByVariant,
 }: {
   product: SkuProductOverview;
   matrix: SourceSkuRow[];
@@ -1535,6 +1673,7 @@ function PrimaryComparePanel({
   focusVariantId: string | null;
   focusRef: React.Ref<HTMLDivElement>;
   shopCurrency?: string | null;
+  visionByVariant: Record<string, Record<string, number>>;
   pricingTemplate?: PricingTemplate | null;
   onRetryMatrix: () => void;
   onSelectSku: (variantId: string, skuId: string) => void;
@@ -1694,6 +1833,7 @@ function PrimaryComparePanel({
                 }
                 onSelect={(skuId) => onSelectSku(variant.thirdPlatformSkuId, skuId)}
                 onGoSupplement={onGoSupplement}
+                visionByVariant={visionByVariant}
               />
             ))}
           </div>
@@ -1729,6 +1869,7 @@ function PrimaryCompareRow({
   rowRef,
   onSelect,
   onGoSupplement,
+  visionByVariant,
 }: {
   variant: SkuVariant;
   matrix: SourceSkuRow[];
@@ -1741,16 +1882,17 @@ function PrimaryCompareRow({
   rowRef?: React.Ref<HTMLDivElement>;
   onSelect: (skuId: string) => void;
   onGoSupplement: () => void;
+  visionByVariant: Record<string, Record<string, number>>;
 }) {
   const t = useT();
   const displayState = deriveVariantDisplayState(variant);
   const ranked = useMemo(
     () =>
       rankSourceSkuRows(matrix, variant.optionLabel, {
-        variantPrice: variant.price,
         variantImageUrl: variant.imageUrl,
+        imageScoreBySkuId: visionByVariant[variant.thirdPlatformSkuId],
       }),
-    [matrix, variant.optionLabel, variant.price, variant.imageUrl]
+    [matrix, variant.optionLabel, variant.imageUrl, variant.thirdPlatformSkuId, visionByVariant]
   );
   const bestScore = ranked[0]?.matchScore ?? 0;
 
@@ -2033,6 +2175,7 @@ function SupplementPanel({
   shopCurrency,
   pricingTemplate,
   onSearch,
+  onContactAccountManager,
   onManualAddInputChange,
   onManualAdd,
   onClearManualInput,
@@ -2062,6 +2205,7 @@ function SupplementPanel({
   pricingTemplate?: PricingTemplate | null;
   locale: Locale;
   onSearch: () => void;
+  onContactAccountManager?: () => void;
   onManualAddInputChange: (value: string) => void;
   onManualAdd: () => void;
   onClearManualInput: () => void;
@@ -2195,10 +2339,22 @@ function SupplementPanel({
         ) : searchError ? (
           <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2">
             <p className="text-[11px] text-amber-800">{searchError}</p>
-            <Button size="sm" variant="secondary" className="mt-2" onClick={onSearch}>
-              <RefreshCw className="mr-1 h-3.5 w-3.5" />
-              {t("skuWorkbench.searchAgain")}
-            </Button>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {onContactAccountManager ? (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  className="h-7 text-[11px]"
+                  onClick={onContactAccountManager}
+                >
+                  {t("accountManager.imageSearchModal.contactNow")}
+                </Button>
+              ) : null}
+              <Button size="sm" variant="secondary" className="h-7 text-[11px]" onClick={onSearch}>
+                <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                {t("skuWorkbench.searchAgain")}
+              </Button>
+            </div>
           </div>
         ) : supplementGaps.length === 0 ? (
           <p className="py-8 text-center text-xs text-ink-muted">
@@ -2268,10 +2424,9 @@ function SupplementGapRow({
   const skuOptions = useMemo(
     () =>
       rankSourceSkuRows(activeMatrix, variant.optionLabel, {
-        variantPrice: variant.price,
         variantImageUrl: variant.imageUrl,
       }),
-    [activeMatrix, variant.optionLabel, variant.price, variant.imageUrl]
+    [activeMatrix, variant.optionLabel, variant.imageUrl]
   );
   const chosenRow = skuId ? findSourceSkuRow(activeMatrix, skuId) : undefined;
   const chosenCandidate = candidates.find(

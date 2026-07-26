@@ -1,3 +1,4 @@
+import type { TranslateFn } from "@/i18n/server";
 import type {
   SkuCommandClassifyResult,
   SkuCommandClarify,
@@ -42,6 +43,19 @@ function detectFilterMode(text: string): SkuFilterMode {
   return "all";
 }
 
+/** Detect negation words that should downgrade confidence. */
+function hasNegation(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("不") ||
+    lower.includes("别") ||
+    lower.includes("不要") ||
+    lower.includes("don't") ||
+    lower.includes("cancel") ||
+    lower.includes("undo")
+  );
+}
+
 const FILTER_RULES: {
   filter: SkuFilterMode;
   patterns: RegExp[];
@@ -60,22 +74,34 @@ const FILTER_RULES: {
   },
 ];
 
+/**
+ * Rules classifier: short-circuits only on exact keyword matches.
+ * Free-form natural language is left to the LLM (command-client uses llm-first).
+ *
+ * Confidence levels:
+ * - high: exact keyword match (e.g. "批量确认", "重新对齐")
+ * - medium: fuzzy match or negated exact match — let user confirm
+ * - none: no match
+ */
 export function classifySkuCommandByRules(
-  raw: string
+  raw: string,
+  t?: TranslateFn
 ): SkuCommandClassifyResult {
   const text = raw.trim();
   if (!text) {
     return {
       confidence: "none",
       source: "rules",
-      clarify: "请输入命令或简短提问。",
+      clarify: t ? t("skuAgent.rulesEmptyInput") : "Please enter a command or a short question.",
     };
   }
+
+  const negated = hasNegation(text);
 
   for (const rule of FILTER_RULES) {
     if (rule.patterns.some((p) => p.test(text))) {
       return {
-        confidence: "high",
+        confidence: negated ? "medium" : "high",
         source: "rules",
         draft: draft("open_filter", { filterMode: rule.filter }, { targetScope: "none", confirmationRequired: false }),
       };
@@ -85,7 +111,7 @@ export function classifySkuCommandByRules(
   if (/重新对齐|重新匹配|再次对齐/i.test(text)) {
     const isBatch = refersToBatch(text);
     return {
-      confidence: "high",
+      confidence: negated ? "medium" : "high",
       source: "rules",
       draft: draft("rerun_auto_align", {}, { targetScope: isBatch ? "all" : "current", confirmationRequired: false }),
     };
@@ -93,7 +119,7 @@ export function classifySkuCommandByRules(
 
   if (/解释匹配|为什么匹配|匹配依据|置信度/i.test(text)) {
     return {
-      confidence: "high",
+      confidence: negated ? "medium" : "high",
       source: "rules",
       draft: draft("explain_sku_match", {}, { confirmationRequired: false }),
     };
@@ -101,7 +127,7 @@ export function classifySkuCommandByRules(
 
   if (/看这个商品|聚焦当前|定位当前|当前商品/i.test(text)) {
     return {
-      confidence: "high",
+      confidence: negated ? "medium" : "high",
       source: "rules",
       draft: draft("focus_product", {}, { confirmationRequired: false }),
     };
@@ -109,7 +135,7 @@ export function classifySkuCommandByRules(
 
   if (/打开详情|查看详情|详情/i.test(text)) {
     return {
-      confidence: "high",
+      confidence: negated ? "medium" : "high",
       source: "rules",
       draft: draft("open_sku_detail", {}, { confirmationRequired: false }),
     };
@@ -118,7 +144,7 @@ export function classifySkuCommandByRules(
   if (/批量确认|接受全部|全部确认/i.test(text)) {
     const batchFilter = detectFilterMode(text);
     return {
-      confidence: "high",
+      confidence: negated ? "medium" : "high",
       source: "rules",
       draft: draft(
         "batch_confirm_pending",
@@ -130,17 +156,39 @@ export function classifySkuCommandByRules(
 
   if (/解绑|取消绑定|解除绑定|去掉绑定|unbind/i.test(text)) {
     return {
-      confidence: "high",
+      confidence: negated ? "medium" : "high",
       source: "rules",
       draft: draft("unbind", {}, { targetScope: "current", confirmationRequired: true }),
     };
   }
 
+  // Fuzzy keywords — medium confidence, let the user confirm
+  const fuzzyKeywords: Record<string, SkuCommandId> = {
+    关联: "open_filter",
+    匹配: "rerun_auto_align",
+    对齐: "rerun_auto_align",
+    确认: "batch_confirm_pending",
+    绑定: "bind_variant",
+    货源: "open_sku_detail",
+    变体: "open_sku_detail",
+  };
+
+  for (const [keyword, intent] of Object.entries(fuzzyKeywords)) {
+    if (text.includes(keyword)) {
+      return {
+        confidence: "medium",
+        source: "rules",
+        draft: draft(intent, {}, { targetScope: "current", confirmationRequired: intent === "batch_confirm_pending" }),
+      };
+    }
+  }
+
   return {
     confidence: "none",
     source: "rules",
-    clarify:
-      "未识别为页面命令。可试试：只看部分关联 / 批量确认待确认 / 重新对齐 / 解释匹配。",
+    clarify: t
+      ? t("skuAgent.rulesUnrecognized")
+      : "Not recognized as a page command. Try: show partially linked / batch confirm pending / realign / explain match.",
   };
 }
 

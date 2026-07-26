@@ -74,7 +74,7 @@ export function BatchLinkProgressCard({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-md border px-2.5 py-2 transition-colors",
+        "relative z-0 overflow-hidden rounded-md border px-2.5 py-2 transition-colors",
         queueActive
           ? "border-sky-300 bg-sky-50/80 batch-link-shimmer"
           : "border-emerald-200 bg-emerald-50/80 pipeline-done-flash",

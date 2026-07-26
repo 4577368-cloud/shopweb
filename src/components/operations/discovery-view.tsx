@@ -1,4 +1,4 @@
-// 发现视图（设计 §3 / 原型 v2）：TikTok 店铺 / 广告商品（排行 / 搜索）+ 枚举筛选 + 指标概览条
+// 发现视图（设计 §3 / 原型 v2）：广告商品（排行 / 搜索）+ 枚举筛选 + 指标概览条
 // + 行内趋势 sparkline / CPM 区间 + 结果表 + 分页 + 四态。
 "use client";
 
@@ -14,17 +14,11 @@ import { api } from "@/lib/api";
 import {
   fetchRankList,
   fetchSearchAds,
-  fetchTtsShops,
 } from "@/lib/marketing/api";
 import {
-  AD_CATEGORIES,
-  REGIONS,
-  SHOP_TYPES,
-  TTS_CATEGORIES,
-  categoryLabel,
-  regionLabel,
   shopTypeLabel,
 } from "@/lib/marketing/enums";
+import { useReferenceDictionaries } from "@/hooks/use-reference-dictionaries";
 import type {
   AdCard,
   MarketingResponse,
@@ -44,16 +38,16 @@ import {
 import { CoverThumb } from "./cover-thumb";
 import { PlatformBadge } from "./platform-badge";
 import { RankingProductGrid, RankingDetailDrawer } from "./ranking-grid";
-import { ttsSignals, rankMomentum, normalizeTo100 } from "@/lib/marketing/derived";
+import { rankMomentum, normalizeTo100 } from "@/lib/marketing/derived";
 import { fmtCompact, fmtGrowthRate, fmtInt, fmtPercent, fmtUsd } from "@/lib/marketing/format";
-import { Sparkline, MiniBar, ScorePill, Tag } from "./intel";
+import { ScorePill } from "./intel";
 import { AdIntelCard } from "./ad-intel-card";
-import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
 
 interface DiscoveryViewProps {
   run: <T extends MarketingResponse<unknown>>(endpoint: string, cacheKey: string, fn: () => Promise<T>) => Promise<T>;
   shop: string;
   onViewCompetitor: (productId: string) => void;
+  onViewCompetitorStore: (store: string) => void;
   onViewTtsDetail: (row: TtsShopRow) => void;
   onViewDetail: (adId: string) => void;
   onLearnCreatives: (adId: string) => void;
@@ -66,7 +60,7 @@ export type DiscoveryViewHandle = {
   fetchCurrent: () => void;
 };
 
-type Segment = "tts" | "ads" | "board";
+type Segment = "ads" | "board";
 
 function rankFilterKey(
   period: RankType,
@@ -97,18 +91,9 @@ function rankCacheKey(
   return `${rankFilterKey(period, sortKey, region, category, shopType, platform, growthMin, growthMax)}:${p}`;
 }
 
-function ttsFilterKey(category: string, region: string) {
-  return `tts:${category}:${region}`;
-}
-
-function ttsCacheKey(p: number, category: string, region: string) {
-  return `${ttsFilterKey(category, region)}:${p}`;
-}
-
 // 诚实的"调用价值"条：每次 list 调用只消耗 1 额度，但回传的多个真实字段
 // 被组合派生出多重洞察。这里的字段数/信号数均为真实计数（非夸大）。
-const CALL_VALUE: Record<"tts" | "rank" | "search", { fields: number; signals: number }> = {
-  tts: { fields: 22, signals: 7 },
+const CALL_VALUE: Record<"rank" | "search", { fields: number; signals: number }> = {
   rank: { fields: 9, signals: 4 },
   search: { fields: 15, signals: 6 },
 };
@@ -118,7 +103,6 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
   run,
   shop,
   onViewCompetitor,
-  onViewTtsDetail,
   onViewDetail,
   onLearnCreatives,
   initialSegment = "ads",
@@ -127,6 +111,7 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
   ref
 ) {
   const t = useT();
+  const { dictionaries } = useReferenceDictionaries();
   const [segment, setSegment] = useState<Segment>(initialSegment);
   const [committedSearch, setCommittedSearch] = useState("");
   const hasSearch = committedSearch.trim().length > 0;
@@ -143,21 +128,18 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
   const [searchQ, setSearchQ] = useState("");
 
   const [rank, setRank] = useState<{ list: RankRow[]; page: PageMeta } | null>(null);
-  const [tts, setTts] = useState<{ list: TtsShopRow[]; page: PageMeta } | null>(null);
   const [search, setSearch] = useState<{ list: AdCard[]; page: PageMeta } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [page, setPage] = useState(1);
   const [fav, setFav] = useState<Set<string>>(new Set());
   const [rankLoadedFilter, setRankLoadedFilter] = useState<string | null>(null);
-  const [ttsLoadedFilter, setTtsLoadedFilter] = useState<string | null>(null);
   const [searchLoadedQuery, setSearchLoadedQuery] = useState<string | null>(null);
 
   const currentRankFilter = useMemo(
     () => rankFilterKey(period, sortKey, region, category, shopType, platform, growthMin, growthMax),
     [period, sortKey, region, category, shopType, platform, growthMin, growthMax]
   );
-  const currentTtsFilter = useMemo(() => ttsFilterKey(category, region), [category, region]);
 
   useEffect(() => {
     const rankSnap = readMarketingViewState<{
@@ -169,15 +151,6 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
       setRank(rankSnap.data);
       setRankLoadedFilter(rankSnap.filterKey);
       setPage(rankSnap.page);
-    }
-    const ttsSnap = readMarketingViewState<{
-      filterKey: string;
-      page: number;
-      data: { list: TtsShopRow[]; page: PageMeta };
-    }>("discovery:tts");
-    if (ttsSnap) {
-      setTts(ttsSnap.data);
-      setTtsLoadedFilter(ttsSnap.filterKey);
     }
     const searchSnap = readMarketingViewState<{
       query: string;
@@ -255,41 +228,6 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
     [run, period, sortKey, region, category, shopType, platform, growthMin, growthMax]
   );
 
-  const loadTts = useCallback(
-    async (p: number) => {
-      setLoading(true);
-      setError(false);
-      setPage(p);
-      const filterKey = ttsFilterKey(category, region);
-      const cacheKey = ttsCacheKey(p, category, region);
-      try {
-        const res = await run(
-          "tiktok-shop-list",
-          cacheKey,
-          () =>
-            fetchTtsShops({
-              page: p,
-              pageSize: 20,
-              category: category === "all" ? undefined : category,
-              region: region === "all" ? undefined : region,
-            })
-        );
-        setTts(res.data);
-        setTtsLoadedFilter(filterKey);
-        writeMarketingViewState("discovery:tts", {
-          filterKey,
-          page: p,
-          data: res.data,
-        });
-      } catch (e) {
-        if (!isGuardCancel(e)) setError(true);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [run, category, region]
-  );
-
   const loadSearch = useCallback(
     async (p: number) => {
       const q = committedSearch.trim();
@@ -324,18 +262,15 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
     () => ({
       fetchCurrent: () => {
         if (segment === "board") return;
-        if (segment === "tts") void loadTts(1);
-        else if (hasSearch) void loadSearch(1);
+        if (hasSearch) void loadSearch(1);
         else void loadRank(1);
       },
     }),
-    [segment, hasSearch, loadTts, loadSearch, loadRank]
+    [segment, hasSearch, loadSearch, loadRank]
   );
 
   const rankFiltersStale =
     rank != null && rankLoadedFilter != null && rankLoadedFilter !== currentRankFilter;
-  const ttsFiltersStale =
-    tts != null && ttsLoadedFilter != null && ttsLoadedFilter !== currentTtsFilter;
   const searchQueryStale =
     search != null &&
     searchLoadedQuery != null &&
@@ -370,18 +305,6 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
 
   // 指标概览条（依当前数据集真实字段动态计算）
   const summary = useMemo<{ label: string; value: string; tone?: "success" }[] | null>(() => {
-    if (segment === "tts" && tts?.list) {
-      const l = tts.list;
-      const totalGmv = l.reduce((a, s) => a + s.gmvUsd, 0);
-      const avgScore = l.length ? l.reduce((a, s) => a + s.score, 0) / l.length : 0;
-      const totalSales = l.reduce((a, s) => a + s.salesVolume, 0);
-      return [
-        { label: t("ops.discovery.summary.tts.products"), value: fmtInt(l.length) },
-        { label: t("ops.discovery.summary.tts.gmv"), value: fmtUsd(totalGmv) },
-        { label: t("ops.discovery.summary.tts.avgScore"), value: avgScore.toFixed(2) },
-        { label: t("ops.discovery.summary.tts.sales"), value: fmtCompact(totalSales) },
-      ];
-    }
     if (segment === "ads" && !hasSearch && rank?.list) {
       const l = rank.list;
       const totalCountGrowth = l.reduce((a, r) => a + r.countGrowth, 0);
@@ -410,26 +333,13 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
       ];
     }
     return null;
-  }, [segment, hasSearch, rank, tts, search]);
+  }, [segment, hasSearch, rank, search]);
 
   // 关键信号条：基于已加载数据用真实字段组合出人话可读的"高价值发现"。
-  // - TTS：热度冠军 / 广告渗透冠军 / 头部 SKU 依赖冠军（直接复用 ttsSignals）
   // - Rank：动量 Top 3 + 价格甜区（直接复用 rankMomentum）
   // - Search 无 region/category/趋势 → 不展示
   // 一行 chip 列表替代原 Heatmap + LineChart + Scatter 三个图（信息密度高、可读、不占地方）。
   const keySignals = useMemo<{ label: string; value: string }[] | null>(() => {
-    if (segment === "tts" && tts?.list && tts.list.length) {
-      const now = Math.floor(Date.now() / 1000);
-      const scored = tts.list.map((s) => ({ s, sig: ttsSignals(s, now) }));
-      const byHeat = [...scored].sort((a, b) => b.sig.heatScore - a.sig.heatScore)[0];
-      const byPen = [...scored].sort((a, b) => b.sig.adPenetration - a.sig.adPenetration)[0];
-      const byTop = [...scored].sort((a, b) => b.sig.topSkuShare - a.sig.topSkuShare)[0];
-      return [
-        { label: t("ops.discovery.insights.labelHeat"), value: `${byHeat.s.title} · ${byHeat.sig.heatScore}` },
-        { label: t("ops.discovery.insights.labelPen"), value: `${byPen.s.title} · ${Math.round(byPen.sig.adPenetration * 100)}%` },
-        { label: t("ops.discovery.insights.labelTop"), value: `${byTop.s.title} · ${Math.round(byTop.sig.topSkuShare * 100)}%` },
-      ];
-    }
     if (segment === "ads" && !hasSearch && rank?.list && rank.list.length) {
       const scored = rank.list.map((r) => ({ r, mom: rankMomentum(r).momentumRaw }));
       const top3 = [...scored].sort((a, b) => b.mom - a.mom).slice(0, 3);
@@ -467,15 +377,14 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
       ];
     }
     return null;
-  }, [segment, hasSearch, tts, rank, t]);
+  }, [segment, hasSearch, rank, t]);
 
   return (
     <div>
-      {/* 分段：TTS 店铺 / 广告商品 */}
+      {/* 分段：广告商品 / 榜单 */}
       <SegmentedTabs
         variant="solid"
         tabs={[
-          { id: "tts", label: t("ops.discovery.segTts") },
           { id: "ads", label: t("ops.discovery.segAds") },
           { id: "board", label: t("ops.discovery.segBoard") },
         ]}
@@ -490,28 +399,7 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
 
       {/* 筛选栏 */}
       <div className="mb-3 flex flex-wrap items-end gap-2">
-        {segment === "tts" ? (
-          <>
-            <Select
-              label={t("ops.discovery.filters.category")}
-              value={category}
-              onChange={setCategory}
-              options={TTS_CATEGORIES.map((c) => ({ value: c.code, label: c.label }))}
-              allLabel={t("ops.discovery.filters.all")}
-            />
-            <Select
-              label={t("ops.discovery.filters.region")}
-              value={region}
-              onChange={setRegion}
-              options={REGIONS.map((r) => ({ value: r.code, label: r.label }))}
-              allLabel={t("ops.discovery.filters.all")}
-            />
-            <Button variant="secondary" size="sm" onClick={() => void loadTts(1)}>
-              <Search className="h-3.5 w-3.5" />
-              {t("ops.fetch.get")}
-            </Button>
-          </>
-        ) : segment === "ads" ? (
+        {segment === "ads" ? (
           <div className="flex w-full flex-col gap-2">
             <div className="flex flex-wrap items-end gap-2">
               <input
@@ -552,21 +440,21 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
                     label={t("ops.discovery.filters.region")}
                     value={region}
                     onChange={setRegion}
-                    options={REGIONS.map((r) => ({ value: r.code, label: r.label }))}
+                    options={dictionaries.region.map((r) => ({ value: r.code, label: r.label }))}
                     allLabel={t("ops.discovery.filters.all")}
                   />
                   <Select
                     label={t("ops.discovery.filters.category")}
                     value={category}
                     onChange={setCategory}
-                    options={AD_CATEGORIES.map((c) => ({ value: c.code, label: c.label }))}
+                    options={dictionaries.productCategory.map((c) => ({ value: c.code, label: c.label }))}
                     allLabel={t("ops.discovery.filters.all")}
                   />
                   <Select
                     label={t("ops.discovery.filters.shopType")}
                     value={shopType}
                     onChange={setShopType}
-                    options={SHOP_TYPES.map((s) => ({ value: s.code, label: s.label }))}
+                    options={dictionaries.shopType.map((s) => ({ value: s.code, label: s.label }))}
                     allLabel={t("ops.discovery.filters.all")}
                   />
                   <Select
@@ -623,24 +511,8 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
         <SkeletonRows />
       ) : error ? (
         <ErrorState
-          onRetry={() =>
-            segment === "tts" ? loadTts(page) : hasSearch ? loadSearch(page) : loadRank(page)
-          }
+          onRetry={() => (hasSearch ? loadSearch(page) : loadRank(page))}
         />
-      ) : segment === "tts" ? (
-        <>
-          {ttsFiltersStale && <StaleFiltersBanner />}
-          {!tts ? (
-            <FetchPrompt />
-          ) : (
-            <TtsTable
-              data={tts}
-              onViewCompetitor={onViewCompetitor}
-              onViewTtsDetail={onViewTtsDetail}
-              onPage={loadTts}
-            />
-          )}
-        </>
       ) : !hasSearch ? (
         <>
           {rankFiltersStale && <StaleFiltersBanner />}
@@ -682,8 +554,8 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
       {segment !== "board" && !loading && !error && (
         <p className="mt-3 text-center text-[11px] text-ink-subtle">
           {t("ops.intel.value", {
-            fields: CALL_VALUE[segment === "tts" ? "tts" : hasSearch ? "search" : "rank"].fields,
-            signals: CALL_VALUE[segment === "tts" ? "tts" : hasSearch ? "search" : "rank"].signals,
+            fields: CALL_VALUE[hasSearch ? "search" : "rank"].fields,
+            signals: CALL_VALUE[hasSearch ? "search" : "rank"].signals,
           })}
         </p>
       )}
@@ -1010,212 +882,6 @@ function SearchTable({
         ))}
       </div>
       <Pager page={data.page} onPage={onPage} meta={data.page} />
-    </div>
-  );
-}
-
-function TtsTable({
-  data,
-  onViewCompetitor,
-  onViewTtsDetail,
-  onPage,
-}: {
-  data: { list: TtsShopRow[]; page: PageMeta } | null;
-  onViewCompetitor: (shopNameOrId: string) => void;
-  onViewTtsDetail: (row: TtsShopRow) => void;
-  onPage: (p: number) => void;
-}) {
-  const t = useT();
-  if (!data || data.list.length === 0) {
-    return <p className="py-12 text-center text-sm text-ink-subtle">{t("ops.discovery.empty")}</p>;
-  }
-  const now = Math.floor(Date.now() / 1000);
-  return (
-    <div>
-      <div className="grid gap-3 md:grid-cols-2">
-        {data.list.map((row) => (
-          <TtsCard
-            key={row.id}
-            row={row}
-            now={now}
-            onViewCompetitor={onViewCompetitor}
-            onViewDetail={onViewTtsDetail}
-          />
-        ))}
-      </div>
-      <Pager page={data.page} onPage={onPage} meta={data.page} />
-    </div>
-  );
-}
-
-const PRICE_KEY: Record<"low" | "mid" | "high", string> = {
-  low: "ops.intel.tts.priceLow",
-  mid: "ops.intel.tts.priceMid",
-  high: "ops.intel.tts.priceHigh",
-};
-
-function TtsCard({
-  row,
-  now,
-  onViewCompetitor,
-  onViewDetail,
-}: {
-  row: TtsShopRow;
-  now: number;
-  onViewCompetitor: (shopNameOrId: string) => void;
-  onViewDetail: (row: TtsShopRow) => void;
-}) {
-  const t = useT();
-  const s = ttsSignals(row, now);
-  const heatTone = s.heatScore >= 70 ? "success" : s.heatScore >= 40 ? "brand" : "muted";
-  return (
-    <article
-      role="button"
-      tabIndex={0}
-      onClick={() => onViewDetail(row)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onViewDetail(row);
-        }
-      }}
-      className={cn(
-        selectableCardClassName({ interactive: true }),
-        "flex cursor-pointer flex-col p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
-      )}
-    >
-      {/* 头部：封面 + 名称 + 价格带/地区 + 热度分 */}
-      <div className="flex items-start gap-2">
-        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-[var(--radius-control)]">
-          <CoverThumb src={row.image} label={row.title} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-semibold text-ink">{row.title}</p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-1">
-            <Tag tone="muted">{t(PRICE_KEY[s.priceTier])}</Tag>
-            {row.regions.map((r) => (
-              <Tag key={r} tone="muted">{regionLabel(r)}</Tag>
-            ))}
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-0.5">
-          <ScorePill value={s.heatScore} tone={heatTone} />
-          <span className="text-[9px] text-ink-subtle">{t("ops.intel.tts.heat")}</span>
-        </div>
-      </div>
-
-      {/* GMV / 评分 / 销量 */}
-      <div className="mt-2 flex items-center gap-4">
-        <div>
-          <span className="block text-[10px] text-ink-subtle">{t("ops.discovery.tts.colGmv")}</span>
-          <span className="text-[14px] font-semibold tabular-nums text-success">{fmtUsd(row.gmvUsd)}</span>
-        </div>
-        <div>
-          <span className="block text-[10px] text-ink-subtle">{t("ops.discovery.tts.colScore")}</span>
-          <span className="text-[14px] font-semibold tabular-nums text-ink">{row.score.toFixed(1)}</span>
-        </div>
-        <div>
-          <span className="block text-[10px] text-ink-subtle">{t("ops.discovery.tts.colSales")}</span>
-          <span className="text-[14px] font-semibold tabular-nums text-ink">{fmtCompact(row.salesVolume)}</span>
-        </div>
-      </div>
-
-      {/* 趋势 sparkline + 动量 */}
-      <div className="mt-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] text-ink-subtle">{t("ops.discovery.insights.momentum")}</span>
-          <span className={cn("text-[11px] font-semibold tabular-nums", s.momentumPct >= 0 ? "text-success" : "text-destructive")}>
-            {fmtGrowthRate(s.momentumPct, t("ops.discovery.growthFactor"))}
-          </span>
-        </div>
-        <Sparkline
-          values={row.salesTrendData.map((p) => p.salesVolume)}
-          color={s.momentumPct >= 0 ? "var(--success)" : "var(--destructive)"}
-          width={300}
-          height={32}
-        />
-      </div>
-
-      {/* 广告渗透率 + 头部 SKU 集中度（组合条） */}
-      <div className="mt-2 space-y-1.5">
-        <SignalBar
-          label={t("ops.intel.tts.penetration")}
-          sub={t("ops.intel.tts.penetrationHint", { pct: Math.round(s.adPenetration * 100), n: row.goodsCount })}
-          pct={s.adPenetration}
-          color="var(--brand)"
-        />
-        <SignalBar
-          label={t("ops.intel.tts.topSku")}
-          sub={t("ops.intel.tts.topSkuHint", { pct: Math.round(s.topSkuShare * 100) })}
-          pct={s.topSkuShare}
-          color="var(--link)"
-        />
-      </div>
-
-      {/* 分享率 / 类目 / 最近出现 / 爆款 */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-        <Tag tone="link">{t("ops.intel.tts.shareRate")} {fmtPercent(s.shareRate, 2)}</Tag>
-        {row.categories.slice(0, 2).map((c) => (
-          <Tag key={c.id} tone="muted">{c.nameEn || c.nameZh}</Tag>
-        ))}
-        {s.recencyDays != null && (
-          <span className="text-ink-subtle">{t("ops.intel.tts.recency", { d: s.recencyDays })}</span>
-        )}
-        {row.bestSellingGoods[0] && (
-          <span className="inline-flex items-center gap-1">
-            <span className="text-[10px] text-ink-subtle">{t("ops.intel.tts.bestSeller")}</span>
-            <div className="h-5 w-5 overflow-hidden rounded">
-              <CoverThumb src={row.bestSellingGoods[0].image} label={t("ops.intel.tts.bestSeller")} />
-            </div>
-            <span className="tabular-nums text-ink-muted">{fmtCompact(row.bestSellingGoods[0].salesVolume)}</span>
-          </span>
-        )}
-      </div>
-
-      <div className="mt-2 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onViewDetail(row);
-          }}
-          className="rounded px-1.5 py-0.5 text-[11px] font-medium text-ink hover:bg-surface-muted"
-        >
-          {t("ops.discovery.actViewDetail")}
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onViewCompetitor(row.title);
-          }}
-          className="rounded px-1.5 py-0.5 text-[11px] text-link hover:underline"
-        >
-          {t("ops.discovery.actViewComp")}
-        </button>
-      </div>
-    </article>
-  );
-}
-
-function SignalBar({
-  label,
-  sub,
-  pct,
-  color,
-}: {
-  label: string;
-  sub?: string;
-  pct: number;
-  color: string;
-}) {
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] text-ink-muted">{label}</span>
-        {sub && <span className="truncate text-[10px] text-ink-subtle">{sub}</span>}
-      </div>
-      <MiniBar pct={pct} color={color} />
     </div>
   );
 }

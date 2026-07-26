@@ -20,6 +20,7 @@ import { classifyProductsShortInput, fetchProductsAgentResponse, type ClientAgen
 import { classifyProductCommandInput } from "@/lib/agents/products/command-client";
 import type { CommandClassifyContext } from "@/lib/agents/products/classify-command";
 import { readableError } from "@/lib/api";
+import { isAbortError } from "@/lib/products/command-run-abort";
 import {
   commandRequiresConfirmation,
   planProductCommand,
@@ -47,7 +48,8 @@ import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 export type PreviewGenerator = (
   plan: ProductCommandPlan,
-  shopName: string
+  shopName: string,
+  signal?: AbortSignal
 ) => Promise<ConfirmPreviewResult>;
 
 export type CommandExecutor = (payload: Record<string, unknown>) => Promise<void>;
@@ -113,7 +115,39 @@ export function ProductsAgentPanel({
   const [skillFeedback, setSkillFeedback] = useState<SkillExecutionFeedback | null>(null);
   const requestSeq = useRef(0);
   const previewSeq = useRef(0);
+  const commandRunAbortRef = useRef<AbortController | null>(null);
   const autoKey = useRef<string | null>(null);
+
+  const beginCommandRun = useCallback((): AbortSignal => {
+    commandRunAbortRef.current?.abort();
+    const ac = new AbortController();
+    commandRunAbortRef.current = ac;
+    return ac.signal;
+  }, []);
+
+  const cancelCommandRun = useCallback(() => {
+    commandRunAbortRef.current?.abort();
+    commandRunAbortRef.current = null;
+    previewSeq.current += 1;
+    requestSeq.current += 1;
+    setCommandPlan(null);
+    setPreview(null);
+    setPreviewLoading(false);
+    setPreviewError(null);
+    setExecStep(null);
+    setBatchProgress(null);
+    setSkillFeedback(null);
+    setCommandExecuting(false);
+    setLoading(false);
+  }, []);
+
+  const commandInputLocked =
+    loading ||
+    commandExecuting ||
+    previewLoading ||
+    commandPlan != null ||
+    execStep === "batch_running" ||
+    execStep === "applying";
 
   const activeTask = useMemo(() => computeActiveTask(context, t), [context, t]);
 
@@ -253,23 +287,28 @@ export function ProductsAgentPanel({
       return;
     }
     const seq = ++previewSeq.current;
+    const signal = beginCommandRun();
     setPreviewLoading(true);
     setPreviewError(null);
     setPreview(null);
     setExecStep("executing");
     try {
-      const result = await generator(commandPlan, context.shopName);
+      const result = await generator(commandPlan, context.shopName, signal);
       if (previewSeq.current !== seq) return;
       setPreview(result);
       setExecStep("preview_ready");
     } catch (err) {
       if (previewSeq.current !== seq) return;
+      if (isAbortError(err)) {
+        setExecStep(null);
+        return;
+      }
       setPreviewError(readableError(err) || t("productsAgent.errPreviewFailed"));
       setExecStep("error");
     } finally {
       if (previewSeq.current === seq) setPreviewLoading(false);
     }
-  }, [commandPlan, uiConfig, previewGenerators, context.shopName, t]);
+  }, [commandPlan, uiConfig, previewGenerators, context.shopName, t, beginCommandRun]);
 
   useEffect(() => {
     if (commandPlan && uiConfig?.requiresPreview) {
@@ -305,16 +344,22 @@ export function ProductsAgentPanel({
     }
 
     try {
+      const signal = beginCommandRun();
       const payloadWithProgress = isBatch
         ? {
             ...payload,
+            signal,
             onProgress: (current: number, total: number, success: number, failed: number) => {
               setBatchProgress({ current, total, success, failed });
             },
           }
-        : payload;
+        : { ...payload, signal };
 
       await executor(payloadWithProgress);
+      if (signal.aborted) {
+        setExecStep(null);
+        return;
+      }
       setExecStep("done");
 
       // 生成 skill feedback，不自动消失
@@ -346,12 +391,19 @@ export function ProductsAgentPanel({
         }, 1200);
       }
     } catch (err) {
+      if (isAbortError(err)) {
+        setExecStep(null);
+        setCommandPlan(null);
+        setPreview(null);
+        setBatchProgress(null);
+        return;
+      }
       setClarify(readableError(err) || t("productsAgent.errCommandFailed"));
       setExecStep("error");
     } finally {
       setCommandExecuting(false);
     }
-  }, [commandPlan, commandExecutors, context, batchProgress, t]);
+  }, [commandPlan, commandExecutors, context, batchProgress, t, beginCommandRun]);
 
   const handleCustomConfirm = useCallback(async (intent: string, execution: any) => {
     const executor = commandExecutors[intent];
@@ -513,9 +565,13 @@ export function ProductsAgentPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intentRequest, context.focusProductId, context.focusProduct]);
 
+  useEffect(() => {
+    setClarify(null);
+  }, [context.focusProductId]);
+
   const submitShortInput = () => {
     const text = input.trim();
-    if (!text || loading) return;
+    if (!text || commandInputLocked) return;
     const seq = ++requestSeq.current;
     setLoading(true);
     setClarify(null);
@@ -540,28 +596,33 @@ export function ProductsAgentPanel({
     batchLinkProgress != null &&
     (batchLinkProgress.active || batchLinkProgress.done);
 
+  const batchLinkActive = batchLinkProgress?.active ?? false;
+
   return (
     <div className={cn("flex min-h-0 flex-col gap-2.5", className)}>
       {showBatchProgress ? (
-        <BatchLinkProgressCard
-          batchLinkProgress={batchLinkProgress}
-          pendingAckCount={context.pendingCount}
-          onBatchAckPending={
-            context.pendingCount > 0
-              ? () =>
-                  onApplySuggestedAction?.({
-                    kind: "batch_ack_pending",
-                    tab: "shop",
-                    shopFilter: "pending",
-                    label: t("productsAgent.batchAckAll", {
-                      count: context.pendingCount,
-                    }),
-                  })
-              : undefined
-          }
-        />
+        <div className="sticky top-0 z-20 -mx-0.5 shrink-0 bg-canvas/95 px-0.5 pb-2.5 pt-0.5 backdrop-blur-sm">
+          <BatchLinkProgressCard
+            batchLinkProgress={batchLinkProgress}
+            pendingAckCount={context.pendingCount}
+            onBatchAckPending={
+              context.pendingCount > 0
+                ? () =>
+                    onApplySuggestedAction?.({
+                      kind: "batch_ack_pending",
+                      tab: "shop",
+                      shopFilter: "pending",
+                      label: t("productsAgent.batchAckAll", {
+                        count: context.pendingCount,
+                      }),
+                    })
+                : undefined
+            }
+          />
+        </div>
       ) : null}
 
+      {!batchLinkActive ? (
       <ActiveTaskCard
         title={activeTask.title}
         reason={activeTask.reason}
@@ -579,6 +640,7 @@ export function ProductsAgentPanel({
           }
         }}
       />
+      ) : null}
 
       {context.focusProduct ? (
         <p className="line-clamp-1 text-[10px] text-slate-500">
@@ -622,7 +684,9 @@ export function ProductsAgentPanel({
 
         <button
           type="button"
+          disabled={commandInputLocked}
           onClick={() => {
+            if (commandInputLocked) return;
             setInput(t("productsAgent.translateAllEn"));
             setTimeout(() => submitShortInput(), 50);
           }}
@@ -684,7 +748,7 @@ export function ProductsAgentPanel({
           type="text"
           value={input}
           maxLength={PRODUCTS_SHORT_INPUT_MAX}
-          disabled={loading}
+          disabled={commandInputLocked}
           placeholder={t("productsAgent.inputPlaceholder")}
           onChange={(e) => setInput(e.target.value)}
           className={cn(controlClassName, "h-auto min-w-0 flex-1 rounded-lg py-2 text-xs")}
@@ -694,7 +758,7 @@ export function ProductsAgentPanel({
           type="submit"
           size="sm"
           variant="secondary"
-          disabled={loading || !input.trim()}
+          disabled={commandInputLocked || !input.trim()}
           className="h-9 w-9 shrink-0 rounded-lg px-0"
           title={t("productsAgent.send")}
           aria-label={t("productsAgent.sendAria")}
@@ -770,11 +834,7 @@ export function ProductsAgentPanel({
             batchProgress={batchProgress}
             onAutoApply={handleConfirmWithPreview}
             onCancel={() => {
-              setCommandPlan(null);
-              setPreview(null);
-              setExecStep(null);
-              setBatchProgress(null);
-              setSkillFeedback(null);
+              cancelCommandRun();
             }}
           />
         ) : commandPlan.draft.intent === "update_listing_price" ? (
@@ -783,20 +843,14 @@ export function ProductsAgentPanel({
             shopName={context.shopName}
             executing={commandExecuting}
             onConfirm={(execution) => void handleCustomConfirm("update_listing_price", execution)}
-            onCancel={() => {
-              setCommandPlan(null);
-              setSkillFeedback(null);
-            }}
+            onCancel={cancelCommandRun}
           />
         ) : (
           <ProductCommandCard
             plan={commandPlan}
             executing={commandExecuting}
             onConfirm={() => void executeCommand(commandPlan)}
-            onCancel={() => {
-              setCommandPlan(null);
-              setSkillFeedback(null);
-            }}
+            onCancel={cancelCommandRun}
           />
         )
       ) : null}

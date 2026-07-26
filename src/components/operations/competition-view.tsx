@@ -8,17 +8,19 @@ import { Button } from "@/components/ui/button";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Search } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
-import { fetchCompetition } from "@/lib/marketing/api";
+import { fetchCompetition, fetchStoreSearch } from "@/lib/marketing/api";
 import { isGuardCancel } from "@/lib/marketing/guard";
 import {
   readMarketingViewState,
   writeMarketingViewState,
 } from "@/lib/marketing/session-cache";
 import { lifecycleStage, platformMatrix } from "@/lib/marketing/analytics";
-import { REGIONS, SHOP_TYPES, PLATFORM_META, regionLabel, shopTypeLabel, categoryLabel } from "@/lib/marketing/enums";
-import type { AdPlatform, StoreAdState, StoreRow, MarketingResponse } from "@/lib/marketing/types";
+import { PLATFORM_META, regionLabel, shopTypeLabel, categoryLabel } from "@/lib/marketing/enums";
+import { useReferenceDictionaries } from "@/hooks/use-reference-dictionaries";
+import type { AdPlatform, StoreAdState, StoreRow, StoreSearchResult, MarketingResponse } from "@/lib/marketing/types";
 import { CoverThumb } from "./cover-thumb";
 import { PlatformBadge } from "./platform-badge";
+import { CostBadge } from "./cost-badge";
 import { Sparkline, StackedBar, type StackSegment } from "./charts";
 import { fmtCompact, fmtInt } from "@/lib/marketing/format";
 import { storeThreat } from "@/lib/marketing/derived";
@@ -29,11 +31,14 @@ interface CompetitionViewProps {
   onOpenDetail: (store: StoreRow) => void;
   onRequestCompare: (stores: StoreRow[]) => void;
   initialQuery?: string;
+  initialProductId?: string;
   onQueryChange?: (q: string) => void;
   /** 已关注的竞店 id 集合（localStorage，竞店卡片 ☆）。 */
   collectedIds: Set<string>;
   /** 点击 ☆ 时调；page.tsx 负责把 store 写入 watchlist.toggleCompetitor。 */
   onToggleCollect: (store: StoreRow) => void;
+  /** 当前正在同步后端的竞店 id 集合（展示旋转图标）。 */
+  togglingIds?: Set<string>;
 }
 
 export type CompetitionViewHandle = {
@@ -69,14 +74,21 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
   onOpenDetail,
   onRequestCompare,
   initialQuery = "",
+  initialProductId = "",
   onQueryChange,
   collectedIds,
   onToggleCollect,
+  togglingIds,
   },
   ref
 ) {
   const t = useT();
+  const { dictionaries } = useReferenceDictionaries();
   const [query, setQuery] = useState(initialQuery);
+  // 当前竞店查询模式：productId 存在 = 「谁在投这款品」；否则按店铺名/ID 搜。
+  const [activeProductId, setActiveProductId] = useState<string | null>(
+    initialProductId || null
+  );
   const [platSeg, setPlatSeg] = useState<PlatSeg>("all");
   const [aiOnly, setAiOnly] = useState(false);
   const [dramaOnly, setDramaOnly] = useState(false);
@@ -86,6 +98,8 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [resolved, setResolved] = useState<StoreSearchResult | null>(null);
+  const [searchNotFound, setSearchNotFound] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -105,19 +119,59 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
   }, []);
 
   const doSearch = useCallback(
-    async (id: string) => {
-      const q = id.trim();
-      if (!q) return;
+    async (input: string, productId?: string) => {
+      const q = input.trim();
+      // 产品视角：用 product_id 查「谁在投这款品」（与这款品相关的跟卖者，而非泛店对比）。
+      const pid = productId ?? (q ? undefined : activeProductId ?? undefined);
+      if (!q && !pid) return;
+      setActiveProductId(pid ?? null);
       setLoading(true);
       setError(false);
       setSearched(true);
+      setResolved(null);
+      setSearchNotFound(false);
       try {
+        // 产品视角：直接走 product_id，无需域名解析。
+        if (pid && !q) {
+          const res = await run(
+            "store/detail/competition/pid",
+            `comp:pid:${pid}`,
+            () => fetchCompetition({ id: pid, productId: pid, pageSize: 10 })
+          );
+          setData(res.data);
+          writeMarketingViewState("competition", { query: q, data: res.data });
+          return;
+        }
+        // 判断输入是 pipi 内部 ID（13 字符 hex）还是用户可读的域名/店名。
+        const looksLikeId = /^[0-9a-f]{10,}$/i.test(q.replace(/\s/g, ""));
+        let storeId = q;
+        let resolvedStore: StoreSearchResult | null = null;
+        if (!looksLikeId) {
+          // 精准检索：直接拿与输入精确对应的那一条（pageSize=1，不给备选，避免为候选列表多付费）。
+          // 计费：store/list 按实返行数计费 —— 0 行 = 0 分（未找到不计费）；命中仅 1 分。
+          const sres = await run(
+            "store/list",
+            `search:${q.toLowerCase()}`,
+            () => fetchStoreSearch({ keyword: q, pageSize: 1 })
+          );
+          const picked = findResolvedStore(sres.data.list, q);
+          if (!picked) {
+            setSearchNotFound(true);
+            setData({ stores: [] });
+            setLoading(false);
+            return; // 0 结果 / 无可信匹配 → 显示 notFound（0 行不计费）
+          }
+          setSearchNotFound(false);
+          storeId = picked.id;
+          resolvedStore = picked;
+        }
         const res = await run(
           "store/detail/competition",
-          `comp:${q}`,
-          () => fetchCompetition({ id: q, pageSize: 10 })
+          pid ? `comp:pid:${pid}` : `comp:${storeId}`,
+          () => fetchCompetition(pid ? { id: pid, productId: pid, pageSize: 10 } : { id: storeId, pageSize: 10 })
         );
         setData(res.data);
+        setResolved(resolvedStore);
         writeMarketingViewState("competition", { query: q, data: res.data });
       } catch (e) {
         if (!isGuardCancel(e)) setError(true);
@@ -125,17 +179,27 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
         setLoading(false);
       }
     },
-    [run]
+    [run, activeProductId]
   );
+
+  // 从发现/榜行「看竞店」带 product_id 进入时，自动发起产品视角查询（无需再点一次）。
+  useEffect(() => {
+    if (initialProductId) {
+      void doSearch("", initialProductId);
+    } else if (initialQuery) {
+      void doSearch(initialQuery);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useImperativeHandle(
     ref,
     () => ({
       fetchCurrent: () => {
-        void doSearch(query);
+        void doSearch(query, activeProductId ?? undefined);
       },
     }),
-    [doSearch, query]
+    [doSearch, query, activeProductId]
   );
 
   const visible = useMemo(() => {
@@ -207,7 +271,13 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
           <Search className="h-3.5 w-3.5" />
           {t("ops.competition.queryBtn")}
         </Button>
+        <CostBadge free />
       </div>
+
+      {/* 免费服务提示：该店的在投商品列表（competition/products）0 积分，鼓励先用免费入口 */}
+      <p className="mb-3 flex items-center gap-2 text-[11px] text-ink-muted">
+        {t("ops.competition.freeProductsHint")}
+      </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <SegmentedTabs
@@ -235,7 +305,7 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
           className="h-7 rounded-[var(--radius-control)] border border-hairline bg-surface px-2 text-[11px] text-ink"
         >
           <option value="all">{t("ops.competition.filters.region")}: {t("ops.competition.filters.all")}</option>
-          {REGIONS.map((r) => (
+          {dictionaries.region.map((r) => (
             <option key={r.code} value={r.code}>{r.label}</option>
           ))}
         </select>
@@ -245,11 +315,36 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
           className="h-7 rounded-[var(--radius-control)] border border-hairline bg-surface px-2 text-[11px] text-ink"
         >
           <option value="all">{t("ops.competition.filters.shopType")}: {t("ops.competition.filters.all")}</option>
-          {SHOP_TYPES.map((s) => (
+          {dictionaries.shopType.map((s) => (
             <option key={s.code} value={s.code}>{s.label}</option>
           ))}
         </select>
       </div>
+
+      {/* 产品视角上下文条：从发现/榜行「看竞店」带 product_id 进入，标明这是「谁在投这款品」 */}
+      {activeProductId && (
+        <div className="mb-3 flex items-center gap-2 rounded-[var(--radius-control)] border border-brand-soft bg-brand-soft/30 px-3 py-2 text-[11px]">
+          <span className="font-medium text-ink">{t("ops.competition.productContext")}</span>
+          <span className="truncate font-mono text-ink-subtle">{activeProductId}</span>
+        </div>
+      )}
+
+      {/* 域名解析上下文条：用户输入域名/店名 → 检索命中 → 显示「已匹配 + 查看本店」 */}
+      {resolved && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-[var(--radius-control)] border border-success-soft bg-success-soft/30 px-3 py-2 text-[11px]">
+          <span className="font-medium text-ink">{t("ops.competition.resolved", { domain: resolved.domain || resolved.name })}</span>
+          {resolved.adCount > 0 && (
+            <span className="text-ink-muted">· {fmtInt(resolved.adCount)} {t("ops.competition.resolvedAds")}</span>
+          )}
+          <button
+            type="button"
+            onClick={() => onOpenDetail(searchResultToStoreRow(resolved))}
+            className="ml-auto rounded-[var(--radius-control)] bg-success px-2 py-1 text-[11px] font-medium text-white hover:opacity-90"
+          >
+            {t("ops.competition.viewThisStore")}
+          </button>
+        </div>
+      )}
 
       {/* 概览条 */}
       {searched && data && (
@@ -289,7 +384,9 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
       ) : !searched || !data ? (
         <p className="py-16 text-center text-sm text-ink-subtle">{t("ops.fetch.prompt")}</p>
       ) : visible.length === 0 ? (
-        <p className="py-16 text-center text-sm text-ink-subtle">{t("ops.competition.empty")}</p>
+        <p className="py-16 text-center text-sm text-ink-subtle">
+          {searchNotFound ? t("ops.competition.notFound", { q: query }) : t("ops.competition.empty")}
+        </p>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {visible.map((store) => (
@@ -297,6 +394,7 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
               key={store.id}
               store={store}
               collected={collectedIds.has(store.id)}
+              toggling={!!togglingIds?.has(store.id)}
               selected={selected.has(store.id)}
               onCollect={() => onToggleCollect(store)}
               onToggleSelect={() => toggleSelect(store.id)}
@@ -338,6 +436,80 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
   );
 });
 
+/** 精准检索：仅返回与输入精确对应的那一条（不给备选）。无精确匹配则返 null（视为未找到，不计费）。 */
+function findResolvedStore(list: StoreSearchResult[], input: string): StoreSearchResult | null {
+  if (!list.length) return null;
+  const norm = (s: string) =>
+    s.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+  const q = norm(input);
+  // 1) 精确域名匹配（含 .myshopify.com 等价变体）
+  const exact = list.find((s) => {
+    const d = norm(s.domain);
+    return d === q || d === `${q}.myshopify.com` || `${d}.myshopify.com` === q;
+  });
+  if (exact) return exact;
+  // 2) 域名或店名与输入明显相关才接受（避免返回毫不相干的店）
+  const related = list.find((s) => {
+    const d = norm(s.domain);
+    const n = s.name.trim().toLowerCase();
+    return d.includes(q) || q.includes(d) || n.includes(q) || q.includes(n);
+  });
+  return related ?? null;
+}
+
+/** 把检索候选转成 StoreRow（抽屉只依赖 id/name/rootPath/platType/adState/adCount，其余占位即可）。 */
+function searchResultToStoreRow(r: StoreSearchResult): StoreRow {
+  return {
+    id: r.id,
+    storeId: r.id,
+    name: r.name,
+    rootPath: r.domain,
+    icon: r.icon,
+    shopType: r.shopType || "shopify",
+    platform: r.platType[0] ?? "meta",
+    platType: r.platType,
+    adCount: r.adCount,
+    playCount: 0,
+    diggCount: 0,
+    putDays: 0,
+    foundTime: r.firstAdTime,
+    latestFoundTime: r.lastAdTime,
+    cpmMin: 0,
+    cpmMax: 0,
+    cpaMin: 0,
+    cpaMax: 0,
+    pageCount: 0,
+    adState: r.adState,
+    monthlyVisits: r.monthlyVisits,
+    bounceRate: 0,
+    visitSeconds: 0,
+    regions: r.region ? [r.region] : [],
+    categories: [],
+    latestCreatives: [],
+    popularPersonCount: 0,
+    isAi: false,
+    isDrama: false,
+    appType2: "web",
+    website: {
+      url: r.domain,
+      title: r.name,
+      icon: r.icon,
+      monthlyVisits: r.monthlyVisits,
+      bounceRate: 0,
+      visitSeconds: 0,
+      languages: [],
+      countries: [],
+      currencies: [],
+      summary: "",
+    },
+    tiktok: null,
+    facebook: null,
+    metaLibrary: null,
+    isCollection: false,
+    growthSeries: [],
+  };
+}
+
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[var(--radius-card)] border border-hairline bg-surface-muted px-3 py-2">
@@ -350,6 +522,7 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
 function StoreCard({
   store,
   collected,
+  toggling,
   selected,
   onCollect,
   onToggleSelect,
@@ -357,6 +530,7 @@ function StoreCard({
 }: {
   store: StoreRow;
   collected: boolean;
+  toggling?: boolean;
   selected: boolean;
   onCollect: () => void;
   onToggleSelect: () => void;
@@ -397,10 +571,15 @@ function StoreCard({
           <button
             type="button"
             onClick={onCollect}
+            disabled={toggling}
             aria-label={t("ops.competition.card.collect")}
-            className={cn("text-base leading-none", collected ? "text-amber-400" : "text-ink-subtle hover:text-amber-300")}
+            className={cn(
+              "text-base leading-none",
+              toggling && "opacity-50",
+              collected ? "text-amber-400" : "text-ink-subtle hover:text-amber-300"
+            )}
           >
-            {collected ? "★" : "☆"}
+            {toggling ? "⟳" : collected ? "★" : "☆"}
           </button>
         </div>
       </div>

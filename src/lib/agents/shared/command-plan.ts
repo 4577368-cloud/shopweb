@@ -14,7 +14,7 @@ export interface BaseCommandPlan {
 }
 
 export interface CommandClassifyResult<TDraft = unknown> {
-  confidence: "high" | "low" | "none";
+  confidence: "high" | "medium" | "low" | "none";
   source?: string;
   draft?: TDraft;
   /** Plain string for simple rules; sku-align also returns a structured object. */

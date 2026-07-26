@@ -4,7 +4,19 @@
 import { useMemo } from "react";
 import { useT } from "@/i18n/LocaleProvider";
 import { Button } from "@/components/ui/button";
-import type { AdPlatform, StoreAdState, StoreRow } from "@/lib/marketing/types";
+import type {
+  AdPlatform,
+  CompetitionProductRow,
+  StoreAdState,
+  StoreAdTrendPoint,
+  StoreDataAnalysis,
+  StoreDeliveryAnalysis,
+  StoreFbPage,
+  StoreLongestRunAd,
+  StoreMostUsedAd,
+  StoreRegionAnalysis,
+  StoreRow,
+} from "@/lib/marketing/types";
 import { PLATFORM_META, regionLabel, categoryLabel, shopTypeLabel } from "@/lib/marketing/enums";
 import { referenceCohort } from "@/lib/marketing/api";
 import {
@@ -14,12 +26,23 @@ import {
   trafficQuality,
   benchmarkRadar,
 } from "@/lib/marketing/analytics";
+import type { MarketingRunFn } from "@/hooks/use-marketing-runner";
+import { useStoreAnalysis, type StoreAnalysisState } from "@/hooks/use-store-analysis";
 import { Drawer } from "./drawer";
 import { PlatformBadge } from "./platform-badge";
+import { CostBadge } from "./cost-badge";
+import { CoverThumb } from "./cover-thumb";
 import { MetricTile } from "./metric-tile";
 import { Sparkline, StackedBar, RadarChart, RadialGauge, type StackSegment } from "./charts";
-import { fmtCompact, fmtPercent } from "@/lib/marketing/format";
+import { fmtCompact, fmtInt, fmtPercent } from "@/lib/marketing/format";
 import { cn } from "@/lib/utils";
+
+/** pipi 空值降级：0 / 空串 / null 一律渲染「未知」，避免 NaN 或空白（截图里「电商系统: --」「月访问量: --」）。 */
+function dash(v: number | string | undefined | null): string {
+  if (v === undefined || v === null) return "—";
+  if (typeof v === "number") return v > 0 ? fmtInt(v) : "—";
+  return v ? v : "—";
+}
 
 const STATUS_META = {
   1: { label: "active", cls: "bg-success-soft text-success" },
@@ -29,15 +52,21 @@ const STATUS_META = {
 
 interface CompetitionDetailDrawerProps {
   store: StoreRow | null;
+  products?: CompetitionProductRow[] | null;
   onClose: () => void;
   onToggleCollect: (store: StoreRow) => void;
   collected: boolean;
+  /** 当前正在同步后端的收藏状态（展示禁用/加载）。 */
+  toggling?: boolean;
   cohort?: StoreRow[]; // 对标基准集合；缺省用 referenceCohort()
+  run: MarketingRunFn; // 统一出站（自带 3 天免费窗口 / 缓存 / 记账）
 }
 
-export function CompetitionDetailDrawer({ store, onClose, onToggleCollect, collected, cohort: cohortProp }: CompetitionDetailDrawerProps) {
+export function CompetitionDetailDrawer({ store, products, onClose, onToggleCollect, collected, toggling, cohort: cohortProp, run }: CompetitionDetailDrawerProps) {
   const t = useT();
   const cohort = useMemo(() => cohortProp && cohortProp.length ? cohortProp : referenceCohort(), [cohortProp]);
+  // 竞店充实：并行拉取 store/detail 族 4 端点（基于 store id，享 3 天免费窗口）。
+  const analysis = useStoreAnalysis(store?.id ?? "", run);
   const nowSec = useMemo(() => Math.max(1, ...cohort.map((s) => s.latestFoundTime || 0)), [cohort]);
   const analytics = useMemo(() => {
     if (!store) return null;
@@ -65,7 +94,7 @@ export function CompetitionDetailDrawer({ store, onClose, onToggleCollect, colle
             {store.isAi && <span className="rounded-full bg-info-soft px-2 py-0.5 text-[10px] font-medium text-info">AI</span>}
             {store.isDrama && <span className="rounded-full bg-warning-soft px-2 py-0.5 text-[10px] font-medium text-warning">Drama</span>}
           </div>
-          <p className="text-[11px] text-ink-subtle">{store.rootPath} · {shopTypeLabel(store.shopType)}</p>
+          <p className="text-[11px] text-ink-subtle">{store.rootPath || "—"} · {store.shopType ? shopTypeLabel(store.shopType) : "—"}</p>
 
           {/* 趋势 */}
           <div className="rounded-[var(--radius-card)] border border-hairline bg-surface-muted/50 p-3">
@@ -100,9 +129,9 @@ export function CompetitionDetailDrawer({ store, onClose, onToggleCollect, colle
               <p className="truncate text-[10px] text-ink-subtle">{store.website.url}</p>
               <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">{store.website.summary}</p>
               <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
-                <Mini label={t("ops.competition.detail.visits")} value={fmtCompact(store.website.monthlyVisits)} />
-                <Mini label={t("ops.competition.detail.bounce")} value={fmtPercent(store.website.bounceRate)} />
-                <Mini label={t("ops.competition.detail.avgTime")} value={`${store.website.visitSeconds}s`} />
+                <Mini label={t("ops.competition.detail.visits")} value={dash(store.website.monthlyVisits)} />
+                <Mini label={t("ops.competition.detail.bounce")} value={store.website.bounceRate ? fmtPercent(store.website.bounceRate) : "—"} />
+                <Mini label={t("ops.competition.detail.avgTime")} value={store.website.visitSeconds ? `${store.website.visitSeconds}s` : "—"} />
               </div>
               <div className="mt-2 flex flex-wrap gap-1">
                 {store.website.languages.map((l) => (
@@ -204,9 +233,50 @@ export function CompetitionDetailDrawer({ store, onClose, onToggleCollect, colle
             ))}
           </div>
 
-          <Button variant={collected ? "secondary" : "primary"} className="w-full" onClick={() => onToggleCollect(store)}>
-            <span className="text-base leading-none">★</span>
-            {collected ? t("ops.competition.card.collected") : t("ops.competition.card.collect")}
+          {/* 该店在投 SKU（免费接口，先选哪款再分析） */}
+          {products && (
+            <div>
+              <div className="mb-1.5 flex items-center gap-2">
+                <span className="text-[11px] font-medium text-ink-muted">{t("ops.competition.detail.freeProducts")}</span>
+                <CostBadge free />
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {products.length === 0 ? (
+                  <p className="col-span-full text-[11px] text-ink-subtle">—</p>
+                ) : (
+                  products.map((p) => {
+                    const card = (
+                      <div className="overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface">
+                        <div className="h-16 w-full overflow-hidden">
+                          <CoverThumb src={p.icon} label={p.title} />
+                        </div>
+                        <p className="truncate px-1.5 py-1 text-[10px] text-ink" title={p.title}>{p.title}</p>
+                      </div>
+                    );
+                    return p.link ? (
+                      <a key={p.id} href={p.link} target="_blank" rel="noreferrer" className="block hover:ring-1 hover:ring-[var(--brand)]/40">
+                        {card}
+                      </a>
+                    ) : (
+                      <div key={p.id}>{card}</div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 竞店充实：店铺情报（store/detail 族 4 端点，享 3 天免费窗口） */}
+          <StoreAnalysisSection analysis={analysis} t={t} />
+
+          <Button
+            variant={collected ? "secondary" : "primary"}
+            className="w-full"
+            disabled={toggling}
+            onClick={() => onToggleCollect(store)}
+          >
+            <span className="text-base leading-none">{toggling ? "⟳" : "★"}</span>
+            {toggling ? t("ops.competition.card.syncing") : collected ? t("ops.competition.card.collected") : t("ops.competition.card.collect")}
           </Button>
         </div>
       )}
@@ -214,7 +284,7 @@ export function CompetitionDetailDrawer({ store, onClose, onToggleCollect, colle
   );
 }
 
-function PlatformBreakdown({ store }: { store: StoreRow }) {
+export function PlatformBreakdown({ store }: { store: StoreRow }) {
   const t = useT();
   const rows = [
     { key: "tiktok" as const, b: store.tiktok },
@@ -250,7 +320,7 @@ function PlatformBreakdown({ store }: { store: StoreRow }) {
   );
 }
 
-function Mini({ label, value }: { label: string; value: string }) {
+export function Mini({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
       <p className="truncate text-[10px] text-ink-subtle">{label}</p>
@@ -259,14 +329,14 @@ function Mini({ label, value }: { label: string; value: string }) {
   );
 }
 
-const LIFE_CLS: Record<string, string> = {
+export const LIFE_CLS: Record<string, string> = {
   scaling: "bg-success-soft text-success",
   steady: "bg-info-soft text-info",
   cooling: "bg-warning-soft text-warning",
   stopped: "bg-destructive-soft text-destructive",
 };
 
-function PlatformStrategyMatrix({ rows, t }: { rows: import("@/lib/marketing/analytics").PlatformMatrixRow[]; t: ReturnType<typeof useT> }) {
+export function PlatformStrategyMatrix({ rows, t }: { rows: import("@/lib/marketing/analytics").PlatformMatrixRow[]; t: ReturnType<typeof useT> }) {
   const adStateCls = (s: number) => (s === 1 ? "text-success" : s === 0 ? "text-ink-muted" : "text-destructive");
   const adStateLabel = (s: number) =>
     s === 1 ? t("ops.competition.matrix.active") : s === 0 ? t("ops.competition.matrix.offline") : t("ops.competition.matrix.stopped");
@@ -304,6 +374,241 @@ function PlatformStrategyMatrix({ rows, t }: { rows: import("@/lib/marketing/ana
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+// --- 竞店充实：店铺情报区块（store/detail 族 4 端点）---
+
+function StoreAnalysisSection({ analysis, t }: { analysis: StoreAnalysisState; t: ReturnType<typeof useT> }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-medium text-ink-muted">{t("ops.competition.analysis.title")}</span>
+        <CostBadge free />
+      </div>
+      {analysis.loading && (
+        <p className="text-[11px] text-ink-subtle">{t("ops.competition.analysis.loading")}</p>
+      )}
+      {analysis.error && (
+        <p className="text-[11px] text-destructive">{t("ops.competition.error")}</p>
+      )}
+      {!analysis.loading && !analysis.error && (
+        <>
+          <DataAnalysisBlock data={analysis.dataAnalysis} t={t} />
+          <AdTrendBlock points={analysis.adTrend ?? []} t={t} />
+          <LongestAdsBlock ads={analysis.longest ?? []} t={t} />
+          <MostUsedAdsBlock ads={analysis.mostUsed ?? []} t={t} />
+          <FbPagesBlock pages={analysis.fbPages ?? []} t={t} />
+          <RegionAnalysisBlock rows={analysis.regionAnalysis ?? []} t={t} />
+          <DeliveryBlock delivery={analysis.delivery} t={t} />
+        </>
+      )}
+    </div>
+  );
+}
+
+export function AdTrendBlock({ points, t }: { points: StoreAdTrendPoint[]; t: ReturnType<typeof useT> }) {
+  if (points.length === 0) return null;
+  const plays = points.map((p) => p.playCount);
+  const latest = plays[plays.length - 1];
+  const totalAds = points.reduce((acc, p) => acc + p.adCount, 0);
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] font-medium text-ink-muted">{t("ops.competition.analysis.adTrend.title")}</p>
+      <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3">
+        <div className="mb-1 flex items-center justify-between text-[11px]">
+          <span className="text-ink-muted">{t("ops.competition.analysis.adTrend.plays")}</span>
+          <span className="tabular-nums text-ink">{fmtCompact(latest)}</span>
+        </div>
+        <Sparkline data={plays} width={520} height={56} stroke="var(--brand)" fill="var(--brand-soft)" strokeWidth={2} />
+        <p className="mt-1 text-[10px] text-ink-subtle">
+          {t("ops.competition.analysis.adTrend.ads")}: {fmtCompact(totalAds)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function LongestAdsBlock({ ads, t }: { ads: StoreLongestRunAd[]; t: ReturnType<typeof useT> }) {
+  if (ads.length === 0) return null;
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] font-medium text-ink-muted">
+        {t("ops.competition.analysis.longest.title")}
+        <span className="ml-1 font-normal text-ink-subtle">{t("ops.competition.analysis.longest.subtitle")}</span>
+      </p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {ads.map((ad) => (
+          <div key={ad.id} className="overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface">
+            <div className="h-20 w-full overflow-hidden">
+              <CoverThumb src={ad.cover} label={ad.title} />
+            </div>
+            <div className="px-1.5 py-1">
+              <p className="truncate text-[10px] text-ink" title={ad.title}>{ad.title}</p>
+              <div className="mt-0.5 flex items-center justify-between text-[10px] text-ink-subtle">
+                <PlatformBadge platform={ad.platform} />
+                <span className="tabular-nums">{t("ops.competition.analysis.longest.days", { n: ad.runDays })}</span>
+              </div>
+              <p className="mt-0.5 text-[10px] tabular-nums text-ink-muted">{fmtCompact(ad.playCount)} {t("ops.competition.card.plays")}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function MostUsedAdsBlock({ ads, t }: { ads: StoreMostUsedAd[]; t: ReturnType<typeof useT> }) {
+  if (ads.length === 0) return null;
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] font-medium text-ink-muted">
+        {t("ops.competition.analysis.mostUsed.title")}
+        <span className="ml-1 font-normal text-ink-subtle">{t("ops.competition.analysis.mostUsed.subtitle")}</span>
+      </p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {ads.map((ad) => (
+          <div key={ad.id} className="overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface">
+            <div className="h-20 w-full overflow-hidden">
+              <CoverThumb src={ad.cover} label={ad.title} />
+            </div>
+            <div className="px-1.5 py-1">
+              <p className="truncate text-[10px] text-ink" title={ad.title}>{ad.title}</p>
+              <div className="mt-0.5 flex items-center justify-between text-[10px] text-ink-subtle">
+                <PlatformBadge platform={ad.platform} />
+                <span className="tabular-nums">{t("ops.competition.analysis.mostUsed.uses", { n: ad.usedCount })}</span>
+              </div>
+              <p className="mt-0.5 text-[10px] tabular-nums text-ink-muted">
+                {t("ops.competition.analysis.mostUsed.cpm")} ${ad.cpm} · {fmtCompact(ad.playCount)}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function FbPagesBlock({ pages, t }: { pages: StoreFbPage[]; t: ReturnType<typeof useT> }) {
+  if (pages.length === 0) return null;
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] font-medium text-ink-muted">{t("ops.competition.analysis.fbPages.title")}</p>
+      <div className="space-y-2">
+        {pages.map((p) => (
+          <a
+            key={p.id}
+            href={p.url}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-2 hover:ring-1 hover:ring-[var(--brand)]/40"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-[12px] font-medium text-ink">{p.name}</p>
+              <p className="truncate text-[10px] text-ink-subtle">{p.category}</p>
+            </div>
+            <div className="flex shrink-0 gap-4 text-right text-[10px] tabular-nums text-ink-muted">
+              <span>{t("ops.competition.analysis.fbPages.likes")}<br /><span className="text-ink">{fmtCompact(p.likes)}</span></span>
+              <span>{t("ops.competition.analysis.fbPages.followers")}<br /><span className="text-ink">{fmtCompact(p.followers)}</span></span>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 店铺数据分析（store/data-analysis，截图「数据分析」整块：播放/赞/赞率/天数/花费 + 平台占比）。 */
+export function DataAnalysisBlock({ data, t }: { data?: StoreDataAnalysis; t: ReturnType<typeof useT> }) {
+  if (!data) return null;
+  const spend = data.spendMin > 0 || data.spendMax > 0 ? `$${fmtInt(data.spendMin)}–$${fmtInt(data.spendMax)}` : "—";
+  const likeRate = data.likeRate > 0 ? `${(data.likeRate * 100).toFixed(2)}%` : "—";
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] font-medium text-ink-muted">{t("ops.competition.analysis.data.title")}</p>
+      <div className="space-y-2">
+        {/* 汇总指标 */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <MetricTile label={t("ops.competition.analysis.data.plays")} value={fmtCompact(data.totalPlayCount)} />
+          <MetricTile label={t("ops.competition.analysis.data.likes")} value={fmtCompact(data.totalLikeCount)} />
+          <MetricTile label={t("ops.competition.analysis.data.likeRate")} value={likeRate} />
+          <MetricTile label={t("ops.competition.analysis.data.ads")} value={fmtCompact(data.totalAdCount)} tone="brand" />
+          <MetricTile label={t("ops.competition.analysis.data.days")} value={dash(data.totalAdDays)} />
+          <MetricTile label={t("ops.competition.analysis.data.spend")} value={spend} tone="info" />
+        </div>
+        {/* 平台占比表 */}
+        {data.platforms.length > 0 && (
+          <div className="overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface">
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="border-b border-hairline text-left text-[10px] text-ink-subtle">
+                  <th className="px-2 py-1.5 font-medium">{t("ops.competition.analysis.data.platform")}</th>
+                  <th className="px-2 py-1.5 text-right font-medium">{t("ops.competition.analysis.data.plays")}</th>
+                  <th className="px-2 py-1.5 text-right font-medium">{t("ops.competition.analysis.data.likes")}</th>
+                  <th className="px-2 py-1.5 text-right font-medium">{t("ops.competition.analysis.data.ads")}</th>
+                  <th className="px-2 py-1.5 text-right font-medium">{t("ops.competition.analysis.data.share")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.platforms.map((p) => (
+                  <tr key={p.platform} className="border-b border-hairline/70 last:border-0">
+                    <td className="px-2 py-1.5">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-ink">
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: PLATFORM_META[p.platform].dot }} />
+                        {PLATFORM_META[p.platform].label}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-ink-muted">{fmtCompact(p.playCount)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-ink-muted">{fmtCompact(p.likeCount)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-ink-muted">{fmtCompact(p.adCount)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-ink-muted">{fmtPercent(p.share)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** 广告地区分布（store/region-analysis）。 */
+export function RegionAnalysisBlock({ rows, t }: { rows: StoreRegionAnalysis[]; t: ReturnType<typeof useT> }) {
+  if (rows.length === 0) return null;
+  const total = rows.reduce((a, r) => a + r.adCount, 0) || 1;
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] font-medium text-ink-muted">{t("ops.competition.analysis.region.title")}</p>
+      <div className="space-y-1">
+        {rows.map((r) => (
+          <div key={r.region} className="flex items-center gap-3 text-[11px]">
+            <span className="w-16 shrink-0 text-ink-muted">{regionLabel(r.region)}</span>
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-muted">
+              <div className="h-full rounded-full bg-[var(--brand)]" style={{ width: `${Math.min(100, (r.adCount / total) * 100)}%` }} />
+            </div>
+            <span className="w-14 shrink-0 text-right tabular-nums text-ink-muted">{fmtCompact(r.adCount)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 交付分析（store/delivery-analysis）。 */
+export function DeliveryBlock({ delivery, t }: { delivery?: StoreDeliveryAnalysis; t: ReturnType<typeof useT> }) {
+  if (!delivery) return null;
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] font-medium text-ink-muted">{t("ops.competition.analysis.delivery.title")}</p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <MetricTile label={t("ops.competition.analysis.delivery.avgDays")} value={dash(delivery.avgDeliveryDays)} />
+        <MetricTile label={t("ops.competition.analysis.delivery.maxDays")} value={dash(delivery.maxDeliveryDays)} />
+        <MetricTile label={t("ops.competition.analysis.delivery.frequency")} value={dash(delivery.frequency)} />
+        <MetricTile label={t("ops.competition.analysis.delivery.coverage")} value={dash(delivery.coverage)} />
+        <MetricTile label={t("ops.competition.analysis.delivery.activeDays")} value={dash(delivery.activeDays)} />
       </div>
     </div>
   );

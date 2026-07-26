@@ -32,16 +32,50 @@ export function primaryAccountManager(): AccountManagerContact {
   return listAccountManagers()[0];
 }
 
+export type AccountManagerPrefillVariant =
+  | "default"
+  | "image_search_weak"
+  | "image_search_failed";
+
+export interface AccountManagerHrefOptions {
+  productTitle?: string | null;
+  prefillVariant?: AccountManagerPrefillVariant;
+}
+
 export function accountManagerWhatsAppHref(
   context: AccountManagerContext,
   manager: AccountManagerContact = primaryAccountManager(),
+  options?: AccountManagerHrefOptions,
 ): string {
   const base = manager.whatsappUrl;
   if (!base || base === "https://wa.me/") return base;
   const sep = base.includes("?") ? "&" : "?";
-  const text = encodeURIComponent(defaultPrefillMessage(context));
+  const text = encodeURIComponent(
+    buildPrefillMessage(context, options),
+  );
   if (base.includes("text=")) return base;
   return `${base}${sep}text=${text}`;
+}
+
+function buildPrefillMessage(
+  context: AccountManagerContext,
+  options?: AccountManagerHrefOptions,
+): string {
+  const variant = options?.prefillVariant ?? "default";
+  const title = options?.productTitle?.trim();
+
+  if (variant === "image_search_failed" || variant === "image_search_weak") {
+    const lead =
+      variant === "image_search_failed"
+        ? "图搜未找到可靠同款货源"
+        : "图搜相似度偏低、系统无法自动推荐";
+    if (title) {
+      return `你好，店铺商品「${title}」${lead}，请协助人工寻源并帮我在系统里关联货源与 SKU。`;
+    }
+    return `你好，${lead}，请协助人工寻源并帮我在系统里关联货源与 SKU。`;
+  }
+
+  return defaultPrefillMessage(context);
 }
 
 function defaultPrefillMessage(context: AccountManagerContext): string {
