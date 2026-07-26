@@ -32,10 +32,20 @@ function sortCandidatesByRanking(a: CandidateSummary, b: CandidateSummary): numb
   const imageDiff = (b.imageScore ?? -1) - (a.imageScore ?? -1);
   if (imageDiff !== 0) return imageDiff;
 
-  const scoreDiff = (b.matchScore ?? 0) - (a.matchScore ?? 0);
+  const scoreA = a.matchScore ?? 0;
+  const scoreB = b.matchScore ?? 0;
+  const scoreDiff = scoreB - scoreA;
   if (scoreDiff !== 0) return scoreDiff;
-  const soldDiff = (b.soldCount ?? 0) - (a.soldCount ?? 0);
-  if (soldDiff !== 0) return soldDiff;
+
+  const hasSimilaritySignal =
+    (a.imageScore != null && a.imageScore > 0) ||
+    (b.imageScore != null && b.imageScore > 0) ||
+    scoreA > 0 ||
+    scoreB > 0;
+  if (hasSimilaritySignal) {
+    const soldDiff = (b.soldCount ?? 0) - (a.soldCount ?? 0);
+    if (soldDiff !== 0) return soldDiff;
+  }
   return a.rank - b.rank;
 }
 

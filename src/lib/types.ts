@@ -585,11 +585,14 @@ export interface ImageSearchProduct {
   /** 网关现价原始字符串（如 "12.00"），可能为空 */
   price?: string | null;
   supplier?: string | null;
-  /** 月销（官方图搜 monthSold）——A3-3b 起替代相似度作为可信度参考 */
+  /** 月销（官方图搜 monthSold）——仅在相似度并列时作次级排序 */
   soldCount?: number | null;
-  /** 复购率展示串（如 "13%"）——官方图搜信号，替代相似度 */
+  /** 复购率展示串（如 "13%"）——仅在相似度并列时作次级排序 */
   repurchaseRate?: string | null;
-  /** A3-3b 起恒为 null（官方多语言图搜不返回逐条相似度） */
+  /**
+   * 官方多语言图搜通常不返回逐条相似度（常为 null）。
+   * 排序时相似度永远第一：有分按分；无分时保留网关召回序，销量不得抢位。
+   */
   similarityScore?: number | null;
   minOrderQty?: number | null;
   inventory?: number | null;
