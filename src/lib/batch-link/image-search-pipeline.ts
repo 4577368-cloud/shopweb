@@ -194,27 +194,39 @@ async function fetchMergedImageSearch(
 ): Promise<ImageSearchResult> {
   const batches: ImageSearchProduct[][] = [];
   let meta: ImageSearchResult | null = null;
+  let lastErr: unknown = null;
 
   for (const url of queryImageUrls) {
-    const res = await imageSearchWithColdStartRetry(
+    try {
+      const res = await imageSearchWithColdStartRetry(
+        shopName,
+        thirdPlatformItemId,
+        limit,
+        country,
+        url
+      );
+      if (!meta) meta = res;
+      batches.push(res.items ?? []);
+    } catch (err) {
+      // One unreachable variant image must not sink the whole search.
+      lastErr = err;
+    }
+  }
+
+  // Every explicit query image failed — fall back to the backend picking the
+  // image itself, which is the path used before multi-image search existed.
+  if (meta == null) {
+    if (lastErr && queryImageUrls.length === 0) throw lastErr;
+    return imageSearchWithColdStartRetry(
       shopName,
       thirdPlatformItemId,
       limit,
-      country,
-      url
+      country
     );
-    if (!meta) meta = res;
-    batches.push(res.items ?? []);
   }
 
   const mergedItems = mergeImageSearchItems(batches);
-  const base: ImageSearchResult = meta ?? {
-    items: [],
-    imageSource: "SHOPIFY",
-    querySource: "NONE",
-    appliedQuery: null,
-  };
-  return { ...base, items: mergedItems };
+  return { ...meta, items: mergedItems };
 }
 
 async function scoreTitleCandidates(
