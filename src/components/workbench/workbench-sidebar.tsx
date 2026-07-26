@@ -13,6 +13,10 @@ import { SidebarUserMenu } from "@/components/workbench/sidebar-user-menu";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { useHubFeatureFlag } from "@/lib/hub/feature-flag";
+import {
+  OPERATIONS_HUB_PRODUCT_MATCH_PERCENT,
+  productSourceLinkPercent,
+} from "@/lib/hub/unlock";
 import { cn } from "@/lib/utils";
 import type { WorkflowStepSnapshot, WorkflowStatusKey } from "@/lib/workflow-step-snapshots";
 
@@ -84,6 +88,7 @@ export function WorkbenchSidebar({ bottomPanel, embedded }: WorkbenchSidebarProp
     workflowStepSnapshots,
     workflowProgressPercent,
     refreshWorkflowProgress,
+    workflowBinding,
   } = useOnboarding();
 
   useEffect(() => {
@@ -98,6 +103,7 @@ export function WorkbenchSidebar({ bottomPanel, embedded }: WorkbenchSidebarProp
   const flowSectionLabel = syncCompleted ? t("nav.dropship") : t("nav.flow");
   const { enabled: hubEnabled } = useHubFeatureFlag();
   const hubUnlocked = operationsHubReady && hubEnabled;
+  const productLinkPct = productSourceLinkPercent(workflowBinding);
 
   const navItems = steps.map((s) => ({
     id: s.id,
@@ -210,58 +216,65 @@ export function WorkbenchSidebar({ bottomPanel, embedded }: WorkbenchSidebarProp
         </ul>
       </nav>
 
-      <nav
-        className="min-h-0 shrink-0 overflow-y-auto border-t border-hairline px-3 py-2"
-        aria-label={t("nav.hub")}
-      >
-        <p className="mb-2 px-1 text-[11px] font-medium text-ink-subtle">{t("nav.hub")}</p>
-        <ul className="space-y-0.5">
-          {hubItems.map((item) => {
-            const current = item.href ? pathname === item.href : false;
-            const disabled = !item.href || !hubUnlocked;
-            const disabledHint = !hubEnabled ? t("sidebar.hubUnavailable") : undefined;
+      {hubEnabled ? (
+        <nav
+          className="min-h-0 shrink-0 overflow-y-auto border-t border-hairline px-3 py-2"
+          aria-label={t("nav.hub")}
+        >
+          <p className="mb-2 px-1 text-[11px] font-medium text-ink-subtle">{t("nav.hub")}</p>
+          <ul className="space-y-0.5">
+            {hubItems.map((item) => {
+              const current = item.href ? pathname === item.href : false;
+              const disabled = !item.href || !hubUnlocked;
+              const disabledHint = !operationsHubReady
+                ? t("sidebar.hubLockedUntilProductMatch", {
+                    target: OPERATIONS_HUB_PRODUCT_MATCH_PERCENT,
+                    current: productLinkPct,
+                  })
+                : undefined;
 
-            if (disabled) {
+              if (disabled) {
+                return (
+                  <li key={item.id}>
+                    <span
+                      {...(disabledHint ? { title: disabledHint } : {})}
+                      className="flex cursor-not-allowed gap-2.5 rounded-[var(--radius-control)] px-2 py-2 text-[13px] font-medium leading-5 text-ink-subtle/55"
+                    >
+                      <HubNavIcon icon={item.icon} state="disabled" />
+                      <span className="min-w-0 flex-1">{item.title}</span>
+                    </span>
+                  </li>
+                );
+              }
+
               return (
                 <li key={item.id}>
-                  <span
-                    {...(disabledHint ? { title: disabledHint } : {})}
-                    className="flex cursor-not-allowed gap-2.5 rounded-[var(--radius-control)] px-2 py-2 text-[13px] font-medium leading-5 text-ink-subtle/55"
-                  >
-                    <HubNavIcon icon={item.icon} state="disabled" />
-                    <span className="min-w-0 flex-1">{item.title}</span>
-                  </span>
-                </li>
-              );
-            }
-
-            return (
-              <li key={item.id}>
-                <Link
-                  href={item.href!}
-                  aria-current={current ? "page" : undefined}
-                  className={cn(
-                    "group flex cursor-pointer gap-2.5 rounded-[var(--radius-control)] px-2 py-2 transition-colors",
-                    current ? "bg-brand-soft/80 ring-1 ring-brand/10" : "hover:bg-surface-muted/80"
-                  )}
-                >
-                  <HubNavIcon icon={item.icon} state={current ? "current" : "default"} />
-                  <span
+                  <Link
+                    href={item.href!}
+                    aria-current={current ? "page" : undefined}
                     className={cn(
-                      "min-w-0 flex-1 text-[13px] font-medium leading-5",
-                      current ? "text-brand-accent" : "text-ink group-hover:text-brand-accent"
+                      "group flex cursor-pointer gap-2.5 rounded-[var(--radius-control)] px-2 py-2 transition-colors",
+                      current ? "bg-brand-soft/80 ring-1 ring-brand/10" : "hover:bg-surface-muted/80"
                     )}
                   >
-                    {item.title}
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+                    <HubNavIcon icon={item.icon} state={current ? "current" : "default"} />
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1 text-[13px] font-medium leading-5",
+                        current ? "text-brand-accent" : "text-ink group-hover:text-brand-accent"
+                      )}
+                    >
+                      {item.title}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+      ) : null}
 
-      {bottomPanel ? (
+      {bottomPanel && hubEnabled ? (
         <div className="min-h-0 flex-1 overflow-y-auto border-t border-hairline px-3 py-3">
           {bottomPanel}
         </div>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 const STORAGE_KEY = "tb_hub_enabled";
+const CHANGE_EVENT = "tb_hub_enabled_change";
 /** @deprecated Migrated to {@link STORAGE_KEY}; read once then removed. */
 const LEGACY_HUB_MODE_KEY = "tangbuy:hub-mode";
 
@@ -55,6 +56,9 @@ export function isHubFeatureEnabled(): boolean {
 export function setHubFeatureEnabled(value: boolean): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, String(value));
+  window.dispatchEvent(
+    new CustomEvent(CHANGE_EVENT, { detail: value })
+  );
 }
 
 /**
@@ -65,7 +69,22 @@ export function useHubFeatureFlag() {
   const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
-    setEnabled(getDefaultEnabled());
+    const sync = () => setEnabled(getDefaultEnabled());
+    sync();
+    const onCustom = (e: Event) => {
+      const detail = (e as CustomEvent<boolean>).detail;
+      if (typeof detail === "boolean") setEnabled(detail);
+      else sync();
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) sync();
+    };
+    window.addEventListener(CHANGE_EVENT, onCustom);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(CHANGE_EVENT, onCustom);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   const setHubEnabled = useCallback((value: boolean) => {
