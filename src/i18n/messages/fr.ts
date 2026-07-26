@@ -1913,6 +1913,8 @@ export const fr: Dictionary = {
       board: {
         title: "Classement des produits TikTok",
         snapshotLabel: "Fenêtre de dates",
+        countryLabel: "Pays",
+        countryEmpty: "Aucun instantané importé pour {{country}} pour le moment.",
         categoryLabel: "Catégorie",
         allCategories: "Toutes les catégories",
         rank: "#",
@@ -1956,6 +1958,10 @@ export const fr: Dictionary = {
         l3Label: "Catégorie de niveau 3",
         growthFactor: "×",
         // Palmarès multiples
+        kpiGmvTop: "CA n°1",
+        kpiAvgGrowth: "Croissance moy.",
+        kpiCreators: "Créateurs tot.",
+        kpiAvgCommission: "Commission moy.",
         boardGmv: "Palmarès CA",
         boardGmvHint: "Classé par chiffre d'affaires",
         boardGrowth: "Palmarès croissance",

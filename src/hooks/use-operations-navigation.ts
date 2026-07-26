@@ -36,7 +36,7 @@ function readParams(): OperationsNavigationState {
   if (typeof window === "undefined") {
     return {
       tab: "discovery",
-      discoverySeg: "ads",
+      discoverySeg: "board",
       discoveryAdsSeg: "rank",
       competitionQuery: "",
       competitionProductId: "",
@@ -49,7 +49,7 @@ function readParams(): OperationsNavigationState {
     ? tab
     : "discovery";
   const discoverySeg =
-    (params.get(DISCOVERY_SEG_KEY) as DiscoverySegment | null) ?? "ads";
+    (params.get(DISCOVERY_SEG_KEY) as DiscoverySegment | null) ?? "board";
   const validDiscoverySeg = ["ads", "board"].includes(discoverySeg)
     ? discoverySeg
     : "ads";
@@ -78,7 +78,7 @@ function writeParams(state: OperationsNavigationState): void {
   else params.delete(TAB_KEY);
 
   if (state.tab === "discovery") {
-    if (state.discoverySeg !== "ads") params.set(DISCOVERY_SEG_KEY, state.discoverySeg);
+    if (state.discoverySeg !== "board") params.set(DISCOVERY_SEG_KEY, state.discoverySeg);
     else params.delete(DISCOVERY_SEG_KEY);
 
     if (state.discoverySeg === "ads") {
@@ -131,7 +131,7 @@ export function useOperationsNavigation(): OperationsNavigationState &
   // 否则服务端（window 不存在→默认值）与客户端（读 URL→可能不同）首帧渲染不一致，触发 hydration mismatch。
   const [state, setState] = useState<OperationsNavigationState>({
     tab: "discovery",
-    discoverySeg: "ads",
+    discoverySeg: "board",
     discoveryAdsSeg: "rank",
     competitionQuery: "",
     competitionProductId: "",

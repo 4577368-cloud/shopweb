@@ -1916,6 +1916,8 @@ export const en = {
       board: {
         title: "TikTok product ranking board",
         snapshotLabel: "Date window",
+        countryLabel: "Country",
+        countryEmpty: "No snapshots imported for {{country}} yet.",
         categoryLabel: "Category",
         allCategories: "All categories",
         rank: "#",
@@ -1959,6 +1961,10 @@ export const en = {
         l3Label: "Level 3 category",
         growthFactor: "x",
         // Multi-board
+        kpiGmvTop: "Top GMV",
+        kpiAvgGrowth: "Avg growth",
+        kpiCreators: "Creators total",
+        kpiAvgCommission: "Avg commission",
         boardGmv: "GMV board",
         boardGmvHint: "Ranked by GMV",
         boardGrowth: "Growth board",

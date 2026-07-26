@@ -554,16 +554,40 @@ export interface ImageSearchResult {
 // 字段严格对齐后端 rank_snapshot / rank_product（见 RankingController + RankRepository）。
 // 数值型统一用 `number | null` 容错（后端 nullable 列在 JSON 中可能缺省或 null）。
 
-/** 榜单快照（rank_snapshot）：一张榜单 = 一个日期窗口。 */
+/** 榜单快照（rank_snapshot）：一张榜单 = 一个（国家, 日期窗口）组合。 */
 export interface RankingSnapshot {
   id: number;
   shopName: string;
+  country: string; // ISO-3166 alpha-2（如 "US"/"GB"）；后端 rank_snapshot.country
   dateRange: string; // "2026-04-12~2026-05-11"
   startDate: string | null; // "yyyy-MM-dd"
   endDate: string | null;
   productCount: number;
   createdAt: string | null; // 时间戳
 }
+
+/**
+ * 榜单支持的国家清单（与 shopify-data/ranking_prep.py 清洗口径一致）。
+ * 顺序：US 在前（默认），其余按字母序，方便阅读。
+ */
+export const RANKING_COUNTRIES = [
+  "US",
+  "BR",
+  "DE",
+  "ES",
+  "FR",
+  "GB",
+  "ID",
+  "IT",
+  "JP",
+  "MX",
+  "MY",
+  "PH",
+  "SG",
+  "TH",
+  "VN",
+] as const;
+export type RankingCountry = (typeof RANKING_COUNTRIES)[number];
 
 /** 榜单商品行（rank_product）。 */
 export interface RankingRow {

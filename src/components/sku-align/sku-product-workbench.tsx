@@ -543,6 +543,7 @@ export function SkuProductWorkbench({
   // for a new detail URL — that would reset the workspace mid-edit.
   const loadMatrixRef = useRef(loadMatrix);
   const resetRef = useRef(reset);
+  const productRef = useRef(product);
 
   // Declared above every consumer so they always see the committed render.
   useEffect(() => {
@@ -550,6 +551,7 @@ export function SkuProductWorkbench({
     llmScoresRef.current = llmScores;
     loadMatrixRef.current = loadMatrix;
     resetRef.current = reset;
+    productRef.current = product;
   });
 
 
@@ -961,13 +963,13 @@ export function SkuProductWorkbench({
   /** 数据刷新时同步绑定选择，不重复拉主货源规格表。 */
   useEffect(() => {
     const init: Record<string, string> = {};
-    for (const v of product.variants) {
+    for (const v of productRef.current.variants) {
       const id = v.bound?.tangbuySkuId?.trim();
       if (id) init[v.thirdPlatformSkuId] = id;
     }
     setSelections(init);
     setPrimaryMappingDirty(false);
-  }, [product.variants]);
+  }, [product.thirdPlatformItemId]);
 
   /** 替换主货源后：加载新规格表 + 把自动对齐/高置信建议填入下拉。 */
   const overrideDetailUrl = sourceOverride?.detailUrl?.trim() || null;
@@ -978,12 +980,12 @@ export function SkuProductWorkbench({
       const rows = await loadMatrixRef.current(overrideDetailUrl);
       if (cancelled || !rows.length) return;
       const fromBound: Record<string, string> = {};
-      for (const v of product.variants) {
+      for (const v of productRef.current.variants) {
         const id = v.bound?.tangbuySkuId?.trim();
         if (id) fromBound[v.thirdPlatformSkuId] = id;
       }
       const suggestions = buildAutoSuggestions(
-        product.variants,
+        productRef.current.variants,
         rows,
         fromBound,
         llmScoresRef.current
@@ -997,12 +999,12 @@ export function SkuProductWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [overrideDetailUrl, sourceRevision, product.variants]);
+  }, [overrideDetailUrl, sourceRevision]);
 
   useEffect(() => {
     if (loading || !matrix.length) return;
     const suggestions = buildAutoSuggestions(
-      product.variants,
+      productRef.current.variants,
       matrix,
       selections,
       llmScores
@@ -1019,7 +1021,7 @@ export function SkuProductWorkbench({
       }
       return changed ? next : prev;
     });
-  }, [loading, matrix, product.variants, llmScores]);
+  }, [loading, matrix, llmScores]);
 
   /** 父级 overview 追上本地 override 后清除临时快照。 */
   useEffect(() => {

@@ -1909,6 +1909,8 @@ export const zh: Dictionary = {
       board: {
         title: "TikTok 商品榜单",
         snapshotLabel: "日期窗口",
+        countryLabel: "国家",
+        countryEmpty: "{{country}} 暂无榜单数据",
         categoryLabel: "类目",
         allCategories: "全部类目",
         rank: "排名",
@@ -1952,6 +1954,10 @@ export const zh: Dictionary = {
         l3Label: "三级类目",
         growthFactor: "倍",
         // 多榜单
+        kpiGmvTop: "GMV 榜首",
+        kpiAvgGrowth: "平均增速",
+        kpiCreators: "达人总数",
+        kpiAvgCommission: "平均佣金",
         boardGmv: "GMV 榜",
         boardGmvHint: "按成交金额排序",
         boardGrowth: "增长榜",

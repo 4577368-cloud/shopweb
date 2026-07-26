@@ -15,9 +15,6 @@ import {
   fetchRankList,
   fetchSearchAds,
 } from "@/lib/marketing/api";
-import {
-  shopTypeLabel,
-} from "@/lib/marketing/enums";
 import { useReferenceDictionaries } from "@/hooks/use-reference-dictionaries";
 import type {
   AdCard,
@@ -26,10 +23,12 @@ import type {
   RankRow,
   RankSortKey,
   RankType,
+  RankingCountry,
   RankingRow,
   RankingSnapshot,
   TtsShopRow,
 } from "@/lib/marketing/types";
+import { RANKING_COUNTRIES } from "@/lib/marketing/types";
 import { isGuardCancel } from "@/lib/marketing/guard";
 import {
   readMarketingViewState,
@@ -37,7 +36,7 @@ import {
 } from "@/lib/marketing/session-cache";
 import { CoverThumb } from "./cover-thumb";
 import { PlatformBadge } from "./platform-badge";
-import { RankingProductGrid, RankingDetailDrawer } from "./ranking-grid";
+import { RankingProductGrid, RankingDetailDrawer, RankingKpis } from "./ranking-grid";
 import { rankMomentum, normalizeTo100 } from "@/lib/marketing/derived";
 import { fmtCompact, fmtGrowthRate, fmtInt, fmtPercent, fmtUsd } from "@/lib/marketing/format";
 import { ScorePill } from "./intel";
@@ -385,8 +384,8 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
       <SegmentedTabs
         variant="solid"
         tabs={[
-          { id: "ads", label: t("ops.discovery.segAds") },
           { id: "board", label: t("ops.discovery.segBoard") },
+          { id: "ads", label: t("ops.discovery.segAds") },
         ]}
         value={segment}
         onValueChange={(id) => {
@@ -726,75 +725,86 @@ function RankTable({
   const momMax = momVals.length ? Math.max(...momVals) : 1;
   return (
     <div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1140px] border-collapse text-[12px]">
-          <thead>
-            <tr className="border-b border-hairline text-left text-[11px] text-ink-subtle">
-              <th className="px-2 py-2 font-medium">{t("ops.discovery.colRank")}</th>
-              <th className="px-2 py-2 font-medium">{t("ops.discovery.colCover")}</th>
-              <th className="px-2 py-2 font-medium">{t("ops.discovery.colTitle")}</th>
-              <th className="px-2 py-2 font-medium">{t("ops.discovery.colPrice")}</th>
-              <th className="px-2 py-2 text-right font-medium">{t("ops.discovery.colGrowthCount")}</th>
-              <th className="px-2 py-2 text-right font-medium">{t("ops.discovery.colGrowthRate")}</th>
-              <th className="px-2 py-2 text-right font-medium">{t("ops.discovery.colVideoCount")}</th>
-              <th className="px-2 py-2 font-medium">CPM</th>
-              <th className="px-2 py-2 font-medium">{t("ops.discovery.colPlatform")}</th>
-              <th className="px-2 py-2 font-medium">{t("ops.intel.rank.momentum")}</th>
-              <th className="px-2 py-2 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
-            {data.list.map((row, i) => {
-              const mom = normalizeTo100(rankMomentum(row).momentumRaw, momMin, momMax);
-              const momTone = mom >= 70 ? "success" : mom >= 40 ? "brand" : "muted";
-              return (
-              <tr key={row.id} className="border-b border-hairline/70 hover:bg-surface-muted/50">
-                <td className="px-2 py-2 tabular-nums text-ink-muted">{i + 1}</td>
-                <td className="px-2 py-2">
-                  <div className="h-10 w-10 overflow-hidden rounded-[var(--radius-control)]">
-                    <CoverThumb src={row.image} label={row.title} />
-                  </div>
-                </td>
-                <td className="max-w-[220px] px-2 py-2">
-                  <span className="block truncate font-medium text-ink">{row.title}</span>
-                  <span className="text-[10px] text-ink-subtle">{row.currency}</span>
-                </td>
-                <td className="px-2 py-2 tabular-nums text-ink">{fmtUsd(row.usdPrice)}</td>
-                <td className="px-2 py-2 text-right tabular-nums text-ink">+{fmtInt(row.countGrowth)}</td>
-                <td className="px-2 py-2 text-right tabular-nums text-success">+{fmtGrowthRate(row.growthRate * 100, t("ops.discovery.growthFactor"))}</td>
-                <td className="px-2 py-2 text-right tabular-nums text-ink-muted">{row.videoCount}</td>
-                <td className="px-2 py-2 tabular-nums text-ink-muted">
-                  {row.minCpm != null && row.maxCpm != null ? (
-                    <span className="whitespace-nowrap">${row.minCpm}–${row.maxCpm}</span>
-                  ) : (
-                    <span className="text-ink-subtle">—</span>
-                  )}
-                </td>
-                <td className="px-2 py-2">
-                  <span className="rounded-full bg-surface-muted px-2 py-0.5 text-[10px] text-ink-muted">{shopTypeLabel(row.platform)}</span>
-                </td>
-                <td className="px-2 py-2">
-                  <ScorePill value={mom} tone={momTone} />
-                </td>
-                <td className="px-2 py-2">
-                  <div className="flex items-center gap-1.5">
-                    <button type="button" onClick={() => onViewCompetitor(row.id)} className="rounded px-1.5 py-0.5 text-[11px] text-link hover:underline">
-                      {t("ops.discovery.actViewComp")}
-                    </button>
-                    <button type="button" onClick={() => onViewDetail(row.id)} className="rounded px-1.5 py-0.5 text-[11px] text-link hover:underline">
-                      {t("ops.discovery.actViewDetail")}
-                    </button>
-                    <button type="button" onClick={() => onLearn(row.id)} className="rounded px-1.5 py-0.5 text-[11px] text-link hover:underline">
-                      {t("ops.discovery.actLearn")}
-                    </button>
-                    <RowStar id={row.id} active={fav.has(row.id)} onToggle={() => onToggleFav(row.id)} />
-                  </div>
-                </td>
-              </tr>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {data.list.map((row, i) => {
+          const mom = normalizeTo100(rankMomentum(row).momentumRaw, momMin, momMax);
+          const momTone = mom >= 70 ? "success" : mom >= 40 ? "brand" : "muted";
+          return (
+            <div
+              key={row.id}
+              className="flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card transition-shadow hover:shadow-card hover:ring-1 hover:ring-brand"
+            >
+              {/* 封面 + 标题 + 价：整块可点 → 查看详情（1 次调用换完整 dossier） */}
+              <button type="button" onClick={() => onViewDetail(row.id)} className="flex flex-col text-left">
+                <div className="relative h-40 w-full overflow-hidden">
+                  <CoverThumb src={row.image} label={row.title} />
+                  <span className="absolute left-2 top-2">
+                    <PlatformBadge platform={row.platform} />
+                  </span>
+                  <span className="absolute right-2 top-2 rounded bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-white">#{i + 1}</span>
+                </div>
+                <div className="p-2.5">
+                  <p className="truncate text-[12px] font-medium text-ink">{row.title}</p>
+                  <p className="mt-1 flex items-baseline gap-1.5 text-[11px] tabular-nums">
+                    <span className="text-ink">{fmtUsd(row.usdPrice)}</span>
+                    <span className="text-ink-subtle">{row.currency}</span>
+                    {row.isCollection && (
+                      <span className="rounded bg-brand-soft px-1 text-[10px] text-brand">合集</span>
+                    )}
+                  </p>
+                </div>
+              </button>
+
+              {/* 关键指标条：列表这一次调用返回的全部要点（增长 / 增速 / 视频 / CPM） */}
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-2.5 pb-2 text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-ink-subtle">{t("ops.discovery.colGrowthCount")}</span>
+                  <span className="tabular-nums text-ink">+{fmtInt(row.countGrowth)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-ink-subtle">{t("ops.discovery.colGrowthRate")}</span>
+                  <span className="tabular-nums text-success">+{fmtGrowthRate(row.growthRate * 100, t("ops.discovery.growthFactor"))}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-ink-subtle">{t("ops.discovery.colVideoCount")}</span>
+                  <span className="tabular-nums text-ink">{row.videoCount}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-ink-subtle">CPM</span>
+                  <span className="tabular-nums text-ink">
+                    {row.minCpm != null && row.maxCpm != null ? `$${row.minCpm}–${row.maxCpm}` : "—"}
+                  </span>
+                </div>
+              </div>
+
+              {/* 综合动量 */}
+              <div className="px-2.5 pb-2">
+                <ScorePill value={mom} tone={momTone} />
+              </div>
+
+              {/* 底部动作按钮：始终可见，不被横向滚动吃掉 */}
+              <div className="mt-auto flex items-center justify-between gap-1 border-t border-hairline p-2.5">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onViewCompetitor(row.id)}
+                    className="rounded px-1.5 py-1 text-[11px] text-link transition-colors hover:bg-brand-soft hover:text-brand"
+                  >
+                    {t("ops.discovery.actViewComp")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onLearn(row.id)}
+                    className="rounded px-1.5 py-1 text-[11px] text-link transition-colors hover:bg-brand-soft hover:text-brand"
+                  >
+                    {t("ops.discovery.actLearn")}
+                  </button>
+                </div>
+                <RowStar id={row.id} active={fav.has(row.id)} onToggle={() => onToggleFav(row.id)} />
+              </div>
+            </div>
           );
         })}
-          </tbody>
-        </table>
       </div>
       <Pager page={data.page} onPage={onPage} meta={data.page} />
     </div>
@@ -895,6 +905,7 @@ function SearchTable({
 function RankingBoard({ shop }: { shop: string }) {
   const t = useT();
   const [snapshots, setSnapshots] = useState<RankingSnapshot[]>([]);
+  const [selectedCountry, setSelectedCountry] = useState<RankingCountry>("US");
   const [selectedSnapshot, setSelectedSnapshot] = useState<number | null>(null);
   const [products, setProducts] = useState<RankingRow[]>([]);
   const [searchQ, setSearchQ] = useState("");
@@ -902,30 +913,11 @@ function RankingBoard({ shop }: { shop: string }) {
   const [error, setError] = useState(false);
   const [selected, setSelected] = useState<RankingRow | null>(null);
 
-  const loadAll = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      const snaps = await api.fetchRankingSnapshots(shop);
-      setSnapshots(snaps);
-      const latest = snaps.length ? snaps[0].id : null;
-      setSelectedSnapshot(latest);
-      if (latest != null) {
-        const rows = await api.listRankingProducts(shop, { snapshotId: latest });
-        setProducts(rows);
-      } else {
-        setProducts([]);
-      }
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [shop]);
-
-  useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+  // 当前国家下的快照（date Select 用它）。country 为空字符串兜底，兼容历史缺字段。
+  const snapsForCountry = useMemo(
+    () => snapshots.filter((s) => (s.country || "") === selectedCountry),
+    [snapshots, selectedCountry]
+  );
 
   const loadSnapshot = useCallback(
     async (id: number) => {
@@ -942,6 +934,48 @@ function RankingBoard({ shop }: { shop: string }) {
       }
     },
     [shop]
+  );
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const snaps = await api.fetchRankingSnapshots(shop);
+      setSnapshots(snaps);
+      // 默认选当前国家的最新快照（默认 US）
+      const initial = snaps.find((s) => (s.country || "") === selectedCountry);
+      if (initial) {
+        setSelectedSnapshot(initial.id);
+        const rows = await api.listRankingProducts(shop, { snapshotId: initial.id });
+        setProducts(rows);
+      } else {
+        setSelectedSnapshot(null);
+        setProducts([]);
+      }
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [shop, selectedCountry]);
+
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
+
+  const onCountryChange = useCallback(
+    (v: string) => {
+      const next = (v || "US") as RankingCountry;
+      setSelectedCountry(next);
+      const found = snapshots.find((s) => (s.country || "") === next);
+      if (found) {
+        void loadSnapshot(found.id);
+      } else {
+        setSelectedSnapshot(null);
+        setProducts([]);
+      }
+    },
+    [snapshots, loadSnapshot]
   );
 
   const filtered = useMemo(() => {
@@ -972,6 +1006,8 @@ function RankingBoard({ shop }: { shop: string }) {
     );
   }
 
+  const hasDataForCountry = snapsForCountry.length > 0;
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-end gap-2">
@@ -979,10 +1015,16 @@ function RankingBoard({ shop }: { shop: string }) {
           label={t("ops.discovery.board.snapshotLabel")}
           value={selectedSnapshot != null ? String(selectedSnapshot) : ""}
           onChange={(v) => void loadSnapshot(Number(v))}
-          options={snapshots.map((s) => ({
+          options={snapsForCountry.map((s) => ({
             value: String(s.id),
             label: s.dateRange,
           }))}
+        />
+        <Select
+          label={t("ops.discovery.board.countryLabel")}
+          value={selectedCountry}
+          onChange={onCountryChange}
+          options={RANKING_COUNTRIES.map((c) => ({ value: c, label: c }))}
         />
         <label className="flex min-w-0 flex-1 flex-col gap-1 sm:max-w-md">
           <span className="text-[11px] text-ink-subtle">{t("ops.discovery.board.searchLabel")}</span>
@@ -995,6 +1037,14 @@ function RankingBoard({ shop }: { shop: string }) {
           />
         </label>
       </div>
+
+      {snapshots.length > 0 && !hasDataForCountry && !loading && (
+        <p className="mb-3 text-[12px] text-ink-subtle">
+          {t("ops.discovery.board.countryEmpty", { country: selectedCountry })}
+        </p>
+      )}
+
+      {!loading && hasDataForCountry && <RankingKpis products={filtered} />}
 
       <MultiBoards rows={filtered} snapshotId={selectedSnapshot} onSelect={setSelected} />
 

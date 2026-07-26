@@ -1,7 +1,7 @@
 // 榜单共享组件：商品卡 / 指标 / 详情抽屉 / 网格分页，主页与独立路由共用。
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useT } from "@/i18n/LocaleProvider";
 import { CoverThumb } from "@/components/operations/cover-thumb";
 import { StackedBar, type StackSegment } from "@/components/operations/charts";
@@ -95,8 +95,60 @@ export function RankingProductGrid({
   );
 }
 
+export function RankingKpis({ products }: { products: RankingRow[] }) {
+  const t = useT();
+  const kpis = useMemo(() => {
+    if (products.length === 0) return null;
+    const topGmv = products
+      .filter((p) => p.gmvUsd != null)
+      .sort((a, b) => (b.gmvUsd ?? 0) - (a.gmvUsd ?? 0))[0];
+    const grows = products.filter((p) => p.gmvGrowthRate != null).map((p) => p.gmvGrowthRate!);
+    const avgGrowth = grows.length ? grows.reduce((a, b) => a + b, 0) / grows.length : null;
+    const creatorSum = products.reduce((a, p) => a + (p.creatorCount ?? 0), 0);
+    const comms = products.filter((p) => p.commissionRate != null).map((p) => p.commissionRate!);
+    const avgComm = comms.length ? comms.reduce((a, b) => a + b, 0) / comms.length : null;
+    return { topGmv, avgGrowth, creatorSum, avgComm };
+  }, [products]);
+  if (!kpis) return null;
+  return (
+    <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="rounded border border-hairline bg-surface p-2.5">
+        <p className="text-[10px] text-ink-subtle">{t("ops.discovery.board.kpiGmvTop")}</p>
+        <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-ink">
+          {kpis.topGmv ? fmtUsd(kpis.topGmv.gmvUsd ?? 0) : "—"}
+        </p>
+        <p className="truncate text-[10px] text-ink-muted" title={kpis.topGmv?.productTitle}>
+          {kpis.topGmv?.productTitle}
+        </p>
+      </div>
+      <div className="rounded border border-hairline bg-surface p-2.5">
+        <p className="text-[10px] text-ink-subtle">{t("ops.discovery.board.kpiAvgGrowth")}</p>
+        <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-success">
+          {kpis.avgGrowth != null ? fmtGrowthRate(kpis.avgGrowth, t("ops.discovery.board.growthFactor")) : "—"}
+        </p>
+      </div>
+      <div className="rounded border border-hairline bg-surface p-2.5">
+        <p className="text-[10px] text-ink-subtle">{t("ops.discovery.board.kpiCreators")}</p>
+        <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-ink">{fmtInt(kpis.creatorSum)}</p>
+      </div>
+      <div className="rounded border border-hairline bg-surface p-2.5">
+        <p className="text-[10px] text-ink-subtle">{t("ops.discovery.board.kpiAvgCommission")}</p>
+        <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-ink">
+          {kpis.avgComm != null ? fmtPercent(kpis.avgComm) : "—"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function RankingCard({ row, onClick }: { row: RankingRow; onClick?: () => void }) {
   const t = useT();
+  const channels: StackSegment[] = [
+    { label: t("ops.discovery.board.liveGmv"), value: row.liveGmvUsd ?? 0, color: "#ef4444" },
+    { label: t("ops.discovery.board.videoGmv"), value: row.videoGmvUsd ?? 0, color: "#3b82f6" },
+    { label: t("ops.discovery.board.cardGmv"), value: row.cardGmvUsd ?? 0, color: "#10b981" },
+  ];
+  const channelSum = channels.reduce((a, c) => a + c.value, 0) || 1;
   return (
     <div
       role="button"
@@ -112,6 +164,11 @@ export function RankingCard({ row, onClick }: { row: RankingRow; onClick?: () =>
     >
       <div className="relative h-40 w-full overflow-hidden bg-surface-muted">
         <CoverThumb src={row.imageUrl} label={row.productTitle} />
+        {row.rankNo != null && (
+          <span className="absolute left-2 top-2 rounded bg-black/55 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-white">
+            #{row.rankNo}
+          </span>
+        )}
         {row.categoryL1 && (
           <span className="absolute right-2 top-2 max-w-[60%] truncate rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white">
             {tCategory(row.categoryL1, t)}
@@ -132,6 +189,7 @@ export function RankingCard({ row, onClick }: { row: RankingRow; onClick?: () =>
         </button>
         <div className="mt-1.5 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px]">
           <RankingMetric label={t("ops.discovery.board.price")} value={row.priceUsd != null ? fmtUsd(row.priceUsd) : "—"} />
+          <RankingMetric label={t("ops.discovery.board.avgPrice")} value={row.avgPriceUsd != null ? fmtUsd(row.avgPriceUsd) : "—"} />
           <RankingMetric label={t("ops.discovery.board.gmv")} value={row.gmvUsd != null ? fmtUsd(row.gmvUsd) : "—"} />
           <RankingMetric
             label={t("ops.discovery.board.gmvGrowth")}
@@ -140,7 +198,22 @@ export function RankingCard({ row, onClick }: { row: RankingRow; onClick?: () =>
           />
           <RankingMetric label={t("ops.discovery.board.sales")} value={row.salesVolume != null ? fmtInt(row.salesVolume) : "—"} />
           <RankingMetric label={t("ops.discovery.board.creators")} value={row.creatorCount != null ? fmtInt(row.creatorCount) : "—"} />
+          <RankingMetric label={t("ops.discovery.board.commission")} value={row.commissionRate != null ? fmtPercent(row.commissionRate) : "—"} />
           <RankingMetric label={t("ops.discovery.board.rating")} value={row.rating != null ? row.rating.toFixed(1) : "—"} />
+        </div>
+        {/* GMV 渠道迷你条（直播 / 视频 / 商品卡） */}
+        <div className="mt-2">
+          <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-muted">
+            {channels.map((c) => (
+              <span
+                key={c.label}
+                style={{ width: `${(c.value / channelSum) * 100}%`, background: c.color }}
+                className="h-full"
+                title={c.label}
+              />
+            ))}
+          </div>
+          <p className="mt-1 text-[10px] text-ink-subtle">{t("ops.discovery.board.gmvComposition")}</p>
         </div>
         {row.tiktokUrl && (
           <a
@@ -247,6 +320,24 @@ export function RankingDetailDrawer({ row, onClose }: { row: RankingRow | null; 
                 <span className="tabular-nums text-[13px] font-medium text-ink">{f.value}</span>
               </div>
             ))}
+          </div>
+
+          {/* 达人转化：达人数中出单率占比（无需额外调用，纯免费面聚合） */}
+          <div className="rounded border border-hairline bg-surface p-2">
+            <div className="flex h-2 w-full overflow-hidden rounded-full bg-surface-muted">
+              <span
+                style={{ width: `${(row.creatorOrderRate ?? 0) * 100}%` }}
+                className="h-full bg-[var(--brand)]"
+              />
+            </div>
+            <p className="mt-1.5 flex items-center justify-between text-[11px] text-ink-subtle">
+              <span>
+                {row.creatorCount != null ? `${fmtInt(row.creatorCount)} ${t("ops.discovery.board.creators")}` : "—"}
+              </span>
+              <span>
+                {t("ops.discovery.board.creatorOrderRate")}: {row.creatorOrderRate != null ? fmtPercent(row.creatorOrderRate) : "—"}
+              </span>
+            </p>
           </div>
 
           {row.categoryPath && (

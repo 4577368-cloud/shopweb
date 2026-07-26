@@ -10,6 +10,7 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { Button } from "@/components/ui/button";
 import { CoverThumb } from "@/components/operations/cover-thumb";
+import { RankingKpis } from "@/components/operations/ranking-grid";
 import { StackedBar, type StackSegment } from "@/components/operations/charts";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
@@ -282,6 +283,9 @@ function LeaderboardContent({
             {t("ops.leaderboard.total", { n: sorted.length })}
           </p>
         </div>
+
+        {/* KPI 概览：与运营中心首屏「榜单」保持一致 */}
+        {!loading && <RankingKpis products={products} />}
 
         {/* 主体：商品卡网格 + 分页 */}
         {loading ? (
