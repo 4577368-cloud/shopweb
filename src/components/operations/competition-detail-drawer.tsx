@@ -2,7 +2,9 @@
 "use client";
 
 import { useMemo } from "react";
-import { useT } from "@/i18n/LocaleProvider";
+import { useRouter } from "next/navigation";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 import { Button } from "@/components/ui/button";
 import type {
   AdPlatform,
@@ -18,7 +20,7 @@ import type {
   StoreRow,
 } from "@/lib/marketing/types";
 import { PLATFORM_META, regionLabel, categoryLabel, shopTypeLabel } from "@/lib/marketing/enums";
-import { referenceCohort } from "@/lib/marketing/api";
+import { referenceCohort, registerStore } from "@/lib/marketing/api";
 import {
   lifecycleStage,
   platformMatrix,
@@ -64,6 +66,8 @@ interface CompetitionDetailDrawerProps {
 
 export function CompetitionDetailDrawer({ store, products, onClose, onToggleCollect, collected, toggling, cohort: cohortProp, run }: CompetitionDetailDrawerProps) {
   const t = useT();
+  const locale = useLocale();
+  const router = useRouter();
   const cohort = useMemo(() => cohortProp && cohortProp.length ? cohortProp : referenceCohort(), [cohortProp]);
   // 竞店充实：并行拉取 store/detail 族 4 端点（基于 store id，享 3 天免费窗口）。
   const analysis = useStoreAnalysis(store?.id ?? "", run);
@@ -268,6 +272,19 @@ export function CompetitionDetailDrawer({ store, products, onClose, onToggleColl
 
           {/* 竞店充实：店铺情报（store/detail 族 4 端点，享 3 天免费窗口） */}
           <StoreAnalysisSection analysis={analysis} t={t} />
+
+          {store && (
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={() => {
+                registerStore(store);
+                router.push(localePath(locale, `/operations-center/store/${store.id}`));
+              }}
+            >
+              {t("ops.storePage.viewFull")}
+            </Button>
+          )}
 
           <Button
             variant={collected ? "secondary" : "primary"}
