@@ -14,6 +14,7 @@ import {
 } from "@/lib/batch-link/image-match";
 import { isAlreadySourcedProduct } from "@/lib/batch-link/publish-source";
 import { mapImageSearchError } from "@/lib/batch-link/match-errors";
+import { MULTI_IMAGE_SEARCH_ENABLED } from "@/lib/batch-link/image-search-flags";
 import {
   enrich1688CandidateWithCatalogIdentity,
   extractOfferIdFromUrl,
@@ -417,9 +418,13 @@ export async function runImageSearchPipeline(
       ? imageSearchCountryForLocale(context.locale)
       : undefined;
 
-    const queryImageUrls = await resolveRepresentativeSearchImageUrls(item, context);
+    const queryImageUrls = MULTI_IMAGE_SEARCH_ENABLED
+      ? await resolveRepresentativeSearchImageUrls(item, context)
+      : [];
     const useMultiVariantSearch =
-      Boolean(context?.variantImages?.length) && queryImageUrls.length > 0;
+      MULTI_IMAGE_SEARCH_ENABLED &&
+      Boolean(context?.variantImages?.length) &&
+      queryImageUrls.length > 0;
 
     const res = useMultiVariantSearch
       ? await fetchMergedImageSearch(
