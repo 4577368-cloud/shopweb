@@ -194,6 +194,14 @@ export function useProductsMirror({
     void loadSummary({ silent: true });
   }, [batchLinkBusyRef, loadSummary]);
 
+  /** Bypass mirror TTL — use after catalog publish/link so Shop tab sees new rows. */
+  const refreshMirrorFromServer = useCallback(() => {
+    if (batchLinkBusyRef.current) return;
+    void loadSummary({ silent: true, force: true }).then((data) => {
+      if (data) bumpMirrorRefresh();
+    });
+  }, [batchLinkBusyRef, loadSummary, bumpMirrorRefresh]);
+
   return {
     summary,
     shopProducts,
@@ -205,5 +213,6 @@ export function useProductsMirror({
     mirrorRefreshSignal,
     bumpMirrorRefresh,
     refreshProductsQuietly,
+    refreshMirrorFromServer,
   };
 }
