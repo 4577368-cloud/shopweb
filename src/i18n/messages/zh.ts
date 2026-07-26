@@ -3773,6 +3773,7 @@ export const zh: Dictionary = {
     noGapVariants: "当前没有需要补充货源的缺口变体。",
     noSpecsInSource: "当前货源暂无规格",
     pendingSource: "待选择货源",
+    rowMapped: "已映射",
     pickMerchant: "选择商家…",
     pickMerchantFirst: "先选择商家",
     pickSpec: "选择货源规格…",
