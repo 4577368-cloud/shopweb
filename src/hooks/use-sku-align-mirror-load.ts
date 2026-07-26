@@ -69,7 +69,7 @@ export function useSkuAlignMirrorLoad({
           sessionStorage.setItem(backfillKey, "1");
           void api.backfillBindingSnapshots(shopName).catch(() => null);
         }
-        const publishBindingsKey = `sku-backfill-publish-bindings:v2:${shopName}`;
+        const publishBindingsKey = `sku-backfill-publish-bindings:v3:${shopName}`;
         const shouldRepairPublishBindings =
           opts?.skipCache ||
           (typeof sessionStorage !== "undefined" &&
