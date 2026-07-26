@@ -3699,6 +3699,8 @@ export const en = {
     manualCount: "{{count}} manual",
     needSupplement: "Supplement source needed",
     noTitle: "(No title)",
+    openShopProduct: "Open product in your store",
+    openSourceProduct: "Open source product page",
     partialMatch: "{{bound}}/{{total}} aligned",
     pendingConfirm: "{{count}} to confirm",
     replaceSource: "Replace source",

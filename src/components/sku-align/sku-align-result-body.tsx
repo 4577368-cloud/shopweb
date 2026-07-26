@@ -35,6 +35,7 @@ export interface SkuAlignResultBodyProps {
   products: SkuProductOverview[];
   filtered: SkuProductOverview[];
   shopName: string;
+  shopDomain?: string | null;
   pricingTemplate: PricingTemplate | null;
   onRefresh: () => void;
   onAligned: () => void | Promise<void>;
@@ -55,6 +56,7 @@ export function SkuAlignResultBody({
   products,
   filtered,
   shopName,
+  shopDomain,
   pricingTemplate,
   onRefresh,
   onAligned,
@@ -173,6 +175,7 @@ export function SkuAlignResultBody({
                 key={p.thirdPlatformItemId}
                 product={p}
                 shopName={shopName}
+                shopDomain={shopDomain}
                 onAligned={async () => {
                   await onAligned();
                 }}

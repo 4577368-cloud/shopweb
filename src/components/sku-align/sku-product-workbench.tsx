@@ -15,6 +15,7 @@ import {
   X,
 } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
+import { ExternalTextLink } from "@/components/ui/external-text-link";
 import { AccountManagerContactCta } from "@/components/account-manager/account-manager-contact-cta";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -84,6 +85,10 @@ import {
 } from "@/lib/purchase-cost-display";
 import type { ImageSearchProduct, PricingTemplate, SkuProductOverview, SkuVariant } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import {
+  resolveShopListingProductUrl,
+  shopMirrorKeyForLink,
+} from "@/lib/shop-product-external-link";
 
 /** 对照行内下拉：白底 + 实线边框，避免与行背景色混在一起。 */
 const COMPARE_SELECT_CLASS =
@@ -261,6 +266,7 @@ function truncateMerchant(
 export interface SkuProductWorkbenchProps {
   product: SkuProductOverview;
   shopName: string;
+  shopDomain?: string | null;
   detailUrl: string | null;
   tangbuyProductId: string | null;
   phase: DrawerPhase;
@@ -299,6 +305,7 @@ const candidateKeyOf = (c: ImageSearchProduct): string =>
 export function SkuProductWorkbench({
   product,
   shopName,
+  shopDomain,
   detailUrl,
   tangbuyProductId,
   phase,
@@ -362,6 +369,16 @@ export function SkuProductWorkbench({
 
   const effectiveDetailUrl = sourceOverride?.detailUrl ?? detailUrl;
   const effectiveTangbuyId = sourceOverride?.tangbuyProductId ?? tangbuyProductId;
+  const shopProductUrl = useMemo(
+    () =>
+      resolveShopListingProductUrl({
+        thirdPlatformItemId: product.thirdPlatformItemId,
+        shopDomain,
+        shopMirrorKey: shopMirrorKeyForLink(shopName, shopDomain),
+      }),
+    [product.thirdPlatformItemId, shopDomain, shopName]
+  );
+  const sourceProductUrl = effectiveDetailUrl?.trim() || null;
   const canPick = Boolean(effectiveDetailUrl?.trim() && effectiveTangbuyId?.trim());
 
   /* ---------- derived ---------- */
@@ -1343,7 +1360,12 @@ export function SkuProductWorkbench({
               {t("skuWorkbench.headerEyebrow")}
             </p>
             <h2 className="line-clamp-1 text-sm font-normal leading-5 text-ink">
-              {product.title ?? product.thirdPlatformItemId}
+              <ExternalTextLink
+                href={shopProductUrl}
+                title={t("skuBinding.openShopProduct")}
+              >
+                {product.title ?? product.thirdPlatformItemId}
+              </ExternalTextLink>
             </h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
               <span className="text-success">
@@ -1378,6 +1400,7 @@ export function SkuProductWorkbench({
             selections={selections}
             merchantTitle={currentMerchantTitle}
             merchantImage={currentMerchantImage}
+            sourceProductUrl={sourceProductUrl}
             currentSourceLabel={t("skuWorkbench.currentSource")}
             suggestCount={suggestCount}
             previewCount={previewCount}
@@ -1400,6 +1423,7 @@ export function SkuProductWorkbench({
           <ReplacePrimaryPanel
             currentTitle={currentMerchantTitle}
             currentImage={currentMerchantImage}
+            sourceProductUrl={sourceProductUrl}
             loading={replaceSearchLoading}
             error={replaceSearchError}
             candidates={replaceCandidates}
@@ -1507,6 +1531,7 @@ function PrimaryComparePanel({
   selections,
   merchantTitle,
   merchantImage,
+  sourceProductUrl,
   currentSourceLabel,
   suggestCount,
   previewCount,
@@ -1533,6 +1558,7 @@ function PrimaryComparePanel({
   selections: Record<string, string>;
   merchantTitle: string;
   merchantImage: string | null;
+  sourceProductUrl: string | null;
   currentSourceLabel: string;
   suggestCount: number;
   previewCount: number;
@@ -1569,7 +1595,15 @@ function PrimaryComparePanel({
                 <Store className="h-3.5 w-3.5 shrink-0 text-ink-subtle" />
                 {currentSourceLabel}
               </p>
-              <p className="line-clamp-1 text-sm font-medium text-ink">{merchantTitle}</p>
+              <p className="line-clamp-1 text-sm font-medium text-ink">
+                <ExternalTextLink
+                  href={sourceProductUrl}
+                  title={t("skuBinding.openSourceProduct")}
+                  className="font-medium text-ink"
+                >
+                  {merchantTitle}
+                </ExternalTextLink>
+              </p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -1858,6 +1892,7 @@ function PrimaryCompareRow({
 function ReplacePrimaryPanel({
   currentTitle,
   currentImage,
+  sourceProductUrl,
   loading,
   error,
   candidates,
@@ -1868,6 +1903,7 @@ function ReplacePrimaryPanel({
 }: {
   currentTitle: string;
   currentImage?: string | null;
+  sourceProductUrl: string | null;
   loading: boolean;
   error: string | null;
   candidates: RankedCoverageCandidate[];
@@ -1910,7 +1946,13 @@ function ReplacePrimaryPanel({
               {t("skuWorkbench.currentPrimary")}
             </p>
             <p className="truncate text-xs text-ink">
-              {truncateMerchant(currentTitle, unknownSource, 36)}
+              <ExternalTextLink
+                href={sourceProductUrl}
+                title={t("skuBinding.openSourceProduct")}
+                className="text-xs text-ink"
+              >
+                {truncateMerchant(currentTitle, unknownSource, 36)}
+              </ExternalTextLink>
             </p>
           </div>
         </div>

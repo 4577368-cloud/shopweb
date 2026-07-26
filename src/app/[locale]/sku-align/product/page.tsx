@@ -362,6 +362,7 @@ function SkuAlignProductContent() {
           <SkuProductWorkbench
             product={product}
             shopName={shopName}
+            shopDomain={shop.domain}
             detailUrl={detailUrl}
             tangbuyProductId={tangbuyProductId}
             phase={phase}

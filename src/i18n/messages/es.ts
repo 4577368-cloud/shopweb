@@ -3692,6 +3692,8 @@ export const es: Dictionary = {
     manualCount: "{{count}} manual",
     needSupplement: "Supplement source needed",
     noTitle: "(No title)",
+    openShopProduct: "Abrir producto en tu tienda",
+    openSourceProduct: "Abrir página del proveedor",
     partialMatch: "{{bound}}/{{total}} aligned",
     pendingConfirm: "{{count}} to confirm",
     replaceSource: "Replace source",

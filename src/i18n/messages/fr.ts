@@ -3693,6 +3693,8 @@ export const fr: Dictionary = {
     manualCount: "{{count}} manual",
     needSupplement: "Supplement source needed",
     noTitle: "(No title)",
+    openShopProduct: "Ouvrir le produit dans la boutique",
+    openSourceProduct: "Ouvrir la fiche fournisseur",
     partialMatch: "{{bound}}/{{total}} aligned",
     pendingConfirm: "{{count}} to confirm",
     replaceSource: "Replace source",

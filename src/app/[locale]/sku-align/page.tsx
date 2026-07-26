@@ -494,6 +494,7 @@ function SkuAlignContent() {
           products={products}
           filtered={filtered}
           shopName={shopName}
+          shopDomain={shop.domain}
           pricingTemplate={pricingTemplate}
           onRefresh={() => void load()}
           onAligned={() => void load()}
