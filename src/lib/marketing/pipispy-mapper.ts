@@ -1,6 +1,9 @@
 import type {
   AdCard,
   AdDetail,
+  Advertiser,
+  CompetitionProductRow,
+  CreativeBrief,
   AdPlatform,
   CreditsBalance,
   PageMeta,
@@ -8,11 +11,21 @@ import type {
   PlatformCode,
   RankRow,
   StoreAdState,
+  StoreAdTrendPoint,
   StoreCreative,
+  StoreDataAnalysis,
+  StoreDeliveryAnalysis,
+  StoreFbPage,
+  StoreLongestRunAd,
+  StoreMostUsedAd,
+  StorePlatformShare,
+  StoreRegionAnalysis,
   StoreRow,
+  StoreSearchResult,
   TtsBestSellingGood,
   TtsCategory,
   TtsSalesTrendPoint,
+  TtsShopDetail,
   TtsShopRow,
   WebsiteInfo,
 } from "./types";
@@ -257,10 +270,56 @@ export function mapTtsShopRow(r: PipispyRecord): TtsShopRow {
   };
 }
 
+/** 创意打法库条目（adspy/list / ad-library/ads，公开广告库）。pipispy 真实 schema 容错映射。 */
+export function mapCreativeBrief(r: PipispyRecord): CreativeBrief {
+  const cover = str(r.cover ?? r.image_url ?? r.thumbnail ?? r.image);
+  const title = str(r.title ?? r.ad_title ?? r.name);
+  const copy = str(r.caption ?? r.ad_copy ?? r.text ?? r.copy);
+  const platform = platFromCode(r.platform ?? r.plat_type);
+  const platforms = strArray(r.ad_platform ?? r.platforms);
+  const advertiser = str(
+    r.advertiser_name ?? r.page_name ?? r.store_name ?? r.advertiser,
+    title
+  );
+  const adStatus = num(r.ad_status ?? r.status, 1);
+  const endedAt = numOrNull(r.ended_at ?? r.ad_ended_at);
+  const isActive = endedAt == null ? adStatus === 1 : false;
+  return {
+    id: str(r.id ?? r.ad_id, str(r.ad_id)),
+    cover,
+    title,
+    copy,
+    platform,
+    platforms: platforms.length ? platforms : [platform.toUpperCase()],
+    advertiser,
+    advertiserPage: str(r.advertiser_link ?? r.page_link ?? r.ads_library_link),
+    likes: num(r.likes ?? r.like_count),
+    comments: num(r.comments ?? r.comment_count),
+    shares: num(r.shares ?? r.share_count),
+    activeDays: num(r.days ?? r.active_days ?? r.put_days),
+    ctaType: str(r.cta_type ?? r.button_type ?? r.cta, "Others"),
+    isActive,
+  };
+}
+
 export function mapAdDetail(r: PipispyRecord, id: string): AdDetail {
   const product = asRecord(r.product) ?? r;
   const store = asRecord(r.store) ?? {};
   const platCode = num(r.platform ?? r.plat_type, 1) as PlatformCode;
+  // 富 dossier：advertisers 真实映射（曾是硬编码 []，导致详情抽屉被饿死）。
+  const rawAdvertisers = Array.isArray(r.advertisers) ? (r.advertisers as unknown[]) : [];
+  const advertisers: Advertiser[] = rawAdvertisers.map((a, i) => {
+    const rec = asRecord(a) ?? {};
+    const advStore = asRecord(rec.store) ?? {};
+    return {
+      id: str(rec.id, `adv_${i}`),
+      name: str(rec.name ?? rec.advertiser_name, `Advertiser ${i + 1}`),
+      sourceAdvertiserLink: str(rec.source_advertiser_link),
+      adsLibraryLink: str(rec.ads_library_link),
+      domain: str(advStore.source_store_link ?? rec.source_store_link),
+      eCommercePlatform: str(rec.e_commerce_platform ?? advStore.e_commerce_platform),
+    };
+  });
   return {
     id: str(r.id, id),
     product: {
@@ -276,7 +335,10 @@ export function mapAdDetail(r: PipispyRecord, id: string): AdDetail {
       name: str(store.name ?? r.store_name),
       domain: str(store.source_store_link ?? store.domain ?? r.source_store_link),
     },
-    advertisers: [],
+    advertisers,
+    adCost: num(r.ad_cost),
+    adAudienceReach: num(r.ad_audience_reach),
+    adForecast: str(r.ad_forecast, "—"),
     adStartedHistory: strArray(r.ad_started_history),
     ctaType: str(r.cta_type ?? r.button_type, "Others"),
     likeCount: num(r.like_count ?? r.digg_count),
@@ -284,6 +346,163 @@ export function mapAdDetail(r: PipispyRecord, id: string): AdDetail {
     platformCode: platCode,
     videoId: str(r.video_id),
     copyUnavailable: true,
+  };
+}
+
+/** 店下在投商品（store/detail/competition/products，免费端点）。 */
+export function mapCompetitionProduct(r: PipispyRecord): CompetitionProductRow {
+  const store = asRecord(r.store) ?? {};
+  return {
+    id: str(r.id),
+    title: str(r.title ?? r.name ?? store.title, "—"),
+    icon: str(r.icon ?? r.image ?? r.image_url ?? store.logo_url),
+    link: str(r.source_product_link ?? r.source_product_link),
+  };
+}
+
+// --- 竞店充实（store/detail 族，基于 store id，享 3 天免费窗口）---
+
+/** 广告趋势点（store/ad-trend）。响应式字段含 day/time、ad_count/data_count、play_count。 */
+export function mapStoreAdTrend(r: PipispyRecord): StoreAdTrendPoint {
+  return {
+    day: num(r.day ?? r.time),
+    adCount: num(r.ad_count ?? r.data_count),
+    playCount: num(r.play_count),
+  };
+}
+
+/** 常青素材（store/longest-run-ads）：投放最久的创意。 */
+export function mapStoreLongestRunAd(r: PipispyRecord): StoreLongestRunAd {
+  const first = num(r.first_seen ?? r.firstSeen);
+  const last = num(r.last_seen ?? r.lastSeen);
+  const runDays =
+    last && first
+      ? Math.max(0, Math.round((last - first) / 86400))
+      : num(r.run_days ?? r.runDays);
+  return {
+    id: str(r.id),
+    cover: str(r.cover ?? r.image_url ?? r.image),
+    title: str(r.title ?? r.name),
+    platform: platFromCode(r.platform ?? r.plat_type),
+    firstSeen: first,
+    lastSeen: last,
+    runDays,
+    playCount: num(r.play_count ?? r.playCount),
+  };
+}
+
+/** 高频素材（store/most-used-ads）：投放最频繁的创意。 */
+export function mapStoreMostUsedAd(r: PipispyRecord): StoreMostUsedAd {
+  return {
+    id: str(r.id),
+    cover: str(r.cover ?? r.image_url ?? r.image),
+    title: str(r.title ?? r.name),
+    platform: platFromCode(r.platform ?? r.plat_type),
+    usedCount: num(r.used_count ?? r.usedCount ?? r.count),
+    playCount: num(r.play_count ?? r.playCount),
+    cpm: num(r.cpm ?? r.min_cpm ?? r.cpm_min),
+  };
+}
+
+/** 关联 Facebook 主页（store/fb-pages）。 */
+export function mapStoreFbPage(r: PipispyRecord): StoreFbPage {
+  return {
+    id: str(r.id ?? r.page_id),
+    pageId: str(r.page_id ?? r.id),
+    name: str(r.name ?? r.page_name),
+    url: str(r.url ?? r.link ?? r.page_url),
+    likes: num(r.likes ?? r.like_count),
+    followers: num(r.followers ?? r.follower_count),
+    category: str(r.category ?? r.category_name),
+  };
+}
+
+// --- 竞店检索（store/list，域名/店名 → 内部 ID）---
+
+/** 店铺检索结果（store/list → data[]）。 */
+export function mapStoreSearchResult(r: PipispyRecord): StoreSearchResult {
+  const platTypes = Array.isArray(r.plat_type)
+    ? (r.plat_type as unknown[]).map(platFromCode)
+    : [platFromCode(r.plat_type)];
+  return {
+    id: str(r.id ?? r.store_id),
+    name: str(r.name ?? r.shop_name ?? r.store_name),
+    domain: str(r.domain ?? r.store_domain ?? r.source_store_link),
+    icon: str(r.icon ?? r.logo_url ?? r.image),
+    platType: platTypes.length ? platTypes : ["meta"],
+    adCount: num(r.ad_count ?? r.data_count ?? r.total_ad_count),
+    region: str(r.region ?? r.country ?? r.region_code),
+    shopType: str(r.shop_type ?? r.e_commerce_platform ?? r.ecommerce_platform),
+    monthlyVisits: num(r.monthly_visits ?? r.website_monthly_visits),
+    firstAdTime: num(r.first_ad_time ?? r.firstAdTime),
+    lastAdTime: num(r.last_ad_time ?? r.lastAdTime),
+    adState: num(r.store_ad_state ?? r.ad_state, 1) as StoreAdState,
+  };
+}
+
+// --- 店铺数据分析（store/data-analysis，截图「数据分析」整块）---
+
+/** 单平台占比行（like_rate 容忍百分制/小数制：>1 视为百分制归一）。 */
+function mapPlatformShare(rec: PipispyRecord, totalAdCount: number): StorePlatformShare {
+  const raw = num(rec.like_rate ?? rec.likeRate);
+  const likeRate = raw > 1 ? raw / 100 : raw;
+  const adCount = num(rec.ad_count ?? rec.data_count);
+  return {
+    platform: platFromCode(rec.platform ?? rec.plat_type),
+    playCount: num(rec.play_count),
+    likeCount: num(rec.like_count ?? rec.digg_count),
+    likeRate,
+    adCount,
+    adDays: num(rec.ad_days ?? rec.put_days),
+    spendMin: num(rec.min_spend ?? rec.spend_min),
+    spendMax: num(rec.max_spend ?? rec.spend_max),
+    share: totalAdCount > 0 ? adCount / totalAdCount : 0,
+  };
+}
+
+/** 店铺数据分析（store/data-analysis → 全平台汇总 + 平台明细）。 */
+export function mapStoreDataAnalysis(r: PipispyRecord): StoreDataAnalysis {
+  const totalAdCount = num(r.total_ad_count ?? r.totalAdCount);
+  const rawList = Array.isArray(r.platform_list ?? r.platformList)
+    ? ((r.platform_list ?? r.platformList) as unknown[])
+    : Array.isArray(r.platforms)
+      ? (r.platforms as unknown[])
+      : [];
+  const platforms = rawList.map((p) => mapPlatformShare(asRecord(p) ?? {}, totalAdCount));
+  const rawLike = num(r.like_rate ?? r.likeRate);
+  const likeRate = rawLike > 1 ? rawLike / 100 : rawLike;
+  return {
+    totalPlayCount: num(r.total_play_count ?? r.totalPlayCount),
+    totalLikeCount: num(r.total_like_count ?? r.totalLikeCount),
+    likeRate,
+    totalAdCount,
+    totalAdDays: num(r.total_ad_days ?? r.totalAdDays),
+    spendMin: num(r.min_spend ?? r.spendMin ?? r.minSpend),
+    spendMax: num(r.max_spend ?? r.spendMax ?? r.maxSpend),
+    firstAdTime: num(r.first_ad_time ?? r.firstAdTime),
+    lastAdTime: num(r.last_ad_time ?? r.lastAdTime),
+    platforms: platforms.length ? platforms : [mapPlatformShare({}, totalAdCount)],
+  };
+}
+
+/** 广告地区分布（store/region-analysis → data[]）。 */
+export function mapStoreRegionAnalysis(r: PipispyRecord): StoreRegionAnalysis {
+  return {
+    region: str(r.region ?? r.country ?? r.region_code),
+    adCount: num(r.ad_count ?? r.data_count),
+    playCount: num(r.play_count),
+    likeCount: num(r.like_count ?? r.digg_count),
+  };
+}
+
+/** 交付分析（store/delivery-analysis → 单对象）。 */
+export function mapStoreDeliveryAnalysis(r: PipispyRecord): StoreDeliveryAnalysis {
+  return {
+    avgDeliveryDays: num(r.avg_delivery_days ?? r.avgDeliveryDays),
+    maxDeliveryDays: num(r.max_delivery_days ?? r.maxDeliveryDays),
+    frequency: num(r.frequency ?? r.freq),
+    coverage: num(r.coverage ?? r.cover_count),
+    activeDays: num(r.active_days ?? r.activeDays),
   };
 }
 
@@ -336,5 +555,23 @@ export function mapPageMeta(
     currentPage: current,
     pageSize: size,
     isNext,
+  };
+}
+
+/**
+ * TikTok Shop 店铺详情富集（tiktok-shop/shop/detail）。
+ * 只取列表行 TtsShopRow 没有的字段；容错：任何缺失字段降级为 null/false。
+ */
+export function mapTtsShopDetail(r: PipispyRecord): TtsShopDetail {
+  return {
+    adCost: str(r.ad_cost) || null,
+    rootPath: str(r.root_path) || null,
+    goodsAdRate: numOrNull(r.goods_ad_rate),
+    commissionRate: numOrNull(r.commission_rate),
+    landingPage: str(r.landing_page) || null,
+    desc: str(r.desc) || null,
+    keywords: str(r.keywords) || null,
+    isManaged: bool(r.is_managed, false),
+    isInMarketplace: bool(r.is_in_marketplace, false),
   };
 }

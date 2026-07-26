@@ -173,6 +173,8 @@ const CATALOG_HIGH_RISK_TYPES = new Set<LogisticsTypeCode>([
   "FOOD",
   "BATTERY_MAGNETIC",
   "BLADE",
+  "LIQUID",
+  "POWDER",
   "OTHER",
 ]);
 
@@ -363,6 +365,10 @@ export const TYPE_OPTIONS = [
   { value: "FOOD", label: "食品" },
   { value: "BATTERY_MAGNETIC", label: "带电 / 带磁" },
   { value: "BLADE", label: "刀具" },
+  { value: "LIQUID", label: "液体" },
+  { value: "POWDER", label: "粉末" },
+  { value: "FRAGILE", label: "易碎品" },
+  { value: "COSMETIC", label: "化妆品" },
   { value: "OTHER", label: "其他特殊品类" },
 ] as const;
 
@@ -414,6 +420,10 @@ export function buildTypeOptions(t: LogisticsTranslate) {
     { value: "FOOD", label: t("logisticsDisplay.type.food") },
     { value: "BATTERY_MAGNETIC", label: t("logisticsDisplay.type.batteryMagnetic") },
     { value: "BLADE", label: t("logisticsDisplay.type.blade") },
+    { value: "LIQUID", label: t("logisticsDisplay.type.liquid") },
+    { value: "POWDER", label: t("logisticsDisplay.type.powder") },
+    { value: "FRAGILE", label: t("logisticsDisplay.type.fragile") },
+    { value: "COSMETIC", label: t("logisticsDisplay.type.cosmetic") },
     { value: "OTHER", label: t("logisticsDisplay.type.other") },
   ] as const;
 }
@@ -889,7 +899,7 @@ export function statusBadgeClass(status: LogisticsDecisionStatus): string {
   }
 }
 
-function formatFee(
+export function formatFee(
   line?: LogisticsLine | null,
   pricing?: PricingTemplate | null
 ): string | null {
@@ -1251,7 +1261,7 @@ function formatQuoteAlternativesTertiary(
   return undefined;
 }
 
-function resolveLines(
+export function resolveLines(
   decision: VariantLogisticsDecision,
   quoteResult?: LogisticsEstimateResult
 ): {

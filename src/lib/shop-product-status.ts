@@ -60,10 +60,15 @@ export function formatStatusTransition(
 export async function writeShopProductStatus(
   shopName: string,
   productId: string,
-  targetStatus: ShopifyListingStatusTarget
+  targetStatus: ShopifyListingStatusTarget,
+  signal?: AbortSignal
 ): Promise<ShopProductDetail> {
-  return api.updateShopProduct(shopName, {
-    itemId: productId,
-    status: targetStatus,
-  });
+  return api.updateShopProduct(
+    shopName,
+    {
+      itemId: productId,
+      status: targetStatus,
+    },
+    signal
+  );
 }

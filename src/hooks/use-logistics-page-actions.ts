@@ -203,7 +203,9 @@ export function useLogisticsPageActions({
             (typeCode, i, arr) =>
               (typeCode === "BATTERY_MAGNETIC" ||
                 typeCode === "FOOD" ||
-                typeCode === "BLADE") &&
+                typeCode === "BLADE" ||
+                typeCode === "LIQUID" ||
+                typeCode === "POWDER") &&
               arr.indexOf(typeCode) === i
           );
 

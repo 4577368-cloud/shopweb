@@ -16,6 +16,7 @@ export function LogisticsNextStepsCard({
   unidentifiedCount,
   skuBindingGap,
   completionGate,
+  onStartEstimate,
   onSaveAndSync,
   onViewUnidentified,
   onViewPendingConfirm,
@@ -31,7 +32,7 @@ export function LogisticsNextStepsCard({
   unidentifiedCount: number;
   skuBindingGap: { products: number; skus: number };
   completionGate: CompletionGateResult;
-  onStartEstimate: () => void;
+  onStartEstimate?: () => void;
   onSaveAndSync: () => void;
   onViewUnidentified: () => void;
   onViewPendingConfirm: () => void;
@@ -61,7 +62,10 @@ export function LogisticsNextStepsCard({
       key: "estimate",
       title: t("logisticsUi.estimatePendingTitle", { count: autoReadyCount }),
       detail: t("logisticsUi.estimatePendingDetail"),
-      hintOnly: true,
+      actionLabel: t("logisticsUi.execute"),
+      primary: true,
+      onClick: onStartEstimate,
+      disabled: pipelineRunning,
     });
   }
 

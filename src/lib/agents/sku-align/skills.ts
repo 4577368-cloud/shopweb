@@ -1,3 +1,4 @@
+import type { TranslateFn } from "@/i18n/server";
 import type { SkuPageContext } from "@/lib/agents/sku-align/plan-command";
 import type { SkuCommandPlan } from "@/lib/agents/sku-align/command-schema";
 import type { SuggestedActionKind } from "@/lib/agents/types";
@@ -15,12 +16,11 @@ function isFullyLinked(product: SkuProductOverview): boolean {
 
 export interface SkuSkill {
   id: string;
-  name: string;
-  description: string;
+  nameKey: string;
   commandIds: string[];
   isActive: (ctx: SkuPageContext) => boolean;
   progress: (ctx: SkuPageContext) => number | null;
-  nextSteps: (ctx: SkuPageContext) => SkillNextStep[];
+  nextSteps: (ctx: SkuPageContext, t: TranslateFn) => SkillNextStep[];
 }
 
 export interface SkillNextStep {
@@ -40,8 +40,7 @@ export interface SkillExecutionFeedback {
 
 const confirmPendingSkill: SkuSkill = {
   id: "confirm_pending",
-  name: "确认待匹配",
-  description: "审核并确认 AI 自动对齐的 SKU 匹配建议",
+  nameKey: "skuSkill.nameConfirmPending",
   commandIds: ["batch_confirm_pending", "open_filter"],
 
   isActive: (ctx) => {
@@ -56,12 +55,12 @@ const confirmPendingSkill: SkuSkill = {
     return Math.round((fullyLinked / total) * 100);
   },
 
-  nextSteps: (ctx) => {
+  nextSteps: (ctx, t) => {
     const steps: SkillNextStep[] = [];
     const partiallyLinked = ctx.productCatalog.filter(isPartiallyLinked).length;
     if (partiallyLinked > 0) {
       steps.push({
-        label: `查看 ${partiallyLinked} 个部分关联商品`,
+        label: t("skuSkill.stepViewPartial", { count: partiallyLinked }),
         kind: "set_shop_filter",
         filterMode: "partially_linked",
       });
@@ -69,7 +68,7 @@ const confirmPendingSkill: SkuSkill = {
     const fullyLinked = ctx.productCatalog.filter(isFullyLinked).length;
     if (fullyLinked > 0) {
       steps.push({
-        label: `查看 ${fullyLinked} 个全部关联商品`,
+        label: t("skuSkill.stepViewFullyLinked", { count: fullyLinked }),
         kind: "set_shop_filter",
         filterMode: "fully_linked",
       });
@@ -80,23 +79,22 @@ const confirmPendingSkill: SkuSkill = {
 
 const autoAlignSkill: SkuSkill = {
   id: "auto_align",
-  name: "自动对齐",
-  description: "重新运行 SKU 自动对齐，优化变体与货源的映射",
+  nameKey: "skuSkill.nameAutoAlign",
   commandIds: ["rerun_auto_align"],
 
   isActive: () => true,
 
   progress: () => null,
 
-  nextSteps: (ctx) => {
+  nextSteps: (ctx, t) => {
     const steps: SkillNextStep[] = [];
     if (ctx.focusProductId) {
       steps.push({
-        label: "重新对齐当前商品",
+        label: t("skuSkill.stepRealignCurrent"),
       });
     }
     steps.push({
-      label: "查看全部商品",
+      label: t("skuSkill.stepViewAll"),
       kind: "set_shop_filter",
       filterMode: "all",
     });
@@ -106,8 +104,7 @@ const autoAlignSkill: SkuSkill = {
 
 const bindingOpsSkill: SkuSkill = {
   id: "binding_ops",
-  name: "绑定与货源操作",
-  description: "解绑、换货源、加补充货源、忽略匹配、手动绑定等变体级操作",
+  nameKey: "skuSkill.nameBindingOps",
   commandIds: [
     "bind_variant",
     "unbind",
@@ -129,14 +126,14 @@ const bindingOpsSkill: SkuSkill = {
 
   progress: () => null,
 
-  nextSteps: (ctx) => {
+  nextSteps: (ctx, t) => {
     const steps: SkillNextStep[] = [];
     const target = ctx.productCatalog.find((p) =>
       p.variants.some((v) => v.bound?.bindStatus === "PENDING" || !v.bound)
     );
     if (target) {
       steps.push({
-        label: `打开「${target.title}」工作台处理变体`,
+        label: t("skuSkill.stepOpenWorkbench", { title: target.title ?? "" }),
         kind: "focus_product",
         productId: target.thirdPlatformItemId,
       });
@@ -161,6 +158,7 @@ export function findSkuSkillByCommandId(intent: string): SkuSkill | null {
 export function buildSkuSkillFeedback(
   plan: SkuCommandPlan,
   ctx: SkuPageContext,
+  t: TranslateFn,
   opts?: {
     successCount?: number;
     failedCount?: number;
@@ -170,8 +168,9 @@ export function buildSkuSkillFeedback(
   const skill = findSkuSkillByCommandId(plan.draft.intent);
   if (!skill) return null;
 
+  const skillName = t(skill.nameKey);
   const progress = skill.progress(ctx);
-  const nextSteps = skill.nextSteps(ctx);
+  const nextSteps = skill.nextSteps(ctx, t);
   const detailLines: string[] = [];
 
   switch (plan.draft.intent) {
@@ -180,14 +179,14 @@ export function buildSkuSkillFeedback(
       const success = opts?.successCount ?? total;
       const failed = opts?.failedCount ?? 0;
       if (total > 0) {
-        detailLines.push(`已处理 ${total} 个商品`);
-        if (success > 0) detailLines.push(`成功 ${success} 个`);
-        if (failed > 0) detailLines.push(`失败 ${failed} 个`);
+        detailLines.push(t("skuSkill.detailProcessed", { count: total }));
+        if (success > 0) detailLines.push(t("skuSkill.detailSuccess", { count: success }));
+        if (failed > 0) detailLines.push(t("skuSkill.detailFailed", { count: failed }));
       }
       break;
     }
     case "open_filter": {
-      detailLines.push(`已切换到「${plan.targetLabel}」视图`);
+      detailLines.push(t("skuSkill.detailSwitchedFilter", { label: plan.targetLabel }));
       break;
     }
     case "rerun_auto_align": {
@@ -199,8 +198,8 @@ export function buildSkuSkillFeedback(
   }
 
   return {
-    skillName: skill.name,
-    summary: `${skill.name} · ${plan.operation}`,
+    skillName,
+    summary: `${skillName} · ${plan.operation}`,
     detailLines,
     progress,
     nextSteps,

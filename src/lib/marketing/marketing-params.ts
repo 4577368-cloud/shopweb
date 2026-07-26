@@ -1,4 +1,4 @@
-import type { CompetitionParams, RankParams, TtsShopParams } from "./types";
+import type { AdspyParams, CompetitionParams, RankParams, StoreIdParams, StoreSearchParams, TtsShopParams } from "./types";
 
 /** pipispy rankList `time` = Asia/Shanghai midnight (seconds). */
 export function shanghaiMidnight(ts = Date.now()): number {
@@ -36,6 +36,23 @@ export function buildCompetitionParams(p: CompetitionParams): Record<string, unk
   return params;
 }
 
+/** 竞店充实端点（store/ad-trend 等）统一入参：仅 store id。 */
+export function buildStoreIdParam(p: StoreIdParams): Record<string, unknown> {
+  return { id: p.id };
+}
+
+/** 店铺检索（store/list）：域名/店名 → 候选 store。 */
+export function buildStoreSearchParam(p: StoreSearchParams): Record<string, unknown> {
+  const params: Record<string, unknown> = {
+    keyword: p.keyword,
+    current_page: p.currentPage ?? 1,
+    page_size: p.pageSize ?? 5,
+  };
+  if (p.region) params.region = p.region;
+  if (p.platType != null) params.plat_type = p.platType;
+  return params;
+}
+
 export function buildSearchAdsParams(q: string, page: number, pageSize: number): Record<string, unknown> {
   const params: Record<string, unknown> = {
     page,
@@ -48,6 +65,22 @@ export function buildSearchAdsParams(q: string, page: number, pageSize: number):
     params.keyword = kw;
     params.q = kw;
   }
+  return params;
+}
+
+export function buildAdspyParams(p: AdspyParams): Record<string, unknown> {
+  const params: Record<string, unknown> = {
+    page: p.page ?? 1,
+    per_page: p.pageSize ?? 20,
+    order_by: "ad_started_at",
+    direction: "desc",
+  };
+  const kw = (p.q ?? "").trim();
+  if (kw) {
+    params.keyword = kw;
+    params.q = kw;
+  }
+  // includeStopped 本身不改变 adspy/list 参数；切到 ad-library/ads 在 api 层处理。
   return params;
 }
 

@@ -138,14 +138,15 @@ export async function writeShopListingPrice(
   shopName: string,
   productId: string,
   price: number,
-  target: ListingPriceWriteTarget
+  target: ListingPriceWriteTarget,
+  signal?: AbortSignal
 ): Promise<{
   detail: ShopProductDetail;
   previousPrice: number | null;
   variantScope: ListingPriceScope;
   variantSkuId?: string;
 }> {
-  const detail = await api.getShopProductDetail(shopName, productId);
+  const detail = await api.getShopProductDetail(shopName, productId, signal);
   const previousPrice = variantPriceBefore(detail, target);
   const variants = buildVariantPayload(detail, price, target);
   if (!variants?.length) {
@@ -161,14 +162,18 @@ export async function writeShopListingPrice(
 
   let saved: ShopProductDetail;
   try {
-    saved = await api.updateShopProduct(shopName, payload);
+    saved = await api.updateShopProduct(shopName, payload, signal);
   } catch (err) {
     if (!isProductConflict(err)) throw err;
-    saved = await api.updateShopProduct(shopName, {
-      ...payload,
-      force: true,
-      expectedUpdatedAt: undefined,
-    });
+    saved = await api.updateShopProduct(
+      shopName,
+      {
+        ...payload,
+        force: true,
+        expectedUpdatedAt: undefined,
+      },
+      signal
+    );
   }
 
   if (!listingPriceApplied(saved, price, target)) {

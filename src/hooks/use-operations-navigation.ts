@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type OperationsTab = "discovery" | "competition" | "creatives" | "imageSearch";
-export type DiscoverySegment = "tts" | "ads" | "board";
+export type DiscoverySegment = "ads" | "board";
 export type AdsSegment = "rank" | "search";
 
 export interface OperationsNavigationState {
@@ -11,6 +11,7 @@ export interface OperationsNavigationState {
   discoverySeg: DiscoverySegment;
   discoveryAdsSeg: AdsSegment;
   competitionQuery: string;
+  competitionProductId: string;
   creativesQuery: string;
 }
 
@@ -19,6 +20,7 @@ export interface OperationsNavigationActions {
   setDiscoverySeg: (seg: DiscoverySegment) => void;
   setDiscoveryAdsSeg: (seg: AdsSegment) => void;
   setCompetitionQuery: (q: string) => void;
+  setCompetitionProductId: (q: string) => void;
   setCreativesQuery: (q: string) => void;
   navigate: (patch: Partial<OperationsNavigationState>) => void;
 }
@@ -27,6 +29,7 @@ const TAB_KEY = "view";
 const DISCOVERY_SEG_KEY = "segment";
 const ADS_SEG_KEY = "adsSegment";
 const COMPETITION_Q_KEY = "q";
+const COMPETITION_PID_KEY = "pid";
 const CREATIVES_Q_KEY = "creativeQ";
 
 function readParams(): OperationsNavigationState {
@@ -36,6 +39,7 @@ function readParams(): OperationsNavigationState {
       discoverySeg: "ads",
       discoveryAdsSeg: "rank",
       competitionQuery: "",
+      competitionProductId: "",
       creativesQuery: "",
     };
   }
@@ -46,7 +50,7 @@ function readParams(): OperationsNavigationState {
     : "discovery";
   const discoverySeg =
     (params.get(DISCOVERY_SEG_KEY) as DiscoverySegment | null) ?? "ads";
-  const validDiscoverySeg = ["tts", "ads", "board"].includes(discoverySeg)
+  const validDiscoverySeg = ["ads", "board"].includes(discoverySeg)
     ? discoverySeg
     : "ads";
   const discoveryAdsSeg =
@@ -60,6 +64,7 @@ function readParams(): OperationsNavigationState {
     discoverySeg: validDiscoverySeg,
     discoveryAdsSeg: validAdsSeg,
     competitionQuery: params.get(COMPETITION_Q_KEY) ?? "",
+    competitionProductId: params.get(COMPETITION_PID_KEY) ?? "",
     creativesQuery: params.get(CREATIVES_Q_KEY) ?? "",
   };
 }
@@ -83,10 +88,13 @@ function writeParams(state: OperationsNavigationState): void {
       params.delete(ADS_SEG_KEY);
     }
     params.delete(COMPETITION_Q_KEY);
+    params.delete(COMPETITION_PID_KEY);
     params.delete(CREATIVES_Q_KEY);
   } else if (state.tab === "competition") {
     if (state.competitionQuery) params.set(COMPETITION_Q_KEY, state.competitionQuery);
     else params.delete(COMPETITION_Q_KEY);
+    if (state.competitionProductId) params.set(COMPETITION_PID_KEY, state.competitionProductId);
+    else params.delete(COMPETITION_PID_KEY);
     params.delete(DISCOVERY_SEG_KEY);
     params.delete(ADS_SEG_KEY);
     params.delete(CREATIVES_Q_KEY);
@@ -100,6 +108,7 @@ function writeParams(state: OperationsNavigationState): void {
     params.delete(DISCOVERY_SEG_KEY);
     params.delete(ADS_SEG_KEY);
     params.delete(COMPETITION_Q_KEY);
+    params.delete(COMPETITION_PID_KEY);
     params.delete(CREATIVES_Q_KEY);
   }
 
@@ -125,6 +134,7 @@ export function useOperationsNavigation(): OperationsNavigationState &
     discoverySeg: "ads",
     discoveryAdsSeg: "rank",
     competitionQuery: "",
+    competitionProductId: "",
     creativesQuery: "",
   });
 
@@ -139,6 +149,7 @@ export function useOperationsNavigation(): OperationsNavigationState &
       prev.discoverySeg === fromUrl.discoverySeg &&
       prev.discoveryAdsSeg === fromUrl.discoveryAdsSeg &&
       prev.competitionQuery === fromUrl.competitionQuery &&
+      prev.competitionProductId === fromUrl.competitionProductId &&
       prev.creativesQuery === fromUrl.creativesQuery
         ? prev
         : fromUrl
@@ -181,6 +192,10 @@ export function useOperationsNavigation(): OperationsNavigationState &
     (competitionQuery: string) => update({ competitionQuery }),
     [update]
   );
+  const setCompetitionProductId = useCallback(
+    (competitionProductId: string) => update({ competitionProductId }),
+    [update]
+  );
   const setCreativesQuery = useCallback(
     (creativesQuery: string) => update({ creativesQuery }),
     [update]
@@ -197,6 +212,7 @@ export function useOperationsNavigation(): OperationsNavigationState &
       setDiscoverySeg,
       setDiscoveryAdsSeg,
       setCompetitionQuery,
+      setCompetitionProductId,
       setCreativesQuery,
       navigate,
     }),
@@ -206,6 +222,7 @@ export function useOperationsNavigation(): OperationsNavigationState &
       setDiscoverySeg,
       setDiscoveryAdsSeg,
       setCompetitionQuery,
+      setCompetitionProductId,
       setCreativesQuery,
       navigate,
     ]

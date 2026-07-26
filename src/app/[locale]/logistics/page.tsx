@@ -243,6 +243,25 @@ function LogisticsContent() {
     setFocusTarget(null);
   }, []);
 
+  const railFocusProduct = useMemo(() => {
+    const id = focusTarget?.productId?.trim();
+    if (!id || !analysis) {
+      return { id: null as string | null, title: null as string | null };
+    }
+    const profile = analysis.productProfiles.find(
+      (p) => p.thirdPlatformItemId === id
+    );
+    return { id, title: profile?.title?.trim() ?? null };
+  }, [focusTarget?.productId, analysis]);
+
+  const handleRailFocusProduct = useCallback(
+    (productId: string) => {
+      setFocusTarget({ productId });
+      scrollToLogisticsList();
+    },
+    [scrollToLogisticsList]
+  );
+
   const { previewGenerators: logisticsPreviewGenerators, commandExecutors: logisticsCommandExecutors } =
     useLogisticsAgentCommands({
       batchAcceptCount: workbench.batchAcceptCount,
@@ -419,6 +438,11 @@ function LogisticsContent() {
                 batchAcceptCancelRef.current = true;
               }}
               catalogIngestingCount={catalogIngestingCount}
+              currentFilter={filterMode}
+              focusProductTitle={railFocusProduct.title}
+              focusProductId={railFocusProduct.id}
+              quoteResults={quoteResults}
+              onFocusProduct={handleRailFocusProduct}
             />
           }
           railFooter={<AccountManagerRailFooter context="logistics" />}

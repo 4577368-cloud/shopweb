@@ -12,13 +12,27 @@ import {
 import type {
   AdCard,
   AdDetail,
+  CompetitionProductRow,
+  CreativeBrief,
   ImageSearchResult,
   PlatformBreakdown,
+  ProductDossier,
   RankRow,
   StoreAdState,
+  StoreAdTrendPoint,
   StoreCreative,
+  StoreDataAnalysis,
+  StoreDeliveryAnalysis,
+  StoreDossier,
+  StoreFbPage,
+  StoreLongestRunAd,
+  StoreMostUsedAd,
+  StorePlatformShare,
+  StoreRegionAnalysis,
   StoreRow,
+  StoreSearchResult,
   TtsSalesTrendPoint,
+  TtsShopDetail,
   TtsShopRow,
   WebsiteInfo,
 } from "./types";
@@ -206,6 +220,131 @@ export function makeStores(n: number, collectSome = true): StoreRow[] {
   });
 }
 
+// --- 店铺检索（store/list，域名/店名 → 内部 ID，mock 候选生成）---
+
+/** 13 字符 hex 内部 ID（仿 pipi 03274ebc3a519），确定性由 seed 派生。 */
+function makeStoreId(rng: () => number): string {
+  const chars = "0123456789abcdef";
+  let s = "";
+  for (let i = 0; i < 13; i++) s += chars[Math.floor(rng() * 16)];
+  return s;
+}
+
+/** 店铺检索候选（store/list）：把用户输入解析成候选 store。
+ * 首个候选尽力贴合输入——若输入像域名则 domain=输入，否则 name 含输入，便于解析器直取。 */
+export function makeStoreSearchResults(keyword: string, n = 5): StoreSearchResult[] {
+  const kw = keyword.trim().toLowerCase();
+  const seed = [...kw].reduce((a, c) => a + c.charCodeAt(0), 7);
+  const rng = mulberry32(seed * 131 + 9000);
+  const looksLikeDomain = kw.includes(".");
+  return Array.from({ length: Math.max(1, n) }, (_, i) => {
+    const name = makeName(rng);
+    const domain =
+      i === 0 && looksLikeDomain
+        ? kw
+        : i === 0
+          ? `${kw.replace(/[^a-z0-9]/g, "")}.myshopify.com`
+          : `${name.toLowerCase().replace(/[^a-z]/g, "")}.myshopify.com`;
+    const mainPlat = pick(rng, ["tiktok", "facebook", "meta"] as const);
+    const platType: ("tiktok" | "facebook" | "meta")[] = [mainPlat];
+    if (rng() > 0.5) platType.push(pick(rng, ["tiktok", "facebook", "meta"] as const));
+    const adCount = randInt(rng, 40, 6000);
+    const putDays = randInt(rng, 30, 800);
+    return {
+      id: makeStoreId(rng),
+      name: i === 0 && !looksLikeDomain ? kw.replace(/\.myshopify\.com$/, "") : name,
+      domain,
+      icon: "",
+      platType,
+      adCount,
+      region: pick(rng, REGIONS).code,
+      shopType: pick(rng, SHOP_TYPES).code,
+      monthlyVisits: randInt(rng, 40_000, 6_000_000),
+      firstAdTime: now - putDays * DAY,
+      lastAdTime: now - randInt(rng, 1, 20) * DAY,
+      adState: pick(rng, [1, 1, 1, 0, -1] as StoreAdState[]),
+    };
+  });
+}
+
+// --- 店铺数据分析（store/data-analysis 族，mock 生成，仿 velvory 截图结构）---
+
+/** 店铺数据分析（store/data-analysis）：播放/赞/赞率/广告数/天数/花费 + 平台占比。 */
+export function makeStoreDataAnalysis(seedId: string): StoreDataAnalysis {
+  const seed = [...seedId].reduce((a, c) => a + c.charCodeAt(0), 13);
+  const rng = mulberry32(seed * 71 + 4242);
+  const metaAds = randInt(rng, 80, 1200);
+  const fbAds = rng() > 0.4 ? randInt(rng, 1, 40) : 0;
+  const totalAd = metaAds + fbAds;
+  const totalPlay = randInt(rng, 50_000, 9_000_000);
+  const totalLike = randInt(rng, 20, 4000);
+  const likeRate = totalPlay > 0 ? totalLike / totalPlay : 0; // 0..1 分数
+  const totalDays = randInt(rng, 30, 400);
+  const spendMin = +(randFloat(rng, 80, 400) as number).toFixed(1);
+  const spendMax = +(randFloat(rng, 200, 900) as number).toFixed(1);
+  const platforms: StorePlatformShare[] = [];
+  if (fbAds > 0) {
+    platforms.push({
+      platform: "facebook",
+      playCount: totalPlay,
+      likeCount: totalLike,
+      likeRate,
+      adCount: fbAds,
+      adDays: randInt(rng, 1, totalDays),
+      spendMin,
+      spendMax,
+      share: fbAds / totalAd,
+    });
+  }
+  platforms.push({
+    platform: "meta",
+    playCount: rng() > 0.7 ? randInt(rng, 1000, totalPlay) : 0,
+    likeCount: 0,
+    likeRate: 0,
+    adCount: metaAds,
+    adDays: randInt(rng, 1, totalDays),
+    spendMin,
+    spendMax,
+    share: metaAds / totalAd,
+  });
+  return {
+    totalPlayCount: totalPlay,
+    totalLikeCount: totalLike,
+    likeRate,
+    totalAdCount: totalAd,
+    totalAdDays: totalDays,
+    spendMin,
+    spendMax,
+    firstAdTime: now - totalDays * DAY,
+    lastAdTime: now - randInt(rng, 1, 20) * DAY,
+    platforms,
+  };
+}
+
+/** 广告地区分布（store/region-analysis）。 */
+export function makeStoreRegionAnalysis(seedId: string): StoreRegionAnalysis[] {
+  const seed = [...seedId].reduce((a, c) => a + c.charCodeAt(0), 29);
+  const rng = mulberry32(seed * 53 + 771);
+  const total = randInt(rng, 40, 6000);
+  return [
+    { region: "US", adCount: randInt(rng, 1, Math.max(2, Math.floor(total * 0.4))), playCount: randInt(rng, 1000, 5_000_000), likeCount: randInt(rng, 10, 2000) },
+    { region: "OTHER", adCount: total, playCount: randInt(rng, 1000, 5_000_000), likeCount: randInt(rng, 10, 2000) },
+  ];
+}
+
+/** 交付分析（store/delivery-analysis）。 */
+export function makeStoreDeliveryAnalysis(seedId: string): StoreDeliveryAnalysis {
+  const seed = [...seedId].reduce((a, c) => a + c.charCodeAt(0), 31);
+  const rng = mulberry32(seed * 17 + 909);
+  return {
+    avgDeliveryDays: randInt(rng, 5, 90),
+    maxDeliveryDays: randInt(rng, 90, 600),
+    frequency: randInt(rng, 2, 30),
+    coverage: randInt(rng, 1, 40),
+    activeDays: randInt(rng, 30, 400),
+  };
+}
+
 /**
  * 榜单行筛选侧信道（mock 阶段）。
  * RankRow 真实响应不含逐行 region/category/shopType（由 pipispy 服务端按请求 param 过滤），
@@ -269,6 +408,57 @@ export function makeAdCards(n: number): AdCard[] {
       images,
       isCollection: rng() > 0.8,
       userCollected: randInt(rng, 0, 5),
+    };
+  });
+}
+
+/** 广告文案钩子（mock 占位；pipispy 真实不提供正文，接后端后由 adspy caption 覆盖）。 */
+const AD_HOOKS = [
+  "This 10-second routine fixed my back pain",
+  "I wish I knew this gadget sooner",
+  "The hack everyone on TikTok is using",
+  "Stop wasting money on the expensive version",
+  "My bathroom looks 10x bigger now",
+  "3 things I'd never buy again after this",
+  "Why is nobody talking about this tool",
+  "The $19 fix that saved me $400",
+  "She tried it for 7 days — here's what happened",
+  "This is the only one that actually worked",
+];
+
+/** 创意打法库条目（adspy/list / ad-library/ads，mock）。 */
+export function makeCreativeBriefs(n: number): CreativeBrief[] {
+  return Array.from({ length: n }, (_, i) => {
+    const rng = mulberry32(8000 + i * 23);
+    const plat = pick(rng, ["tiktok", "facebook", "meta"] as const);
+    const platforms =
+      plat === "tiktok"
+        ? ["TIKTOK"]
+        : plat === "facebook"
+          ? rng() > 0.5
+            ? ["FACEBOOK", "INSTAGRAM"]
+            : ["FACEBOOK"]
+          : rng() > 0.5
+            ? ["AUDIENCE_NETWORK", "MESSENGER"]
+            : ["THREADS"];
+    const advertiser = makeName(rng);
+    const coverId = `cc_${randInt(rng, 100000, 999999)}`;
+    const isActive = rng() > 0.18;
+    return {
+      id: `cre_${i + 1}`,
+      cover: `https://picsum.photos/seed/${coverId}/300/400`,
+      title: makeTitle(rng),
+      copy: pick(rng, AD_HOOKS),
+      platform: plat,
+      platforms,
+      advertiser: `${advertiser} Official`,
+      advertiserPage: `https://facebook.com/${advertiser.toLowerCase().replace(/[^a-z]/g, "")}`,
+      likes: randInt(rng, 500, 2_400_000),
+      comments: randInt(rng, 20, 80_000),
+      shares: randInt(rng, 10, 140_000),
+      activeDays: randInt(rng, 2, 540),
+      ctaType: pick(rng, CTA_BUTTONS).code,
+      isActive,
     };
   });
 }
@@ -357,6 +547,24 @@ export function makeTtsShops(n: number): TtsShopRow[] {
   });
 }
 
+/** TikTok Shop 店铺详情富集 mock（列表行缺的字段）。 */
+export function makeTtsShopDetail(id: string): TtsShopDetail {
+  const rng = mulberry32(7400 + (id ? id.length * 53 : 11));
+  const min = +randFloat(rng, 50_000, 200_000).toFixed(0);
+  const max = +(min * randFloat(rng, 2, 5)).toFixed(0);
+  return {
+    adCost: `USD ${min.toLocaleString()} - ${(max).toLocaleString()}`,
+    rootPath: `${makeName(rng).toLowerCase().replace(/\s+/g, "")}.com`,
+    goodsAdRate: +randFloat(rng, 0.4, 0.95).toFixed(2),
+    commissionRate: +randFloat(rng, 0.05, 0.2).toFixed(2),
+    landingPage: `https://shop.tiktok.com/@${makeName(rng).toLowerCase().replace(/\s+/g, "")}`,
+    desc: "Mock TikTok Shop store description.",
+    keywords: "fashion,beauty,accessories",
+    isManaged: rng() > 0.5,
+    isInMarketplace: rng() > 0.5,
+  };
+}
+
 export function makeAdDetail(id: string): AdDetail {
   const rng = mulberry32(5000 + (id ? id.length * 31 : 7));
   const usd = +randFloat(rng, 8, 220).toFixed(2);
@@ -383,6 +591,9 @@ export function makeAdDetail(id: string): AdDetail {
     },
     store: { name: makeName(rng), domain: "example.myshopify.com" },
     advertisers,
+    adCost: +randFloat(rng, 200, 50000).toFixed(2),
+    adAudienceReach: randInt(rng, 50_000, 9_000_000),
+    adForecast: pick(rng, ["测款", "放量", "盈利"]),
     adStartedHistory: history,
     ctaType: pick(rng, CTA_BUTTONS).code,
     likeCount: randInt(rng, 5_000, 3_000_000),
@@ -391,6 +602,20 @@ export function makeAdDetail(id: string): AdDetail {
     videoId: `vid_${randInt(rng, 100000, 999999)}`,
     copyUnavailable: true,
   };
+}
+
+/** 店下在投商品（store/detail/competition/products，免费端点，mock）。 */
+export function makeCompetitionProducts(storeId: string): CompetitionProductRow[] {
+  const n = 6;
+  return Array.from({ length: n }, (_, i) => {
+    const rng = mulberry32(7000 + (storeId ? storeId.length * 17 : 3) + i * 13);
+    return {
+      id: `cprod_${storeId}_${i + 1}`,
+      title: makeTitle(rng),
+      icon: "",
+      link: "",
+    };
+  });
 }
 
 export function makeImageResults(n: number): ImageSearchResult[] {
@@ -407,4 +632,102 @@ export function makeImageResults(n: number): ImageSearchResult[] {
       store: makeName(rng),
     };
   });
+}
+
+// --- 竞店充实（store/detail 族，mock 生成，接后端后由 pipispy 真实响应替换）---
+
+/** 广告趋势（store/ad-trend，近 12 期）。 */
+export function makeStoreAdTrend(storeId: string): StoreAdTrendPoint[] {
+  const rng = mulberry32(9100 + (storeId ? storeId.length * 13 : 5));
+  const len = 12;
+  const day0 = now - len * DAY;
+  let ad = randInt(rng, 20, 120);
+  let play = randInt(rng, 50_000, 3_000_000);
+  return Array.from({ length: len }, (_, k) => {
+    ad = Math.max(1, ad + randInt(rng, -10, 25));
+    play = Math.max(1, play + randInt(rng, -100_000, 800_000));
+    return { day: day0 + k * DAY, adCount: ad, playCount: play };
+  });
+}
+
+/** 常青素材（store/longest-run-ads，投放最久的创意）。 */
+export function makeStoreLongestRunAds(storeId: string): StoreLongestRunAd[] {
+  const rng = mulberry32(9200 + (storeId ? storeId.length * 17 : 3));
+  return Array.from({ length: 4 }, (_, i) => {
+    const runDays = randInt(rng, 120, 900);
+    const last = now - randInt(rng, 1, 20) * DAY;
+    const first = last - runDays * DAY;
+    const videoId = `vid_${randInt(rng, 100000, 999999)}`;
+    return {
+      id: `long_${storeId}_${i + 1}`,
+      cover: `https://picsum.photos/seed/${videoId}/180/270`,
+      title: makeTitle(rng),
+      platform: pick(rng, ["tiktok", "facebook", "meta"] as const),
+      firstSeen: first,
+      lastSeen: last,
+      runDays,
+      playCount: randInt(rng, 50_000, 8_000_000),
+    };
+  });
+}
+
+/** 高频素材（store/most-used-ads，投放最频繁的创意）。 */
+export function makeStoreMostUsedAds(storeId: string): StoreMostUsedAd[] {
+  const rng = mulberry32(9300 + (storeId ? storeId.length * 19 : 7));
+  return Array.from({ length: 5 }, (_, i) => {
+    const videoId = `vid_${randInt(rng, 100000, 999999)}`;
+    return {
+      id: `used_${storeId}_${i + 1}`,
+      cover: `https://picsum.photos/seed/${videoId}/180/270`,
+      title: makeTitle(rng),
+      platform: pick(rng, ["tiktok", "facebook", "meta"] as const),
+      usedCount: randInt(rng, 20, 600),
+      playCount: randInt(rng, 100_000, 12_000_000),
+      cpm: +randFloat(rng, 4, 60).toFixed(2),
+    };
+  });
+}
+
+/** 关联 Facebook 主页（store/fb-pages）。 */
+export function makeStoreFbPages(storeId: string): StoreFbPage[] {
+  const rng = mulberry32(9400 + (storeId ? storeId.length * 23 : 9));
+  const n = randInt(rng, 1, 3);
+  return Array.from({ length: n }, (_, i) => {
+    const name = makeName(rng);
+    const slug = name.toLowerCase().replace(/[^a-z]/g, "");
+    return {
+      id: `fb_${storeId}_${i + 1}`,
+      pageId: String(randInt(rng, 100000000000000, 999999999999999)),
+      name: `${name} Official`,
+      url: `https://facebook.com/${slug}`,
+      likes: randInt(rng, 5_000, 900_000),
+      followers: randInt(rng, 5_000, 1_200_000),
+      category: pick(rng, ["Retail", "E-commerce", "Shopping", "Beauty", "Lifestyle"]),
+    };
+  });
+}
+
+// --- dossier 聚合（路由页富内容；mock 阶段本地拼装，store 头部由调用方从注册表填充）---
+
+/** 单店富 dossier（/operations-center/store/[id]）：本地拼装 8 个 store/* 端点。 */
+export function makeStoreDossier(storeId: string): StoreDossier {
+  return {
+    store: null,
+    products: makeCompetitionProducts(storeId),
+    dataAnalysis: makeStoreDataAnalysis(storeId),
+    regionAnalysis: makeStoreRegionAnalysis(storeId),
+    deliveryAnalysis: makeStoreDeliveryAnalysis(storeId),
+    adTrend: makeStoreAdTrend(storeId),
+    longest: makeStoreLongestRunAds(storeId),
+    mostUsed: makeStoreMostUsedAds(storeId),
+    fbPages: makeStoreFbPages(storeId),
+  };
+}
+
+/** 单品富 dossier（/operations-center/product/[id]）：详情 + 市场同类创意墙。 */
+export function makeProductDossier(productId: string): ProductDossier {
+  return {
+    detail: makeAdDetail(productId),
+    relatedAds: makeCreativeBriefs(12),
+  };
 }

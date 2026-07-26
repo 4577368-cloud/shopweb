@@ -14,6 +14,7 @@ import {
   Search,
 } from "@/lib/ui/icons";
 import { AccountManagerContactCta } from "@/components/account-manager/account-manager-contact-cta";
+import { AccountManagerContactModal } from "@/components/account-manager/account-manager-contact-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -100,6 +101,8 @@ import {
   listPendingAckProductIds,
 } from "@/lib/batch-link/batch-ack-pending";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
+import { loadVariantImagesForImageSearch } from "@/lib/batch-link/variant-images-for-search";
+import { assessImageSearchReliability } from "@/lib/batch-link/image-search-outcome";
 import { rerankForShopMirrorProduct } from "@/lib/sku-align/image-search-sku-rank";
 import { sortProductsForBatchLink } from "@/lib/batch-link/sort-products";
 import type { BatchLinkCardDrive, BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
@@ -1265,7 +1268,10 @@ export function ShopProductsPanel({
                   onAiFieldEditConsumed?.(p.thirdPlatformItemId, "title")
                 }
                 onBound={handleBound}
-                onOpenDetail={() => setDetailItemId(p.thirdPlatformItemId)}
+                onOpenDetail={() => {
+                  onProductFocus?.(p.thirdPlatformItemId);
+                  setDetailItemId(p.thirdPlatformItemId);
+                }}
                 focused={focusProductId === p.thirdPlatformItemId}
                 searchModeRequested={searchModeProductId === p.thirdPlatformItemId}
                 onSearchModeConsumed={onSearchModeConsumed}
@@ -1405,6 +1411,11 @@ function ShopProductCard({
 
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [amModalOpen, setAmModalOpen] = useState(false);
+  const [amImageSearchReason, setAmImageSearchReason] = useState<
+    "weak" | "failed" | null
+  >(null);
+  const batchFailedPromptedRef = useRef(false);
   const [result, setResult] = useState<ImageSearchResult | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [trayOpen, setTrayOpen] = useState(false);
@@ -1417,6 +1428,28 @@ function ShopProductCard({
   const [recommendedIdx, setRecommendedIdx] = useState(0);
   const topCandidateRef = useRef<HTMLDivElement>(null);
   const prevTrayOpenRef = useRef(false);
+
+  const promptAccountManagerForImageSearch = useCallback(
+    (reason: "weak" | "failed") => {
+      setAmImageSearchReason(reason);
+      setAmModalOpen(true);
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!batchLinkDrive) return;
+    if (batchLinkDrive.state === "failed") {
+      if (!batchFailedPromptedRef.current) {
+        batchFailedPromptedRef.current = true;
+        promptAccountManagerForImageSearch("failed");
+      }
+      return;
+    }
+    if (batchLinkDrive.state === "idle") {
+      batchFailedPromptedRef.current = false;
+    }
+  }, [batchLinkDrive?.state, promptAccountManagerForImageSearch]);
 
   useEffect(() => {
     if (!batchLinkDrive) return;
@@ -1701,11 +1734,21 @@ function ShopProductCard({
       setSearchPhase(phases[i]!);
     }, 450);
     try {
+      const variantImages = await loadVariantImagesForImageSearch(
+        shopName,
+        item.thirdPlatformItemId
+      );
+
       const pipeline = await runImageSearchPipeline(
         shopName,
         item,
         5,
-        { binding, locale, allowSupplierSwapSearch: fromPublish }
+        {
+          binding,
+          locale,
+          allowSupplierSwapSearch: fromPublish,
+          variantImages,
+        }
       );
       if (pipeline.error || !pipeline.result) {
         setResult(null);
@@ -1715,10 +1758,17 @@ function ShopProductCard({
           pipeline.error ??
             imageSearchError(new Error(t("shopProducts.imageSearchFailed")))
         );
+        promptAccountManagerForImageSearch("failed");
         return;
       }
       setMatchScores(pipeline.matchScores);
       setImageScores(pipeline.imageScores);
+      const reliability = assessImageSearchReliability(pipeline);
+      if (reliability === "failed") {
+        promptAccountManagerForImageSearch("failed");
+      } else if (reliability === "weak") {
+        promptAccountManagerForImageSearch("weak");
+      }
       let ordered = pipeline.rankedItems;
       try {
         const reranked = await rerankForShopMirrorProduct(
@@ -2279,20 +2329,22 @@ function ShopProductCard({
   return (
     <article
       data-product-id={item.thirdPlatformItemId}
+      aria-selected={focused}
       onClick={() => {
         if (listingPriceEditPhases.pill) onListingPriceEditConsumed?.();
         onFocus?.();
       }}
       className={cn(
-        "relative flex flex-col p-4",
+        "relative flex cursor-pointer flex-col p-4",
         batchLinking
           ? "rounded-[var(--radius-card)] border border-info bg-info-soft/30 shadow-md ring-2 ring-info/25"
           : batchQueued
             ? "rounded-[var(--radius-card)] border border-surface-border bg-surface shadow-card ring-1 ring-ring/20"
             : focused
               ? selectableCardClassName({
+                  selected: true,
                   interactive: false,
-                  className: "shadow-md",
+                  className: "shadow-md ring-1 ring-brand/20",
                 })
               : listingPriceEditPhases.cardRing
                 ? "rounded-[var(--radius-card)] border border-info/30 bg-surface shadow-card ai-card-edit-highlight"
@@ -2355,6 +2407,7 @@ function ShopProductCard({
                 title={t("shopProducts.editProduct")}
                 onClick={(e) => {
                   e.stopPropagation();
+                  onFocus?.();
                   onOpenDetail();
                 }}
               >
@@ -2735,20 +2788,34 @@ function ShopProductCard({
         </div>
       ) : null}
       {searchError ? (
-        <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+        <div className="mt-2 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
           <span>{searchError}</span>
-          {hasImage ? (
-            <button
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
               type="button"
-              className="shrink-0 font-medium underline underline-offset-2"
+              size="sm"
+              variant="primary"
+              className="h-7 text-[11px]"
               onClick={(e) => {
                 e.stopPropagation();
-                void runSearch();
+                promptAccountManagerForImageSearch("failed");
               }}
             >
-              {t("shopProducts.retry")}
-            </button>
-          ) : null}
+              {t("accountManager.imageSearchModal.contactNow")}
+            </Button>
+            {hasImage ? (
+              <button
+                type="button"
+                className="shrink-0 font-medium underline underline-offset-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void runSearch();
+                }}
+              >
+                {t("shopProducts.retry")}
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -3060,6 +3127,14 @@ function ShopProductCard({
           onClose={() => setZoomImage(null)}
         />
       ) : null}
+
+      <AccountManagerContactModal
+        open={amModalOpen}
+        onClose={() => setAmModalOpen(false)}
+        context="products"
+        imageSearchReason={amImageSearchReason}
+        productTitle={displayTitle}
+      />
     </article>
   );
 }

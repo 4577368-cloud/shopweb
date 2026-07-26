@@ -33,13 +33,6 @@ export const LOGISTICS_COMMAND_UI_CONFIG: Record<
     renderMode: "generic",
     direct: true,
   },
-  focus_issues: {
-    id: "focus_issues",
-    sensitivity: "low",
-    requiresPreview: false,
-    renderMode: "generic",
-    direct: true,
-  },
   focus_status: {
     id: "focus_status",
     sensitivity: "low",
@@ -47,11 +40,12 @@ export const LOGISTICS_COMMAND_UI_CONFIG: Record<
     renderMode: "generic",
     direct: true,
   },
-  apply_template: {
-    id: "apply_template",
-    sensitivity: "high",
+  explain_quote: {
+    id: "explain_quote",
+    sensitivity: "low",
     requiresPreview: false,
     renderMode: "generic",
+    direct: true,
   },
 };
 

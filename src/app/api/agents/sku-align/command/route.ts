@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     // LLM-first: the model is the authority for natural-language mapping.
     // Deterministic rules are kept only as an offline fallback when the LLM
     // is unavailable, so the rail still works during outages.
-    const local = classifySkuCommandByRules(text);
+    const local = classifySkuCommandByRules(text, localized);
     try {
       const prompt = buildSkuCommandClassifySystemPrompt(
         context,

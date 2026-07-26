@@ -1,5 +1,6 @@
 import {
   HIGH_MATCH_THRESHOLD,
+  MEDIUM_MATCH_THRESHOLD,
 } from "@/data/mock";
 import { normalizeMatchScore } from "@/lib/agents/products/match-rank";
 import type { ImageSearchProduct } from "@/lib/types";
@@ -45,15 +46,15 @@ export function exactImageUrlMatch(
   return Boolean(a && b && a === b);
 }
 
-/** Recommend / 首推: pending scores trust image-search rank; only explicit low scores block. */
+/** Recommend / 首推: only verified scores at or above threshold count as pass. */
 export function passesImageRecommendGate(imageScore: number | null | undefined): boolean {
-  if (isImageScorePending(imageScore)) return true;
+  if (isImageScorePending(imageScore)) return false;
   return (imageScore as number) >= IMAGE_MATCH_RECOMMEND_MIN;
 }
 
-/** Auto-bind: pending scores do not cap title — image-search ordering is the primary signal. */
+/** Auto-bind: pending scores do not qualify for high-confidence auto bind. */
 export function passesImageAutoGate(imageScore: number | null | undefined): boolean {
-  if (isImageScorePending(imageScore)) return true;
+  if (isImageScorePending(imageScore)) return false;
   return (imageScore as number) >= IMAGE_MATCH_AUTO_MIN;
 }
 
@@ -91,12 +92,13 @@ function parseRepurchase(raw?: string | null): number {
 
 /**
  * Sort priority for ranking:
- * 2 = verified pass or pending (trust search rank)
- * 1 = verified fail — sink to tail
+ * 2 = verified pass
+ * 1 = pending (keep search order among pending, below verified pass)
+ * 0 = verified fail — sink to tail
  */
 function imageGateSortTier(imageScore: number | null | undefined): number {
-  if (isImageScorePending(imageScore)) return 2;
-  return passesImageRecommendGate(imageScore) ? 2 : 1;
+  if (isImageScorePending(imageScore)) return 1;
+  return passesImageRecommendGate(imageScore) ? 2 : 0;
 }
 
 /**
@@ -157,7 +159,8 @@ export function resolveTopAutoBindScore(
   const image = imageScores[key] ?? null;
   const effective = effectiveAutoBindTitleScore(title, image);
   if (isImageScorePending(image)) {
-    return Math.max(effective ?? 0, IMAGE_SEARCH_RANK_AUTO_FLOOR);
+    if (effective == null) return null;
+    return Math.min(effective, MEDIUM_MATCH_THRESHOLD - 1);
   }
   return effective;
 }

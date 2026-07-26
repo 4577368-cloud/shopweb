@@ -31,7 +31,7 @@ const confirmReadySkill: LogisticsSkill = {
   id: "confirm_ready",
   name: "确认物流方案",
   description: "审核并确认 AI 推荐的物流方案",
-  commandIds: ["accept_all_ready", "focus_issues"],
+  commandIds: ["accept_all_ready", "focus_status"],
 
   isActive: (ctx) => {
     return ctx.readyAcceptCount > 0 || ctx.pendingCount > 0;
@@ -86,7 +86,7 @@ const templateSkill: LogisticsSkill = {
   id: "template_config",
   name: "模板配置",
   description: "配置物流模板和销售市场",
-  commandIds: ["open_template", "apply_template"],
+  commandIds: ["open_template"],
 
   isActive: () => true,
 
@@ -157,10 +157,6 @@ export function buildLogisticsSkillFeedback(
     }
     case "open_template": {
       detailLines.push("已打开物流模板配置");
-      break;
-    }
-    case "focus_issues": {
-      detailLines.push(`已筛选 ${ctx.pendingCount} 个待处理项`);
       break;
     }
     default:

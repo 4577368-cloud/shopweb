@@ -1,4 +1,13 @@
 import type { TranslateFn } from "@/i18n/server";
+import type { LogisticsEstimateResult } from "@/lib/api";
+import {
+  buildQuoteExplainLines,
+  resolveProductProfileByHint,
+} from "@/lib/agents/logistics/quote-explain";
+import type {
+  LogisticsAnalysis,
+  LogisticsTemplate,
+} from "@/lib/types";
 import type {
   LogisticsCommandDraft,
   LogisticsCommandExecution,
@@ -16,6 +25,9 @@ export interface LogisticsPageContext {
   highRiskTypes: string[];
   readyVariantIds: string[];
   pipelineRunning?: boolean;
+  analysis?: LogisticsAnalysis | null;
+  quoteResults?: Map<string, LogisticsEstimateResult>;
+  activeTemplate?: LogisticsTemplate | null;
 }
 
 function statusLabel(t: TranslateFn, status: LogisticsDecisionStatus): string {
@@ -138,36 +150,6 @@ export function planLogisticsCommand(
         executable: true,
       };
     }
-    case "focus_issues": {
-      if (ctx.pendingCount === 0) {
-        return {
-          draft,
-          operation: t("agentLogistics.opFocusIssues"),
-          targetLabel: t("agentLogistics.targetIssues"),
-          detailLines: [],
-          executable: false,
-          clarify: t("agentLogistics.clarifyNoIssues"),
-        };
-      }
-      return {
-        draft: {
-          ...draft,
-          targetScope: "all",
-          params: {
-            ...draft.params,
-            filterMode: "issues",
-          },
-        },
-        operation: t("agentLogistics.opFocusIssues"),
-        targetLabel: t("agentLogistics.targetIssuesCount", {
-          count: ctx.pendingCount,
-        }),
-        detailLines: [
-          t("agentLogistics.detailFocusIssues", { count: ctx.pendingCount }),
-        ],
-        executable: true,
-      };
-    }
     case "focus_status": {
       if (draft.params.listFilter) {
         const tabLabels: Record<string, string> = {
@@ -215,15 +197,48 @@ export function planLogisticsCommand(
         executable: true,
       };
     }
-    case "apply_template": {
+    case "explain_quote": {
+      const profiles = ctx.analysis?.productProfiles ?? [];
+      const hint =
+        draft.params.productTitleHint?.trim() ||
+        draft.productId?.trim() ||
+        ctx.focusProductTitle?.trim() ||
+        undefined;
+      const profile = resolveProductProfileByHint(profiles, {
+        productId: draft.productId ?? ctx.focusProductId,
+        titleHint: hint,
+        focusTitle: ctx.focusProductTitle,
+      });
+      if (!profile) {
+        return {
+          draft,
+          operation: t("agentLogistics.opExplainQuote"),
+          targetLabel: hint ?? title,
+          detailLines: [],
+          executable: false,
+          clarify: t("agentLogistics.clarifySelectProductForQuote"),
+        };
+      }
+      const quoteMap = ctx.quoteResults ?? new Map();
+      const lines = buildQuoteExplainLines(
+        t,
+        profile,
+        quoteMap,
+        ctx.activeTemplate ?? null
+      );
       return {
         draft: {
           ...draft,
-          targetScope: "all",
+          targetScope: "current",
+          productId: profile.thirdPlatformItemId,
+          params: {
+            ...draft.params,
+            productTitleHint: profile.title ?? hint,
+          },
         },
-        operation: t("agentLogistics.opApplyTemplate"),
-        targetLabel: t("agentLogistics.targetCurrentTemplate"),
-        detailLines: [t("agentLogistics.detailApplyTemplate")],
+        operation: t("agentLogistics.opExplainQuote"),
+        targetLabel: profile.title ?? title,
+        detailLines: lines,
         executable: true,
       };
     }
@@ -259,12 +274,10 @@ export function commandOperationLabel(
       return t("agentLogistics.opStartEstimate");
     case "open_template":
       return t("agentLogistics.opOpenTemplate");
-    case "focus_issues":
-      return t("agentLogistics.opFocusIssues");
     case "focus_status":
       return t("agentLogistics.opFocusStatus");
-    case "apply_template":
-      return t("agentLogistics.opApplyTemplate");
+    case "explain_quote":
+      return t("agentLogistics.opExplainQuote");
     default:
       return t("agentLogistics.opExecute");
   }
@@ -291,9 +304,6 @@ export function resolveLogisticsCommandExecution(
     case "open_template": {
       return { type: "open_template" };
     }
-    case "focus_issues": {
-      return { type: "set_filter", filterMode: "issues" };
-    }
     case "focus_status": {
       if (plan.draft.params.listFilter) {
         return {
@@ -304,8 +314,14 @@ export function resolveLogisticsCommandExecution(
       const status = plan.draft.params.status ?? "needs_review";
       return { type: "focus_status", status };
     }
-    case "apply_template": {
-      return { type: "apply_template", templateId: plan.draft.params.templateId ?? "" };
+    case "explain_quote": {
+      const productId = plan.draft.productId;
+      if (!productId) return null;
+      return {
+        type: "explain_quote",
+        productId,
+        lines: plan.detailLines,
+      };
     }
     default:
       return null;

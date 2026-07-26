@@ -28,10 +28,19 @@ export interface MarketingContext {
   cacheHit: boolean | null;
 }
 
+export interface ConsumeSyncError {
+  endpoint: string;
+  amount: number;
+  message: string;
+  at: number;
+}
+
 export interface LastConsume {
   estimate: number;
   actual: number;
   cacheHit: boolean;
+  /** 命中 pipispy「3 天免费窗口」：本次详情不重复计费（仅标注，真实扣点以 actual 为准）。 */
+  freeWindow?: boolean;
 }
 
 /**
@@ -61,6 +70,7 @@ export function useMarketingRunner(record: MarketingLedgerRecord) {
     cacheHit: null,
   });
   const [lastConsume, setLastConsume] = useState<LastConsume | null>(null);
+  const [consumeError, setConsumeError] = useState<ConsumeSyncError | null>(null);
   const cacheRef = useRef<Map<string, unknown>>(new Map());
 
   const run = useCallback<MarketingRunFn>(
@@ -99,23 +109,42 @@ export function useMarketingRunner(record: MarketingLedgerRecord) {
         }
         record(endpoint, actual, false, remaining);
         setCtx({ estimate: actual, lastActual: actual, cacheHit: false });
-        setLastConsume({ estimate: actual, actual, cacheHit: false });
+        setLastConsume({ estimate: actual, actual, cacheHit: false, freeWindow: res.freeWindow });
 
         // 真实计费模式：把本次运营中心 API 消耗写进账户中心积分库（credit_transactions）。
         // 仅真实模式写库——mock 模式的 consumedCredits 是合成值，写入会污染用户真实 user_credits。
-        // fire-and-forget：pipispy 调用已成功，写库失败（如未登录 401）不应影响用户结果，
-        // 与联邦别名库 skuAlignV1RecordAlias 的 fire-and-forget 策略一致。
+        // 不再纯 fire-and-forget：失败后暴露错误，让上层提示用户，并尝试一次重试。
         if (!USE_MOCK && actual > 0) {
-          void billingApi
-            .consumeCredits({
-              endpoint,
-              amount: actual,
-              refType: "marketing_api",
-              refId: cacheKey,
-            })
-            .catch((err) => {
-              console.warn("[marketing-runner] consumeCredits failed (best-effort):", err);
-            });
+          const sync = async () => {
+            try {
+              await billingApi.consumeCredits({
+                endpoint,
+                amount: actual,
+                refType: "marketing_api",
+                refId: cacheKey,
+              });
+              setConsumeError(null);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.warn("[marketing-runner] consumeCredits failed (will retry once):", err);
+              // 一次重试
+              try {
+                await billingApi.consumeCredits({
+                  endpoint,
+                  amount: actual,
+                  refType: "marketing_api",
+                  refId: cacheKey,
+                });
+                setConsumeError(null);
+                console.info("[marketing-runner] consumeCredits retry succeeded");
+              } catch (err2) {
+                const msg2 = err2 instanceof Error ? err2.message : String(err2);
+                console.error("[marketing-runner] consumeCredits retry failed:", err2);
+                setConsumeError({ endpoint, amount: actual, message: msg2, at: Date.now() });
+              }
+            }
+          };
+          void sync();
         }
         return res;
       };
@@ -129,6 +158,7 @@ export function useMarketingRunner(record: MarketingLedgerRecord) {
     account,
     ctx,
     lastConsume,
+    consumeError,
     run,
   };
 }

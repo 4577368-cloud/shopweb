@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useT } from "@/i18n/LocaleProvider";
 import { Button } from "@/components/ui/button";
-import type { TtsShopRow } from "@/lib/marketing/types";
+import type { TtsShopDetail, TtsShopRow } from "@/lib/marketing/types";
 import { ttsSignals } from "@/lib/marketing/derived";
 import { regionLabel } from "@/lib/marketing/enums";
 import { fmtCompact, fmtInt, fmtPercent, fmtUsd } from "@/lib/marketing/format";
@@ -21,12 +21,14 @@ const PRICE_KEY: Record<"low" | "mid" | "high", string> = {
 
 interface TtsShopDetailDrawerProps {
   row: TtsShopRow | null;
+  detail?: TtsShopDetail | null;
   onClose: () => void;
   onViewCompetitor: (shopName: string) => void;
 }
 
 export function TtsShopDetailDrawer({
   row,
+  detail,
   onClose,
   onViewCompetitor,
 }: TtsShopDetailDrawerProps) {
@@ -118,6 +120,18 @@ export function TtsShopDetailDrawer({
               label={t("ops.discovery.tts.detailPlays")}
               value={fmtCompact(row.playCount)}
             />
+            {detail?.adCost ? (
+              <MetricTile
+                label={t("ops.discovery.tts.detailSpend")}
+                value={detail.adCost}
+              />
+            ) : null}
+            {detail?.goodsAdRate != null ? (
+              <MetricTile
+                label={t("ops.discovery.tts.detailAdRate")}
+                value={fmtPercent(detail.goodsAdRate, 0)}
+              />
+            ) : null}
             <MetricTile
               label={t("ops.intel.tts.shareRate")}
               value={fmtPercent(signals.shareRate, 2)}
@@ -185,6 +199,47 @@ export function TtsShopDetailDrawer({
                   </Tag>
                 ))}
               </div>
+            </div>
+          ) : null}
+
+          {detail ? (
+            <div className="space-y-2 rounded-[var(--radius-card)] border border-hairline bg-surface-muted/40 p-3">
+              <p className="text-[11px] font-medium text-ink-muted">
+                {t("ops.discovery.tts.detailDomain")}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                {detail.rootPath ? (
+                  <span className="rounded bg-surface px-1.5 py-0.5 tabular-nums text-ink">
+                    {detail.rootPath}
+                  </span>
+                ) : null}
+                {detail.landingPage ? (
+                  <a
+                    href={detail.landingPage}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-link underline-offset-2 hover:underline"
+                  >
+                    {t("ops.discovery.tts.detailLanding")} ↗
+                  </a>
+                ) : null}
+                {detail.isManaged ? (
+                  <Tag tone="brand">{t("ops.discovery.tts.detailManaged")}</Tag>
+                ) : null}
+                {detail.isInMarketplace ? (
+                  <Tag tone="brand">{t("ops.discovery.tts.detailMarketplace")}</Tag>
+                ) : null}
+                {detail.commissionRate != null ? (
+                  <Tag tone="muted">
+                    {t("ops.discovery.tts.detailCommission")}: {fmtPercent(detail.commissionRate, 0)}
+                  </Tag>
+                ) : null}
+              </div>
+              {detail.desc ? (
+                <p className="text-[11px] leading-relaxed text-ink-subtle">
+                  {detail.desc}
+                </p>
+              ) : null}
             </div>
           ) : null}
 

@@ -18,6 +18,8 @@ export function toTangbuyPostLimitType(
       return "FOOD";
     case "BLADE":
       return "BLADE";
+    case "COSMETIC":
+      return "COSMETIC";
     case "BATTERY_BUILT_IN":
     case "BATTERY_EXTERNAL":
     case "MAGNETIC":

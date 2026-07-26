@@ -11,9 +11,10 @@ export async function classifyLogisticsCommandInput(
   locale?: string | null
 ): Promise<LogisticsCommandClassifyResult> {
   return classifyCommandInput(text, {
-    rulesClassify: classifyLogisticsCommandByRules,
+    rulesClassify: (clipped) => classifyLogisticsCommandByRules(clipped, ctx ?? null),
     apiPath: "/api/agents/logistics/command",
     context: ctx ?? null,
     locale,
+    priority: "llm-first",
   });
 }

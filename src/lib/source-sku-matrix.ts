@@ -62,23 +62,22 @@ export function scoreVariantSpecMatch(
   return scoreSpecMatch(variantLabel, specLabel);
 }
 
-/** 价格接近度：0 = 完全不同，1 = 完全相同 */
+/** 价格接近度（已不参与综合分，仅保留字段供调试/展示）。 */
 function scorePriceProximity(
-  variantPrice?: number | null,
-  sourcePrice?: number | null
+  _variantPrice?: number | null,
+  _sourcePrice?: number | null
 ): number {
-  if (variantPrice == null || sourcePrice == null) return 0;
-  if (variantPrice <= 0 || sourcePrice <= 0) return 0;
-  const ratio = Math.min(variantPrice, sourcePrice) / Math.max(variantPrice, sourcePrice);
-  // ratio 1.0 → score 1.0, ratio 0.5 → score 0.0
-  return Math.max(0, (ratio - 0.5) / 0.5);
+  return 0;
 }
 
-/** 简单图片相似度：URL 完全相同 = 1，否则 0 */
 function scoreImageSimilarity(
-  variantImageUrl?: string | null,
-  sourceImageUrl?: string | null
+  variantImageUrl: string | null | undefined,
+  sourceImageUrl: string | null | undefined,
+  visualScore?: number | null
 ): number {
+  if (visualScore != null && Number.isFinite(visualScore)) {
+    return Math.max(0, Math.min(1, visualScore));
+  }
   if (!variantImageUrl || !sourceImageUrl) return 0;
   const a = variantImageUrl.split("?")[0].toLowerCase();
   const b = sourceImageUrl.split("?")[0].toLowerCase();
@@ -86,11 +85,14 @@ function scoreImageSimilarity(
 }
 
 export interface RankOptions {
+  /** @deprecated 售价与 CNY 进价不可比，综合分不再使用 */
   variantPrice?: number | null;
   variantImageUrl?: string | null;
+  /** 0–1 visual scores from image-match-score / pHash, keyed by source skuId */
+  imageScoreBySkuId?: Record<string, number>;
 }
 
-/** Rank itemGet rows for a variant — composite of spec match (70%), price (20%), image (10%). */
+/** Rank itemGet rows — spec 75% + image 25%（视觉分可走 imageScoreBySkuId）。 */
 export function rankSourceSkuRows(
   rows: SourceSkuRow[],
   variantLabel: string,
@@ -100,9 +102,13 @@ export function rankSourceSkuRows(
     .map((row) => {
       const specScore = scoreVariantSpecMatch(variantLabel, row.specLabel);
       const priceScore = scorePriceProximity(options?.variantPrice, row.procurementPrice);
-      const imageScore = scoreImageSimilarity(options?.variantImageUrl, row.imageUrl);
-      // 综合分：spec 70% + price 20% + image 10%
-      const matchScore = specScore * 0.7 + priceScore * 0.2 + imageScore * 0.1;
+      const visual = options?.imageScoreBySkuId?.[row.skuId];
+      const imageScore = scoreImageSimilarity(
+        options?.variantImageUrl,
+        row.imageUrl,
+        visual
+      );
+      const matchScore = specScore * 0.75 + imageScore * 0.25;
       return { ...row, matchScore, specScore, priceScore };
     })
     .sort((a, b) => b.matchScore - a.matchScore || a.specLabel.localeCompare(b.specLabel));

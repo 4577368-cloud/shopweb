@@ -17,6 +17,7 @@
  */
 
 import { canonicalizeLabel } from "@/lib/sku-align/spec-canon";
+import { feedbackBoostForPair } from "@/lib/sku-align/spec-match-feedback";
 
 export type SizeSystem =
   | "letter"
@@ -97,6 +98,22 @@ const ALIAS_GROUPS: Array<{ type: AliasType; key: string; aliases: string[] }> =
   { type: "color", key: "brown", aliases: ["棕", "棕色", "褐色", "咖色", "咖啡色", "brown", "cafe"] },
   { type: "color", key: "beige", aliases: ["米", "米色", "米白", "杏色", "beige"] },
   { type: "color", key: "khaki", aliases: ["卡其", "khaki"] },
+  {
+    type: "color",
+    key: "wine_red",
+    aliases: ["酒红", "酒红色", "wine red", "burgundy", "勃艮第", "勃艮第红"],
+  },
+  {
+    type: "color",
+    key: "dusty_pink",
+    aliases: ["脏粉", "脏粉色", "dusty pink", "dustyrose", "藕粉"],
+  },
+  {
+    type: "color",
+    key: "haze_blue",
+    aliases: ["雾霾蓝", "雾蓝", "雾霭蓝", "haze blue", "dusty blue"],
+  },
+  { type: "color", key: "silver_grey", aliases: ["银灰", "银灰色", "silver grey", "silver gray"] },
   // 材质（服装/箱包/珠宝）
   { type: "material", key: "genuineLeather", aliases: ["真皮", "头层牛皮", "牛皮", "genuineleather", "leather"] },
   { type: "material", key: "puLeather", aliases: ["pu", "人造革", "仿皮", "pu皮", "puleather", "faux"] },
@@ -497,5 +514,12 @@ export function scoreParsedSpec(a: ParsedSpec, b: ParsedSpec): number {
 
 /** 便捷入口：两个标签字符串 → 0–1 规格匹配分。 */
 export function scoreSpecMatch(labelA: string, labelB: string): number {
-  return scoreParsedSpec(parseSpec(canonicalizeLabel(labelA)), parseSpec(canonicalizeLabel(labelB)));
+  const base = scoreParsedSpec(
+    parseSpec(canonicalizeLabel(labelA)),
+    parseSpec(canonicalizeLabel(labelB))
+  );
+  if (feedbackBoostForPair(labelA, labelB) > 0) {
+    return Math.max(base, 0.92);
+  }
+  return base;
 }

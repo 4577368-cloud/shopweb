@@ -418,7 +418,7 @@ function SkuAlignContent() {
     <AssistantRail
       assistantContent={
         <>
-          <CopilotCard content={copilot} />
+          <CopilotCard content={copilot} hideComposer />
           {products.length > 0 ? (
             <SkuAgentPanel
               context={agentContext}

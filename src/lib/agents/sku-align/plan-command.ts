@@ -536,7 +536,21 @@ export function resolveSkuCommandExecution(
       };
     }
     case "rerun_auto_align": {
+      // Batch scope: navigate to the first product to kick off auto-align there.
+      const batchIds = plan.draft.params.batchProductIds;
+      if (plan.draft.targetScope === "all" && batchIds && batchIds.length > 0) {
+        return {
+          type: "rerun_auto_align",
+          productId: batchIds[0],
+          productIds: batchIds,
+        };
+      }
       return { type: "rerun_auto_align", productId: plan.draft.productId };
+    }
+    case "explain_sku_match": {
+      const productId = plan.draft.productId;
+      if (!productId) return null;
+      return { type: "focus_product", productId };
     }
     case "open_sku_detail": {
       const productId = plan.draft.productId;

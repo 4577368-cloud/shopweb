@@ -9,6 +9,7 @@ import {
   rankSourceSkuRows,
   type SourceSkuRow,
   type SourceSkuRowRanked,
+  type RankOptions,
 } from "@/lib/source-sku-matrix";
 import { applyLlmToRanked } from "@/lib/sku-align/spec-match-llm";
 import type { TranslateFn } from "@/i18n/server";
@@ -16,6 +17,19 @@ import type { ImageSearchProduct, SkuVariant } from "@/lib/types";
 
 export const AUTO_SUGGEST_THRESHOLD = 0.8;
 export const COVERAGE_MATCH_THRESHOLD = 0.5;
+
+function rankOptsForVariant(
+  variant: SkuVariant,
+  visionByVariant?: Record<string, Record<string, number>>,
+  matrixVisionByVariant?: Record<string, Record<string, number>>
+): RankOptions {
+  return {
+    variantImageUrl: variant.imageUrl,
+    imageScoreBySkuId:
+      matrixVisionByVariant?.[variant.thirdPlatformSkuId] ??
+      visionByVariant?.[variant.thirdPlatformSkuId],
+  };
+}
 
 /** primary=当前主货源 SKU 对照；replace=整款换绑；supplement=缺口规格追加第二货源。 */
 export type DrawerPhase = "primary" | "replace" | "supplement";
@@ -29,7 +43,8 @@ export interface VariantSkuHit {
 export function supplementGapVariantsFromOverview(
   variants: SkuVariant[],
   matrix: SourceSkuRow[],
-  v1Detail?: SkuAlignProductDetail | null
+  v1Detail?: SkuAlignProductDetail | null,
+  visionByVariant?: Record<string, Record<string, number>>
 ): SkuVariant[] {
   const v1Gaps = supplementGapVariants(
     v1Detail ?? { summary: {} as never, variants: [] }
@@ -41,10 +56,7 @@ export function supplementGapVariantsFromOverview(
     const state = deriveVariantDisplayState(v);
     if (state !== "unbound" && state !== "needs_review") return false;
     if (!matrix.length) return true;
-    const ranked = rankSourceSkuRows(matrix, v.optionLabel, {
-      variantPrice: v.price,
-      variantImageUrl: v.imageUrl,
-    });
+    const ranked = rankSourceSkuRows(matrix, v.optionLabel, rankOptsForVariant(v, visionByVariant));
     const top = ranked[0];
     return !top || top.matchScore < COVERAGE_MATCH_THRESHOLD;
   });
@@ -70,7 +82,8 @@ export function buildAutoSuggestions(
   matrix: SourceSkuRow[],
   existing: Record<string, string>,
   /** 可选：灰区 LLM 复核置信度（pairKey→0-1），命中则融入排序。 */
-  llmByKey?: Record<string, number>
+  llmByKey?: Record<string, number>,
+  visionByVariant?: Record<string, Record<string, number>>
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const variant of variants) {
@@ -78,10 +91,11 @@ export function buildAutoSuggestions(
     if (current) continue;
     const bound = variant.bound?.tangbuySkuId?.trim();
     if (bound) continue;
-    let ranked = rankSourceSkuRows(matrix, variant.optionLabel, {
-      variantPrice: variant.price,
-      variantImageUrl: variant.imageUrl,
-    });
+    let ranked = rankSourceSkuRows(
+      matrix,
+      variant.optionLabel,
+      rankOptsForVariant(variant, visionByVariant)
+    );
     if (llmByKey) ranked = applyLlmToRanked(variant.optionLabel, ranked, llmByKey);
     const top = ranked[0];
     if (top && top.matchScore >= AUTO_SUGGEST_THRESHOLD) {
@@ -95,18 +109,22 @@ export function buildAutoSuggestions(
 export function buildPreviewMatches(
   variants: SkuVariant[],
   matrix: SourceSkuRow[],
-  llmByKey?: Record<string, number>
+  llmByKey?: Record<string, number>,
+  visionByVariant?: Record<string, Record<string, number>>
 ): Record<string, string> {
   const out: Record<string, string> = {};
   if (!matrix.length) return out;
   for (const variant of variants) {
-    let ranked = rankSourceSkuRows(matrix, variant.optionLabel, {
-      variantPrice: variant.price,
-      variantImageUrl: variant.imageUrl,
-    });
+    let ranked = rankSourceSkuRows(
+      matrix,
+      variant.optionLabel,
+      rankOptsForVariant(variant, visionByVariant)
+    );
     if (llmByKey) ranked = applyLlmToRanked(variant.optionLabel, ranked, llmByKey);
     const top = ranked[0];
-    if (top?.skuId) out[variant.thirdPlatformSkuId] = top.skuId;
+    if (top && top.matchScore >= AUTO_SUGGEST_THRESHOLD && top.skuId) {
+      out[variant.thirdPlatformSkuId] = top.skuId;
+    }
   }
   return out;
 }
@@ -120,13 +138,16 @@ export function countHighConfidenceSuggestions(
 /** Map gap variants to best SKU hit in a candidate matrix. */
 export function mapGapHits(
   gapVariants: SkuVariant[],
-  matrix: SourceSkuRow[]
+  matrix: SourceSkuRow[],
+  visionByVariant?: Record<string, Record<string, number>>,
+  matrixVisionByVariant?: Record<string, Record<string, number>>
 ): VariantSkuHit[] {
   return gapVariants.map((variant) => {
-    const ranked = rankSourceSkuRows(matrix, variant.optionLabel, {
-      variantPrice: variant.price,
-      variantImageUrl: variant.imageUrl,
-    });
+    const ranked = rankSourceSkuRows(
+      matrix,
+      variant.optionLabel,
+      rankOptsForVariant(variant, visionByVariant, matrixVisionByVariant)
+    );
     const top = ranked[0];
     const hit =
       top && top.matchScore >= COVERAGE_MATCH_THRESHOLD ? top : null;
@@ -151,15 +172,18 @@ export function meanMatchScore(hits: VariantSkuHit[]): number {
 export function autoAssignSupplementGaps(
   gaps: SkuVariant[],
   candidateKey: string,
-  matrix: SourceSkuRow[]
+  matrix: SourceSkuRow[],
+  visionByVariant?: Record<string, Record<string, number>>,
+  matrixVisionByVariant?: Record<string, Record<string, number>>
 ): Record<string, { candidateKey: string; skuId: string }> {
   const out: Record<string, { candidateKey: string; skuId: string }> = {};
   if (!matrix.length) return out;
   for (const variant of gaps) {
-    const top = rankSourceSkuRows(matrix, variant.optionLabel, {
-      variantPrice: variant.price,
-      variantImageUrl: variant.imageUrl,
-    })[0];
+    const top = rankSourceSkuRows(
+      matrix,
+      variant.optionLabel,
+      rankOptsForVariant(variant, visionByVariant, matrixVisionByVariant)
+    )[0];
     if (!top || top.matchScore < COVERAGE_MATCH_THRESHOLD) continue;
     out[variant.thirdPlatformSkuId] = { candidateKey, skuId: top.skuId };
   }
@@ -176,10 +200,11 @@ export function assignSupplementMerchantToVariants(
   const key = candidateKey.trim();
   if (!key || !matrix.length) return out;
   for (const variant of variants) {
-    const top = rankSourceSkuRows(matrix, variant.optionLabel, {
-      variantPrice: variant.price,
-      variantImageUrl: variant.imageUrl,
-    })[0];
+    const top = rankSourceSkuRows(
+      matrix,
+      variant.optionLabel,
+      rankOptsForVariant(variant)
+    )[0];
     out[variant.thirdPlatformSkuId] = { candidateKey: key, skuId: top?.skuId ?? "" };
   }
   return out;
@@ -300,12 +325,25 @@ export function rankCandidatesByCoverage(
   candidates: ImageSearchProduct[],
   gapVariants: SkuVariant[],
   matrices: Map<string, SourceSkuRow[]>,
-  imageScores: Record<string, number>
+  imageScores: Record<string, number>,
+  opts?: {
+    visionByVariant?: Record<string, Record<string, number>>;
+    supplementVisionByCandidate?: Map<
+      string,
+      Record<string, Record<string, number>>
+    >;
+  }
 ): RankedCoverageCandidate[] {
   const ranked: RankedCoverageCandidate[] = candidates.map((candidate) => {
     const key = candidate.internalGoodsId || candidate.productId;
     const matrix = matrices.get(key) ?? [];
-    const hits = mapGapHits(gapVariants, matrix);
+    const matrixVision = opts?.supplementVisionByCandidate?.get(key);
+    const hits = mapGapHits(
+      gapVariants,
+      matrix,
+      opts?.visionByVariant,
+      matrixVision
+    );
     const coverage = coverageCount(hits);
     const imageScore =
       imageScores[key] ??

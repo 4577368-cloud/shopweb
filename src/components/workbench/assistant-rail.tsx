@@ -123,6 +123,8 @@ interface CopilotCardProps {
   suggestions?: AssistantSuggestion[];
   /** Changing this key resets the revealed answer (e.g. when the page's auth state changes). */
   suggestionsKey?: string;
+  /** Hide the composer footer entirely (e.g. when a real command input is rendered elsewhere). */
+  hideComposer?: boolean;
   className?: string;
 }
 
@@ -142,6 +144,7 @@ export function CopilotCard({
   highlightedAlertId,
   suggestions,
   suggestionsKey,
+  hideComposer,
   className,
 }: CopilotCardProps) {
   const t = useT();
@@ -317,7 +320,7 @@ export function CopilotCard({
         ) : null}
       </div>
 
-      {suggestions && suggestions.length > 0 ? (
+      {hideComposer ? null : suggestions && suggestions.length > 0 ? (
         <GuidedComposer
           key={suggestionsKey}
           suggestions={suggestions}

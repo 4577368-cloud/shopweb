@@ -6,12 +6,13 @@ import { useState } from "react";
 import { useT } from "@/i18n/LocaleProvider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { MarketingContext } from "@/hooks/use-marketing-runner";
+import type { MarketingContext, ConsumeSyncError } from "@/hooks/use-marketing-runner";
 
 interface CreditsIndicatorProps {
   apiRemaining: number;
   monitorRemaining: number;
   context: MarketingContext;
+  consumeError?: ConsumeSyncError | null;
   onOpenUsage?: () => void;
   onFetch?: () => void;
   fetchDisabled?: boolean;
@@ -22,6 +23,7 @@ export function CreditsIndicator({
   apiRemaining,
   monitorRemaining,
   context,
+  consumeError,
   onOpenUsage,
   onFetch,
   fetchDisabled,
@@ -41,12 +43,16 @@ export function CreditsIndicator({
       >
       <button
         type="button"
-        className="inline-flex items-center gap-2 rounded-full border border-hairline bg-surface px-3 py-1.5 text-xs shadow-sm transition-colors hover:bg-surface-muted"
+        className={cn(
+          "inline-flex items-center gap-2 rounded-full border bg-surface px-3 py-1.5 text-xs shadow-sm transition-colors hover:bg-surface-muted",
+          consumeError ? "border-warning" : "border-hairline"
+        )}
       >
         <span className="text-ink-subtle">{t("ops.credits.label")}</span>
-        <span className="font-semibold tabular-nums text-brand">
+        <span className={cn("font-semibold tabular-nums", consumeError ? "text-warning" : "text-brand")}>
           {apiRemaining.toLocaleString()} {t("ops.usage.points")}
         </span>
+        {consumeError && <span className="text-warning" title={t("ops.credits.syncErrorTooltip")}>!</span>}
       </button>
 
       {open && (
@@ -73,6 +79,14 @@ export function CreditsIndicator({
                     : t("ops.contextBar.miss")
               }
             />
+            {consumeError && (
+              <>
+                <div className="my-1.5 border-t border-hairline" />
+                <div className="rounded bg-warning-soft px-2 py-1 text-[11px] text-warning">
+                  {t("ops.credits.syncError", { endpoint: consumeError.endpoint, amount: consumeError.amount })}
+                </div>
+              </>
+            )}
             {onOpenUsage && (
               <>
                 <div className="my-1.5 border-t border-hairline" />

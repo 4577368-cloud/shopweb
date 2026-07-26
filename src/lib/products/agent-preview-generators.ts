@@ -1,5 +1,6 @@
 import { api } from "@/lib/api";
 import { resolveTitleCopyStyle } from "@/lib/products/resolve-title-copy-style";
+import { throwIfAborted } from "@/lib/products/command-run-abort";
 import type { ProductsCommandLabels } from "@/lib/products/agent-command-labels";
 import type { ProductsTranslateFn } from "@/lib/products/agent-command-types";
 import {
@@ -24,14 +25,15 @@ export function createProductsPreviewGenerators({
   sessionShopName,
 }: CreateProductsPreviewGeneratorsOpts) {
   return {
-      update_product_copy: async (plan: any, shopName: string) => {
+      update_product_copy: async (plan: any, shopName: string, signal?: AbortSignal) => {
+        throwIfAborted(signal);
         const productId = plan.draft.productId ?? plan.draft.params.productId;
         const copyField = plan.draft.params.copyField ?? "title";
         const copyAction = plan.draft.params.copyAction ?? "translate";
         const targetLang = plan.draft.params.copyTargetLang ?? "en";
         const copyStyle = plan.draft.params.copyStyle;
 
-        const detail = await api.getShopProductDetail(shopName, productId);
+        const detail = await api.getShopProductDetail(shopName, productId, signal);
         const originalTitle = detail.title ?? "";
         let translatedText = "";
         const style = resolveTitleCopyStyle(copyAction, copyStyle);
@@ -41,7 +43,8 @@ export function createProductsPreviewGenerators({
             originalTitle,
             targetLang,
             undefined,
-            style
+            style,
+            signal
           );
           if (!result.success || !result.translatedText) {
             throw new Error(result.error ?? t("productsPreview.errTitleGenFailed"));
@@ -83,7 +86,7 @@ export function createProductsPreviewGenerators({
           },
         };
       },
-      batch_update_product_copy: async (plan: any, shopName: string) => {
+      batch_update_product_copy: async (plan: any, shopName: string, signal?: AbortSignal) => {
         const productIds = plan.draft.params.batchProductIds ?? [];
         const copyField = plan.draft.params.copyField ?? "title";
         const copyAction = plan.draft.params.copyAction ?? "translate";
@@ -100,9 +103,10 @@ export function createProductsPreviewGenerators({
         const sampleRows: any[] = [];
 
         for (let i = 0; i < sampleCount; i++) {
+          throwIfAborted(signal);
           const productId = productIds[i];
           try {
-            const detail = await api.getShopProductDetail(shopName, productId);
+            const detail = await api.getShopProductDetail(shopName, productId, signal);
             const originalTitle = detail.title ?? "";
             let translatedText = "";
 
@@ -111,7 +115,8 @@ export function createProductsPreviewGenerators({
                 originalTitle,
                 targetLang,
                 undefined,
-                style
+                style,
+                signal
               );
               if (result.success && result.translatedText) {
                 translatedText = result.translatedText;
@@ -186,7 +191,7 @@ export function createProductsPreviewGenerators({
           },
         };
       },
-      batch_update_listing_price: async (plan: any, shopName: string) => {
+      batch_update_listing_price: async (plan: any, shopName: string, signal?: AbortSignal) => {
         const productIds = plan.draft.params.batchProductIds ?? [];
         const multiplier = plan.draft.params.batchPriceMultiplier;
         const fixedPrice = plan.draft.params.batchPriceFixed;
@@ -202,7 +207,7 @@ export function createProductsPreviewGenerators({
         for (let i = 0; i < sampleCount; i++) {
           const productId = productIds[i];
           try {
-            const detail = await api.getShopProductDetail(shopName, productId);
+            const detail = await api.getShopProductDetail(shopName, productId, signal);
             const title = detail.title ?? t("productsPreview.unknownProduct");
             const currentPrice = detail.minPrice ?? 0;
             let newPrice = 0;
@@ -276,9 +281,9 @@ export function createProductsPreviewGenerators({
           },
         };
       },
-      draft_product: async (plan: any, shopName: string) => {
+      draft_product: async (plan: any, shopName: string, signal?: AbortSignal) => {
         const productId = plan.draft.productId ?? plan.draft.params.productId;
-        const detail = await api.getShopProductDetail(shopName, productId);
+        const detail = await api.getShopProductDetail(shopName, productId, signal);
         const title =
           detail.title ?? plan.targetLabel ?? t("productsPreview.productFallback");
         const targetStatus: ShopifyListingStatusTarget = "DRAFT";
@@ -308,9 +313,9 @@ export function createProductsPreviewGenerators({
           },
         };
       },
-      archive_product: async (plan: any, shopName: string) => {
+      archive_product: async (plan: any, shopName: string, signal?: AbortSignal) => {
         const productId = plan.draft.productId ?? plan.draft.params.productId;
-        const detail = await api.getShopProductDetail(shopName, productId);
+        const detail = await api.getShopProductDetail(shopName, productId, signal);
         const title =
           detail.title ?? plan.targetLabel ?? t("productsPreview.productFallback");
         const targetStatus: ShopifyListingStatusTarget = "ARCHIVED";
@@ -340,7 +345,7 @@ export function createProductsPreviewGenerators({
           },
         };
       },
-      batch_draft_products: async (plan: any, shopName: string) => {
+      batch_draft_products: async (plan: any, shopName: string, signal?: AbortSignal) => {
         const productIds = plan.draft.params.batchProductIds ?? [];
         const targetStatus: ShopifyListingStatusTarget = "DRAFT";
         const totalCount = productIds.length;
@@ -351,7 +356,7 @@ export function createProductsPreviewGenerators({
         for (let i = 0; i < sampleCount; i++) {
           const productId = productIds[i];
           try {
-            const detail = await api.getShopProductDetail(shopName, productId);
+            const detail = await api.getShopProductDetail(shopName, productId, signal);
             sampleRows.push({
               label:
                 detail.title ?? t("productsPreview.productN", { n: i + 1 }),
@@ -395,7 +400,7 @@ export function createProductsPreviewGenerators({
           },
         };
       },
-      batch_archive_products: async (plan: any, shopName: string) => {
+      batch_archive_products: async (plan: any, shopName: string, signal?: AbortSignal) => {
         const productIds = plan.draft.params.batchProductIds ?? [];
         const targetStatus: ShopifyListingStatusTarget = "ARCHIVED";
         const totalCount = productIds.length;
@@ -406,7 +411,7 @@ export function createProductsPreviewGenerators({
         for (let i = 0; i < sampleCount; i++) {
           const productId = productIds[i];
           try {
-            const detail = await api.getShopProductDetail(shopName, productId);
+            const detail = await api.getShopProductDetail(shopName, productId, signal);
             sampleRows.push({
               label:
                 detail.title ?? t("productsPreview.productN", { n: i + 1 }),
