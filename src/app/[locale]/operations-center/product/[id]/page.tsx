@@ -64,7 +64,7 @@ function ProductDossierContent({ id }: { id: string }) {
 
   const breadcrumbs = [
     { label: t("nav.hub"), href: localePath(locale, "/operations-center") },
-    { label: t("ops.tabs.creatives"), href: localePath(locale, "/operations-center?tab=creatives") },
+    { label: t("ops.tabs.creatives"), href: localePath(locale, "/operations-center?view=creatives") },
     { label: dossier?.detail?.product?.title ?? id },
   ];
 

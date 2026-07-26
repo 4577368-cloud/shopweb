@@ -191,7 +191,7 @@ function LeaderboardContent({
 
   const breadcrumbs = [
     { label: t("nav.hub"), href: localePath(locale, "/operations-center") },
-    { label: t("ops.tabs.discovery"), href: localePath(locale, "/operations-center?tab=discovery") },
+    { label: t("ops.tabs.discovery"), href: localePath(locale, "/operations-center?view=discovery") },
     { label: t("ops.leaderboard.breadcrumb") },
   ];
 
