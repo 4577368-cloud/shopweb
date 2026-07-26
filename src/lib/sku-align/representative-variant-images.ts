@@ -23,7 +23,9 @@ export function collectVariantImageCandidates(
   variants: Array<VariantImageInput | ShopMirrorSku>,
   primaryImageUrl?: string | null
 ): Array<{ url: string; sortKey: number }> {
-  const byKey = new Map<string, number>();
+  // Key is normalized for dedupe only — CDN paths are case-sensitive, so the
+  // original URL is what gets fetched.
+  const byKey = new Map<string, { url: string; sortKey: number }>();
 
   const add = (url: string | null | undefined, sortKey: number) => {
     const trimmed = url?.trim();
@@ -31,7 +33,9 @@ export function collectVariantImageCandidates(
     const key = normalizeImageKey(trimmed);
     if (!key) return;
     const prev = byKey.get(key);
-    if (prev == null || sortKey > prev) byKey.set(key, sortKey);
+    if (prev == null || sortKey > prev.sortKey) {
+      byKey.set(key, { url: trimmed, sortKey });
+    }
   };
 
   for (const v of variants) {
@@ -46,10 +50,7 @@ export function collectVariantImageCandidates(
 
   add(primaryImageUrl, -1);
 
-  return [...byKey.entries()].map(([key, sortKey]) => ({
-    url: key,
-    sortKey,
-  }));
+  return [...byKey.values()];
 }
 
 /**
