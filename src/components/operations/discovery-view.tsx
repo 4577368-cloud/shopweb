@@ -309,12 +309,18 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
       const totalCountGrowth = l.reduce((a, r) => a + r.countGrowth, 0);
       const cpms = l.filter((r) => r.minCpm != null && r.maxCpm != null).map((r) => (r.minCpm! + r.maxCpm!) / 2);
       const totalVideo = l.reduce((a, r) => a + r.videoCount, 0);
+      // 中位数比平均值更抗 CPM 异常值（某些商品 CPM 可达 $1万+，会严重扭曲均值）
+      const medianCpm = (arr: number[]): number => {
+        const s = [...arr].sort((a, b) => a - b);
+        const m = Math.floor(s.length / 2);
+        return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+      };
       return [
         { label: t("ops.discovery.summary.rank.products"), value: fmtInt(l.length) },
         { label: t("ops.discovery.summary.rank.growth"), value: `+${fmtCompact(totalCountGrowth)}` },
         {
           label: t("ops.discovery.summary.rank.avgCpm"),
-          value: cpms.length ? `$${(cpms.reduce((a, b) => a + b, 0) / cpms.length).toFixed(1)}` : "—",
+          value: cpms.length ? `$${medianCpm(cpms).toFixed(1)}` : "—",
         },
         { label: t("ops.discovery.summary.rank.videos"), value: fmtCompact(totalVideo) },
       ];
@@ -586,6 +592,7 @@ function Select({
   options,
   labels,
   allLabel,
+  className,
 }: {
   label: string;
   value: string;
@@ -593,9 +600,11 @@ function Select({
   options: { value: string; label: string }[] | string[];
   labels?: string[];
   allLabel?: string;
+  /** Optional width / flex classes on the outer label (e.g. min-w-[200px]). */
+  className?: string;
 }) {
   return (
-    <label className="flex min-w-0 flex-col gap-1 text-[11px] text-ink-subtle">
+    <label className={cn("flex min-w-0 flex-col gap-1 text-[11px] text-ink-subtle", className)}>
       {label}
       <select
         value={value}
@@ -756,23 +765,23 @@ function RankTable({
               </button>
 
               {/* 关键指标条：列表这一次调用返回的全部要点（增长 / 增速 / 视频 / CPM） */}
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-2.5 pb-2 text-[11px]">
-                <div className="flex items-center justify-between">
-                  <span className="text-ink-subtle">{t("ops.discovery.colGrowthCount")}</span>
-                  <span className="tabular-nums text-ink">+{fmtInt(row.countGrowth)}</span>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 px-2.5 pb-2 text-[11px]">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="shrink-0 text-ink-subtle">{t("ops.discovery.colGrowthCount")}</span>
+                  <span className="tabular-nums text-ink">+{fmtCompact(row.countGrowth)}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-ink-subtle">{t("ops.discovery.colGrowthRate")}</span>
-                  <span className="tabular-nums text-success">+{fmtGrowthRate(row.growthRate * 100, t("ops.discovery.growthFactor"))}</span>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="shrink-0 text-ink-subtle">{t("ops.discovery.colGrowthRate")}</span>
+                  <span className="tabular-nums text-success">{fmtGrowthRate(row.growthRate * 100, t("ops.discovery.growthFactor"))}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-ink-subtle">{t("ops.discovery.colVideoCount")}</span>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="shrink-0 text-ink-subtle">{t("ops.discovery.colVideoCount")}</span>
                   <span className="tabular-nums text-ink">{row.videoCount}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-ink-subtle">CPM</span>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="shrink-0 text-ink-subtle">CPM</span>
                   <span className="tabular-nums text-ink">
-                    {row.minCpm != null && row.maxCpm != null ? `$${row.minCpm}–${row.maxCpm}` : "—"}
+                    {row.minCpm != null && row.maxCpm != null ? `${fmtUsd(row.minCpm)}–${fmtUsd(row.maxCpm)}` : "—"}
                   </span>
                 </div>
               </div>
@@ -841,6 +850,11 @@ function SearchTable({
           <div key={card.id} className="overflow-hidden rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">
             <div className="relative h-36 w-full overflow-hidden">
               <CoverThumb src={card.image} label={card.title} />
+              {card.images.length > 1 && (
+                <span className="absolute bottom-1.5 right-1.5 rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-white">
+                  +{card.images.length - 1}
+                </span>
+              )}
               <span className="absolute left-2 top-2">
                 <PlatformBadge platform={card.adPlatform[0] ?? "meta"} />
               </span>
@@ -859,10 +873,12 @@ function SearchTable({
                 <span className="truncate text-[10px] text-ink-subtle">{card.adPlatform.join(" · ")}</span>
               </div>
               <AdIntelCard card={card} />
-              <div className="mt-1.5 flex items-center gap-3 text-[11px] text-ink-subtle">
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-subtle">
                 <span className="tabular-nums">{t("ops.discovery.searchCard.ads")} {fmtInt(card.adCount)}</span>
                 <span className="tabular-nums">{t("ops.discovery.searchCard.active")} {fmtInt(card.activeAdCount)}</span>
                 <span className="tabular-nums">{t("ops.discovery.searchCard.reach")} {fmtCompact(card.adAudienceReach)}</span>
+                <span className="tabular-nums">{t("ops.discovery.searchCard.adCost")} {fmtUsd(card.adCost)}</span>
+                <span className="tabular-nums">{t("ops.discovery.searchCard.activeDays")} {card.activeDays}d</span>
               </div>
               <div className="mt-1.5 flex items-center justify-between gap-2">
                 <span className="truncate text-[10px] text-ink-subtle" title={card.store.name}>
@@ -1010,7 +1026,7 @@ function RankingBoard({ shop }: { shop: string }) {
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-end gap-2">
+      <div className="mb-3 flex flex-wrap items-end gap-3">
         <Select
           label={t("ops.discovery.board.snapshotLabel")}
           value={selectedSnapshot != null ? String(selectedSnapshot) : ""}
@@ -1019,12 +1035,14 @@ function RankingBoard({ shop }: { shop: string }) {
             value: String(s.id),
             label: s.dateRange,
           }))}
+          className="w-[220px] shrink-0"
         />
         <Select
           label={t("ops.discovery.board.countryLabel")}
           value={selectedCountry}
           onChange={onCountryChange}
           options={RANKING_COUNTRIES.map((c) => ({ value: c, label: c }))}
+          className="w-[96px] shrink-0"
         />
         <label className="flex min-w-0 flex-1 flex-col gap-1 sm:max-w-md">
           <span className="text-[11px] text-ink-subtle">{t("ops.discovery.board.searchLabel")}</span>
