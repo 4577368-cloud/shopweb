@@ -222,14 +222,14 @@ export function StoreDossierView({ dossier }: { dossier: StoreDossier }) {
                   <RadarChart
                     axes={analytics.radar.map((d) => ({ label: t(`ops.competition.radar.${d.key}`) }))}
                     series={[
-                      { label: store.name, color: "#FE2C55", values: analytics.radar.map((d) => d.value) },
+                      { label: store?.name ?? "", color: "#FE2C55", values: analytics.radar.map((d) => d.value) },
                       { label: t("ops.competition.radar.cohort"), color: "#1877F2", values: analytics.radar.map((d) => d.cohort) },
                     ]}
                     size={188}
                   />
                 </div>
                 <div className="mt-1 flex items-center justify-center gap-3 text-[10px] text-ink-muted">
-                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#FE2C55" }} />{store.name}</span>
+                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#FE2C55" }} />{store?.name}</span>
                   <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#1877F2" }} />{t("ops.competition.radar.cohort")}</span>
                 </div>
               </div>
