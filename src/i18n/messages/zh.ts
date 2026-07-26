@@ -1781,6 +1781,11 @@ export const zh: Dictionary = {
       detail: "用量明细",
       points: "点",
     },
+    cost: {
+      free: "免费",
+      cached: "已缓存",
+      paid: "{{n}} 点",
+    },
     usageDrawer: {
       title: "用量明细",
       colTime: "时间",
@@ -1794,7 +1799,6 @@ export const zh: Dictionary = {
       empty: "暂无用量记录。",
     },
     discovery: {
-      segTts: "TikTok 店铺",
       segAds: "热门商品",
       segSearch: "搜索",
       backToHot: "回到热门",
@@ -1836,12 +1840,6 @@ export const zh: Dictionary = {
       actViewDetail: "看详情",
       actLearn: "学素材",
       summary: {
-        tts: {
-          products: "商品",
-          gmv: "GMV(美元)",
-          avgScore: "平均评分",
-          sales: "销量",
-        },
         rank: {
           products: "商品",
           growth: "总增长",
@@ -1934,9 +1932,6 @@ export const zh: Dictionary = {
       insights: {
         keySignals: "亮点",
         momentum: "市场动量",
-        labelHeat: "最热门",
-        labelPen: "靠广告带量",
-        labelTop: "头部商品占比",
         labelMomentumTop: "涨得最快 3 个",
         labelPriceSweet: "热门价位",
         priceSweet: "{{lo}}–{{hi}} · {{n}} 款 · 平均涨 {{mom}}",
@@ -2268,6 +2263,7 @@ export const zh: Dictionary = {
       searchPlaceholder: "店铺 ID / 店铺 URL",
       queryBtn: "查询竞店",
       productContext: "谁在为这个商品投广告",
+      freeProductsHint: "该店铺在投商品列表可免费查看",
       segAll: "全部",
       segTiktok: "TikTok",
       segFacebook: "Facebook",
@@ -3514,7 +3510,7 @@ export const zh: Dictionary = {
     hubLockedUntilProductMatch:
       "商品货源关联达到 {{target}}% 后可使用运营中枢（当前 {{current}}%）",
     hubUnavailable: "运营中枢尚未在本环境开放",
-    progress: "开店进度",
+    progress: "进度",
     upgradeLabel: "Upgrade",
     upgradeAria: "在新标签页打开 Tangbuy 代发平台",
   },
@@ -3924,7 +3920,7 @@ export const zh: Dictionary = {
     },
     logistics: {
       desc: "识别物流类型并配置策略模板",
-      title: "物流",
+      title: "运费预估",
     },
     products: {
       desc: "在售关联 + 目录上架",

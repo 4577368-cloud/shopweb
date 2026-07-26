@@ -1783,6 +1783,11 @@ export const es: Dictionary = {
       detail: "Detalle de uso",
       points: "pts",
     },
+    cost: {
+      free: "Gratis",
+      cached: "En caché",
+      paid: "{{n}} pt",
+    },
     usageDrawer: {
       title: "Detalle de uso",
       colTime: "Hora",
@@ -1796,7 +1801,6 @@ export const es: Dictionary = {
       empty: "Aún no hay registros de uso.",
     },
     discovery: {
-      segTts: "Tiendas TikTok",
       segAds: "Productos populares",
       segSearch: "Buscar",
       backToHot: "Volver a populares",
@@ -1838,12 +1842,6 @@ export const es: Dictionary = {
       actViewDetail: "Ver detalle",
       actLearn: "Estudiar creativos",
       summary: {
-        tts: {
-          products: "Productos",
-          gmv: "GMV (USD)",
-          avgScore: "Puntuación med.",
-          sales: "Vol. ventas",
-        },
         rank: {
           products: "Productos",
           growth: "Crecimiento total",
@@ -1936,9 +1934,6 @@ export const es: Dictionary = {
       insights: {
         keySignals: "Destacados",
         momentum: "Impulso del mercado",
-        labelHeat: "Más popular",
-        labelPen: "Impulsado por anuncios",
-        labelTop: "Cuota de productos top",
         labelMomentumTop: "Top 3 de mayor crecimiento",
         labelPriceSweet: "Rango de precios popular",
         priceSweet: "{{lo}}–{{hi}} · {{n}} artículos · subida media {{mom}}",
@@ -2270,6 +2265,7 @@ export const es: Dictionary = {
       searchPlaceholder: "ID / URL de tienda",
       queryBtn: "Buscar competidores",
       productContext: "Quién anuncia este producto",
+      freeProductsHint: "La lista de productos de la tienda es gratuita",
       segAll: "Todos",
       segTiktok: "TikTok",
       segFacebook: "Facebook",
@@ -3515,7 +3511,7 @@ export const es: Dictionary = {
     hubLockedUntilProductMatch:
       "Desbloquee el centro de operaciones cuando la vinculación de fuentes de producto alcance el {{target}}% (actualmente {{current}}%).",
     hubUnavailable: "El centro de operaciones no está habilitado en este entorno",
-    progress: "Setup progress",
+    progress: "Progreso",
     upgradeLabel: "Upgrade",
     upgradeAria: "Abrir dropshipping de Tangbuy en una pestaña nueva",
   },
@@ -3925,7 +3921,7 @@ export const es: Dictionary = {
     },
     logistics: {
       desc: "Detecta tipos de envío y define plantillas",
-      title: "Logística",
+      title: "Estimación de envío",
     },
     products: {
       desc: "Enlace en directo + publicación en catálogo",

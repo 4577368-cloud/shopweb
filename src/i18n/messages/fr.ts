@@ -1784,6 +1784,11 @@ export const fr: Dictionary = {
       detail: "Détail de l'usage",
       points: "pts",
     },
+    cost: {
+      free: "Gratuit",
+      cached: "En cache",
+      paid: "{{n}} pt",
+    },
     usageDrawer: {
       title: "Détail de l'usage",
       colTime: "Heure",
@@ -1797,7 +1802,6 @@ export const fr: Dictionary = {
       empty: "Aucun enregistrement d'usage.",
     },
     discovery: {
-      segTts: "Boutiques TikTok",
       segAds: "Produits populaires",
       segSearch: "Recherche",
       backToHot: "Retour aux populaires",
@@ -1839,12 +1843,6 @@ export const fr: Dictionary = {
       actViewDetail: "Voir le détail",
       actLearn: "Étudier les créations",
       summary: {
-        tts: {
-          products: "Produits",
-          gmv: "GMV (USD)",
-          avgScore: "Note moy.",
-          sales: "Vol. ventes",
-        },
         rank: {
           products: "Produits",
           growth: "Croissance totale",
@@ -1937,9 +1935,6 @@ export const fr: Dictionary = {
       insights: {
         keySignals: "Points clés",
         momentum: "Élan du marché",
-        labelHeat: "Le plus populaire",
-        labelPen: "Porté par les pubs",
-        labelTop: "Part des produits phares",
         labelMomentumTop: "Top 3 en plus forte croissance",
         labelPriceSweet: "Gamme de prix populaire",
         priceSweet: "{{lo}}–{{hi}} · {{n}} articles · hausse moy. {{mom}}",
@@ -2271,6 +2266,7 @@ export const fr: Dictionary = {
       searchPlaceholder: "ID / URL de boutique",
       queryBtn: "Rechercher les concurrents",
       productContext: "Qui annonce ce produit",
+      freeProductsHint: "La liste des produits du magasin est gratuite",
       segAll: "Tous",
       segTiktok: "TikTok",
       segFacebook: "Facebook",
@@ -3516,7 +3512,7 @@ export const fr: Dictionary = {
     hubLockedUntilProductMatch:
       "Débloquez le hub opérations lorsque la liaison des sources produit atteint {{target}} % (actuellement {{current}} %).",
     hubUnavailable: "Le hub opérations n'est pas activé dans cet environnement",
-    progress: "Setup progress",
+    progress: "Progression",
     upgradeLabel: "Upgrade",
     upgradeAria: "Ouvrir le dropshipping Tangbuy dans un nouvel onglet",
   },
@@ -3926,7 +3922,7 @@ export const fr: Dictionary = {
     },
     logistics: {
       desc: "Détectez les types d'expédition et définissez les modèles",
-      title: "Logistique",
+      title: "Estimation des frais",
     },
     products: {
       desc: "Liens en direct + publication au catalogue",
