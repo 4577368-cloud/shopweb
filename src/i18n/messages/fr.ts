@@ -3775,6 +3775,7 @@ export const fr: Dictionary = {
     noGapVariants: "Aucune variante en écart à compléter",
     noSpecsInSource: "Aucune spec pour la source actuelle",
     pendingSource: "Source en attente",
+    rowMapped: "Mappé",
     pickMerchant: "Choisir un marchand…",
     pickMerchantFirst: "Choisir d'abord un marchand",
     pickSpec: "Choisir une spec source…",

@@ -3781,6 +3781,7 @@ export const en = {
     noGapVariants: "No gap variants to supplement",
     noSpecsInSource: "No specs in current source",
     pendingSource: "Pending source",
+    rowMapped: "Mapped",
     pickMerchant: "Select merchant…",
     pickMerchantFirst: "Select a merchant first",
     pickSpec: "Select source spec…",

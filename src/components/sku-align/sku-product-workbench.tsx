@@ -4,7 +4,6 @@ import { ThumbImage } from "@/components/ui/thumb-image";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
-  ArrowLeftRight,
   Check,
   ImageOff,
   Loader2,
@@ -201,38 +200,6 @@ function CompareImageColumn({
           <p className="text-[11px] leading-snug text-ink-subtle">{emptyHint}</p>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-function CompareVisualPair({
-  left,
-  right,
-}: {
-  left: {
-    src?: string | null;
-    alt: string;
-    title: string;
-    subtitle?: string;
-    badge?: ReactNode;
-    emptyHint?: string;
-  };
-  right: {
-    src?: string | null;
-    alt: string;
-    title: string;
-    subtitle?: string;
-    badge?: ReactNode;
-    emptyHint?: string;
-  };
-}) {
-  return (
-    <div className="flex items-start gap-3 sm:gap-5">
-      <CompareImageColumn {...left} />
-      <div className="flex shrink-0 self-center pt-12 text-ink-subtle">
-        <ArrowLeftRight className="h-5 w-5" />
-      </div>
-      <CompareImageColumn {...right} />
     </div>
   );
 }
@@ -2329,11 +2296,6 @@ function SupplementGapRow({
           32
         )
       : t("skuWorkbench.pickSpec"));
-  const sourceSubtitle = chosenRow
-    ? formatOptionPrice(chosenRow.procurementPrice, shopCurrency, pricingTemplate)
-    : candidateKey
-      ? t("skuWorkbench.pickSpec")
-      : t("skuWorkbench.pickMerchantFirst");
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const skuPickerLabel = chosenRow
@@ -2345,40 +2307,77 @@ function SupplementGapRow({
         : skuOptions.length === 0
           ? t("skuWorkbench.sourceNoSpecs")
           : t("skuWorkbench.pickSpec");
+  const canPickSku =
+    Boolean(candidateKey) && !fetchingSpecs && skuOptions.length > 0;
+  const skuButtonLabel = chosenRow
+    ? truncateMerchant(chosenRow.specLabel ?? skuId, unknownSource, 14)
+    : t("skuWorkbench.selectSku");
 
   return (
     <div
       className={cn(
-        "space-y-3 rounded-[var(--radius-control)] border px-4 py-4 transition-colors",
-        resolved ? "border-emerald-200/80 bg-emerald-50/50" : "border-amber-200/80 bg-amber-50/40"
+        "rounded-[var(--radius-control)] border px-4 py-3 transition-colors",
+        resolved
+          ? "border-emerald-200/80 bg-emerald-50/40"
+          : "border-[#E8E8E8] bg-[#FAFBFC]"
       )}
     >
-      <CompareVisualPair
-        left={{
-          src: variant.imageUrl,
-          alt: variant.optionLabel,
-          title: variant.optionLabel,
-          subtitle: listingPriceLabel,
-        }}
-        right={{
-          src: sourcePreviewImage,
-          alt: sourceTitle,
-          title: sourceTitle,
-          subtitle: sourceSubtitle,
-          emptyHint: candidateKey ? t("skuWorkbench.pickSpec") : t("skuWorkbench.pickMerchantFirst"),
-        }}
-      />
-
-      {/* 商家 + 货源 SKU */}
-      <div className={cn(COMPARE_MAP_PANEL_CLASS, "space-y-2.5")}>
-        <div className="space-y-1">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
-            {t("skuWorkbench.merchant")}
-          </p>
+      <div className="grid grid-cols-[1fr_1fr_auto] items-start gap-3">
+        <CompareImageColumn
+          layout="horizontal"
+          src={variant.imageUrl}
+          alt={variant.optionLabel}
+          title={variant.optionLabel}
+          subtitle={listingPriceLabel}
+        />
+        <CompareImageColumn
+          layout="horizontal"
+          src={sourcePreviewImage}
+          alt={sourceTitle}
+          title={sourceTitle}
+          subtitle={
+            chosenRow
+              ? t("skuWorkbench.sourceCost", {
+                  price: formatOptionPrice(
+                    chosenRow.procurementPrice,
+                    shopCurrency,
+                    pricingTemplate
+                  ),
+                })
+              : t("skuWorkbench.sourceCost", { price: "—" })
+          }
+          placeholder={
+            <div className="flex h-[62px] w-[62px] shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-hairline bg-surface-muted">
+              <span className="px-1 text-center text-[9px] leading-tight text-ink-subtle">
+                {candidateKey
+                  ? t("skuWorkbench.pickSpec")
+                  : t("skuWorkbench.pickMerchantFirst")}
+              </span>
+            </div>
+          }
+        />
+        <div className="flex w-[8.75rem] shrink-0 flex-col gap-1.5">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-8 w-full truncate px-2 text-xs"
+            disabled={!canPickSku}
+            title={skuPickerLabel}
+            onClick={() => setPickerOpen(true)}
+          >
+            {fetchingSpecs ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              skuButtonLabel
+            )}
+          </Button>
           <Select
             value={candidateKey}
             onChange={(e) => onSetMerchant(e.target.value)}
-            className={COMPARE_SELECT_CLASS}
+            className={cn(COMPARE_SELECT_CLASS, "h-8 text-[10px]")}
+            title={t("skuWorkbench.merchant")}
+            aria-label={t("skuWorkbench.merchant")}
           >
             <option value="">{t("skuWorkbench.pickMerchant")}</option>
             {candidates.map((c) => {
@@ -2389,7 +2388,7 @@ function SupplementGapRow({
                   {truncateMerchant(
                     resolveImageSearchDisplayTitle(c.candidate, locale),
                     unknownSource,
-                    28
+                    22
                   )}
                   {matrixLoaded && c.total > 0
                     ? t("skuWorkbench.coverage", {
@@ -2401,64 +2400,32 @@ function SupplementGapRow({
               );
             })}
           </Select>
-        </div>
-        <div className="space-y-1">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
-            {t("skuWorkbench.sourceSpec")}
-          </p>
-          <Button
-            type="button"
-            variant="secondary"
-            className={cn(
-              COMPARE_SELECT_CLASS,
-              "h-9 justify-between px-3 text-left text-xs font-normal"
-            )}
-            disabled={!candidateKey || fetchingSpecs || skuOptions.length === 0}
-            onClick={() => setPickerOpen(true)}
-          >
-            <span className="min-w-0 truncate">{skuPickerLabel}</span>
-          </Button>
-          <SkuPickerDialog
-            open={pickerOpen}
-            onClose={() => setPickerOpen(false)}
-            variantLabel={variant.optionLabel}
-            rows={skuOptions}
-            selectedSkuId={skuId || null}
-            shopCurrency={shopCurrency}
-            pricingTemplate={pricingTemplate}
-            onConfirm={(id) => {
-              onSetSku(id);
-              setPickerOpen(false);
-            }}
-          />
-        </div>
-        {resolved ? (
-          <div className="flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/80 px-2.5 py-2">
-            <span className="min-w-0 flex-1 text-[11px] leading-snug text-ink">
-              <Check className="mr-1 inline h-3.5 w-3.5 text-emerald-700" />
-              {t("skuWorkbench.providedBy", {
-                merchant: truncateMerchant(
-                  chosenCandidate
-                    ? resolveImageSearchDisplayTitle(
-                        chosenCandidate.candidate,
-                        locale
-                      )
-                    : null,
-                  unknownSource
-                ),
-                spec: chosenRow?.specLabel ?? "",
-              })}
+          {resolved ? (
+            <span className="flex items-center gap-1 text-[10px] text-emerald-800">
+              <Check className="h-3 w-3 shrink-0" />
+              <span className="truncate">{t("skuWorkbench.rowMapped")}</span>
             </span>
-            <span className="shrink-0 text-[11px] font-medium text-ink-subtle">
-              {formatOptionPrice(chosenRow?.procurementPrice, shopCurrency, pricingTemplate)}
-            </span>
-          </div>
-        ) : (
-          <Badge variant="warning" className="px-1.5 py-0 text-[9px]">
-            {t("skuWorkbench.pendingSource")}
-          </Badge>
-        )}
+          ) : (
+            <Badge variant="warning" className="w-fit px-1.5 py-0 text-[9px]">
+              {t("skuWorkbench.pendingSource")}
+            </Badge>
+          )}
+        </div>
       </div>
+
+      <SkuPickerDialog
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        variantLabel={variant.optionLabel}
+        rows={skuOptions}
+        selectedSkuId={skuId || null}
+        shopCurrency={shopCurrency}
+        pricingTemplate={pricingTemplate}
+        onConfirm={(id) => {
+          onSetSku(id);
+          setPickerOpen(false);
+        }}
+      />
     </div>
   );
 }

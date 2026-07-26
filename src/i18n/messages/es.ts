@@ -3774,6 +3774,7 @@ export const es: Dictionary = {
     noGapVariants: "No hay variantes con brecha que complementar",
     noSpecsInSource: "Sin specs en la fuente actual",
     pendingSource: "Fuente pendiente",
+    rowMapped: "Mapeado",
     pickMerchant: "Seleccionar comerciante…",
     pickMerchantFirst: "Seleccione un comerciante primero",
     pickSpec: "Seleccionar spec de fuente…",
