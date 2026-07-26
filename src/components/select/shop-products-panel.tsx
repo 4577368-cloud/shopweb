@@ -14,7 +14,6 @@ import {
   Search,
 } from "@/lib/ui/icons";
 import { AccountManagerContactCta } from "@/components/account-manager/account-manager-contact-cta";
-import { AccountManagerContactModal } from "@/components/account-manager/account-manager-contact-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -102,7 +101,6 @@ import {
 } from "@/lib/batch-link/batch-ack-pending";
 import { runImageSearchPipeline } from "@/lib/batch-link/image-search-pipeline";
 import { loadVariantImagesForImageSearch } from "@/lib/batch-link/variant-images-for-search";
-import { assessImageSearchReliability } from "@/lib/batch-link/image-search-outcome";
 import { rerankForShopMirrorProduct } from "@/lib/sku-align/image-search-sku-rank";
 import { sortProductsForBatchLink } from "@/lib/batch-link/sort-products";
 import type { BatchLinkCardDrive, BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
@@ -1412,10 +1410,6 @@ function ShopProductCard({
 
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [amModalOpen, setAmModalOpen] = useState(false);
-  const [amImageSearchReason, setAmImageSearchReason] = useState<
-    "weak" | "failed" | null
-  >(null);
   const [result, setResult] = useState<ImageSearchResult | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [trayOpen, setTrayOpen] = useState(false);
@@ -1428,14 +1422,6 @@ function ShopProductCard({
   const [recommendedIdx, setRecommendedIdx] = useState(0);
   const topCandidateRef = useRef<HTMLDivElement>(null);
   const prevTrayOpenRef = useRef(false);
-
-  const promptAccountManagerForImageSearch = useCallback(
-    (reason: "weak" | "failed") => {
-      setAmImageSearchReason(reason);
-      setAmModalOpen(true);
-    },
-    []
-  );
 
   const batchLinkFailed = batchLinkDrive?.state === "failed";
 
@@ -1752,10 +1738,6 @@ function ShopProductCard({
       }
       setMatchScores(pipeline.matchScores);
       setImageScores(pipeline.imageScores);
-      const reliability = assessImageSearchReliability(pipeline);
-      if (reliability === "weak") {
-        promptAccountManagerForImageSearch("weak");
-      }
       let ordered = pipeline.rankedItems;
       try {
         const reranked = await rerankForShopMirrorProduct(
@@ -3098,14 +3080,6 @@ function ShopProductCard({
           onClose={() => setZoomImage(null)}
         />
       ) : null}
-
-      <AccountManagerContactModal
-        open={amModalOpen}
-        onClose={() => setAmModalOpen(false)}
-        context="products"
-        imageSearchReason={amImageSearchReason}
-        productTitle={displayTitle}
-      />
     </article>
   );
 }
