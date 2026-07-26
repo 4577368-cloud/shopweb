@@ -17,7 +17,7 @@ export interface AccountManagerContactCtaProps {
 }
 
 /**
- * 客户经理 WhatsApp 入口：占位头像 + 场景文案（商品关联 / SKU / 物流）。
+ * 客户经理 WhatsApp 入口：占位头像 + 场景文案（第一人称：联系我 / 我可以为你…）。
  */
 export function AccountManagerContactCta({
   context,
