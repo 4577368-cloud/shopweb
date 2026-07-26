@@ -347,6 +347,11 @@ export function SkuProductWorkbench({
   const lastImageScoresRef = useRef<Record<string, number>>({});
   const candidateMatricesRef = useRef(candidateMatrices);
   candidateMatricesRef.current = candidateMatrices;
+  // Read as refs: both maps are rewritten by the very callbacks that consume
+  // them, so keeping them as deps would re-create loadMatrix on every score
+  // patch and retrigger the effects that own it.
+  const visionByVariantRef = useRef(visionByVariant);
+  const llmScoresRef = useRef(llmScores);
 
   const effectiveDetailUrl = sourceOverride?.detailUrl ?? detailUrl;
   const effectiveTangbuyId = sourceOverride?.tangbuyProductId ?? tangbuyProductId;
@@ -490,7 +495,7 @@ export function SkuProductWorkbench({
         if (variant.bound?.tangbuySkuId?.trim()) continue;
         const ranked = rankSourceSkuRows(rows, variant.optionLabel, {
           variantImageUrl: variant.imageUrl,
-          imageScoreBySkuId: visionByVariant[variant.thirdPlatformSkuId],
+          imageScoreBySkuId: visionByVariantRef.current[variant.thirdPlatformSkuId],
         });
         for (const r of grayZoneRows(variant.optionLabel, ranked)) {
           pairs.push({ variantLabel: variant.optionLabel, specLabel: r.specLabel });
@@ -503,7 +508,7 @@ export function SkuProductWorkbench({
         setLlmScores((prev) => ({ ...prev, ...scores }));
       }
     },
-    [product.variants, visionByVariant, prefetchVariantVisionScores]
+    [product.variants, prefetchVariantVisionScores]
   );
 
   const loadMatrix = useCallback(
@@ -533,6 +538,19 @@ export function SkuProductWorkbench({
     },
     [effectiveDetailUrl, refineGrayZone, t]
   );
+
+  // The product-switch effect must not restart when loadMatrix is re-created
+  // for a new detail URL — that would reset the workspace mid-edit.
+  const loadMatrixRef = useRef(loadMatrix);
+  const resetRef = useRef(reset);
+
+  // Declared above every consumer so they always see the committed render.
+  useEffect(() => {
+    visionByVariantRef.current = visionByVariant;
+    llmScoresRef.current = llmScores;
+    loadMatrixRef.current = loadMatrix;
+    resetRef.current = reset;
+  });
 
 
   const runSupplementSearch = useCallback(async () => {
@@ -932,19 +950,13 @@ export function SkuProductWorkbench({
   };
 
   /* ---------- effects ---------- */
+  /** 切换商品：拉主货源规格表；离开时清空整个工作台。绑定选择由下面的效果初始化。 */
   useEffect(() => {
-    const init: Record<string, string> = {};
-    for (const v of product.variants) {
-      const id = v.bound?.tangbuySkuId?.trim();
-      if (id) init[v.thirdPlatformSkuId] = id;
-    }
-    setSelections(init);
-    setPrimaryMappingDirty(false);
-    void loadMatrix();
+    void loadMatrixRef.current();
     return () => {
-      reset();
+      resetRef.current();
     };
-  }, [product.thirdPlatformItemId, loadMatrix, reset]);
+  }, [product.thirdPlatformItemId]);
 
   /** 数据刷新时同步绑定选择，不重复拉主货源规格表。 */
   useEffect(() => {
@@ -958,18 +970,24 @@ export function SkuProductWorkbench({
   }, [product.variants]);
 
   /** 替换主货源后：加载新规格表 + 把自动对齐/高置信建议填入下拉。 */
+  const overrideDetailUrl = sourceOverride?.detailUrl?.trim() || null;
   useEffect(() => {
-    if (!sourceOverride?.detailUrl || sourceRevision === 0) return;
+    if (!overrideDetailUrl || sourceRevision === 0) return;
     let cancelled = false;
     void (async () => {
-      const rows = await loadMatrix(sourceOverride.detailUrl);
+      const rows = await loadMatrixRef.current(overrideDetailUrl);
       if (cancelled || !rows.length) return;
       const fromBound: Record<string, string> = {};
       for (const v of product.variants) {
         const id = v.bound?.tangbuySkuId?.trim();
         if (id) fromBound[v.thirdPlatformSkuId] = id;
       }
-      const suggestions = buildAutoSuggestions(product.variants, rows, fromBound, llmScores);
+      const suggestions = buildAutoSuggestions(
+        product.variants,
+        rows,
+        fromBound,
+        llmScoresRef.current
+      );
       if (Object.keys(suggestions).length > 0) {
         setSelections((prev) => ({ ...fromBound, ...prev, ...suggestions }));
       } else {
@@ -979,13 +997,7 @@ export function SkuProductWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [
-    sourceOverride,
-    sourceRevision,
-    product.variants,
-    loadMatrix,
-    llmScores,
-  ]);
+  }, [overrideDetailUrl, sourceRevision, product.variants]);
 
   useEffect(() => {
     if (loading || !matrix.length) return;
