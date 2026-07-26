@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import type { TtsShopDetail, TtsShopRow } from "@/lib/marketing/types";
 import { ttsSignals } from "@/lib/marketing/derived";
 import { regionLabel } from "@/lib/marketing/enums";
-import { fmtCompact, fmtInt, fmtPercent, fmtUsd } from "@/lib/marketing/format";
+import { fmtCompact, fmtDate, fmtInt, fmtPercent, fmtUsd } from "@/lib/marketing/format";
 import { Drawer } from "./drawer";
 import { CoverThumb } from "./cover-thumb";
 import { MetricTile } from "./metric-tile";
@@ -120,6 +120,10 @@ export function TtsShopDetailDrawer({
               label={t("ops.discovery.tts.detailPlays")}
               value={fmtCompact(row.playCount)}
             />
+            <MetricTile
+              label={t("ops.discovery.tts.goodsAdCount")}
+              value={fmtInt(row.goodsAdCount)}
+            />
             {detail?.adCost ? (
               <MetricTile
                 label={t("ops.discovery.tts.detailSpend")}
@@ -137,6 +141,12 @@ export function TtsShopDetailDrawer({
               value={fmtPercent(signals.shareRate, 2)}
             />
           </div>
+
+          <p className="text-[10px] tabular-nums text-ink-subtle">
+            {t("ops.discovery.tts.foundTime")}: {row.foundTime ? fmtDate(row.foundTime) : "—"}
+            {" · "}
+            {t("ops.discovery.tts.lastFoundTime")}: {row.lastFoundTime ? fmtDate(row.lastFoundTime) : "—"}
+          </p>
 
           <div className="rounded-[var(--radius-card)] border border-hairline bg-surface-muted/40 p-3">
             <div className="mb-1 flex items-center justify-between">
@@ -197,6 +207,27 @@ export function TtsShopDetailDrawer({
                   <Tag key={c.id} tone="muted">
                     {c.nameEn || c.nameZh}
                   </Tag>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {row.productType.length > 0 ? (
+            <div>
+              <p className="mb-1 text-[11px] font-medium text-ink-muted">{t("ops.discovery.tts.productType")}</p>
+              <div className="flex flex-wrap gap-1">
+                {row.productType.map((p) => (
+                  <Tag key={p} tone="muted">{p}</Tag>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {row.delivery.length > 0 ? (
+            <div>
+              <p className="mb-1 text-[11px] font-medium text-ink-muted">{t("ops.discovery.tts.delivery")}</p>
+              <div className="flex flex-wrap gap-1">
+                {row.delivery.map((d) => (
+                  <Tag key={d} tone="muted">{d}</Tag>
                 ))}
               </div>
             </div>

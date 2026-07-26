@@ -64,7 +64,7 @@ function StoreDossierContent({ id }: { id: string }) {
 
   const breadcrumbs = [
     { label: t("nav.hub"), href: localePath(locale, "/operations-center") },
-    { label: t("ops.tabs.competition"), href: localePath(locale, "/operations-center?tab=competition") },
+    { label: t("ops.tabs.competition"), href: localePath(locale, "/operations-center?view=competition") },
     { label: dossier?.store?.name ?? id },
   ];
 

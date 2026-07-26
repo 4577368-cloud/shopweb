@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type OperationsTab = "discovery" | "competition" | "creatives" | "imageSearch";
-export type DiscoverySegment = "ads" | "board";
+export type DiscoverySegment = "ads" | "board" | "tiktok";
 export type AdsSegment = "rank" | "search";
 
 export interface OperationsNavigationState {
@@ -50,7 +50,7 @@ function readParams(): OperationsNavigationState {
     : "discovery";
   const discoverySeg =
     (params.get(DISCOVERY_SEG_KEY) as DiscoverySegment | null) ?? "board";
-  const validDiscoverySeg = ["ads", "board"].includes(discoverySeg)
+  const validDiscoverySeg = ["ads", "board", "tiktok"].includes(discoverySeg)
     ? discoverySeg
     : "ads";
   const discoveryAdsSeg =

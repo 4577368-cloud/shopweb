@@ -35,3 +35,12 @@ export function fmtGrowthRate(ratePct: number, unit: string): string {
   if (abs < 300) return `${sign}${abs.toFixed(0)}%`;
   return `${sign}${(abs / 100).toFixed(1)}${unit}`;
 }
+
+/**
+ * 时间戳（unix 秒）格式化为短日期；非法/空值降级为 "—"。
+ * 用于展示店铺发现时间等真实返回字段（foundTime/lastFoundTime 为 number | null）。
+ */
+export function fmtDate(ts: number | null | undefined): string {
+  if (ts == null || ts <= 0) return "—";
+  return new Date(ts * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}

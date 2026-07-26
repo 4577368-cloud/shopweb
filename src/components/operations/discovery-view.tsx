@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import {
   fetchRankList,
   fetchSearchAds,
+  fetchTtsShops,
 } from "@/lib/marketing/api";
 import { useReferenceDictionaries } from "@/hooks/use-reference-dictionaries";
 import type {
@@ -40,7 +41,7 @@ import { RankingProductGrid, RankingDetailDrawer, RankingKpis } from "./ranking-
 import { rankMomentum, normalizeTo100 } from "@/lib/marketing/derived";
 import { fmtCompact, fmtGrowthRate, fmtInt, fmtPercent, fmtUsd } from "@/lib/marketing/format";
 import { ScorePill } from "./intel";
-import { AdIntelCard } from "./ad-intel-card";
+
 
 interface DiscoveryViewProps {
   run: <T extends MarketingResponse<unknown>>(endpoint: string, cacheKey: string, fn: () => Promise<T>) => Promise<T>;
@@ -59,7 +60,7 @@ export type DiscoveryViewHandle = {
   fetchCurrent: () => void;
 };
 
-type Segment = "ads" | "board";
+type Segment = "ads" | "board" | "tiktok";
 
 function rankFilterKey(
   period: RankType,
@@ -134,6 +135,13 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
   const [fav, setFav] = useState<Set<string>>(new Set());
   const [rankLoadedFilter, setRankLoadedFilter] = useState<string | null>(null);
   const [searchLoadedQuery, setSearchLoadedQuery] = useState<string | null>(null);
+
+  // TikTok Shop 状态（榜单模式：只拉一页，前端本地过滤，无翻页消耗）
+  const [ttsShops, setTtsShops] = useState<TtsShopRow[] | null>(null);
+  const [ttsLoading, setTtsLoading] = useState(false);
+  const [ttsError, setTtsError] = useState(false);
+  const [ttsRegion, setTtsRegion] = useState("all");
+  const [ttsSearch, setTtsSearch] = useState("");
 
   const currentRankFilter = useMemo(
     () => rankFilterKey(period, sortKey, region, category, shopType, platform, growthMin, growthMax),
@@ -256,16 +264,50 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
     [run, committedSearch]
   );
 
+  const loadTtsShops = useCallback(async () => {
+    setTtsLoading(true);
+    setTtsError(false);
+    try {
+      const res = await run(
+        "tiktok-shop/shop/list",
+        `tts:${ttsRegion}`,
+        () =>
+          fetchTtsShops({
+            region: ttsRegion === "all" ? undefined : ttsRegion,
+            page: 1,
+            pageSize: 20,
+          })
+      );
+      setTtsShops(res.data.list);
+    } catch (e) {
+      if (!isGuardCancel(e)) setTtsError(true);
+    } finally {
+      setTtsLoading(false);
+    }
+  }, [run, ttsRegion]);
+
+  // 前端本地过滤（对已加载的 20 条按店名过滤，不额外消耗 API）
+  const filteredTtsShops = useMemo(() => {
+    if (!ttsShops) return null;
+    const kw = ttsSearch.trim().toLowerCase();
+    if (!kw) return ttsShops;
+    return ttsShops.filter((s) => s.title.toLowerCase().includes(kw));
+  }, [ttsShops, ttsSearch]);
+
   useImperativeHandle(
     ref,
     () => ({
       fetchCurrent: () => {
         if (segment === "board") return;
+        if (segment === "tiktok") {
+          void loadTtsShops();
+          return;
+        }
         if (hasSearch) void loadSearch(1);
         else void loadRank(1);
       },
     }),
-    [segment, hasSearch, loadSearch, loadRank]
+    [segment, hasSearch, loadSearch, loadRank, loadTtsShops]
   );
 
   const rankFiltersStale =
@@ -386,12 +428,13 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
 
   return (
     <div>
-      {/* 分段：广告商品 / 榜单 */}
+      {/* 分段：榜单 / 广告商品 / TikTok 店铺 */}
       <SegmentedTabs
         variant="solid"
         tabs={[
           { id: "board", label: t("ops.discovery.segBoard") },
           { id: "ads", label: t("ops.discovery.segAds") },
+          { id: "tiktok", label: t("ops.discovery.segTiktok") },
         ]}
         value={segment}
         onValueChange={(id) => {
@@ -750,7 +793,15 @@ function RankTable({
                   <span className="absolute left-2 top-2">
                     <PlatformBadge platform={row.platform} />
                   </span>
-                  <span className="absolute right-2 top-2 rounded bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-white">#{i + 1}</span>
+                  <div className="absolute right-2 top-2 flex items-center gap-1">
+                    <span className="rounded bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-white">#{i + 1}</span>
+                    <span
+                      title={t(row.countGrowth > 0 ? "ops.discovery.tts.trendUp" : row.countGrowth < 0 ? "ops.discovery.tts.trendDown" : "ops.discovery.tts.trendFlat")}
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${row.countGrowth > 0 ? "bg-emerald-600 text-white" : row.countGrowth < 0 ? "bg-rose-600 text-white" : "bg-zinc-600 text-white"}`}
+                    >
+                      {row.countGrowth > 0 ? "↗" : row.countGrowth < 0 ? "↘" : "→"}
+                    </span>
+                  </div>
                 </div>
                 <div className="p-2.5">
                   <p className="truncate text-[12px] font-medium text-ink">{row.title}</p>
@@ -858,50 +909,88 @@ function SearchTable({
               <span className="absolute left-2 top-2">
                 <PlatformBadge platform={card.adPlatform[0] ?? "meta"} />
               </span>
-              <button
-                type="button"
-                onClick={() => onLearn(card.id)}
-                className="absolute right-2 top-2 rounded bg-black/40 px-1.5 py-0.5 text-[10px] text-white hover:bg-black/60"
-              >
-                {t("ops.creatives.learnBtn")}
-              </button>
             </div>
             <div className="p-2.5">
               <p className="truncate text-[12px] font-medium text-ink" title={card.title}>{card.title}</p>
               <div className="mt-1 flex items-center justify-between text-[11px] text-ink-muted">
                 <span className="tabular-nums">{fmtUsd(card.priceUsd ?? card.price)}</span>
-                <span className="truncate text-[10px] text-ink-subtle">{card.adPlatform.join(" · ")}</span>
-              </div>
-              <AdIntelCard card={card} />
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-subtle">
-                <span className="tabular-nums">{t("ops.discovery.searchCard.ads")} {fmtInt(card.adCount)}</span>
-                <span className="tabular-nums">{t("ops.discovery.searchCard.active")} {fmtInt(card.activeAdCount)}</span>
-                <span className="tabular-nums">{t("ops.discovery.searchCard.reach")} {fmtCompact(card.adAudienceReach)}</span>
-                <span className="tabular-nums">{t("ops.discovery.searchCard.adCost")} {fmtUsd(card.adCost)}</span>
-                <span className="tabular-nums">{t("ops.discovery.searchCard.activeDays")} {card.activeDays}d</span>
-              </div>
-              <div className="mt-1.5 flex items-center justify-between gap-2">
-                <span className="truncate text-[10px] text-ink-subtle" title={card.store.name}>
-                  {t("ops.discovery.searchCard.store")} {card.store.name}
+                <span className="flex min-w-0 items-center gap-1 truncate text-[10px] text-ink-subtle" title={card.store.name}>
+                  {card.store.logoUrl ? (
+                    <img
+                      src={card.store.logoUrl}
+                      alt=""
+                      className="h-4 w-4 shrink-0 rounded-full object-cover ring-1 ring-hairline"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
+                    />
+                  ) : null}
+                  <span className="truncate">{card.store.country} · {card.store.name}</span>
                 </span>
-                <RowStar id={card.id} active={fav.has(card.id)} onToggle={() => onToggleFav(card.id)} />
               </div>
-              <div className="mt-1.5 flex items-center justify-between gap-2">
-                {card.sourceProductLink ? (
-                  <a
-                    href={card.sourceProductLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded px-1.5 py-0.5 text-[11px] text-link hover:underline"
+
+              {/* 关键指标：2×2 网格 */}
+              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="shrink-0 text-ink-subtle">{t("ops.discovery.searchCard.ads")}</span>
+                  <span className="tabular-nums text-ink">{fmtInt(card.adCount)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="shrink-0 text-ink-subtle">{t("ops.discovery.searchCard.active")}</span>
+                  <span className="tabular-nums text-ink">{fmtInt(card.activeAdCount)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="shrink-0 text-ink-subtle">{t("ops.discovery.searchCard.reach")}</span>
+                  <span className="tabular-nums text-ink">{fmtCompact(card.adAudienceReach)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="shrink-0 text-ink-subtle">{t("ops.discovery.searchCard.activeDays")}</span>
+                  <span className="tabular-nums text-ink">{card.activeDays}d</span>
+                </div>
+              </div>
+
+              {/* 状态 + 花费 */}
+              <div className="mt-1.5 flex items-center justify-between text-[11px]">
+                <span className={cn(
+                  "rounded px-1 py-0.5 text-[10px] font-medium",
+                  card.adStatus === 1 ? "bg-success-soft text-success" : "bg-muted text-ink-muted"
+                )}>
+                  {card.adStatus === 1 ? t("ops.discovery.searchCard.statusActive") : t("ops.discovery.searchCard.statusStopped")}
+                </span>
+                <span className="tabular-nums text-ink-subtle">
+                  {t("ops.discovery.searchCard.adCost")} {fmtUsd(card.adCost)}
+                </span>
+              </div>
+
+              {/* 底部操作 */}
+              <div className="mt-2 flex items-center justify-between gap-1 border-t border-hairline pt-2">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onLearn(card.id)}
+                    className="rounded px-1.5 py-1 text-[11px] text-link transition-colors hover:bg-brand-soft hover:text-brand"
                   >
-                    {t("ops.discovery.searchCard.source")}
-                  </a>
-                ) : (
-                  <span />
-                )}
-                <button type="button" onClick={() => onViewDetail(card.id)} className="rounded px-1.5 py-0.5 text-[11px] text-link hover:underline">
-                  {t("ops.discovery.actViewDetail")}
-                </button>
+                    {t("ops.creatives.learnBtn")}
+                  </button>
+                  {card.sourceProductLink && (
+                    <a
+                      href={card.sourceProductLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded px-1.5 py-1 text-[11px] text-link transition-colors hover:bg-brand-soft hover:text-brand"
+                    >
+                      {t("ops.discovery.searchCard.source")}
+                    </a>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onViewDetail(card.id)}
+                    className="rounded px-1.5 py-1 text-[11px] text-link transition-colors hover:bg-brand-soft hover:text-brand"
+                  >
+                    {t("ops.discovery.actViewDetail")}
+                  </button>
+                  <RowStar id={card.id} active={fav.has(card.id)} onToggle={() => onToggleFav(card.id)} />
+                </div>
               </div>
             </div>
           </div>
@@ -1069,7 +1158,7 @@ function RankingBoard({ shop }: { shop: string }) {
       {selectedSnapshot != null && (
         <RankingProductGrid products={filtered} loading={loading} onSelect={setSelected} />
       )}
-      <RankingDetailDrawer row={selected} onClose={() => setSelected(null)} />
+      <RankingDetailDrawer row={selected} onClose={() => setSelected(null)} shopName={shop} />
     </div>
   );
 }

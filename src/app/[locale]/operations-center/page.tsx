@@ -412,6 +412,7 @@ function OperationsCenterContent() {
         open={usageOpen}
         entries={ledger.entries}
         sessionUsed={ledger.sessionUsed}
+        account={account}
         onClose={() => setUsageOpen(false)}
       />
     </WorkbenchShell>
