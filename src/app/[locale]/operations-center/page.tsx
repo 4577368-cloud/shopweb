@@ -43,6 +43,8 @@ import { SectionGuide } from "@/components/operations/section-guide";
 import { useMarketingRunner } from "@/hooks/use-marketing-runner";
 import { useOperationsNavigation, type OperationsTab } from "@/hooks/use-operations-navigation";
 import { useOperationsWatchlist } from "@/hooks/use-operations-watchlist";
+import { useFavorites } from "@/hooks/use-favorites";
+import { FavoritesView } from "@/components/operations/favorites-view";
 import { useOnboarding } from "@/context/onboarding-context";
 import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import { fetchAdDetail, fetchCompetitionProducts, fetchTtsShopDetail } from "@/lib/marketing/api";
@@ -89,6 +91,14 @@ function OperationsCenterContent() {
   const nav = useOperationsNavigation();
   const watchlist = useOperationsWatchlist();
   const competitorTogglingIds = watchlist.togglingIds;
+  const favorites = useFavorites();
+  const favIdSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of favorites.items) {
+      set.add(`${item.type}:${item.id}`);
+    }
+    return set;
+  }, [favorites.items]);
 
   const discoveryRef = useRef<DiscoveryViewHandle>(null);
   const competitionRef = useRef<CompetitionViewHandle>(null);
@@ -102,6 +112,7 @@ function OperationsCenterContent() {
 
   const fetchDisabled =
     nav.tab === "imageSearch" ||
+    nav.tab === "favorites" ||
     (nav.tab === "discovery" && nav.discoverySeg === "board");
 
   // 详情抽屉
@@ -278,6 +289,7 @@ function OperationsCenterContent() {
     { id: "competition", label: t("ops.tabs.competition") },
     { id: "creatives", label: t("ops.tabs.creatives") },
     { id: "imageSearch", label: t("ops.tabs.imageSearch") },
+    { id: "favorites", label: t("ops.tabs.favorites") },
   ];
 
   const sidebarFooter = (
@@ -340,6 +352,16 @@ function OperationsCenterContent() {
             onLearnCreatives={handleLearnCreatives}
             initialSegment={nav.discoverySeg}
             onSegmentChange={nav.setDiscoverySeg}
+            favoritedIds={favIdSet}
+            onToggleFavorite={(item) =>
+              favorites.toggleFavorite({
+                id: item.id,
+                type: item.type as import("@/hooks/use-favorites").FavoriteType,
+                title: item.title,
+                subtitle: item.subtitle,
+                image: item.image,
+              })
+            }
           />
         )}
         {nav.tab === "competition" && (
@@ -363,6 +385,16 @@ function OperationsCenterContent() {
             onViewAdvertiser={handleViewCompetitorStore}
             initialQuery={nav.creativesQuery}
             onQueryChange={nav.setCreativesQuery}
+            favoritedIds={favIdSet}
+            onToggleFavorite={(item) =>
+              favorites.toggleFavorite({
+                id: item.id,
+                type: item.type as import("@/hooks/use-favorites").FavoriteType,
+                title: item.title,
+                subtitle: item.subtitle,
+                image: item.image,
+              })
+            }
           />
         )}
         {nav.tab === "imageSearch" && (
@@ -371,6 +403,33 @@ function OperationsCenterContent() {
             onOpenDetail={handleViewDetail}
             onFollowStore={handleFollowStore}
             onViewStore={handleViewStore}
+          />
+        )}
+        {nav.tab === "favorites" && (
+          <FavoritesView
+            items={favorites.items}
+            storeItems={watchlist.competitors}
+            onRemove={favorites.removeFavorite}
+            onRemoveStore={(id) => watchlist.toggleCompetitor({ id, name: "" })}
+            onClearType={favorites.clearByType}
+            onViewStore={(id) => {
+              const item = favorites.items.find((x) => x.id === id && x.type === "store");
+              const storeItem = watchlist.competitors.find((x) => x.id === id);
+              const title = item?.title ?? storeItem?.name ?? id;
+              nav.navigate({ tab: "competition", competitionQuery: title, competitionProductId: "" });
+            }}
+            onViewProduct={handleViewDetail}
+            onViewCreative={(id) => {
+              const item = favorites.items.find((x) => x.id === id && x.type === "creative");
+              if (item) nav.navigate({ tab: "creatives", creativesQuery: item.subtitle || item.title });
+            }}
+            onViewTtsShop={(id) => {
+              const item = favorites.items.find((x) => x.id === id && x.type === "ttsShop");
+              if (item) nav.navigate({ tab: "discovery", discoverySeg: "tiktok" });
+            }}
+            onViewRankProduct={(id) => {
+              nav.navigate({ tab: "discovery", discoverySeg: "board" });
+            }}
           />
         )}
 

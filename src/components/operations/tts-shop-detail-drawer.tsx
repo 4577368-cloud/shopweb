@@ -24,6 +24,8 @@ interface TtsShopDetailDrawerProps {
   detail?: TtsShopDetail | null;
   onClose: () => void;
   onViewCompetitor: (shopName: string) => void;
+  isFavorited?: boolean;
+  onToggleFavorite?: () => void;
 }
 
 export function TtsShopDetailDrawer({
@@ -31,6 +33,8 @@ export function TtsShopDetailDrawer({
   detail,
   onClose,
   onViewCompetitor,
+  isFavorited,
+  onToggleFavorite,
 }: TtsShopDetailDrawerProps) {
   const t = useT();
   const now = useMemo(() => Math.floor(Date.now() / 1000), [row?.id]);
@@ -47,20 +51,34 @@ export function TtsShopDetailDrawer({
       widthClass="max-w-xl"
       footer={
         row ? (
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={onClose}>
-              {t("ops.discovery.tts.detailClose")}
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                onViewCompetitor(row.title);
-                onClose();
-              }}
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={onToggleFavorite}
+              className={cn(
+                "rounded px-2 py-1 text-sm",
+                isFavorited
+                  ? "text-amber-400"
+                  : "text-ink-subtle hover:text-amber-300"
+              )}
             >
-              {t("ops.discovery.actViewComp")}
-            </Button>
+              {isFavorited ? "★ 已收藏" : "☆ 收藏"}
+            </button>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={onClose}>
+                {t("ops.discovery.tts.detailClose")}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  onViewCompetitor(row.title);
+                  onClose();
+                }}
+              >
+                {t("ops.discovery.actViewComp")}
+              </Button>
+            </div>
           </div>
         ) : null
       }

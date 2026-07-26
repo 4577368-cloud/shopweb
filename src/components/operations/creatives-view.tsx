@@ -15,6 +15,7 @@ import { CostBadge } from "./cost-badge";
 import { CoverThumb } from "./cover-thumb";
 import { PlatformBadge } from "./platform-badge";
 import { fmtCompact, fmtInt } from "@/lib/marketing/format";
+import { cn } from "@/lib/utils";
 import type {
   CreativeBrief,
   MarketingResponse,
@@ -29,6 +30,8 @@ interface CreativesViewProps {
   onViewAdvertiser: (name: string) => void;
   initialQuery?: string;
   onQueryChange?: (q: string) => void;
+  favoritedIds?: Set<string>;
+  onToggleFavorite?: (item: { id: string; type: string; title: string; subtitle?: string; image?: string }) => void;
 }
 
 export type CreativesViewHandle = {
@@ -36,7 +39,7 @@ export type CreativesViewHandle = {
 };
 
 export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>(
-  function CreativesView({ run, onViewAdvertiser, initialQuery = "", onQueryChange }, ref) {
+  function CreativesView({ run, onViewAdvertiser, initialQuery = "", onQueryChange, favoritedIds = new Set(), onToggleFavorite }, ref) {
   const t = useT();
   const [query, setQuery] = useState(initialQuery);
   const [platSeg, setPlatSeg] = useState<PlatSeg>("all");
@@ -171,10 +174,31 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
                     <PlatformBadge platform={card.platform} />
                   </span>
                   {!card.isActive && (
-                    <span className="absolute right-2 top-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-ink-muted">
+                    <span className="absolute right-8 top-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-ink-muted">
                       {t("ops.creatives.stopped")}
                     </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleFavorite?.({
+                        id: card.id,
+                        type: "creative",
+                        title: card.title,
+                        image: card.cover,
+                        subtitle: card.advertiser,
+                      });
+                    }}
+                    className={cn(
+                      "absolute right-2 top-2 rounded-full bg-black/40 px-1.5 py-0.5 text-sm",
+                      favoritedIds.has(`creative:${card.id}`)
+                        ? "text-amber-400"
+                        : "text-white/80 hover:text-white"
+                    )}
+                  >
+                    {favoritedIds.has(`creative:${card.id}`) ? "★" : "☆"}
+                  </button>
                 </div>
                 <div className="flex flex-1 flex-col p-2.5">
                   <p className="truncate text-[12px] font-semibold text-ink" title={card.title}>{card.title}</p>

@@ -53,6 +53,10 @@ interface DiscoveryViewProps {
   onLearnCreatives: (adId: string) => void;
   initialSegment?: Segment;
   onSegmentChange?: (segment: Segment) => void;
+  /** 持久化收藏：当前已收藏的 id 集合（含类型前缀，如 "product:123"）。 */
+  favoritedIds?: Set<string>;
+  /** 点击 ☆ 时调。 */
+  onToggleFavorite?: (item: { id: string; type: string; title: string; subtitle?: string; image?: string }) => void;
 }
 
 export type DiscoveryViewHandle = {
@@ -107,6 +111,8 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
   onLearnCreatives,
   initialSegment = "ads",
   onSegmentChange,
+  favoritedIds = new Set(),
+  onToggleFavorite,
   },
   ref
 ) {
@@ -132,7 +138,6 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [page, setPage] = useState(1);
-  const [fav, setFav] = useState<Set<string>>(new Set());
   const [rankLoadedFilter, setRankLoadedFilter] = useState<string | null>(null);
   const [searchLoadedQuery, setSearchLoadedQuery] = useState<string | null>(null);
 
@@ -316,14 +321,6 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
     search != null &&
     searchLoadedQuery != null &&
     searchLoadedQuery !== committedSearch.trim();
-
-  const toggleFav = (id: string) =>
-    setFav((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
 
   const resetFilters = () => {
     setRegion("all");
@@ -569,8 +566,8 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
           ) : (
             <RankTable
               data={rank}
-              fav={fav}
-              onToggleFav={toggleFav}
+              favoritedIds={favoritedIds}
+              onToggleFavorite={onToggleFavorite}
               onViewCompetitor={onViewCompetitor}
               onViewDetail={onViewDetail}
               onLearn={onLearnCreatives}
@@ -586,8 +583,8 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
           ) : (
             <SearchTable
               data={search}
-              fav={fav}
-              onToggleFav={toggleFav}
+              favoritedIds={favoritedIds}
+              onToggleFavorite={onToggleFavorite}
               query={committedSearch}
               onViewCompetitor={onViewCompetitor}
               onViewDetail={onViewDetail}
@@ -752,16 +749,16 @@ function Pager({
 
 function RankTable({
   data,
-  fav,
-  onToggleFav,
+  favoritedIds,
+  onToggleFavorite,
   onViewCompetitor,
   onViewDetail,
   onLearn,
   onPage,
 }: {
   data: { list: RankRow[]; page: PageMeta } | null;
-  fav: Set<string>;
-  onToggleFav: (id: string) => void;
+  favoritedIds: Set<string>;
+  onToggleFavorite?: (item: { id: string; type: string; title: string; subtitle?: string; image?: string }) => void;
   onViewCompetitor: (id: string) => void;
   onViewDetail: (id: string) => void;
   onLearn: (id: string) => void;
@@ -860,7 +857,17 @@ function RankTable({
                     {t("ops.discovery.actLearn")}
                   </button>
                 </div>
-                <RowStar id={row.id} active={fav.has(row.id)} onToggle={() => onToggleFav(row.id)} />
+                <RowStar
+                  active={favoritedIds.has(`product:${row.id}`)}
+                  onToggle={() =>
+                    onToggleFavorite?.({
+                      id: row.id,
+                      type: "product",
+                      title: row.title,
+                      image: row.image,
+                    })
+                  }
+                />
               </div>
             </div>
           );
@@ -873,8 +880,8 @@ function RankTable({
 
 function SearchTable({
   data,
-  fav,
-  onToggleFav,
+  favoritedIds,
+  onToggleFavorite,
   query,
   onViewCompetitor,
   onViewDetail,
@@ -882,8 +889,8 @@ function SearchTable({
   onPage,
 }: {
   data: { list: AdCard[]; page: PageMeta } | null;
-  fav: Set<string>;
-  onToggleFav: (id: string) => void;
+  favoritedIds: Set<string>;
+  onToggleFavorite?: (item: { id: string; type: string; title: string; subtitle?: string; image?: string }) => void;
   query: string;
   onViewCompetitor: (id: string) => void;
   onViewDetail: (id: string) => void;
@@ -989,7 +996,18 @@ function SearchTable({
                   >
                     {t("ops.discovery.actViewDetail")}
                   </button>
-                  <RowStar id={card.id} active={fav.has(card.id)} onToggle={() => onToggleFav(card.id)} />
+                  <RowStar
+                    active={favoritedIds.has(`product:${card.id}`)}
+                    onToggle={() =>
+                      onToggleFavorite?.({
+                        id: card.id,
+                        type: "product",
+                        title: card.title,
+                        image: card.image,
+                        subtitle: card.store?.name,
+                      })
+                    }
+                  />
                 </div>
               </div>
             </div>
@@ -1357,7 +1375,7 @@ function BoardCard({
   );
 }
 
-function RowStar({ id, active, onToggle }: { id: string; active: boolean; onToggle: () => void }) {
+function RowStar({ active, onToggle }: { active: boolean; onToggle: () => void }) {
   const t = useT();
   return (
     <button

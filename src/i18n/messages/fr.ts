@@ -1786,7 +1786,7 @@ export const fr: Dictionary = {
       staleFilters: "Filtres modifiés — cliquez sur Récupérer ou Rechercher pour mettre à jour.",
     },
     pulse: "Pulsation marché",
-    tabs: { discovery: "Découverte", competition: "Concurrence", creatives: "Créations", imageSearch: "Recherche par image" },
+    tabs: { discovery: "Découverte", competition: "Concurrence", creatives: "Créations", imageSearch: "Recherche par image", favorites: "Favoris" },
     pulseApiBalance: "Solde API",
     pulseMonitorBalance: "Solde supervision",
     contextBar: {
@@ -2291,6 +2291,21 @@ export const fr: Dictionary = {
         "露营庇护所": "Abri de camping",
         "露营灯具": "Lampes de camping",
       },
+    },
+    favorites: {
+      typeStore: "Boutique",
+      typeProduct: "Produit",
+      typeCreative: "Création",
+      typeTtsShop: "Boutique TikTok",
+      typeRankProduct: "Produit classé",
+      tabAll: "Tous",
+      searchPlaceholder: "Rechercher dans les favoris…",
+      typeCount: "{{n}} éléments",
+      clearType: "Vider cette catégorie",
+      empty: "Aucun favori",
+      emptyHint: "Cliquez sur l'étoile dans Découverte, Concurrence ou Créations pour ajouter des favoris.",
+      view: "Voir",
+      remove: "Retirer",
     },
     intel: {
       tts: {

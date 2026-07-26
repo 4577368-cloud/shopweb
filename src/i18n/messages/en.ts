@@ -1789,7 +1789,7 @@ export const en = {
       staleFilters: "Filters changed — click Fetch or Search to refresh the list.",
     },
     pulse: "Market pulse",
-    tabs: { discovery: "Discovery", competition: "Competition", creatives: "Creatives", imageSearch: "Image search" },
+    tabs: { discovery: "Discovery", competition: "Competition", creatives: "Creatives", imageSearch: "Image search", favorites: "Favorites" },
     pulseApiBalance: "API balance",
     pulseMonitorBalance: "Monitor balance",
     contextBar: {
@@ -2294,6 +2294,21 @@ export const en = {
         "露营庇护所": "Camping Shelters",
         "露营灯具": "Camping Lights",
       },
+    },
+    favorites: {
+      typeStore: "Store",
+      typeProduct: "Product",
+      typeCreative: "Creative",
+      typeTtsShop: "TikTok Shop",
+      typeRankProduct: "Ranked Product",
+      tabAll: "All",
+      searchPlaceholder: "Search favorites…",
+      typeCount: "{{n}} items",
+      clearType: "Clear this type",
+      empty: "No favorites yet",
+      emptyHint: "Click the star on discovery, competition, or creative pages to add favorites.",
+      view: "View",
+      remove: "Remove",
     },
     intel: {
       tts: {
