@@ -49,7 +49,9 @@ export function candidateMatchScore(
 }
 
 /**
- * Compare candidates: match score first (highest wins), then monthly sold, then repurchase.
+ * Compare candidates: similarity / match score always first.
+ * Commercial signals (sold / repurchase) only break ties when both have a real score.
+ * When scores are missing (A3-3b null similarity), preserve caller/gateway order.
  * Returns positive if `a` is better than `b`.
  */
 export function compareCandidates(
@@ -57,14 +59,18 @@ export function compareCandidates(
   b: ImageSearchProduct,
   matchScores?: Record<string, number>
 ): number {
-  const scoreDiff = candidateMatchScore(a, matchScores) - candidateMatchScore(b, matchScores);
+  const scoreA = candidateMatchScore(a, matchScores);
+  const scoreB = candidateMatchScore(b, matchScores);
+  const scoreDiff = scoreA - scoreB;
   if (scoreDiff !== 0) return scoreDiff;
+  // Both missing similarity → do not let sold reorder past 1688 relevance order.
+  if (scoreA <= 0 && scoreB <= 0) return 0;
   const soldDiff = (a.soldCount ?? 0) - (b.soldCount ?? 0);
   if (soldDiff !== 0) return soldDiff;
   return parseRepurchase(a.repurchaseRate) - parseRepurchase(b.repurchaseRate);
 }
 
-/** Best index under match-score → sold → repurchase. */
+/** Best index under similarity-first ranking (sold only ties real scores). */
 export function pickBestCandidateIndex(
   items: ImageSearchProduct[],
   opts?: { matchScores?: Record<string, number> }

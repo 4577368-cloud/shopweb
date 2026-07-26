@@ -102,10 +102,11 @@ function imageGateSortTier(imageScore: number | null | undefined): number {
 }
 
 /**
- * Rank candidates for auto-bind:
+ * Rank candidates for auto-bind — similarity always first:
  * - Pending image scores keep image-search order (not sunk as "unverified")
  * - Verified low scores sink
- * - Tie-break: image score → title → monthly sold → repurchase → search index
+ * - Order: image score → title → (sold / repurchase only when a real similarity signal exists) → search index
+ * - When image+title are both missing, preserve 1688 gateway order (sold must not steal the top slot)
  */
 export function rankCandidatesWithImageGate(
   items: ImageSearchProduct[],
@@ -133,13 +134,20 @@ export function rankCandidatesWithImageGate(
       const titleB = titleScores[keyB] ?? 0;
       if (titleA !== titleB) return titleB - titleA;
 
-      const soldA = a.item.soldCount ?? 0;
-      const soldB = b.item.soldCount ?? 0;
-      if (soldA !== soldB) return soldB - soldA;
+      const hasSimilaritySignal =
+        (!isImageScorePending(imageA) && (imageA as number) > 0) ||
+        (!isImageScorePending(imageB) && (imageB as number) > 0) ||
+        titleA > 0 ||
+        titleB > 0;
+      if (hasSimilaritySignal) {
+        const soldA = a.item.soldCount ?? 0;
+        const soldB = b.item.soldCount ?? 0;
+        if (soldA !== soldB) return soldB - soldA;
 
-      const repA = parseRepurchase(a.item.repurchaseRate);
-      const repB = parseRepurchase(b.item.repurchaseRate);
-      if (repA !== repB) return repB - repA;
+        const repA = parseRepurchase(a.item.repurchaseRate);
+        const repB = parseRepurchase(b.item.repurchaseRate);
+        if (repA !== repB) return repB - repA;
+      }
 
       return a.index - b.index;
     })
