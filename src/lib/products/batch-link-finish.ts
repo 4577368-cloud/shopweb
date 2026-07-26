@@ -1,4 +1,5 @@
 import { formatBatchLinkSummary, type BatchLinkProgress } from "@/lib/batch-link/types";
+import { buildBatchLinkEscalation } from "@/lib/batch-link/escalation";
 import { buildNewArrivalResultFromBatch } from "@/lib/batch-link/build-new-arrival-result";
 import { formatNewArrivalAnalysisSummary } from "@/lib/new-arrival-analysis-result";
 import { mergeProductBaseline } from "@/lib/shop-product-mirror-baseline";
@@ -37,5 +38,8 @@ export async function handleProductsBatchLinkFinish({
         : formatBatchLinkSummary(progress)
     );
   }
+  // Runs that left products unlinked keep the finished card visible so the user
+  // can hand them over in one go; dismissing it clears the progress.
+  if (buildBatchLinkEscalation(progress)) return;
   window.setTimeout(clearBatchLinkProgress, 2000);
 }

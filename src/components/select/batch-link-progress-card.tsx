@@ -23,12 +23,15 @@ export function BatchLinkProgressCard({
   unboundMatchJob = null,
   pendingAckCount = 0,
   onBatchAckPending,
+  onEscalationDismiss,
   className,
 }: {
   batchLinkProgress?: BatchLinkProgress | null;
   unboundMatchJob?: MatchJobProgress | null;
   pendingAckCount?: number;
   onBatchAckPending?: () => void;
+  /** Close the finished card once the user handled (or declined) the handover. */
+  onEscalationDismiss?: () => void;
   className?: string;
 }) {
   const t = useT();
@@ -198,7 +201,10 @@ export function BatchLinkProgressCard({
             size="sm"
             variant="ghost"
             className="h-7 shrink-0 px-1.5 text-[11px] text-slate-500"
-            onClick={() => setDismissedRunKey(runKey)}
+            onClick={() => {
+              setDismissedRunKey(runKey);
+              onEscalationDismiss?.();
+            }}
           >
             {t("batchLink.escalationDismiss")}
           </Button>
@@ -211,6 +217,7 @@ export function BatchLinkProgressCard({
           onClose={() => {
             setEscalationOpen(false);
             setDismissedRunKey(runKey);
+            onEscalationDismiss?.();
           }}
           context="products"
           batchEscalation={{

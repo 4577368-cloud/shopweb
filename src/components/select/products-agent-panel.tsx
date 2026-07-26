@@ -69,6 +69,8 @@ export interface ProductsAgentPanelProps {
   previewGenerators?: Record<string, PreviewGenerator>;
   commandExecutors?: Record<string, CommandExecutor>;
   batchLinkProgress?: BatchLinkProgress | null;
+  /** Close the finished batch card after the user handled the leftovers. */
+  onBatchLinkDismiss?: () => void;
   className?: string;
 }
 
@@ -93,6 +95,7 @@ export function ProductsAgentPanel({
   previewGenerators = {},
   commandExecutors = {},
   batchLinkProgress = null,
+  onBatchLinkDismiss,
   className,
 }: ProductsAgentPanelProps) {
   const t = useT();
@@ -604,6 +607,7 @@ export function ProductsAgentPanel({
         <div className="sticky top-0 z-20 -mx-0.5 shrink-0 bg-canvas/95 px-0.5 pb-2.5 pt-0.5 backdrop-blur-sm">
           <BatchLinkProgressCard
             batchLinkProgress={batchLinkProgress}
+            onEscalationDismiss={onBatchLinkDismiss}
             pendingAckCount={context.pendingCount}
             onBatchAckPending={
               context.pendingCount > 0
