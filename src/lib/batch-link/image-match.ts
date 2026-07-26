@@ -6,7 +6,7 @@ import { normalizeMatchScore } from "@/lib/agents/products/match-rank";
 import type { ImageSearchProduct } from "@/lib/types";
 
 /** Below this image score a candidate cannot be 首推. */
-export const IMAGE_MATCH_RECOMMEND_MIN = 70;
+export const IMAGE_MATCH_RECOMMEND_MIN = 55;
 
 /** Image score required for auto-bind tier (with title score ≥ 85). */
 export const IMAGE_MATCH_AUTO_MIN = 85;

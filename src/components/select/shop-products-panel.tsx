@@ -133,6 +133,7 @@ import { buildImageSearchRecoveryHints } from "@/lib/batch-link/search-recovery-
 import {
   mapImageMatchConfirmError,
   mapImageSearchError,
+  userFacingImageSearchMessage,
 } from "@/lib/batch-link/match-errors";
 import {
   isAlreadySourcedProduct,
@@ -1415,7 +1416,6 @@ function ShopProductCard({
   const [amImageSearchReason, setAmImageSearchReason] = useState<
     "weak" | "failed" | null
   >(null);
-  const batchFailedPromptedRef = useRef(false);
   const [result, setResult] = useState<ImageSearchResult | null>(null);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [trayOpen, setTrayOpen] = useState(false);
@@ -1437,19 +1437,7 @@ function ShopProductCard({
     []
   );
 
-  useEffect(() => {
-    if (!batchLinkDrive) return;
-    if (batchLinkDrive.state === "failed") {
-      if (!batchFailedPromptedRef.current) {
-        batchFailedPromptedRef.current = true;
-        promptAccountManagerForImageSearch("failed");
-      }
-      return;
-    }
-    if (batchLinkDrive.state === "idle") {
-      batchFailedPromptedRef.current = false;
-    }
-  }, [batchLinkDrive?.state, promptAccountManagerForImageSearch]);
+  const batchLinkFailed = batchLinkDrive?.state === "failed";
 
   useEffect(() => {
     if (!batchLinkDrive) return;
@@ -1755,18 +1743,17 @@ function ShopProductCard({
         setMatchScores({});
         setImageScores({});
         setSearchError(
-          pipeline.error ??
-            imageSearchError(new Error(t("shopProducts.imageSearchFailed")))
+          userFacingImageSearchMessage(
+            pipeline.error,
+            t("shopProducts.imageSearchFailed")
+          )
         );
-        promptAccountManagerForImageSearch("failed");
         return;
       }
       setMatchScores(pipeline.matchScores);
       setImageScores(pipeline.imageScores);
       const reliability = assessImageSearchReliability(pipeline);
-      if (reliability === "failed") {
-        promptAccountManagerForImageSearch("failed");
-      } else if (reliability === "weak") {
+      if (reliability === "weak") {
         promptAccountManagerForImageSearch("weak");
       }
       let ordered = pipeline.rankedItems;
@@ -1950,12 +1937,14 @@ function ShopProductCard({
 
   const searchRecoveryHints = useMemo(
     () =>
-      buildImageSearchRecoveryHints({
-        result,
-        hasImage,
-        errorMessage: searchError,
-      }),
-    [result, hasImage, searchError]
+      batchLinkFailed
+        ? []
+        : buildImageSearchRecoveryHints({
+            result,
+            hasImage,
+            errorMessage: searchError,
+          }),
+    [batchLinkFailed, result, hasImage, searchError]
   );
 
   useEffect(() => {
@@ -2214,6 +2203,7 @@ function ShopProductCard({
     !boundOfferId &&
     !bindConfirmed &&
     batchLinkDrive?.state !== "done";
+  const showSearchErrorBanner = Boolean(searchError) && !batchLinkFailed;
 
   const matchHeadline = linkAnimating
     ? publishLinkHeadline(
@@ -2625,14 +2615,9 @@ function ShopProductCard({
             </div>
           ) : (
             <div className="flex flex-1 items-center rounded-lg border border-dashed border-surface-border px-3 py-2 text-[11px] text-muted-foreground">
-              {batchLinkDrive?.state === "failed" &&
-              batchLinkDrive.errorMessage &&
-              !boundOfferId &&
-              !bindConfirmed
-                ? batchLinkDrive.errorMessage
-                : hasImage
-                  ? t("shopProducts.clickFindCandidates")
-                  : t("shopProducts.noImageNoSearch")}
+              {hasImage
+                ? t("shopProducts.clickFindCandidates")
+                : t("shopProducts.noImageNoSearch")}
             </div>
           )}
         </div>
@@ -2787,35 +2772,21 @@ function ShopProductCard({
           {confirmError}
         </div>
       ) : null}
-      {searchError ? (
-        <div className="mt-2 flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          <span>{searchError}</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
+      {showSearchErrorBanner ? (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="min-w-0 flex-1">{searchError}</span>
+          {hasImage ? (
+            <button
               type="button"
-              size="sm"
-              variant="primary"
-              className="h-7 text-[11px]"
+              className="shrink-0 font-medium underline underline-offset-2"
               onClick={(e) => {
                 e.stopPropagation();
-                promptAccountManagerForImageSearch("failed");
+                void runSearch();
               }}
             >
-              {t("accountManager.imageSearchModal.contactNow")}
-            </Button>
-            {hasImage ? (
-              <button
-                type="button"
-                className="shrink-0 font-medium underline underline-offset-2"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void runSearch();
-                }}
-              >
-                {t("shopProducts.retry")}
-              </button>
-            ) : null}
-          </div>
+              {t("shopProducts.retry")}
+            </button>
+          ) : null}
         </div>
       ) : null}
 

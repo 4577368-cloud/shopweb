@@ -24,7 +24,12 @@ export function assessImageSearchReliability(
   if (classifyMatchConfidence(pipeline.topScore) === "none") return "weak";
 
   const topImage = pipeline.imageScores[candidateStorageKey(top)];
-  if (!isImageScorePending(topImage) && !passesImageRecommendGate(topImage)) {
+  if (isImageScorePending(topImage)) {
+    return classifyMatchConfidence(pipeline.topScore) === "none"
+      ? "weak"
+      : "reliable";
+  }
+  if (!passesImageRecommendGate(topImage)) {
     return "weak";
   }
 

@@ -1,4 +1,5 @@
 import type { MatchConfidenceTier } from "@/lib/batch-link/confidence";
+import { userFacingImageSearchMessage } from "@/lib/batch-link/match-errors";
 import type { BatchLinkCardDrive, BatchLinkCardState } from "@/lib/batch-link/types";
 
 export type BatchLinkTranslate = (
@@ -65,13 +66,21 @@ export function formatBatchCardQueueLine(
   drive: BatchLinkCardDrive
 ): string {
   const stateLabel = batchCardStateLabel(drive.state, t);
+  if (drive.state === "failed" && drive.errorMessage?.trim()) {
+    return `${stateLabel} · ${userFacingImageSearchMessage(drive.errorMessage)}`;
+  }
+  if (drive.state === "needs_review") {
+    const scores = formatConfidenceScores(t, {
+      titleScore: drive.titleScore,
+      imageScore: drive.imageScore,
+      tier: drive.confidenceTier,
+    });
+    return scores !== "—" ? `${stateLabel} · ${scores}` : stateLabel;
+  }
   const scores = formatConfidenceScores(t, {
     titleScore: drive.titleScore,
     imageScore: drive.imageScore,
     tier: drive.confidenceTier,
   });
-  if (drive.state === "failed" && drive.errorMessage?.trim()) {
-    return `${stateLabel} · ${scores} · ${drive.errorMessage.trim()}`;
-  }
   return scores !== "—" ? `${stateLabel} · ${scores}` : stateLabel;
 }
