@@ -156,8 +156,6 @@ function LogisticsContent() {
     skuBindingGap,
     handleCorrect,
     handleSaveTemplate,
-    handleDeleteTemplate,
-    handleSelectTemplate,
     handleSave,
     handleSaveAndSync,
   } = useLogisticsPageActions({
@@ -167,7 +165,6 @@ function LogisticsContent() {
     localePath,
     analysis,
     setAnalysis,
-    templates,
     setTemplates,
     activeTemplate,
     setActiveTemplate,
@@ -602,11 +599,8 @@ function LogisticsContent() {
       {showDrawer ? (
         <LogisticsTemplateDrawer
           shopName={shopName}
-          templates={templates}
           activeTemplate={activeTemplate}
           onSave={handleSaveTemplate}
-          onDelete={handleDeleteTemplate}
-          onSelect={handleSelectTemplate}
           onClose={() => setShowDrawer(false)}
         />
       ) : null}

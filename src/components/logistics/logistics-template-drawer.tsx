@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { X, Save, Trash2, Plus, Check } from "@/lib/ui/icons";
+import { X, Save, RefreshCw, Check } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { useLocale, useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,6 @@ import {
   marketGroupLabel,
 } from "@/lib/logistics/markets";
 import {
-  codesFromSelections,
   marketSelectionForCountry,
   singleCountryCodeFromMarkets,
 } from "@/components/logistics/market-multi-select";
@@ -24,27 +23,19 @@ import type {
 
 export function LogisticsTemplateDrawer({
   shopName,
-  templates,
   activeTemplate,
   onSave,
-  onDelete,
-  onSelect,
   onClose,
 }: {
   shopName: string;
-  templates: LogisticsTemplate[];
   activeTemplate: LogisticsTemplate | null;
-  onSave: (template: LogisticsTemplateUpsert, id?: string) => Promise<LogisticsTemplate>;
-  onDelete: (id: string) => Promise<void>;
-  onSelect: (template: LogisticsTemplate) => void;
+  onSave: (template: LogisticsTemplateUpsert) => Promise<LogisticsTemplate>;
   onClose: () => void;
 }) {
   const t = useT();
   const locale = useLocale();
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<LogisticsTemplate>>({});
-  /** null = creating a new template; string = editing an existing one */
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,7 +85,6 @@ export function LogisticsTemplateDrawer({
         ? { ...activeTemplate, markets: marketSelectionForCountry(single) }
         : activeTemplate;
       setFormData(normalized);
-      setEditingId(activeTemplate.id ?? null);
       if (single) {
         const group = MARKET_GROUPS.find((g) =>
           g.countries.some((c) => c.code === single)
@@ -148,26 +138,14 @@ export function LogisticsTemplateDrawer({
     setError(null);
 
     try {
-      const now = new Date();
-      const dateTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      const autoName = t("logisticsTemplate.autoName", { dateTime });
-
       const upsertData: LogisticsTemplateUpsert = {
         shopName,
-        name: formData.name || autoName,
         packaging: formData.packaging,
         speedPreference: formData.speedPreference,
         markets: marketSelectionForCountry(selectedCountry),
       };
 
-      await onSave(
-        upsertData,
-        editingId &&
-          editingId !== "default" &&
-          templates.some((tpl) => tpl.id === editingId)
-          ? editingId
-          : undefined
-      );
+      await onSave(upsertData);
       onClose();
     } catch (err) {
       setError((err as Error).message);
@@ -176,33 +154,12 @@ export function LogisticsTemplateDrawer({
     }
   };
 
-  const handleDelete = async () => {
-    if (!editingId) return;
-    const target = templates.find((tpl) => tpl.id === editingId);
-    if (!target) return;
-    if (!confirm(t("logisticsTemplate.deleteConfirm", { name: target.name }))) return;
-
-    try {
-      await onDelete(editingId);
-      const remaining = templates.filter((tpl) => tpl.id !== editingId);
-      if (remaining.length > 0) {
-        onSelect(remaining[0]);
-      } else {
-        onClose();
-      }
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
-
-  const handleNewTemplate = () => {
-    setEditingId(null);
+  const handleResetForm = () => {
     setFormData({
       shopName,
       packaging: "MINIMAL",
       speedPreference: "BALANCED",
       markets: [],
-      name: "",
     });
     setSelectedGroupId(null);
     setError(null);
@@ -225,52 +182,14 @@ export function LogisticsTemplateDrawer({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {templates.length > 0 ? (
-              <select
-                value={editingId ?? ""}
-                onChange={(e) => {
-                  const nextId = e.target.value;
-                  if (!nextId) {
-                    handleNewTemplate();
-                    return;
-                  }
-                  const selected = templates.find((tpl) => tpl.id === nextId);
-                  if (selected) {
-                    const single = singleCountryCodeFromMarkets(selected.markets);
-                    const normalized = single
-                      ? { ...selected, markets: marketSelectionForCountry(single) }
-                      : selected;
-                    setEditingId(selected.id);
-                    setFormData(normalized);
-                    if (single) {
-                      const group = MARKET_GROUPS.find((g) =>
-                        g.countries.some((c) => c.code === single)
-                      );
-                      setSelectedGroupId(group?.id ?? null);
-                    } else {
-                      setSelectedGroupId(null);
-                    }
-                    setError(null);
-                  }
-                }}
-                className="rounded-[var(--radius-control)] border border-hairline bg-surface px-2 py-1 text-xs text-ink"
-              >
-                <option value="">{t("logisticsTemplate.newTemplate")}</option>
-                {templates.map((tpl) => (
-                  <option key={tpl.id} value={tpl.id}>
-                    {tpl.name}
-                  </option>
-                ))}
-              </select>
-            ) : null}
             <button
               type="button"
-              onClick={handleNewTemplate}
+              onClick={handleResetForm}
               className="rounded p-1 text-ink-muted hover:bg-surface-muted hover:text-ink"
-              title={t("logisticsTemplate.newTemplateAria")}
-              aria-label={t("logisticsTemplate.newTemplateAria")}
+              title={t("logisticsTemplate.resetAria")}
+              aria-label={t("logisticsTemplate.resetAria")}
             >
-              <Plus className="h-4 w-4" />
+              <RefreshCw className="h-4 w-4" />
             </button>
             <button
               type="button"
@@ -284,19 +203,6 @@ export function LogisticsTemplateDrawer({
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
           <div className="space-y-4">
-            <div>
-              <label className="block mb-1 text-xs font-medium text-ink">
-                {t("logisticsTemplate.nameLabel")}
-              </label>
-              <input
-                type="text"
-                value={formData.name ?? ""}
-                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder={t("logisticsTemplate.namePlaceholder")}
-                className="w-full rounded-[var(--radius-control)] border border-hairline px-3 py-2 text-xs bg-surface"
-              />
-            </div>
-
             <div>
               <label className="block mb-2 text-xs font-medium text-ink">
                 {t("logisticsTemplate.countryLabel")}
@@ -421,12 +327,6 @@ export function LogisticsTemplateDrawer({
         </div>
 
         <footer className="flex items-center gap-2 border-t border-hairline px-4 py-3">
-          {editingId && templates.some((tpl) => tpl.id === editingId) && templates.length > 1 ? (
-            <Button variant="danger" size="sm" onClick={handleDelete}>
-              <Trash2 className="mr-1 h-3 w-3" />
-              {t("logisticsTemplate.delete")}
-            </Button>
-          ) : null}
           <div className="flex-1" />
           <Button variant="secondary" size="sm" onClick={onClose}>
             {t("logisticsTemplate.cancel")}
@@ -435,9 +335,7 @@ export function LogisticsTemplateDrawer({
             <Save className="mr-1 h-3 w-3" />
             {isSaving
               ? t("logisticsTemplate.saving")
-              : editingId
-                ? t("logisticsTemplate.saveTemplate")
-                : t("logisticsTemplate.createTemplate")}
+              : t("logisticsTemplate.saveTemplate")}
           </Button>
         </footer>
       </aside>

@@ -1621,6 +1621,7 @@ export const es: Dictionary = {
     namePlaceholder: "ej. Paquetes pequeños este de EE.UU.",
     newTemplate: "Nueva plantilla",
     newTemplateAria: "Nueva plantilla",
+    resetAria: "Restablecer la estrategia predeterminada",
     packCartonHint: "Artículos frágiles o voluminosos",
     packCartonLabel: "Caja",
     packMinimalHint: "Ideal para ropa — peso volumétrico reducido",

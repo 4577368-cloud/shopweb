@@ -1622,6 +1622,7 @@ export const fr: Dictionary = {
     namePlaceholder: "ex. Petits colis Est des États-Unis",
     newTemplate: "Nouveau modèle",
     newTemplateAria: "Nouveau modèle",
+    resetAria: "Réinitialiser la stratégie par défaut",
     packCartonHint: "Articles fragiles ou volumineux",
     packCartonLabel: "Carton",
     packMinimalHint: "Idéal pour les vêtements — poids volumétrique réduit",

@@ -97,13 +97,12 @@ export default function SyncPage() {
   const showFull = phase === "holding" || phase === "summary";
   const summaryIsPartial = summary != null && summary.meta.loadTier === "fast";
 
+  // Coming back to a ceremony that already ran lands on the summary, never on a
+  // context-free congrats screen. The header replay button re-runs the ceremony.
   const applyPostFetchPhase = useCallback(() => {
-    if (revisitRef.current || readSummaryViewed()) {
+    if (revisitRef.current || readSummaryViewed() || readCeremonyCelebrated()) {
       setCeremonyPercent(100);
       setPhase("summary");
-    } else if (readCeremonyCelebrated()) {
-      setCeremonyPercent(100);
-      setPhase("complete");
     } else {
       setCeremonyPercent(0);
       setPhase("running");

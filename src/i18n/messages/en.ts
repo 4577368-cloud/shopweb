@@ -1625,6 +1625,7 @@ export const en = {
     namePlaceholder: "e.g., US East small parcels",
     newTemplate: "New template",
     newTemplateAria: "New template",
+    resetAria: "Reset to default strategy",
     packCartonHint: "Fragile or bulky items",
     packCartonLabel: "Carton",
     packMinimalHint: "Best for apparel — lighter volumetric weight",

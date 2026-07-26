@@ -264,10 +264,10 @@ export interface MarketSelection {
   countryCodes: string[];
 }
 
+/** One template per shop — the backend keys `logistics_template` on shopName. */
 export interface LogisticsTemplate {
   id: string;
   shopName: string;
-  name: string;
   packaging: PackagingType;
   speedPreference: LogisticsSpeedPreference;
   markets: MarketSelection[];
@@ -277,10 +277,20 @@ export interface LogisticsTemplate {
 
 export interface LogisticsTemplateUpsert {
   shopName: string;
-  name?: string;
   packaging: PackagingType;
   speedPreference: LogisticsSpeedPreference;
   markets: MarketSelection[];
+}
+
+/** Wire shape of GET/POST /api/plugin/logistics/template. */
+export interface LogisticsTemplateVO {
+  shopName: string;
+  packaging: PackagingType;
+  speedPreference: LogisticsSpeedPreference;
+  markets: MarketSelection[];
+  /** True when nothing is stored yet and the backend answered with its default. */
+  defaultTemplate: boolean;
+  updatedAt?: string | null;
 }
 
 export interface ProductLogisticsProfile {

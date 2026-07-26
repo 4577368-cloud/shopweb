@@ -12,6 +12,7 @@ import type {
   LogisticsLine,
   LogisticsTemplate,
   LogisticsTemplateUpsert,
+  LogisticsTemplateVO,
   LogisticsTypeCode,
   PackagingType,
   OfferDetail,
@@ -50,6 +51,7 @@ import type {
 } from "@/lib/sku-align-v1/types";
 import type { OrderBindingLine } from "@/lib/order/types";
 import { normalizeSkuOverviewForList } from "@/lib/api/sku-overview-normalize";
+import { logisticsTemplateFromVo } from "@/lib/logistics/default-template";
 import { normalizeShopApiName } from "@/lib/resolve-shop-api-name";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
@@ -481,6 +483,12 @@ export interface UserShopBinding {
 export interface UnbindShopResult {
   shopName: string;
   unbound: boolean;
+}
+
+function fetchLogisticsTemplateVo(shop: string) {
+  return request<LogisticsTemplateVO>(
+    `/api/plugin/logistics/template?shopName=${encodeURIComponent(shop)}`
+  );
 }
 
 export const api = {
@@ -1036,35 +1044,39 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  getLogisticsTemplate: (shop: string) =>
-    request<LogisticsTemplate>(
-      `/api/plugin/logistics/template?shopName=${encodeURIComponent(shop)}`
-    ),
+  getLogisticsTemplate: (shop: string) => fetchLogisticsTemplateVo(shop),
 
-  listLogisticsTemplates: (shop: string) =>
-    localRequest<LogisticsTemplate[]>(
-      `/api/logistics/templates?shopName=${encodeURIComponent(shop)}`
-    ),
-
-  upsertLogisticsTemplate: (shop: string, body: LogisticsTemplateUpsert, id?: string) => {
-    const resolvedShop = shop.trim() || body.shopName?.trim() || "";
-    if (!resolvedShop) {
-      return Promise.reject(new Error("缺少店铺标识，请先完成店铺授权"));
-    }
-    const url = `/api/logistics/templates?shopName=${encodeURIComponent(resolvedShop)}`;
-    return localRequest<LogisticsTemplate>(url, {
-      method: id ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        id ? { ...body, shopName: resolvedShop, id } : { ...body, shopName: resolvedShop }
-      ),
-    });
+  /**
+   * Kept list-shaped for the UI while the backend stores a single template per
+   * shop. A shop that never saved gets the in-memory default back, which is
+   * reported as empty so the onboarding step stays pending until a real save.
+   */
+  listLogisticsTemplates: async (shop: string): Promise<LogisticsTemplate[]> => {
+    const vo = await fetchLogisticsTemplateVo(shop);
+    if (!vo || vo.defaultTemplate) return [];
+    return [logisticsTemplateFromVo(vo, shop)];
   },
 
-  deleteLogisticsTemplate: (shop: string, id: string) =>
-    localRequest<void>(`/api/logistics/templates/${id}?shopName=${encodeURIComponent(shop)}`, {
-      method: "DELETE",
-    }),
+  upsertLogisticsTemplate: async (
+    shop: string,
+    body: LogisticsTemplateUpsert
+  ): Promise<LogisticsTemplate> => {
+    const resolvedShop = shop.trim() || body.shopName?.trim() || "";
+    if (!resolvedShop) {
+      throw new Error("缺少店铺标识，请先完成店铺授权");
+    }
+    const vo = await request<LogisticsTemplateVO>("/api/plugin/logistics/template", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        shopName: resolvedShop,
+        packaging: body.packaging,
+        speedPreference: body.speedPreference,
+        markets: body.markets,
+      }),
+    });
+    return logisticsTemplateFromVo(vo, resolvedShop);
+  },
 
   /**
    * Upload an image to Tangbuy OSS via the same-origin Next.js proxy (/api/oss/upload) and get back

@@ -8,7 +8,7 @@ import {
   deriveLogisticsStepSnapshot,
   evaluateLogisticsCompletionGate,
 } from "@/lib/logistics/completion-gate";
-import { createDefaultLogisticsTemplate } from "@/lib/logistics/default-template";
+import type { LogisticsTemplateUpsert } from "@/lib/types";
 import { stashLogisticsSyncExceptionCount } from "@/lib/logistics/sync-handoff";
 import { resolveQuoteMarketCode } from "@/lib/logistics/template-params";
 import type { LogisticsWorkflowStep } from "@/lib/logistics/page-constants";
@@ -36,7 +36,6 @@ export interface UseLogisticsPageActionsParams {
   localePath: typeof import("@/i18n/LocaleLink").localePath;
   analysis: LogisticsAnalysis | null;
   setAnalysis: React.Dispatch<React.SetStateAction<LogisticsAnalysis | null>>;
-  templates: LogisticsTemplate[];
   setTemplates: React.Dispatch<React.SetStateAction<LogisticsTemplate[]>>;
   activeTemplate: LogisticsTemplate | null;
   setActiveTemplate: React.Dispatch<React.SetStateAction<LogisticsTemplate | null>>;
@@ -68,7 +67,6 @@ export function useLogisticsPageActions({
   localePath,
   analysis,
   setAnalysis,
-  templates,
   setTemplates,
   activeTemplate,
   setActiveTemplate,
@@ -225,25 +223,11 @@ export function useLogisticsPageActions({
     }
   };
 
-  const handleSaveTemplate = async (
-    upsertData: {
-      shopName: string;
-      name?: string;
-      packaging: string;
-      speedPreference: string;
-      markets: { marketGroupId: string; countryCodes: string[] }[];
-    },
-    id?: string
-  ) => {
+  const handleSaveTemplate = async (upsertData: LogisticsTemplateUpsert) => {
     setSaving(true);
     try {
-      const saved = await api.upsertLogisticsTemplate(shopName, upsertData as any, id);
-      setTemplates((prev) => {
-        if (id) {
-          return prev.map((tpl) => (tpl.id === id ? saved : tpl));
-        }
-        return [saved, ...prev];
-      });
+      const saved = await api.upsertLogisticsTemplate(shopName, upsertData);
+      setTemplates([saved]);
       suppressScopeSwitchToastRef.current = true;
       setActiveTemplate(saved);
       showToast(t("logistics.toastTemplateSavedEstimate"));
@@ -256,32 +240,6 @@ export function useLogisticsPageActions({
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleDeleteTemplate = async (id: string) => {
-    try {
-      await api.deleteLogisticsTemplate(shopName, id);
-      setTemplates((prev) => prev.filter((tpl) => tpl.id !== id));
-      if (activeTemplate?.id === id) {
-        const remaining = templates.filter((tpl) => tpl.id !== id);
-        setActiveTemplate(
-          remaining.length > 0
-            ? remaining[0]
-            : createDefaultLogisticsTemplate(
-                shopName,
-                t("logistics.defaultTemplateName")
-              )
-        );
-      }
-      showToast(t("logistics.toastTemplateDeleted"));
-    } catch (err) {
-      showToast(readableError(err));
-    }
-  };
-
-  const handleSelectTemplate = (template: LogisticsTemplate) => {
-    setActiveTemplate(template);
-    setQuoteMarketCode(resolveQuoteMarketCode(template, null));
   };
 
   const handleSave = useCallback(
@@ -343,8 +301,6 @@ export function useLogisticsPageActions({
     skuBindingGap,
     handleCorrect,
     handleSaveTemplate,
-    handleDeleteTemplate,
-    handleSelectTemplate,
     handleSave,
     handleSaveAndSync,
   };

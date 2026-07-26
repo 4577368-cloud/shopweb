@@ -122,7 +122,6 @@ function StrategyCard({
         {activeTemplate
           ? speedPriorityLabel(t, activeTemplate.speedPreference)
           : t("logisticsUi.noTemplate")}
-        {activeTemplate?.name ? ` · ${activeTemplate.name}` : ""}
       </p>
     </button>
   );
