@@ -2319,7 +2319,7 @@ function ShopProductCard({
   return (
     <article
       data-product-id={item.thirdPlatformItemId}
-      aria-selected={focused}
+      data-selected={focused ? "true" : undefined}
       onClick={() => {
         if (listingPriceEditPhases.pill) onListingPriceEditConsumed?.();
         onFocus?.();

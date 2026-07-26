@@ -222,7 +222,7 @@ async function scoreTitleCandidates(
   items: ImageSearchProduct[],
   initialScores: Record<string, number> = {}
 ): Promise<Record<string, number>> {
-  let scores = { ...initialScores };
+  const scores = { ...initialScores };
   for (const c of items) {
     const key = candidateStorageKey(c);
     const n = normalizeMatchScore(c.similarityScore);

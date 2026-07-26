@@ -378,6 +378,7 @@ function SelectContent() {
           pendingMinis={pendingMinis}
           unboundMinis={unboundMinis}
           batchLinkProgress={batchLinkProgress}
+          onBatchLinkDismiss={() => setBatchLinkProgress(null)}
           intentRequest={agentIntentRequest}
           onIntentRequestConsumed={() => setAgentIntentRequest(null)}
           onApplySuggestedAction={(action) =>
