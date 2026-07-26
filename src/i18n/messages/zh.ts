@@ -1619,6 +1619,7 @@ export const zh: Dictionary = {
     namePlaceholder: "例如：美东轻小件",
     newTemplate: "新建模板",
     newTemplateAria: "新建模板",
+    resetAria: "重置为默认策略",
     packCartonHint: "易碎或大件",
     packCartonLabel: "纸箱加固",
     packMinimalHint: "服装配饰首选，减少体积重",

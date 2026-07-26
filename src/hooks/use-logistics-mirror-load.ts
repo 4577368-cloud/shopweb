@@ -77,15 +77,10 @@ export function useLogisticsMirrorLoad({
       if (ts.length > 0) {
         setActiveTemplate(ts[0]);
       } else {
-        setActiveTemplate(
-          createDefaultLogisticsTemplate(
-            shopName,
-            t("logistics.defaultTemplateName")
-          )
-        );
+        setActiveTemplate(createDefaultLogisticsTemplate(shopName));
       }
     },
-    [shopName, t]
+    [shopName]
   );
 
   const load = useCallback(
@@ -145,12 +140,7 @@ export function useLogisticsMirrorLoad({
         const ts = await api.listLogisticsTemplates(shopName).catch(() => []);
         setTemplates(ts);
         setActiveTemplate(
-          ts.length > 0
-            ? ts[0]
-            : createDefaultLogisticsTemplate(
-                shopName,
-                t("logistics.defaultTemplateName")
-              )
+          ts.length > 0 ? ts[0] : createDefaultLogisticsTemplate(shopName)
         );
       } finally {
         setClassifying(false);
