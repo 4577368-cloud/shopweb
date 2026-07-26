@@ -25,7 +25,6 @@ import {
   needsSupplementSource,
 } from "@/lib/sku-align-v1";
 import type { SkuAlignProductDetail } from "@/lib/sku-align-v1/types";
-import { buildGapSummaryText } from "@/lib/sku-align/drawer-helpers";
 import { mergeV1DetailIntoProductOverview } from "@/lib/sku-align/merge-v1-overview";
 import { skuAlignProductWorkbenchHref } from "@/lib/sku-align/deep-link";
 import { stashSkuProductHandoff } from "@/lib/sku-align/overview-handoff";
@@ -259,8 +258,6 @@ export function SkuProductCard({
     needsSupplementSource(v1Detail) &&
     (unboundCount > 0 || (v1Detail.summary.noSourceVariants ?? 0) > 0);
   const supplementHint = v1Detail ? buildSupplementSourceHint(t, v1Detail) : null;
-  const noSourceCount = v1Detail?.summary.noSourceVariants ?? 0;
-  const gapSummary = buildGapSummaryText(t, unboundCount, noSourceCount);
 
   const alignedPreview = buildVariantPreviewLine(visibleVariants, t);
 
@@ -300,9 +297,6 @@ export function SkuProductCard({
                 <Badge variant="success">
                   {t("skuBinding.manualCount", { count: manualCount })}
                 </Badge>
-              ) : null}
-              {gapSummary ? (
-                <p className="mt-1 text-[11px] text-amber-800">{gapSummary}</p>
               ) : null}
             </div>
           </div>
