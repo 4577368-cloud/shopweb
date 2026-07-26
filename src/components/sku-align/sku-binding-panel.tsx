@@ -42,6 +42,11 @@ import {
 } from "@/lib/sku-align/display";
 import { scheduleSkuAlignV1DetailLoad } from "@/lib/sku-align/v1-detail-load-queue";
 import { useT } from "@/i18n/LocaleProvider";
+import { ExternalTextLink } from "@/components/ui/external-text-link";
+import {
+  resolveShopListingProductUrl,
+  shopMirrorKeyForLink,
+} from "@/lib/shop-product-external-link";
 
 export type ProductMatchState = "full" | "partial" | "none";
 
@@ -155,10 +160,12 @@ function buildVariantPreviewLine(
 export function SkuProductCard({
   product,
   shopName,
+  shopDomain,
   filterMode = "all",
 }: {
   product: SkuProductOverview;
   shopName: string;
+  shopDomain?: string | null;
   onAligned?: () => Promise<void>;
   showToast?: (message: string) => void;
   filterMode?: SkuFilterMode;
@@ -181,6 +188,15 @@ export function SkuProductCard({
   const state = productMatchState(mergedProduct);
 
   const productId = product.thirdPlatformItemId;
+  const shopProductUrl = useMemo(
+    () =>
+      resolveShopListingProductUrl({
+        thirdPlatformItemId: productId,
+        shopDomain,
+        shopMirrorKey: shopMirrorKeyForLink(shopName, shopDomain),
+      }),
+    [productId, shopDomain, shopName]
+  );
   const stashHandoff = () => {
     stashSkuProductHandoff(shopName, product);
     setSkuProductSession(shopName, product);
@@ -276,7 +292,13 @@ export function SkuProductCard({
           />
           <div className="min-w-0 flex-1">
             <h3 className="line-clamp-1 text-sm font-semibold leading-5 text-ink">
-              {product.title ?? t("skuBinding.noTitle")}
+              <ExternalTextLink
+                href={shopProductUrl}
+                title={t("skuBinding.openShopProduct")}
+                className="font-semibold text-ink"
+              >
+                {product.title ?? t("skuBinding.noTitle")}
+              </ExternalTextLink>
             </h3>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-[11px] text-ink-subtle">

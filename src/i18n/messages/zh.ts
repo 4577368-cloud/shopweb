@@ -3691,6 +3691,8 @@ export const zh: Dictionary = {
     manualCount: "手动 {{count}}",
     needSupplement: "需补充货源",
     noTitle: "（无标题）",
+    openShopProduct: "在店铺中打开商品",
+    openSourceProduct: "打开货源商品页",
     partialMatch: "部分对齐 {{bound}}/{{total}}",
     pendingConfirm: "待确认 {{count}}",
     replaceSource: "整款替换主货源",
