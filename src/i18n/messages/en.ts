@@ -302,6 +302,10 @@ export const en = {
     registerSubmitting: "Creating...",
     registerSubtitle: "Create a Tangbuy workspace account.",
     registerTitle: "Create account",
+    registerSuccessTitle: "Account created",
+    registerSuccessRedirecting: "You're signed in — taking you to the next step…",
+    loginSuccessTitle: "Signed in",
+    loginSuccessRedirecting: "Opening your workspace…",
     rememberPassword: "Remembered your password?",
     resetPasswordRedirecting: "Redirecting to sign in...",
     resetPasswordSubmit: "Reset password",
@@ -593,6 +597,9 @@ export const en = {
     connectShop: "Connect Shopify store",
     connectSubtitle: "Authorize via official Shopify OAuth — scoped to products and orders we need for sourcing.",
     connectTitle: "Connect your store",
+    welcomeRegisterTitle: "Welcome to Tangbuy",
+    welcomeRegisterDesc:
+      "Your account is ready. Connect your Shopify store next to start sourcing and product linking.",
     copilotDoneNextAction: "Go to product linking",
     copilotDoneNextDescEmpty: "Image-search and link Tangbuy sources for live products.",
     copilotDoneNextDescLinked: "{{count}} sources linked — review or replace.",
@@ -1094,6 +1101,9 @@ export const en = {
     loginFirstTitle: "Sign in / register with Tangbuy first",
     loginFirstDesc:
       "Your Shopify store is bound to your Tangbuy account. Authorization can't complete while signed out.",
+    welcomeRegisterTitle: "You're registered and signed in",
+    welcomeRegisterDesc:
+      "Click Connect store below to finish Shopify authorization and continue.",
     navLogin: "Log in",
     navRegister: "Free sign-up",
     waitAuth: "Confirming your login status — try connecting again in a moment…",

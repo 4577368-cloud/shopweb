@@ -299,6 +299,10 @@ export const es: Dictionary = {
     registerSubmitting: "Creando…",
     registerSubtitle: "Crea una cuenta de Tangbuy.",
     registerTitle: "Crear cuenta",
+    registerSuccessTitle: "Cuenta creada",
+    registerSuccessRedirecting: "Has iniciado sesión — pasando al siguiente paso…",
+    loginSuccessTitle: "Sesión iniciada",
+    loginSuccessRedirecting: "Abriendo tu espacio de trabajo…",
     rememberPassword: "¿Recordabas tu contraseña?",
     resetPasswordRedirecting: "Redirigiendo a iniciar sesión…",
     resetPasswordSubmit: "Restablecer",
@@ -591,6 +595,9 @@ export const es: Dictionary = {
     connectShop: "Connect Shopify Tienda",
     connectSubtitle: "Authorize via official Shopify OAuth — scoped to products and orders we need for sourcing.",
     connectTitle: "Connect your Tienda",
+    welcomeRegisterTitle: "Bienvenido a Tangbuy",
+    welcomeRegisterDesc:
+      "Tu cuenta está lista. Conecta tu tienda Shopify para empezar a buscar proveedores y vincular productos.",
     copilotDoneNextAction: "Go to Enlaces de Productoos",
     copilotDoneNextDescEmpty: "Image-Buscar and link Tangbuy Fuentes for live Productos.",
     copilotDoneNextDescLinked: "{{count}} Fuentes linked — review or replace.",
@@ -1092,6 +1099,9 @@ export const es: Dictionary = {
     loginFirstTitle: "Sign in / register with Tangbuy first",
     loginFirstDesc:
       "Your Shopify store is bound to your Tangbuy account. Authorization can't complete while signed out.",
+    welcomeRegisterTitle: "Registro listo — ya has iniciado sesión",
+    welcomeRegisterDesc:
+      "Pulsa Conectar tienda abajo para completar la autorización de Shopify y continuar.",
     navLogin: "Iniciar sesión",
     navRegister: "Registro gratis",
     waitAuth: "Confirming your login status — try connecting again in a moment…",

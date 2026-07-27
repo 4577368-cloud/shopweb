@@ -4,13 +4,16 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { X } from "@/lib/ui/icons";
+import { CheckCircle2, Loader2, X } from "@/lib/ui/icons";
 import { useAuth } from "@/context/user-context";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { ApiError } from "@/lib/api";
+import { authApi } from "@/lib/auth/api";
+import { markJustRegistered } from "@/lib/auth/just-registered";
 
 type AuthMode = "login" | "register";
+type AuthPhase = "form" | "submitting" | "success";
 
 interface AuthPanelProps {
   mode: AuthMode;
@@ -23,7 +26,7 @@ interface AuthPanelProps {
 /**
  * 右侧登录/注册面板。
  * 复用 useAuth().login / register，错误码复用 auth.* i18n。
- * 登录/注册成功后 router.replace 到工作台入口（由父组件传入 redirectAfterSuccess）。
+ * 注册成功后保持登录态并立刻进入下一步（绑店 / from 回跳），不要求再点登录。
  */
 export function AuthPanel({
   mode,
@@ -39,8 +42,10 @@ export function AuthPanel({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [phase, setPhase] = useState<AuthPhase>("form");
   const [error, setError] = useState<string | null>(null);
+
+  const busy = phase !== "form";
 
   function errorMessage(err: unknown): string {
     if (err instanceof ApiError) {
@@ -60,24 +65,46 @@ export function AuthPanel({
     return t("auth.errorUnknown");
   }
 
+  async function ensureSessionAfterRegister(payload: {
+    email: string;
+    password: string;
+    name: string;
+  }) {
+    await register(payload);
+    // Register should set cookies; if rewrite/cookie edge case leaves session empty,
+    // immediately sign in with the same credentials so the next page is authenticated.
+    try {
+      await authApi.me();
+    } catch {
+      await login({ email: payload.email, password: payload.password });
+    }
+  }
+
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (submitting) return;
-    setSubmitting(true);
+    if (busy) return;
+    setPhase("submitting");
     setError(null);
+    const trimmedEmail = email.trim();
+    const trimmedName = name.trim();
     try {
       if (mode === "login") {
-        await login({ email: email.trim(), password });
+        await login({ email: trimmedEmail, password });
       } else {
-        await register({ name: name.trim(), email: email.trim(), password });
+        await ensureSessionAfterRegister({
+          name: trimmedName,
+          email: trimmedEmail,
+          password,
+        });
+        markJustRegistered();
       }
+      setPhase("success");
       const target = redirectAfterSuccess ?? localePath(locale, "/authorize");
       router.replace(target);
       router.refresh();
     } catch (err) {
       setError(errorMessage(err));
-    } finally {
-      setSubmitting(false);
+      setPhase("form");
     }
   }
 
@@ -107,10 +134,12 @@ export function AuthPanel({
                 key={tab.id}
                 type="button"
                 onClick={() => {
+                  if (busy) return;
                   onModeChange(tab.id);
                   setError(null);
                 }}
-                className="relative pb-3 text-sm font-medium transition"
+                disabled={busy}
+                className="relative pb-3 text-sm font-medium transition disabled:opacity-60"
                 style={{
                   color: mode === tab.id ? "var(--landing-cyan)" : "var(--landing-text-muted)",
                 }}
@@ -136,7 +165,26 @@ export function AuthPanel({
             </p>
           </div>
 
-          {/* 表单 */}
+          {phase === "success" ? (
+            <div
+              className="flex flex-col items-center gap-3 rounded-[var(--radius-control)] border border-[--landing-border] bg-white/5 px-4 py-8 text-center"
+              role="status"
+              aria-live="polite"
+            >
+              <CheckCircle2 className="h-8 w-8 text-[--landing-cyan]" aria-hidden />
+              <p className="text-sm font-medium text-[--landing-text]">
+                {mode === "register"
+                  ? t("auth.registerSuccessTitle")
+                  : t("auth.loginSuccessTitle")}
+              </p>
+              <p className="text-xs leading-5 text-[--landing-text-muted]">
+                {mode === "register"
+                  ? t("auth.registerSuccessRedirecting")
+                  : t("auth.loginSuccessRedirecting")}
+              </p>
+              <Loader2 className="mt-1 h-4 w-4 animate-spin text-[--landing-cyan]" aria-hidden />
+            </div>
+          ) : (
           <form onSubmit={onSubmit} className="space-y-4">
             {mode === "register" ? (
               <div>
@@ -152,7 +200,7 @@ export function AuthPanel({
                   placeholder={t("auth.namePlaceholder")}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  disabled={submitting}
+                  disabled={busy}
                   className="landing-input w-full px-3 py-2 text-sm"
                 />
               </div>
@@ -170,7 +218,7 @@ export function AuthPanel({
                 placeholder={t("auth.emailPlaceholder")}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={submitting}
+                disabled={busy}
                 className="landing-input w-full px-3 py-2 text-sm"
               />
             </div>
@@ -187,7 +235,7 @@ export function AuthPanel({
                 placeholder={t("auth.passwordPlaceholder")}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                disabled={submitting}
+                disabled={busy}
                 className="landing-input w-full px-3 py-2 text-sm"
               />
             </div>
@@ -197,6 +245,7 @@ export function AuthPanel({
                 <Link
                   href={localePath(locale, "/forgot-password")}
                   className="text-[11px] font-medium text-[--landing-cyan] hover:underline"
+                  tabIndex={busy ? -1 : undefined}
                 >
                   {t("auth.forgotPasswordLink")}
                 </Link>
@@ -209,14 +258,20 @@ export function AuthPanel({
 
             <button
               type="submit"
-              disabled={submitting}
-              className="landing-btn-primary w-full rounded-[var(--radius-control)] py-2.5 text-sm font-semibold"
+              disabled={busy}
+              className="landing-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] py-2.5 text-sm font-semibold"
             >
-              {submitting
-                ? t(mode === "login" ? "auth.loginSubmitting" : "auth.registerSubmitting")
-                : t(mode === "login" ? "auth.loginSubmit" : "auth.registerSubmit")}
+              {phase === "submitting" ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  {t(mode === "login" ? "auth.loginSubmitting" : "auth.registerSubmitting")}
+                </>
+              ) : (
+                t(mode === "login" ? "auth.loginSubmit" : "auth.registerSubmit")
+              )}
             </button>
           </form>
+          )}
         </div>
       </div>
     </div>

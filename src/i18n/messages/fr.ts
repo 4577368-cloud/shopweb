@@ -301,6 +301,10 @@ export const fr: Dictionary = {
     registerSubmitting: "Création…",
     registerSubtitle: "Créez un compte Tangbuy.",
     registerTitle: "Créer un compte",
+    registerSuccessTitle: "Compte créé",
+    registerSuccessRedirecting: "Vous êtes connecté — passage à l’étape suivante…",
+    loginSuccessTitle: "Connexion réussie",
+    loginSuccessRedirecting: "Ouverture de votre espace de travail…",
     rememberPassword: "Vous vous souvenez de votre mot de passe ?",
     resetPasswordRedirecting: "Redirection vers la connexion…",
     resetPasswordSubmit: "Réinitialiser",
@@ -592,6 +596,9 @@ export const fr: Dictionary = {
     connectShop: "Connect Shopify Boutique",
     connectSubtitle: "Authorize via official Shopify OAuth — scoped to products and orders we need for sourcing.",
     connectTitle: "Connect your Boutique",
+    welcomeRegisterTitle: "Bienvenue sur Tangbuy",
+    welcomeRegisterDesc:
+      "Votre compte est prêt. Connectez ensuite votre boutique Shopify pour démarrer le sourcing.",
     copilotDoneNextAction: "Go to Liens produits",
     copilotDoneNextDescEmpty: "Image-Rechercher and link Tangbuy Sources for live Produits.",
     copilotDoneNextDescLinked: "{{count}} Sources linked — review or replace.",
@@ -1093,6 +1100,9 @@ export const fr: Dictionary = {
     loginFirstTitle: "Connectez-vous / inscrivez-vous d'abord sur Tangbuy",
     loginFirstDesc:
       "Votre boutique Shopify est liée à votre compte Tangbuy. L'autorisation ne peut pas aboutir sans connexion.",
+    welcomeRegisterTitle: "Inscription réussie — vous êtes connecté",
+    welcomeRegisterDesc:
+      "Cliquez sur Connecter la boutique ci-dessous pour terminer l’autorisation Shopify et continuer.",
     navLogin: "Connexion",
     navRegister: "Inscription gratuite",
     waitAuth: "Vérification de la connexion — réessayez de connecter dans un instant…",

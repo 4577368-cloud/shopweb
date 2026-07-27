@@ -44,6 +44,7 @@ import {
   setAuthorizeMirrorCache,
   isAuthorizeMirrorCacheFresh,
 } from "@/lib/authorize/authorize-mirror-cache";
+import { consumeJustRegistered } from "@/lib/auth/just-registered";
 import { localePath } from "@/i18n/LocaleLink";
 import { localeHtmlLang } from "@/i18n/config";
 import { cn } from "@/lib/utils";
@@ -100,7 +101,12 @@ function AuthorizePageContent() {
   const [mirrorProductCount, setMirrorProductCount] = useState<number | null>(
     null
   );
+  const [justRegistered, setJustRegistered] = useState(false);
   const syncAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    setJustRegistered(consumeJustRegistered());
+  }, []);
 
   useEffect(() => {
     if (shopDomainInput.trim()) {
@@ -433,6 +439,22 @@ function AuthorizePageContent() {
         }
       >
         <div className="space-y-4">
+          {justRegistered && phase === "unbound" ? (
+            <div
+              className="flex items-start gap-3 rounded-[var(--radius-card)] border border-brand/25 bg-brand/5 px-4 py-3"
+              role="status"
+            >
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden />
+              <div>
+                <p className="text-sm font-medium text-ink">
+                  {t("authorize.welcomeRegisterTitle")}
+                </p>
+                <p className="mt-0.5 text-xs leading-5 text-ink-muted">
+                  {t("authorize.welcomeRegisterDesc")}
+                </p>
+              </div>
+            </div>
+          ) : null}
           <section className="rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">
             <div className="border-b border-hairline px-5 py-4">
               <div className="flex items-center gap-2">

@@ -32,6 +32,7 @@ import { APP_FULL_NAME } from "@/lib/brand";
 import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
+import { consumeJustRegistered } from "@/lib/auth/just-registered";
 
 function InstallPageContent() {
   const { showToast } = useOnboarding();
@@ -44,6 +45,11 @@ function InstallPageContent() {
   const [handle, setHandle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
+  const [justRegistered, setJustRegistered] = useState(false);
+
+  useEffect(() => {
+    setJustRegistered(consumeJustRegistered());
+  }, []);
 
   const connectWithDomain = (raw: string) => {
     // Always remember the shop before any redirect so login / language switch can restore it.
@@ -219,6 +225,15 @@ function InstallPageContent() {
             </p>
 
             <div className="mt-6 max-w-lg space-y-2">
+              {justRegistered && !needsLogin ? (
+                <div
+                  className="rounded-[var(--radius-control)] border border-brand/25 bg-brand/5 px-3 py-2.5 text-[11px] leading-4 text-ink"
+                  role="status"
+                >
+                  <p className="font-medium">{t("install.welcomeRegisterTitle")}</p>
+                  <p className="mt-0.5 text-ink-muted">{t("install.welcomeRegisterDesc")}</p>
+                </div>
+              ) : null}
               {needsLogin ? (
                 <div className="rounded-[var(--radius-control)] border border-brand-accent/25 bg-brand-soft px-3 py-2.5 text-[11px] leading-4 text-ink">
                   <p className="font-medium">{t("install.loginFirstTitle")}</p>
