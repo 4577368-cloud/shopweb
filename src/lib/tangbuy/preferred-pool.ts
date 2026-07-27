@@ -112,19 +112,34 @@ async function submitPreferredPoolAdd(
         msg: browser.msg,
       };
     }
-    if (browser.status === "upstream_rejected") {
+    const browserErr = browser.error?.trim() ?? "";
+    const browserAuthFailed =
+      browser.httpStatus === 401 ||
+      browser.code === 401 ||
+      /认证失败|unauthorized|无法访问系统资源|token|login required/i.test(
+        browserErr
+      );
+
+    // 浏览器 JWT 过期/无效 → 回退服务端 TANGBUY_ADMIN_TOKEN
+    if (browserAuthFailed) {
+      if (typeof console !== "undefined") {
+        console.warn(
+          `[tangbuy/preferred-pool/add] browser token auth failed, falling back to server route: ${browserErr}`
+        );
+      }
+    } else if (browser.status === "upstream_rejected") {
+      // 业务拒绝（如获取不到商品信息）无需再打服务端
       logPoolAddDiagnostic(offerId, {
         error: browser.error,
         httpStatus: browser.httpStatus,
       });
       return { ok: false, status: "failed", error: browser.error };
-    }
-    if (browser.error && !/未配置/i.test(browser.error)) {
+    } else if (browserErr && !/未配置/i.test(browserErr)) {
       logPoolAddDiagnostic(offerId, {
-        error: browser.error,
+        error: browserErr,
         httpStatus: browser.httpStatus,
       });
-      return { ok: false, status: "failed", error: browser.error };
+      return { ok: false, status: "failed", error: browserErr };
     }
   }
 
@@ -185,6 +200,8 @@ export async function pollResolveGoodsIdAfterPool(input: {
   tangbuySkuId?: string | null;
   titleHint?: string | null;
   shopName?: string | null;
+  /** 仅做即时 admin 反查，不进入长轮询（前台用） */
+  quick?: boolean;
 }): Promise<ReturnType<typeof resolveInternalGoodsIdByOfferSku>> {
   const offerId = input.offerId1688.trim();
   const sku = input.tangbuySkuId?.trim();
@@ -195,6 +212,7 @@ export async function pollResolveGoodsIdAfterPool(input: {
     tangbuySkuId: input.tangbuySkuId,
   });
   if (adminImmediate) return adminImmediate;
+  if (input.quick) return null;
 
   for (const delay of POLL_DELAYS_MS) {
     if (delay > 0) await sleep(delay);
@@ -241,6 +259,7 @@ function mergePoolResolvedIdentity(
     resolvedAt: now,
     poolIngestStatus: poolStatus === "already_exists" ? "already_exists" : "resolved",
     poolIngestedAt: base.poolIngestedAt ?? now,
+    poolIngestError: null,
   };
 }
 
@@ -271,6 +290,7 @@ export async function resolveIdentityWithPreferredPool(
     offerId1688: offerId,
     poolIngestedAt: now,
     poolIngestStatus: pool.ok ? "pending_resolve" : pool.skipped ? "skipped" : "failed",
+    poolIngestError: pool.ok ? null : pool.error ?? pool.msg ?? null,
   };
 
   if (!pool.ok) {
@@ -366,6 +386,7 @@ export async function ensurePoolIngestForLogistics(input: {
         : pool.skipped
           ? "skipped"
           : "failed",
+      poolIngestError: pool.ok ? null : pool.error ?? pool.msg ?? null,
     };
     if (!pool.ok) {
       const adminHit = await resolveCatalogMatchViaAdminApi({
@@ -378,6 +399,7 @@ export async function ensurePoolIngestForLogistics(input: {
             ...withPool,
             poolIngestStatus: "already_exists",
             poolIngestedAt: withPool.poolIngestedAt ?? now,
+            poolIngestError: null,
           },
           adminHit,
           "already_exists"

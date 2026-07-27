@@ -54,11 +54,11 @@ export function BillingDrawer({
     async (paypalOrderId: string) => {
       const res: CapturePayPalOrderResponse = await billingApi.capturePayPalOrder(paypalOrderId);
       if (!res.success) {
-        throw new Error(res.errorCode || "capture failed");
+        throw new Error(t("ops.billing.errCapture"));
       }
       return res;
     },
-    []
+    [t]
   );
 
   const handleBuy = useCallback(
@@ -76,7 +76,7 @@ export function BillingDrawer({
           setPaypalHostCode(item.code);
           // 等待 React 渲染出独立的 host div
           await new Promise((r) => setTimeout(r, 50));
-          await loadPaypalSdk(PAYPAL_CLIENT_ID);
+          await loadPaypalSdk(PAYPAL_CLIENT_ID, t);
           const paypal = (window as any).paypal;
           if (paypal && paypalHostRef.current) {
             paypal
@@ -88,8 +88,8 @@ export function BillingDrawer({
                   setPaypalHostCode(null);
                   onPurchased?.();
                 },
-                onError: (err: unknown) => {
-                  setError(String(err));
+                onError: () => {
+                  setError(t("ops.billing.errCapture"));
                   setPaypalHostCode(null);
                 },
               })
@@ -190,7 +190,7 @@ export function BillingDrawer({
 }
 
 let sdkPromise: Promise<void> | null = null;
-function loadPaypalSdk(clientId: string): Promise<void> {
+function loadPaypalSdk(clientId: string, t: (key: string) => string): Promise<void> {
   if (typeof window === "undefined") return Promise.resolve();
   if ((window as any).paypal) return Promise.resolve();
   if (sdkPromise) return sdkPromise;
@@ -198,7 +198,7 @@ function loadPaypalSdk(clientId: string): Promise<void> {
     const s = document.createElement("script");
     s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=USD`;
     s.onload = () => resolve();
-    s.onerror = () => reject(new Error("PayPal SDK load failed"));
+    s.onerror = () => reject(new Error(t("ops.billing.errSdkLoad")));
     document.body.appendChild(s);
   });
   return sdkPromise;

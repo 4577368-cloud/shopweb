@@ -24,6 +24,10 @@ import {
 } from "@/lib/recommended-categories";
 import type { ScanHandoffPayload } from "@/lib/scan/handoff";
 import type { ImageBindingView, PricingTemplate, ShopMirrorProduct } from "@/lib/types";
+import {
+  isShopifyLinkedProduct,
+  isTangbuyListedProduct,
+} from "@/lib/products/catalog-scope";
 import type { ProductsPagePhase } from "@/hooks/use-products-entry";
 import type { LoadSummaryFn } from "@/hooks/use-products-entry";
 
@@ -52,6 +56,7 @@ export interface UseProductsAgentRailParams {
   focusCandidates: CandidateSummary[];
   shopProducts: ShopMirrorProduct[];
   bindingsMap: Record<string, ImageBindingView>;
+  visiblePageProductIds?: string[];
   scanHandoff: ScanHandoffPayload | null;
   shopCurrencyHint: string | null;
   pendingMinis: import("@/lib/agents/products/shop-minis").ShopProductMini[];
@@ -104,6 +109,7 @@ export function useProductsAgentRail(params: UseProductsAgentRailParams) {
     focusCandidates,
     shopProducts,
     bindingsMap,
+    visiblePageProductIds = [],
     scanHandoff,
     shopCurrencyHint,
     pendingMinis,
@@ -142,14 +148,26 @@ export function useProductsAgentRail(params: UseProductsAgentRailParams) {
         if (binding?.bound) {
           bindState = binding.bindStatus === "PENDING" ? "pending" : "confirmed";
         }
+        let origin: "linked" | "listed" | null = null;
+        if (
+          isTangbuyListedProduct(binding, shopName, p.thirdPlatformItemId)
+        ) {
+          origin = "listed";
+        } else if (
+          isShopifyLinkedProduct(binding, shopName, p.thirdPlatformItemId)
+        ) {
+          origin = "linked";
+        }
         return {
           productId: p.thirdPlatformItemId,
           title: (p.title ?? "").trim() || p.thirdPlatformItemId,
           bindState,
           shopStatus: p.status,
+          origin,
+          updatedAt: p.updatedAt ?? null,
         };
       }),
-    [shopProducts, bindingsMap]
+    [shopProducts, bindingsMap, shopName]
   );
 
   const pageContext = useMemo(
@@ -175,6 +193,7 @@ export function useProductsAgentRail(params: UseProductsAgentRailParams) {
         focusProduct: focusProductSnapshot,
         focusCandidates,
         productCatalog,
+        visiblePageProductIds,
         scanHandoff,
         shopCurrencyHint,
         t,
@@ -198,6 +217,7 @@ export function useProductsAgentRail(params: UseProductsAgentRailParams) {
       focusProductSnapshot,
       focusCandidates,
       productCatalog,
+      visiblePageProductIds,
       scanHandoff,
       shopCurrencyHint,
       t,

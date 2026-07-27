@@ -482,7 +482,6 @@ function OperationsCenterContent() {
           <AiImageSearch
             run={run}
             walletBalance={wallet?.balanceCredits ?? null}
-            onOpenDetail={handleViewDetail}
             onFollowStore={handleFollowStore}
             onViewStore={handleViewStore}
           />

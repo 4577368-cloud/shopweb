@@ -36,6 +36,7 @@ import {
   AccountSignInState,
 } from "@/components/account/account-primitives";
 import {
+  AccountLedgerTable,
   AccountPagination,
   AccountSegmentedFilter,
   AccountStatItem,
@@ -463,57 +464,102 @@ export default function AccountCreditsPage() {
             <AccountEmptyState message={t("accountCredits.transactionsEmpty")} />
           ) : (
             <>
-              <ul className="divide-y divide-surface-border">
-                {transactions.map((tx) => (
-                  <li key={tx.id} className="py-2.5">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <CreditTxTypeTag type={tx.type} t={t} />
-                          {tx.endpoint ? (
-                            <code className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                              {tx.endpoint}
-                            </code>
-                          ) : null}
-                          {tx.bucket ? <LotSourceTag source={tx.bucket} t={t} /> : null}
-                          {tx.upstreamCredits ? (
-                            <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
-                              {t("accountCredits.colUpstream")}: {tx.upstreamCredits}
-                            </span>
-                          ) : null}
-                          <span className="text-[10px] text-muted-foreground/80">
-                            {fmtDate(locale, tx.createdAt)}
-                          </span>
-                        </div>
-                        {tx.remark ? (
-                          <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={tx.remark}>
+              <AccountLedgerTable
+                columns={[
+                  {
+                    key: "time",
+                    header: t("accountCommon.ledgerCols.time"),
+                    render: (tx) => (
+                      <span className="text-muted-foreground">
+                        {fmtDate(locale, tx.createdAt)}
+                      </span>
+                    ),
+                    sortValue: (tx) => tx.createdAt,
+                    sortable: true,
+                  },
+                  {
+                    key: "type",
+                    header: t("accountCommon.ledgerCols.type"),
+                    render: (tx) => <CreditTxTypeTag type={tx.type} t={t} />,
+                  },
+                  {
+                    key: "endpoint",
+                    header: t("accountCommon.ledgerCols.endpoint"),
+                    render: (tx) =>
+                      tx.endpoint ? (
+                        <code className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                          {tx.endpoint}
+                        </code>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      ),
+                  },
+                  {
+                    key: "bucket",
+                    header: t("accountCommon.ledgerCols.bucket"),
+                    render: (tx) =>
+                      tx.bucket ? <LotSourceTag source={tx.bucket} t={t} /> : (
+                        <span className="text-muted-foreground/50">—</span>
+                      ),
+                  },
+                  {
+                    key: "amount",
+                    header: t("accountCommon.ledgerCols.amount"),
+                    align: "right",
+                    render: (tx) => (
+                      <span
+                        className={cn(
+                          "font-semibold tabular-nums",
+                          tx.amount >= 0 ? "text-brand-accent" : "text-foreground"
+                        )}
+                      >
+                        {tx.amount >= 0 ? "+" : ""}
+                        {tx.amount}
+                      </span>
+                    ),
+                    sortValue: (tx) => tx.amount,
+                    sortable: true,
+                  },
+                  {
+                    key: "balance",
+                    header: t("accountCommon.ledgerCols.balance"),
+                    align: "right",
+                    render: (tx) => (
+                      <span className="tabular-nums text-muted-foreground">
+                        {tx.balanceAfter}
+                      </span>
+                    ),
+                    sortValue: (tx) => tx.balanceAfter,
+                    sortable: true,
+                  },
+                  {
+                    key: "note",
+                    header: t("accountCommon.ledgerCols.note"),
+                    render: (tx) => {
+                      if (tx.remark) {
+                        return (
+                          <span className="text-muted-foreground" title={tx.remark}>
                             {tx.remark}
-                          </p>
-                        ) : null}
-                        {tx.refId ? (
-                          <p className="mt-0.5 text-[10px] text-muted-foreground/80">
-                            {tx.refType ?? ""} · {tx.refId}
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="text-right">
-                        <p
-                          className={cn(
-                            "text-[13px] font-semibold tabular-nums",
-                            tx.amount >= 0 ? "text-brand-accent" : "text-foreground"
-                          )}
-                        >
-                          {tx.amount >= 0 ? "+" : ""}
-                          {tx.amount}
-                        </p>
-                        <p className="text-[10px] tabular-nums text-muted-foreground/80">
-                          {t("accountCredits.balanceAfterPlatform")}: {tx.balanceAfter}
-                        </p>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                          </span>
+                        );
+                      }
+                      if (tx.refId) {
+                        return (
+                          <span className="text-muted-foreground/80">
+                            {tx.refType ? `${tx.refType} · ` : ""}
+                            {tx.refId}
+                          </span>
+                        );
+                      }
+                      return <span className="text-muted-foreground/50">—</span>;
+                    },
+                  },
+                ]}
+                rows={transactions}
+                rowKey={(tx) => String(tx.id)}
+                zebra
+                minWidth="900px"
+              />
               <AccountPagination
                 offset={txOffset}
                 total={txTotal}
@@ -569,42 +615,98 @@ export default function AccountCreditsPage() {
             <AccountEmptyState message={t("accountCredits.lotsEmpty")} />
           ) : (
             <>
-              <ul className="divide-y divide-surface-border">
-                {lots.map((lot) => (
-                  <li key={lot.id} className="py-3">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <LotSourceTag source={lot.sourceType} t={t} />
-                          <span className="text-[10px] text-muted-foreground/80">
-                            {fmtDate(locale, lot.createdAt)}
-                          </span>
-                          {lot.expiresAt ? (
-                            <span className="text-[10px] text-muted-foreground/80">
-                              · {t("accountCredits.expiresAt")} {fmtDate(locale, lot.expiresAt)}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-muted-foreground sm:grid-cols-4">
-                          <Detail label={t("accountCredits.lotGranted")} value={lot.amountGranted} />
-                          <Detail label={t("accountCredits.lotConsumed")} value={lot.amountConsumed} />
-                          <Detail label={t("accountCredits.lotExpired")} value={lot.amountExpired} />
-                          <Detail label={t("accountCredits.lotRemaining")} value={lot.remaining} />
-                        </div>
-                        {/* Consumption progress bar */}
-                        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <AccountLedgerTable
+                columns={[
+                  {
+                    key: "source",
+                    header: t("accountCommon.ledgerCols.source"),
+                    render: (lot) => <LotSourceTag source={lot.sourceType} t={t} />,
+                  },
+                  {
+                    key: "granted",
+                    header: t("accountCommon.ledgerCols.granted"),
+                    align: "right",
+                    render: (lot) => (
+                      <span className="tabular-nums text-muted-foreground">
+                        {lot.amountGranted}
+                      </span>
+                    ),
+                    sortValue: (lot) => lot.amountGranted,
+                    sortable: true,
+                  },
+                  {
+                    key: "consumed",
+                    header: t("accountCommon.ledgerCols.consumed"),
+                    align: "right",
+                    render: (lot) => (
+                      <span className="tabular-nums text-muted-foreground">
+                        {lot.amountConsumed}
+                      </span>
+                    ),
+                    sortValue: (lot) => lot.amountConsumed,
+                    sortable: true,
+                  },
+                  {
+                    key: "expired",
+                    header: t("accountCommon.ledgerCols.expired"),
+                    align: "right",
+                    render: (lot) => (
+                      <span className="tabular-nums text-muted-foreground">
+                        {lot.amountExpired}
+                      </span>
+                    ),
+                    sortValue: (lot) => lot.amountExpired,
+                    sortable: true,
+                  },
+                  {
+                    key: "remaining",
+                    header: t("accountCommon.ledgerCols.remaining"),
+                    align: "right",
+                    render: (lot) => (
+                      <span className="font-semibold tabular-nums">
+                        {lot.remaining}
+                      </span>
+                    ),
+                    sortValue: (lot) => lot.remaining,
+                    sortable: true,
+                  },
+                  {
+                    key: "progress",
+                    header: t("accountCommon.ledgerCols.progress"),
+                    render: (lot) => (
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
                           <div
                             className="h-full bg-brand-accent"
-                            style={{
-                              width: `${pctConsumed(lot)}%`,
-                            }}
+                            style={{ width: `${pctConsumed(lot)}%` }}
                           />
                         </div>
+                        <span className="text-[10px] tabular-nums text-muted-foreground">
+                          {pctConsumed(lot)}%
+                        </span>
                       </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    ),
+                  },
+                  {
+                    key: "expiresAt",
+                    header: t("accountCommon.ledgerCols.expiresAt"),
+                    render: (lot) =>
+                      lot.expiresAt ? (
+                        <span className="text-muted-foreground">
+                          {fmtDate(locale, lot.expiresAt)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      ),
+                    sortValue: (lot) => lot.expiresAt ?? "",
+                    sortable: true,
+                  },
+                ]}
+                rows={lots}
+                rowKey={(lot) => String(lot.id)}
+                zebra
+                minWidth="780px"
+              />
               <AccountPagination
                 offset={lotOffset}
                 total={lotTotal}
@@ -737,9 +839,8 @@ function readError(err: unknown, t: (key: string, params?: Record<string, string
   if (err instanceof ApiError) {
     if (err.status === 0) return t("auth.errorNetwork");
     if (err.status === 401) return t("accountCredits.errorUnauthenticated");
-    return err.message;
+    return t("auth.errorUnknown");
   }
-  if (err instanceof Error) return err.message;
   return t("auth.errorUnknown");
 }
 

@@ -834,7 +834,7 @@ function RankTable({
                     <span className="text-ink">{fmtUsd(row.usdPrice)}</span>
                     <span className="text-ink-subtle">{row.currency}</span>
                     {row.isCollection && (
-                      <span className="rounded bg-brand-soft px-1 text-[10px] text-brand">合集</span>
+                      <span className="rounded bg-brand-soft px-1 text-[10px] text-brand">{t("ops.discovery.board.collection")}</span>
                     )}
                   </p>
                 </div>

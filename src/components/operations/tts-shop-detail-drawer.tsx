@@ -62,7 +62,7 @@ export function TtsShopDetailDrawer({
                   : "text-ink-subtle hover:text-amber-300"
               )}
             >
-              {isFavorited ? "★ 已收藏" : "☆ 收藏"}
+              {isFavorited ? t("ops.discovery.tts.favoriteRemove") : t("ops.discovery.tts.favoriteAdd")}
             </button>
             <div className="flex items-center gap-2">
               <Button variant="secondary" size="sm" onClick={onClose}>

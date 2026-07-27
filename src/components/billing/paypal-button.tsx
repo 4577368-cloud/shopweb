@@ -24,6 +24,7 @@ import {
   usePayPalScriptReducer,
 } from "@paypal/react-paypal-js";
 import { billingApi, type CapturePayPalOrderResponse, type PayPalPurpose } from "@/lib/billing/api";
+import { useT } from "@/i18n/LocaleProvider";
 
 export interface PayPalButtonProps {
   /** 用途：order_payment（订单支付）/ balance_recharge（余额充值） */
@@ -50,6 +51,7 @@ const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || "";
 const PAYPAL_SANDBOX = process.env.NEXT_PUBLIC_PAYPAL_SANDBOX !== "false";
 
 export function PayPalScriptWrapper({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const options = useMemo(
     () => ({
       clientId: PAYPAL_CLIENT_ID || "test",
@@ -62,7 +64,7 @@ export function PayPalScriptWrapper({ children }: { children: React.ReactNode })
   if (!PAYPAL_CLIENT_ID) {
     return (
       <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-[11px] text-amber-700">
-        PayPal 未配置：请在 .env.local 设置 NEXT_PUBLIC_PAYPAL_CLIENT_ID
+        {t("billing.paypalNotConfigured")}
       </div>
     );
   }
@@ -84,12 +86,13 @@ export function PayPalButton({
   onCancel,
   onError,
 }: PayPalButtonProps) {
+  const t = useT();
   const [{ isPending, isRejected }] = usePayPalScriptReducer();
 
   if (!PAYPAL_CLIENT_ID) {
     return (
       <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-[11px] text-amber-700">
-        PayPal 未配置：请在 .env.local 设置 NEXT_PUBLIC_PAYPAL_CLIENT_ID
+        {t("billing.paypalNotConfigured")}
       </div>
     );
   }
@@ -97,7 +100,7 @@ export function PayPalButton({
   if (isPending) {
     return (
       <div className="flex h-11 items-center justify-center rounded-md bg-neutral-100 text-[12px] text-neutral-500">
-        PayPal 加载中…
+        {t("billing.paypalLoading")}
       </div>
     );
   }
@@ -105,7 +108,7 @@ export function PayPalButton({
   if (isRejected) {
     return (
       <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-[11px] text-destructive">
-        PayPal SDK 加载失败（检查网络或 Client ID）
+        {t("billing.paypalLoadFailed")}
       </div>
     );
   }
@@ -125,8 +128,7 @@ export function PayPalButton({
           });
           return resp.paypalOrderId;
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          onError?.(msg);
+          onError?.(t("billing.paypalCreateFailed"));
           throw err;
         }
       }}
@@ -136,19 +138,17 @@ export function PayPalButton({
           if (result.success) {
             onSuccess(result);
           } else {
-            onError?.(result.errorCode || "Capture failed");
+            onError?.(t("billing.paypalCaptureFailed"));
           }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          onError?.(msg);
+        } catch {
+          onError?.(t("billing.paypalCaptureFailed"));
         }
       }}
       onCancel={() => {
         onCancel?.();
       }}
-      onError={(err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        onError?.(msg);
+      onError={() => {
+        onError?.(t("billing.paypalCaptureFailed"));
       }}
     />
   );

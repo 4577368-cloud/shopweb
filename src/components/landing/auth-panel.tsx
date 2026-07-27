@@ -55,7 +55,7 @@ export function AuthPanel({
         if (code === "INVALID_EMAIL") return t("auth.errorInvalidEmail");
       }
       if (err.status === 0) return t("auth.errorNetwork");
-      return err.message;
+      return t("auth.errorUnknown");
     }
     return t("auth.errorUnknown");
   }

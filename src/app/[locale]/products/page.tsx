@@ -46,6 +46,10 @@ import {
   buildProductFocusSnapshot,
 } from "@/lib/agents/products/product-focus-snapshot";
 import { deriveRecommendedCategories } from "@/lib/recommended-categories";
+import {
+  countCatalogScopes,
+  type CatalogScope,
+} from "@/lib/products/catalog-scope";
 import type { AiPanelContent } from "@/lib/types";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
@@ -141,6 +145,7 @@ function SelectContent() {
     setPageLinkableScope,
     batchLinkActive,
     pageLinkableCount,
+    pageLinkableScope,
     handleBatchLinkProgressChange,
     hasNewProductsToLink,
     newLinkableIds,
@@ -166,6 +171,7 @@ function SelectContent() {
     bumpMirrorRefresh,
     refreshProductsQuietly,
     refreshMirrorFromServer,
+    syncAndRefreshMirror,
   } = useProductsMirror({
     shopName,
     shopMirrorKey,
@@ -182,7 +188,6 @@ function SelectContent() {
     scanHandoff,
     finishToResult,
     exitScanToProducts,
-    restartScan,
   } = useProductsEntry({
     shopName,
     shopMirrorKey,
@@ -203,6 +208,40 @@ function SelectContent() {
   );
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [catalogScope, setCatalogScope] = useState<CatalogScope>("all");
+  const [listRefreshing, setListRefreshing] = useState(false);
+
+  const handleRefreshList = useCallback(async () => {
+    if (listRefreshing || batchLinkActive) return;
+    setListRefreshing(true);
+    try {
+      const result = await syncAndRefreshMirror();
+      if (result) {
+        showToast(
+          t("sourcing.refreshDone", { count: result.productCount })
+        );
+      }
+    } catch (err) {
+      showToast(
+        t("sourcing.refreshFailed", {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
+    } finally {
+      setListRefreshing(false);
+    }
+  }, [
+    batchLinkActive,
+    listRefreshing,
+    showToast,
+    syncAndRefreshMirror,
+    t,
+  ]);
+
+  const scopeCounts = useMemo(
+    () => countCatalogScopes(shopProducts, bindingsMap, shopName),
+    [shopProducts, bindingsMap, shopName]
+  );
 
   const { displaySummary, pendingCount, analyzed, matched, unbound } = useMemo(
     () => selectProductsDisplayMetrics(summary, shopMirrorKey),
@@ -250,6 +289,7 @@ function SelectContent() {
     focusCandidates,
     shopProducts,
     bindingsMap,
+    visiblePageProductIds: pageLinkableScope.visibleIds,
     scanHandoff,
     shopCurrencyHint,
     pendingMinis,
@@ -318,19 +358,17 @@ function SelectContent() {
   );
 
   const shopTab = useProductsShopTabProps({
-    displaySummaryReady: displaySummary != null,
-    displaySummaryShopProducts: displaySummary?.shopProducts ?? 0,
-    matched,
-    pendingCount,
-    unbound,
     pendingNewAnalysisCount: newArrivalStats.pendingNewAnalysisCount,
     pendingNewAnalysisIds: newArrivalStats.pendingNewAnalysisIds,
-    recommendedCategories,
-    restartScan,
+    catalogScope,
+    setCatalogScope,
+    scopeCounts,
     setShopFilter,
     hasNewProductsToLink,
     enqueueNewArrivalsBatchLink,
     batchLinkActive,
+    listRefreshing,
+    onRefreshList: () => void handleRefreshList(),
     refreshProductsQuietly,
     shopFilter,
     commitAnalysisBaseline,

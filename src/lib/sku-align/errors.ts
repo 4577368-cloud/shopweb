@@ -6,7 +6,7 @@ import { isOfferNotFoundMessage } from "@/lib/batch-link/match-errors";
 export function mapSkuAlignError(err: unknown, t?: TranslateFn): string {
   let raw = "";
   if (err instanceof ApiError) {
-    if (err.status === 0) return err.message;
+    if (err.status === 0) return t?.("auth.errorNetwork") ?? "Network error";
     const body = err.body as { message?: string } | undefined;
     raw = body?.message ?? err.message;
     const colonIdx = raw.indexOf("：");
@@ -51,5 +51,5 @@ export function mapSkuAlignError(err: unknown, t?: TranslateFn): string {
   if (raw.startsWith("SUPPLEMENT_SAME_AS_PRIMARY")) {
     return t?.("skuBinding.errSupplementSame") ?? "SUPPLEMENT_SAME_AS_PRIMARY";
   }
-  return raw || (t?.("skuBinding.errSaveFailed") ?? "SAVE_FAILED");
+  return t?.("skuBinding.errSaveFailed") ?? "SAVE_FAILED";
 }

@@ -2810,6 +2810,11 @@ export const en = {
       button: "Recharge",
       success: "Recharge successful",
     },
+    paypalNotConfigured: "PayPal is not configured. Contact support to enable recharge.",
+    paypalLoading: "Loading PayPal…",
+    paypalLoadFailed: "PayPal failed to load. Refresh and try again.",
+    paypalCreateFailed: "Could not create the payment order. Try again later.",
+    paypalCaptureFailed: "Payment confirmation failed. Try again or contact support.",
   },
   order: {
     payMethodBalance: "Balance",

@@ -7,6 +7,7 @@ import {
   fetchCompetitionProductsReal,
   fetchCompetitionReal,
   fetchCreditsBalanceReal,
+  fetchImageSearchReal,
   fetchProductDossierReal,
   fetchRankListReal,
   fetchSearchAdsReal,
@@ -171,11 +172,16 @@ function persistAccount(acc: MockAccount) {
   }
 }
 // 真实计费口径（用户确认：pipispy 按"每次有效调用"计费，普通接口 1 次调用 = 1 点）。
-// 以图搜 v1.5 真实为 submit+status+result 三步流程 = 3 点（硬事实）。
-// 用户要求"都按真实计算"：mock 阶段即按真实点数计（不再用 1 点兜底），真实模式由业务响应
-// 的 consumed_credits 决定，账本一律以响应为准。
+// 以图搜真实为 submit+status+resultSummary+product/search 编排，按 product/search 实际返回条数
+// 计费（1 点/条）+ 编排步；服务端估计下界 = (pageSize+3)*2（×2 到用户钱包）。
+// 用户要求"都按真实计算"：真实模式由业务响应 consumed_credits 决定，账本一律以响应为准。
 export const CREDIT_PER_CALL = 1;
 export const IMAGE_SEARCH_CREDITS = 3;
+
+/** 以图搜预估消耗（与服务端同公式）：(pageSize+3)*2，pageSize 默认 4。 */
+export function imageSearchEstimate(pageSize = 4): number {
+  return (Math.min(Math.max(pageSize, 1), 50) + 3) * 2;
+}
 
 /** 按接口返回真实消耗点数（mock 与真实口径一致）。 */
 export function realCostFor(endpoint: string): number {
@@ -595,17 +601,25 @@ export async function fetchAdDetail(id: string): Promise<MarketingResponse<AdDet
   };
 }
 
-// --- 以图搜（v1.5 submit/status/result-summary，mock）---
+// --- 以图搜（真实走后端编排端点 /api/plugin/marketing/ai-search-image；mock 仅原型）---
 export async function fetchImageSearch(
-  imageFile: File,
-  page = 1
+  opts: { imageFile?: File | null; imageUrl?: string | null; page?: number; pageSize?: number }
 ): Promise<MarketingResponse<{ list: ImageSearchResult[]; page: PageMeta }>> {
+  if (!USE_MOCK) {
+    return fetchImageSearchReal({
+      imageUrl: opts.imageUrl ?? undefined,
+      file: opts.imageFile,
+      page: opts.page,
+      pageSize: opts.pageSize,
+    });
+  }
   // v1 mock：仅读取文件名用于日志；后端接通后应把 File 通过 FormData 上传，
   // 或先上传到对象存储再拿 URL 调 pipispy 以图搜图接口。
-  void imageFile.name;
+  void opts.imageFile?.name;
   await delay(700);
+  const pageSize = opts.pageSize ?? 12;
+  const page = opts.page ?? 1;
   const all = makeImageResults(24);
-  const pageSize = 12;
   const start = (page - 1) * pageSize;
   const sliced = all.slice(start, start + pageSize);
   const consumed = IMAGE_SEARCH_CREDITS;

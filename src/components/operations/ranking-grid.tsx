@@ -10,17 +10,27 @@ import { cn } from "@/lib/utils";
 import { fmtGrowthRate, fmtInt, fmtPercent, fmtUsd } from "@/lib/marketing/format";
 import type { RankingRow } from "@/lib/marketing/types";
 
-/** 榜单类目来自上游中文标签，不做四语言 i18n（避免 Missing translation key）。 */
-export function tCategory(name: string | null | undefined): string {
-  return name?.trim() || "";
+/** 榜单类目：上游中文标签 → i18n 翻译（ops.discovery.board.category.{中文名}）。 */
+export function tCategory(
+  name: string | null | undefined,
+  t: (key: string) => string
+): string {
+  const raw = name?.trim() || "";
+  if (!raw) return "";
+  const translated = t(`ops.discovery.board.category.${raw}`);
+  // i18n 找不到时返回 key 本身（含命名空间前缀），此时回退原始中文
+  return translated.startsWith("ops.") ? raw : translated;
 }
 
-/** 类目路径 "L1 > L2 > L3" 原样展示（上游中文）。 */
-export function tCategoryPath(path: string | null | undefined): string {
+/** 类目路径 "L1 > L2 > L3" 逐段翻译。 */
+export function tCategoryPath(
+  path: string | null | undefined,
+  t: (key: string) => string
+): string {
   if (!path) return "";
   return path
     .split(/\s*>\s*/)
-    .map((seg) => tCategory(seg))
+    .map((seg) => tCategory(seg, t))
     .filter(Boolean)
     .join(" > ");
 }
@@ -171,7 +181,7 @@ export function RankingCard({ row, onClick }: { row: RankingRow; onClick?: () =>
         )}
         {row.categoryL1 && (
           <span className="absolute right-2 top-2 max-w-[60%] truncate rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white">
-            {tCategory(row.categoryL1)}
+            {tCategory(row.categoryL1, t)}
           </span>
         )}
       </div>
@@ -294,7 +304,7 @@ export function RankingDetailDrawer({
                 <span className="rounded bg-black/55 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-white">#{row.rankNo}</span>
               )}
               {row.categoryL1 && (
-                <span className="truncate rounded bg-surface-muted px-1.5 py-0.5 text-[10px] text-ink-subtle">{tCategory(row.categoryL1)}</span>
+                <span className="truncate rounded bg-surface-muted px-1.5 py-0.5 text-[10px] text-ink-subtle">{tCategory(row.categoryL1, t)}</span>
               )}
             </div>
             <p className="mt-1 text-[13px] font-medium leading-snug text-ink">{row.productTitle}</p>
@@ -369,7 +379,7 @@ export function RankingDetailDrawer({
           {row.categoryPath && (
             <div>
               <p className="mb-0.5 text-[10px] text-ink-subtle">{t("ops.discovery.board.categoryPath")}</p>
-              <p className="text-[12px] text-ink">{tCategoryPath(row.categoryPath)}</p>
+              <p className="text-[12px] text-ink">{tCategoryPath(row.categoryPath, t)}</p>
             </div>
           )}
         </div>

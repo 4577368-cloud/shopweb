@@ -61,7 +61,7 @@ export function mapImageMatchConfirmError(
   if (raw.startsWith("AOP_TOKEN_INVALID")) {
     return "货源授权已失效，请重新授权后重试";
   }
-  return raw;
+  return fallback;
 }
 
 export function mapImageSearchError(err: unknown): string {
@@ -93,7 +93,7 @@ export function mapImageSearchError(err: unknown): string {
   if (raw.startsWith("GATEWAY_BUSY")) {
     return "Tangbuy 货源网关繁忙或限流，请稍后重试";
   }
-  return raw || "图搜失败";
+  return "图搜失败，请稍后重试";
 }
 
 /** Short, UI-safe image-search message (no raw URLs or machine codes). */

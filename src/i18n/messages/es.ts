@@ -2806,6 +2806,13 @@ export const es: Dictionary = {
       button: "Recargar",
       success: "Recarga exitosa",
     },
+    paypalNotConfigured:
+      "PayPal no está configurado. Contacta a soporte para habilitar la recarga.",
+    paypalLoading: "Cargando PayPal…",
+    paypalLoadFailed: "No se pudo cargar PayPal. Actualiza e inténtalo de nuevo.",
+    paypalCreateFailed: "No se pudo crear la orden de pago. Inténtalo más tarde.",
+    paypalCaptureFailed:
+      "La confirmación del pago falló. Inténtalo de nuevo o contacta a soporte.",
   },
   order: {
     payMethodBalance: "Saldo",

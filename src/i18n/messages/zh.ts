@@ -2797,6 +2797,11 @@ export const zh: Dictionary = {
       button: "充值",
       success: "充值成功",
     },
+    paypalNotConfigured: "PayPal 尚未配置，请联系客服开通充值。",
+    paypalLoading: "正在加载 PayPal…",
+    paypalLoadFailed: "PayPal 加载失败，请刷新后重试。",
+    paypalCreateFailed: "创建支付订单失败，请稍后重试。",
+    paypalCaptureFailed: "支付确认失败，请稍后重试或联系客服。",
   },
   order: {
     payMethodBalance: "余额",

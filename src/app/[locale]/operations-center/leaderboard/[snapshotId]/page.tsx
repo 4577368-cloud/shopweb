@@ -261,7 +261,7 @@ function LeaderboardContent({
               <option value="all">{t("ops.discovery.board.allCategories")}</option>
               {categories.map((c) => (
                 <option key={c} value={c}>
-                  {tCategory(c)}
+                  {tCategory(c, t)}
                 </option>
               ))}
             </select>
@@ -346,7 +346,7 @@ function RankingCard({ row, onClick }: { row: RankingRow; onClick?: () => void }
         )}
         {row.categoryL1 && (
           <span className="absolute right-2 top-2 max-w-[60%] truncate rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white">
-            {tCategory(row.categoryL1)}
+            {tCategory(row.categoryL1, t)}
           </span>
         )}
       </div>

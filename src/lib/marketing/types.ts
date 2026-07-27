@@ -545,15 +545,26 @@ export interface TtsShopParams {
 /** 平台筛选（发现/素材共用）。 */
 export type PlatformFilter = "all" | "tiktok" | "facebook" | "meta";
 
-/** 以图搜结果（v1.5 submit/status/result-summary，mock）。 */
+/** 以图搜结果（submit/status/resultSummary + product/search，真实富字段）。 */
 export interface ImageSearchResult {
   id: string;
   image: string;
   title: string;
   platform: AdPlatform;
   usdPrice: number;
-  similarity: number; // 0..1
+  similarity: number; // 0..1（真实 product/search 不回传相似度，默认 0）
   store: string;
+  // 真实 product/search 富字段（可选；mock 可不填）
+  price?: number | null;
+  currency?: string | null;
+  playCount?: number | null;
+  diggCount?: number | null;
+  commentCount?: number | null;
+  shareCount?: number | null;
+  videoCount?: number | null;
+  putDays?: number | null;
+  popularPersonCount?: number | null;
+  adPlatformList?: string[] | null;
 }
 
 // --- TikTok 商品榜单（tangbuy-plugin /api/plugin/ranking，真实落库，非 pipispy）---

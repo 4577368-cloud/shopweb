@@ -250,8 +250,7 @@ function readError(err: unknown, t: (key: string, params?: Record<string, string
     if (code === "WRONG_PASSWORD") return t("accountSecurity.errorWrongPassword");
     if (code === "SAME_PASSWORD") return t("accountSecurity.errorSamePassword");
     if (code === "WEAK_PASSWORD") return t("accountSecurity.errorWeak");
-    return err.message;
+    return t("auth.errorUnknown");
   }
-  if (err instanceof Error) return err.message;
   return t("auth.errorUnknown");
 }

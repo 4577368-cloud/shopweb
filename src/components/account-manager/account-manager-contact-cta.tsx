@@ -9,6 +9,7 @@ import {
 } from "@/lib/account-manager/config";
 import { useT } from "@/i18n/LocaleProvider";
 import { cn } from "@/lib/utils";
+import { openChatwoot } from "@/components/chatwoot/chatwoot-widget";
 
 export interface AccountManagerContactCtaProps {
   context: AccountManagerContext;
@@ -17,7 +18,10 @@ export interface AccountManagerContactCtaProps {
 }
 
 /**
- * 客户经理 WhatsApp 入口：占位头像 + 场景文案（第一人称：联系我 / 我可以为你…）。
+ * 客户经理联系入口：占位头像 + 场景文案（第一人称：联系我 / 我可以为你…）。
+ *
+ * 点击优先唤起 Chatwoot 在线客服；若 SDK 尚未就绪则 fallback 到 WhatsApp
+ * (href 作为 <a> 默认行为保留)，保证联系入口永不失效。
  */
 export function AccountManagerContactCta({
   context,
@@ -31,6 +35,14 @@ export function AccountManagerContactCta({
   const inlineLabel = t("accountManager.contactService");
   const title = t("accountManager.contactTitle");
 
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.stopPropagation();
+    if (openChatwoot()) {
+      e.preventDefault();
+    }
+    // 否则放行 <a> 默认跳转 WhatsApp
+  };
+
   if (variant === "rail") {
     return (
       <a
@@ -42,6 +54,7 @@ export function AccountManagerContactCta({
           className,
         )}
         title={title}
+        onClick={handleClick}
       >
         <AccountManagerAvatar size={40} src={manager.avatarUrl} />
         <div className="min-w-0 flex-1">
@@ -62,7 +75,7 @@ export function AccountManagerContactCta({
         className,
       )}
       title={title}
-      onClick={(e) => e.stopPropagation()}
+      onClick={handleClick}
     >
       <AccountManagerAvatar size={22} src={manager.avatarUrl} />
       <span className="whitespace-nowrap">{inlineLabel}</span>

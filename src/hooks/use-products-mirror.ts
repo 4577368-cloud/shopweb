@@ -202,6 +202,21 @@ export function useProductsMirror({
     });
   }, [batchLinkBusyRef, loadSummary, bumpMirrorRefresh]);
 
+  /**
+   * Explicit list refresh: pull Shopify → reload mirror (bypasses TTL).
+   * Used by the shop-tab refresh control next to scope filters — not a full scan ceremony.
+   */
+  const syncAndRefreshMirror = useCallback(async (): Promise<{
+    productCount: number;
+  } | null> => {
+    if (batchLinkBusyRef.current) return null;
+    await api.syncShopProducts(shopName);
+    const data = await loadSummary({ silent: true, force: true });
+    if (!data) return null;
+    bumpMirrorRefresh();
+    return { productCount: data.products.length };
+  }, [batchLinkBusyRef, bumpMirrorRefresh, loadSummary, shopName]);
+
   return {
     summary,
     shopProducts,
@@ -214,5 +229,6 @@ export function useProductsMirror({
     bumpMirrorRefresh,
     refreshProductsQuietly,
     refreshMirrorFromServer,
+    syncAndRefreshMirror,
   };
 }

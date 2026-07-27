@@ -549,7 +549,50 @@ function LogisticsContent() {
                   clearScanned("logistics", scanShopKey);
                   clearLogisticsMirrorCache(shopName);
                   clearLogisticsSession(shopName);
-                  void load(true);
+                  void load(true).then((stats) => {
+                    if (!stats) return;
+                    if (stats.mailLimitVariants > 0) {
+                      showToast(
+                        t("logistics.toastMailLimitUpdated", {
+                          mail: stats.mailLimitVariants,
+                          changed: stats.changedVariants,
+                          total: stats.totalVariants,
+                        })
+                      );
+                      return;
+                    }
+                    if (stats.reason === "listing_empty") {
+                      showToast(
+                        t("logistics.toastMailLimitListingEmpty", {
+                          listingTotal: stats.listingTotal,
+                          total: stats.totalVariants,
+                        })
+                      );
+                      return;
+                    }
+                    if (stats.reason === "listing_error") {
+                      showToast(
+                        t("logistics.toastMailLimitListingError", {
+                          error: stats.detail || "unknown",
+                        })
+                      );
+                      return;
+                    }
+                    if (stats.reason === "no_match") {
+                      showToast(
+                        t("logistics.toastMailLimitNoMatch", {
+                          mapped: stats.mappedProducts,
+                          total: stats.totalVariants,
+                        })
+                      );
+                      return;
+                    }
+                    showToast(
+                      t("logistics.toastMailLimitNoData", {
+                        total: stats.totalVariants,
+                      })
+                    );
+                  });
                 }}
                 disabled={loading || classifying}
                 title={t("logistics.refreshWorkflowTitle")}

@@ -235,6 +235,9 @@ export interface VariantLogisticsDecision {
   postalLimitClass?: string;
   postalLimitLabel?: string;
   postalLimitConfidence?: number;
+  /** Tangbuy mailLimitList 一级/二级 ID（来自 listing/page） */
+  mailLimitPid?: number;
+  mailLimitId?: number;
   estimatedWeightG?: number;
   estimatedVolumeCm3?: number;
   estimatedLengthCm?: number;
@@ -566,6 +569,8 @@ export interface ProductSourceIdentity {
   resolvedAt?: string | null;
   poolIngestStatus?: PoolIngestStatus | null;
   poolIngestedAt?: string | null;
+  /** Last preferred-pool submit error (when status is failed/skipped). */
+  poolIngestError?: string | null;
 }
 
 /** POST /api/plugin/match/image-search 返回的归一化 1688 候选（后端已按相似度降序，前端不重排）。 */

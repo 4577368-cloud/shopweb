@@ -143,7 +143,7 @@ export function OrderAgentPanel({ context, handlers }: OrderAgentPanelProps) {
           setExecState("done");
         }
       } catch (err) {
-        setExecError(err instanceof Error ? err.message : t("order.agent.cannotExec"));
+        setExecError(t("order.agent.cannotExec"));
         setExecState("error");
       }
     },
