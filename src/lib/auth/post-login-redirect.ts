@@ -32,31 +32,27 @@ export function isHubRoutePath(path: string): boolean {
 /**
  * 登录成功后的默认落点（与营销页 Nav「进入工作台」一致）。
  *
- * `?from=` 仅在「用户本就该去那里」时生效：
- * - 鉴权页 / 外链无效路径 → 忽略
- * - 运营中枢（订单中心 / 运营中心）→ 仅当已绑店且中枢已解锁，否则回授权或选品
+ * 运营中枢已下线：任何 ?from= 指向订单/运营中心的回跳一律忽略。
  */
 export function resolvePostLoginPath(
   locale: Locale,
   from: string | null | undefined,
   ops: { isAuthorized: boolean; operationsHubReady: boolean }
 ): string {
+  void ops.operationsHubReady;
+
   if (from && from.startsWith("/") && !from.startsWith("//") && !isAuthRoutePath(from)) {
     const qIndex = from.indexOf("?");
     const rawPath = qIndex >= 0 ? from.slice(0, qIndex) : from;
     const query = qIndex >= 0 ? from.slice(qIndex) : "";
     const pathOnly = stripLocalePrefix(rawPath);
 
-    const hubDeepLink = isHubRoutePath(pathOnly);
-    const hubAllowed = ops.isAuthorized && ops.operationsHubReady;
-
-    if (!hubDeepLink || hubAllowed) {
+    // Hub retired — never restore deep links into order/ops center.
+    if (!isHubRoutePath(pathOnly)) {
       return `${localePath(locale, pathOnly || "/")}${query}`;
     }
-    // Stale ?from=/operations-center after cookie bounce — do not yank early users into hub.
   }
 
   if (!ops.isAuthorized) return localePath(locale, "/authorize");
-  // Hub is opt-in via sidebar — never auto-land on order/ops center after login.
   return localePath(locale, "/products");
 }

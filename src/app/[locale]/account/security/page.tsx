@@ -7,7 +7,6 @@ import {
   Loader2,
   Lock,
   ShieldCheck,
-  LineChart,
 } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
@@ -16,7 +15,6 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { useUser } from "@/context/user-context";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
-import { useHubFeatureFlag } from "@/lib/hub/feature-flag";
 import {
   AccountCard,
   AccountLoadingState,
@@ -37,17 +35,6 @@ export default function AccountSecurityPage() {
   const router = useRouter();
   const { showToast } = useOnboarding();
   const { status, bootstrapping, changePassword } = useUser();
-  const { enabled: hubEnabled, toggle: toggleHub } = useHubFeatureFlag();
-  const [hubSwitchPending, setHubSwitchPending] = useState(false);
-
-  const handleHubToggle = () => {
-    setHubSwitchPending(true);
-    toggleHub();
-    // 短暂延迟后刷新页面，使侧边栏等所有组件同步新状态
-    window.setTimeout(() => {
-      window.location.reload();
-    }, 300);
-  };
 
   // ===== Change password state =====
   const [currentPassword, setCurrentPassword] = useState("");
@@ -196,44 +183,6 @@ export default function AccountSecurityPage() {
           <p className="text-[11px] leading-5 text-muted-foreground/80">
             {t("accountSecurity.passwordSideEffect")}
           </p>
-        </div>
-      </AccountCard>
-
-      {/* 运营中枢功能开关 */}
-      <AccountCard>
-        <div className="flex items-start gap-2">
-          <LineChart className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <h2 className="text-[13px] font-semibold text-foreground">
-              {t("accountSecurity.sectionHub")}
-            </h2>
-            <p className="mt-1 text-[11px] text-muted-foreground/80">
-              {t("accountSecurity.hubHint")}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={hubEnabled}
-            onClick={handleHubToggle}
-            disabled={hubSwitchPending}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 ${
-              hubEnabled ? "bg-brand" : "bg-muted-foreground/30"
-            }`}
-          >
-            <span
-              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                hubEnabled ? "translate-x-5" : "translate-x-0"
-              }`}
-            />
-          </button>
-          <span className="text-[13px] font-medium text-foreground">
-            {hubEnabled ? t("accountSecurity.hubOn") : t("accountSecurity.hubOff")}
-          </span>
-          {hubSwitchPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
         </div>
       </AccountCard>
     </section>

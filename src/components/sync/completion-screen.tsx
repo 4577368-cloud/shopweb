@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Download, FileText, ListChecks } from "@/lib/ui/icons";
+import { ArrowRight, Download, FileText } from "@/lib/ui/icons";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
@@ -64,22 +64,16 @@ export function CompletionScreen({
         ) : null}
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Link href={localePath(locale, "/order-center")} className="col-span-1 sm:col-span-2">
+          <Link href={localePath(locale, "/products")} className="col-span-1 sm:col-span-2">
             <Button className="h-11 w-full">
-              {t("syncCeremony.enterOperationsHub")}
+              {t("syncCeremony.pendingOptimizations")}
               <ArrowRight className="h-4 w-4" />
             </Button>
           </Link>
-          <Link href={localePath(locale, "/")} className="col-span-1">
+          <Link href={localePath(locale, "/")} className="col-span-1 sm:col-span-2">
             <Button variant="secondary" className="h-10 w-full">
               {t("syncCeremony.enterWorkbench")}
               <ArrowRight className="h-4 w-4" />
-            </Button>
-          </Link>
-          <Link href={localePath(locale, "/products")} className="col-span-1">
-            <Button variant="secondary" className="h-10 w-full">
-              <ListChecks className="h-4 w-4" />
-              {t("syncCeremony.pendingOptimizations")}
             </Button>
           </Link>
         </div>
