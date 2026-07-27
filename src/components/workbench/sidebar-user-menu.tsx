@@ -15,6 +15,7 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { useUser } from "@/context/user-context";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
+import { SHOP_STORAGE_KEY } from "@/lib/shopify-install";
 import { cn } from "@/lib/utils";
 
 type UserMenuAction = "shops" | "profile" | "bills" | "settings" | "signOut";
@@ -104,9 +105,14 @@ export function SidebarUserMenu({ className }: { className?: string }) {
       setSigningOut(true);
       try {
         await logout();
+        // Clear persisted shop so the next login starts fresh.
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(SHOP_STORAGE_KEY);
+        }
         showToast(t("userMenu.toastSignedOut"));
-        // Soft-refresh so server components pick up the cleared auth state.
-        router.refresh();
+        // Navigate to landing so the user sees a clear state change.
+        // Server components on the landing page do not require auth.
+        router.push(localePath(locale, "/"));
       } catch {
         showToast(t("userMenu.signOutFailed"));
       } finally {

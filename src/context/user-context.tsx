@@ -167,9 +167,15 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
-    } catch {
-      // Even if the logout call fails (network), clear local state so the UI
-      // reflects the signed-out intent. The cookie will eventually expire.
+    } catch (err) {
+      // If the logout endpoint itself is missing (404) or returns an error,
+      // surface it so callers can show a proper failure toast rather than
+      // pretending the sign-out succeeded while the cookie remains alive.
+      setUser(null);
+      setStatus("unauthenticated");
+      setError(null);
+      refreshPromiseRef.current = null;
+      throw err;
     }
     setUser(null);
     setStatus("unauthenticated");
