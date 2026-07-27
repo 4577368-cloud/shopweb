@@ -2030,6 +2030,7 @@ export const es: Dictionary = {
         sourceFind: "Buscar por imagen en 1688",
         sourceRetry: "Buscar de nuevo",
         sourceEmpty: "No se encontró proveedor similar. Reinténtalo o elige otro producto.",
+        sourceFailed: "Falló la búsqueda por imagen. Inténtalo de nuevo.",
         sourceAdd: "Añadir y publicar",
         sourceNoShop: "Conecta primero una tienda Shopify",
         sourcePublished: "Publicado",

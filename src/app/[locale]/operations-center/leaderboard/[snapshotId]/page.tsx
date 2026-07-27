@@ -10,7 +10,7 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { Button } from "@/components/ui/button";
 import { CoverThumb } from "@/components/operations/cover-thumb";
-import { RankingDetailDrawer, RankingKpis } from "@/components/operations/ranking-grid";
+import { RankingDetailDrawer, RankingKpis, tCategory } from "@/components/operations/ranking-grid";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail } from "@/components/workbench/assistant-rail";
@@ -28,13 +28,6 @@ import type { PageMeta } from "@/lib/marketing/types";
 
 const PAGE_SIZE = 24;
 
-// 类目名 i18n 兜底包装：字典命中返回译文，未命中回退原始中文（数据本身是中文）
-function tCategory(name: string | null | undefined, t: (key: string) => string): string {
-  if (!name) return "";
-  const key = `ops.discovery.board.category.${name}`;
-  const translated = t(key);
-  return translated === key ? name : translated;
-}
 export default function LeaderboardPage({
   params,
   searchParams,
@@ -268,7 +261,7 @@ function LeaderboardContent({
               <option value="all">{t("ops.discovery.board.allCategories")}</option>
               {categories.map((c) => (
                 <option key={c} value={c}>
-                  {tCategory(c, t)}
+                  {tCategory(c)}
                 </option>
               ))}
             </select>
@@ -353,7 +346,7 @@ function RankingCard({ row, onClick }: { row: RankingRow; onClick?: () => void }
         )}
         {row.categoryL1 && (
           <span className="absolute right-2 top-2 max-w-[60%] truncate rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white">
-            {tCategory(row.categoryL1, t)}
+            {tCategory(row.categoryL1)}
           </span>
         )}
       </div>

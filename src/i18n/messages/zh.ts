@@ -2026,6 +2026,7 @@ export const zh: Dictionary = {
         sourceFind: "1688 图搜找同款",
         sourceRetry: "重新图搜",
         sourceEmpty: "没找到相似货源，可重试或换个商品。",
+        sourceFailed: "图搜失败，请稍后重试。",
         sourceAdd: "加入并上架",
         sourceNoShop: "请先完成店铺授权",
         sourcePublished: "已上架",

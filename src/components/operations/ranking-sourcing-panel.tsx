@@ -40,7 +40,7 @@ interface PublishState {
 
 export function RankingSourcingPanel({
   shopName,
-  title,
+  title: _productTitle,
   imageUrl,
 }: {
   shopName?: string | null;
@@ -51,6 +51,7 @@ export function RankingSourcingPanel({
   const locale = useLocale();
   const [state, setState] = useState<SearchState>("idle");
   const [hits, setHits] = useState<SourcingSearchHit[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [publishById, setPublishById] = useState<Record<string, PublishState>>({});
   const templateRef = useRef<PricingTemplate | null | undefined>(undefined);
 
@@ -60,15 +61,22 @@ export function RankingSourcingPanel({
   const runSearch = useCallback(async () => {
     if (!seed) return;
     setState("loading");
+    setError(null);
     setPublishById({});
-    const found = await search1688OffersByKeyword(title, {
-      seedImageUrl: seed,
-      country: imageSearchCountryForLocale(locale),
-      size: MAX_HITS,
-    });
-    setHits(found.slice(0, MAX_HITS));
-    setState(found.length > 0 ? "done" : "failed");
-  }, [seed, title, locale]);
+    try {
+      const found = await search1688OffersByKeyword("", {
+        seedImageUrl: seed,
+        country: imageSearchCountryForLocale(locale),
+        size: MAX_HITS,
+      });
+      setHits(found.slice(0, MAX_HITS));
+      setState(found.length > 0 ? "done" : "failed");
+    } catch (err) {
+      setHits([]);
+      setError(err instanceof Error ? err.message : t("ops.discovery.board.sourceFailed"));
+      setState("failed");
+    }
+  }, [seed, locale, t]);
 
   const handlePublish = useCallback(
     async (hit: SourcingSearchHit) => {
@@ -168,7 +176,9 @@ export function RankingSourcingPanel({
       )}
 
       {state === "failed" && (
-        <p className="mt-2 text-[11px] text-ink-subtle">{t("ops.discovery.board.sourceEmpty")}</p>
+        <p className="mt-2 text-[11px] text-destructive">
+          {error || t("ops.discovery.board.sourceEmpty")}
+        </p>
       )}
 
       {state === "done" && (

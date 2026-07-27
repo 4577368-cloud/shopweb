@@ -2033,6 +2033,7 @@ export const en = {
         sourceFind: "Image search on 1688",
         sourceRetry: "Search again",
         sourceEmpty: "No similar supplier found. Try again or pick another product.",
+        sourceFailed: "Image search failed. Please try again.",
         sourceAdd: "Add & publish",
         sourceNoShop: "Connect a Shopify store first",
         sourcePublished: "Published",
