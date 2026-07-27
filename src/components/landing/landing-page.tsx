@@ -79,9 +79,9 @@ export function LandingPage() {
 
   useEffect(() => {
     if (authStatus !== "authenticated" || mode !== "auth") return;
-    router.replace(postLoginTarget);
-    router.refresh();
-  }, [authStatus, mode, postLoginTarget, router]);
+    // Soft client nav can stall after login/register; hard-assign matches AuthPanel.
+    window.location.assign(postLoginTarget);
+  }, [authStatus, mode, postLoginTarget]);
 
   return (
     <div className="landing-root">

@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { CheckCircle2, Loader2, X } from "@/lib/ui/icons";
 import { useAuth } from "@/context/user-context";
@@ -36,7 +35,6 @@ export function AuthPanel({
 }: AuthPanelProps) {
   const t = useT();
   const locale = useLocale();
-  const router = useRouter();
   const { login, register } = useAuth();
 
   const [name, setName] = useState("");
@@ -44,8 +42,16 @@ export function AuthPanel({
   const [password, setPassword] = useState("");
   const [phase, setPhase] = useState<AuthPhase>("form");
   const [error, setError] = useState<string | null>(null);
+  const [successTarget, setSuccessTarget] = useState<string | null>(null);
+  const [showManualContinue, setShowManualContinue] = useState(false);
 
   const busy = phase !== "form";
+
+  useEffect(() => {
+    if (phase !== "success" || !successTarget) return;
+    const timer = window.setTimeout(() => setShowManualContinue(true), 2500);
+    return () => window.clearTimeout(timer);
+  }, [phase, successTarget]);
 
   function errorMessage(err: unknown): string {
     if (err instanceof ApiError) {
@@ -100,8 +106,10 @@ export function AuthPanel({
       }
       setPhase("success");
       const target = redirectAfterSuccess ?? localePath(locale, "/authorize");
-      router.replace(target);
-      router.refresh();
+      setSuccessTarget(target);
+      // Hard navigation: soft router.replace often stalls right after Set-Cookie
+      // (RSC refresh races), leaving the success spinner forever in incognito.
+      window.location.assign(target);
     } catch (err) {
       setError(errorMessage(err));
       setPhase("form");
@@ -183,6 +191,14 @@ export function AuthPanel({
                   : t("auth.loginSuccessRedirecting")}
               </p>
               <Loader2 className="mt-1 h-4 w-4 animate-spin text-[--landing-cyan]" aria-hidden />
+              {showManualContinue && successTarget ? (
+                <a
+                  href={successTarget}
+                  className="mt-2 text-xs font-medium text-[--landing-cyan] hover:underline"
+                >
+                  {t("auth.continueManually")}
+                </a>
+              ) : null}
             </div>
           ) : (
           <form onSubmit={onSubmit} className="space-y-4">

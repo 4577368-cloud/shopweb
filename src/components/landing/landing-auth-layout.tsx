@@ -65,9 +65,8 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
 
   useEffect(() => {
     if (authStatus !== "authenticated") return;
-    router.replace(postLoginTarget);
-    router.refresh();
-  }, [authStatus, postLoginTarget, router]);
+    window.location.assign(postLoginTarget);
+  }, [authStatus, postLoginTarget]);
 
   const entryHref =
     authStatus === "authenticated"
