@@ -3,6 +3,7 @@ import { upsertAcceptances } from "@/lib/logistics/accept-decisions-store";
 import {
   collectAcceptableVariants,
   loadLogisticsAnalysis,
+  upstreamAuthFromRequest,
 } from "@/lib/logistics/server-analysis";
 import { mergeAcceptancesIntoAnalysis } from "@/lib/logistics/merge-acceptances-into-analysis";
 import type {
@@ -37,7 +38,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const analysis = await loadLogisticsAnalysis(shopName, false);
+    const analysis = await loadLogisticsAnalysis(shopName, false, {
+      auth: upstreamAuthFromRequest(request),
+    });
     const { readAcceptances } = await import(
       "@/lib/logistics/accept-decisions-store"
     );

@@ -70,19 +70,29 @@ export class ApiError extends Error {
 
 /**
  * Shared, human-readable rendering of a thrown error for toasts / inline error states.
- * Network failures (status 0) surface their own message; HTTP errors are prefixed with the status.
+ * Never surfaces raw `err.message` to users — returns a generic network/HTTP/unknown
+ * fallback so backend machine codes and English stack traces stay internal.
  * Callers that need machine-code-specific copy (image search, confirm, auto-align) map first, then
  * fall back to this.
  */
 export function readableError(err: unknown, t?: TranslateFn): string {
   if (err instanceof ApiError) {
-    if (err.status === 0) return err.message;
-    if (t) {
-      return t("api.httpError", { status: err.status, message: err.message });
+    if (err.status === 0) return t ? t("auth.errorNetwork") : "Network error";
+    const detail = err.message?.trim();
+    // Prefer upstream/detail message when present (e.g. login required).
+    if (
+      detail &&
+      !/^Request failed \(\d+\)/.test(detail) &&
+      detail !== `Request failed (${err.status})`
+    ) {
+      return detail;
     }
-    return `Request failed (${err.status}): ${err.message}`;
+    if (t) {
+      return t("api.httpError", { status: err.status });
+    }
+    return `Request failed (${err.status})`;
   }
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error && err.message.trim()) return err.message;
   return t ? t("api.unknownError") : "Unknown error";
 }
 
@@ -317,6 +327,7 @@ async function localRequest<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(url, {
       ...init,
+      credentials: "same-origin",
       headers: {
         Accept: "application/json",
         ...(init?.headers ?? {}),

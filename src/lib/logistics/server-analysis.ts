@@ -17,23 +17,37 @@ const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
 const UPSTREAM_RETRIES = 2;
 const UPSTREAM_TIMEOUT_MS = 45_000;
 
+export type UpstreamAuthHeaders = {
+  cookie?: string | null;
+};
+
+/** Pull browser auth cookies so server→plugin calls pass JwtAuthFilter. */
+export function upstreamAuthFromRequest(request: Request): UpstreamAuthHeaders {
+  return { cookie: request.headers.get("cookie") };
+}
+
 async function fetchUpstream(
   url: string,
-  init?: RequestInit
+  init?: RequestInit,
+  auth?: UpstreamAuthHeaders
 ): Promise<Response> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= UPSTREAM_RETRIES; attempt += 1) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
     try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(init?.headers as Record<string, string> | undefined),
+      };
+      const cookie = auth?.cookie?.trim();
+      if (cookie) headers.Cookie = cookie;
+
       const res = await fetch(url, {
         ...init,
         signal: controller.signal,
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          ...(init?.headers ?? {}),
-        },
+        headers,
       });
       if (
         res.ok ||
@@ -51,13 +65,16 @@ async function fetchUpstream(
     }
     await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
   }
-    throw lastError instanceof Error
+  throw lastError instanceof Error
     ? lastError
     : new Error("上游物流服务暂时不可用，请稍后重试");
 }
 
 /** SKU overview enriches variant decisions only — never block logistics analysis on it. */
-async function fetchSkuOverviewOptional(shopKey: string): Promise<Response | null> {
+async function fetchSkuOverviewOptional(
+  shopKey: string,
+  auth?: UpstreamAuthHeaders
+): Promise<Response | null> {
   const query = new URLSearchParams({
     shopName: shopKey,
     thumbWidth: "144",
@@ -65,7 +82,7 @@ async function fetchSkuOverviewOptional(shopKey: string): Promise<Response | nul
   });
   const url = `${API_BASE}/api/plugin/match/sku/overview?${query.toString()}`;
   try {
-    return await fetchUpstream(url, { method: "GET" });
+    return await fetchUpstream(url, { method: "GET" }, auth);
   } catch {
     return null;
   }
@@ -81,7 +98,10 @@ const ACCEPTABLE: Set<LogisticsDecisionStatus> = new Set([
 export async function loadLogisticsAnalysis(
   shopName: string,
   force: boolean,
-  options?: { includeSkuOverview?: boolean }
+  options?: {
+    includeSkuOverview?: boolean;
+    auth?: UpstreamAuthHeaders;
+  }
 ): Promise<LogisticsAnalysis> {
   if (!API_BASE) {
     const { buildEmptyAnalysis } = await import("@/lib/logistics/decision-engine");
@@ -93,14 +113,19 @@ export async function loadLogisticsAnalysis(
 
   const shopKey = normalizeShopApiName(shopName);
   const analyzeUrl = `${API_BASE}/api/plugin/logistics/${force ? "analyze" : "analysis"}?shopName=${encodeURIComponent(shopKey)}${force ? "&force=true" : ""}`;
+  const auth = options?.auth;
 
   const includeSku = options?.includeSkuOverview !== false;
   // Sequential: avoid hammering a cold Render instance with two heavy DB calls at once.
-  const analysisRes = await fetchUpstream(analyzeUrl, {
-    method: force ? "POST" : "GET",
-  });
+  const analysisRes = await fetchUpstream(
+    analyzeUrl,
+    { method: force ? "POST" : "GET" },
+    auth
+  );
   const skuRes =
-    includeSku && shopKey ? await fetchSkuOverviewOptional(shopKey) : null;
+    includeSku && shopKey
+      ? await fetchSkuOverviewOptional(shopKey, auth)
+      : null;
 
   const analysisText = await analysisRes.text();
   let analysisRaw: unknown;
@@ -111,6 +136,9 @@ export async function loadLogisticsAnalysis(
   }
 
   if (!analysisRes.ok) {
+    if (analysisRes.status === 401) {
+      throw new Error("登录已失效，请刷新页面后重新登录再试物流分析");
+    }
     const detail =
       typeof analysisRaw === "object" && analysisRaw && "message" in analysisRaw
         ? String((analysisRaw as { message?: string }).message)
