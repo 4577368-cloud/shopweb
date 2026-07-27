@@ -88,8 +88,15 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
   );
 
   const onClose = useCallback(() => {
+    if (from && from.startsWith("/") && !from.startsWith("//")) {
+      const qIndex = from.indexOf("?");
+      const pathOnly = qIndex >= 0 ? from.slice(0, qIndex) : from;
+      const query = qIndex >= 0 ? from.slice(qIndex) : "";
+      router.push(`${localePath(locale, pathOnly || "/")}${query}`);
+      return;
+    }
     router.push(localePath(locale, "/"));
-  }, [locale, router]);
+  }, [from, locale, router]);
 
   const showAuth = useCallback(
     (m: LandingAuthMode) => {

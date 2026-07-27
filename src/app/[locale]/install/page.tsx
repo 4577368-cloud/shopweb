@@ -18,6 +18,8 @@ import { useUser } from "@/context/user-context";
 import {
   SHOP_STORAGE_KEY,
   launchShopifyInstall,
+  normalizeShopDomain,
+  rememberShopDomain,
   resolveInstallError,
 } from "@/lib/shopify-install";
 import {
@@ -44,10 +46,21 @@ function InstallPageContent() {
   const [redirecting, setRedirecting] = useState(false);
 
   const connectWithDomain = (raw: string) => {
-    // P2: shop binding requires an authenticated user — the backend /install endpoint
-    // is JWT-protected and writes user_shop. Redirect to /login if not signed in yet.
+    // Always remember the shop before any redirect so login / language switch can restore it.
+    const remembered = rememberShopDomain(raw);
+    if (remembered) {
+      setHandle(shopHandleFromDomain(remembered));
+    }
+
+    // Login-first: Shopify OAuth writes user_shop under the current Tangbuy JWT.
     if (!bootstrapping && authStatus !== "authenticated") {
-      router.push(localePath(locale, `/login?from=${encodeURIComponent("/install")}`));
+      const shopQ = remembered
+        ? `?shop=${encodeURIComponent(remembered)}`
+        : "";
+      const from = `/install${shopQ}`;
+      router.push(
+        localePath(locale, `/login?from=${encodeURIComponent(from)}`)
+      );
       return;
     }
     // During bootstrap we don't yet know the auth state — block the action briefly to avoid
@@ -69,22 +82,56 @@ function InstallPageContent() {
 
   const connect = () => connectWithDomain(handle);
 
+  const goLoginPreservingShop = (mode: "login" | "register" = "login") => {
+    const raw =
+      handle.trim() ||
+      searchParams.get("shop")?.trim() ||
+      (typeof window !== "undefined"
+        ? window.localStorage.getItem(SHOP_STORAGE_KEY) ?? ""
+        : "");
+    const remembered = raw ? rememberShopDomain(raw) : null;
+    const shopQ = remembered
+      ? `?shop=${encodeURIComponent(remembered)}`
+      : "";
+    const from = `/install${shopQ}`;
+    const base = mode === "register" ? "/register" : "/login";
+    router.push(localePath(locale, `${base}?from=${encodeURIComponent(from)}`));
+  };
+
+  // Prefill from localStorage (e.g. returned from login) or ?shop=.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const fromQuery = searchParams.get("shop")?.trim();
+    if (fromQuery) {
+      const normalized = normalizeShopDomain(fromQuery);
+      if (normalized) {
+        rememberShopDomain(normalized);
+        setHandle(shopHandleFromDomain(normalized));
+        return;
+      }
+    }
     const saved = window.localStorage.getItem(SHOP_STORAGE_KEY);
     if (saved) {
       setHandle(shopHandleFromDomain(saved));
     }
-  }, []);
+  }, [searchParams]);
 
+  // After Tangbuy login (or when already signed in), auto-resume Shopify OAuth for ?shop=.
   useEffect(() => {
-    const shop = searchParams.get("shop")?.trim();
+    if (bootstrapping || authStatus !== "authenticated") return;
+    const shop =
+      searchParams.get("shop")?.trim() ||
+      (typeof window !== "undefined"
+        ? window.localStorage.getItem(SHOP_STORAGE_KEY)
+        : null);
     if (!shop || autoShopAttempted.current) return;
     autoShopAttempted.current = true;
     setHandle(shopHandleFromDomain(shop));
     connectWithDomain(shop);
-  }, [searchParams]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resume once when auth ready
+  }, [authStatus, bootstrapping, searchParams]);
 
+  const needsLogin = !bootstrapping && authStatus !== "authenticated";
   const trustSignals = [
     t("install.trustOfficialOAuth"),
     t("install.trustScoped"),
@@ -127,13 +174,32 @@ function InstallPageContent() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3.5">
           <AppLogo variant="header" size="sm" />
           <div className="flex items-center gap-3">
-            <LanguageSwitcher />
-            <Link
-              href={localePath(locale, "/authorize")}
-              className="text-xs font-medium text-ink-muted hover:text-ink"
-            >
-              {t("install.authorizedHint")}
-            </Link>
+            <LanguageSwitcher menuPlacement="down" />
+            {needsLogin ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => goLoginPreservingShop("login")}
+                  className="text-xs font-medium text-ink-muted hover:text-ink"
+                >
+                  {t("install.navLogin")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => goLoginPreservingShop("register")}
+                  className="rounded-[var(--radius-control)] bg-ink px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-ink/90"
+                >
+                  {t("install.navRegister")}
+                </button>
+              </div>
+            ) : (
+              <Link
+                href={localePath(locale, "/authorize")}
+                className="text-xs font-medium text-ink-muted hover:text-ink"
+              >
+                {t("install.authorizedHint")}
+              </Link>
+            )}
           </div>
         </div>
       </header>
@@ -153,6 +219,28 @@ function InstallPageContent() {
             </p>
 
             <div className="mt-6 max-w-lg space-y-2">
+              {needsLogin ? (
+                <div className="rounded-[var(--radius-control)] border border-brand-accent/25 bg-brand-soft px-3 py-2.5 text-[11px] leading-4 text-ink">
+                  <p className="font-medium">{t("install.loginFirstTitle")}</p>
+                  <p className="mt-0.5 text-ink-muted">{t("install.loginFirstDesc")}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => goLoginPreservingShop("login")}
+                      className="rounded-[var(--radius-control)] bg-ink px-2.5 py-1 text-[11px] font-semibold text-white"
+                    >
+                      {t("install.navLogin")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => goLoginPreservingShop("register")}
+                      className="rounded-[var(--radius-control)] border border-hairline bg-surface px-2.5 py-1 text-[11px] font-medium text-ink"
+                    >
+                      {t("install.navRegister")}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <ShopDomainConnectField
                 value={handle}
                 onChange={setHandle}
@@ -163,7 +251,9 @@ function InstallPageContent() {
                 <p className="text-[11px] leading-4 text-red-600">{error}</p>
               ) : (
                 <p className="text-[11px] leading-4 text-ink-subtle">
-                  {t("install.connectNote")}
+                  {needsLogin
+                    ? t("install.connectNoteLoginFirst")
+                    : t("install.connectNote")}
                 </p>
               )}
             </div>

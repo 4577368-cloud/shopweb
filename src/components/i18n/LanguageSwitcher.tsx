@@ -8,13 +8,20 @@ import { locales, localeCodes, localeLabels, isLocale, type Locale } from "@/i18
 import { localePath } from "@/i18n/LocaleLink";
 import { cn } from "@/lib/utils";
 
+export type LanguageMenuPlacement = "up" | "down";
+
 /**
- * Compact locale control for the sidebar footer.
- * Uses a custom menu (not a native &lt;select&gt;) so locale navigation does not
- * race the browser's select popup — that race commonly throws
- * NotFoundError: removeChild during Next.js client transitions.
+ * Compact locale control.
+ * - `menuPlacement="up"`: sidebar footer (opens above the trigger)
+ * - `menuPlacement="down"`: page headers (opens below; avoids clipping off the top)
  */
-export function LanguageSwitcher({ className }: { className?: string }) {
+export function LanguageSwitcher({
+  className,
+  menuPlacement = "up",
+}: {
+  className?: string;
+  menuPlacement?: LanguageMenuPlacement;
+}) {
   const locale = useLocale();
   const pathname = usePathname();
   const router = useRouter();
@@ -45,7 +52,9 @@ export function LanguageSwitcher({ className }: { className?: string }) {
     setOpen(false);
     const segments = pathname.split("/").filter(Boolean);
     const rest = isLocale(segments[0]) ? segments.slice(1) : segments;
-    const newPath = localePath(next, `/${rest.join("/")}`);
+    const search =
+      typeof window !== "undefined" ? window.location.search : "";
+    const newPath = `${localePath(next, `/${rest.join("/")}`)}${search}`;
     document.cookie = `locale=${next}; path=/; max-age=${60 * 60 * 24 * 365}`;
     router.prefetch(newPath);
     window.setTimeout(() => {
@@ -84,7 +93,10 @@ export function LanguageSwitcher({ className }: { className?: string }) {
         <div
           role="listbox"
           aria-label={localeLabels[locale]}
-          className="absolute bottom-full right-0 z-40 mb-1 min-w-[7.5rem] overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface py-1 shadow-card"
+          className={cn(
+            "absolute right-0 z-40 min-w-[7.5rem] overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface py-1 shadow-card",
+            menuPlacement === "down" ? "top-full mt-1" : "bottom-full mb-1"
+          )}
         >
           {locales.map((l) => {
             const active = l === locale;
