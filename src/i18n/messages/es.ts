@@ -794,7 +794,11 @@ export const es: Dictionary = {
   },
   catalogPublish: {
     confirmPublish: "¿Publicar « {{title}} » en {{shopName}} a {{price}}?",
+    configurePricing: "Configurar plantilla de precios",
     loadFailed: "Error al cargar catálogo: {{error}}",
+    pricingRequired:
+      "Guarde una plantilla de precios antes de publicar. Sin ella, el precio en Shopify queda cerca del coste de compra y puede perder dinero tras comisiones.",
+    pricingRequiredTitle: "Configure precios antes de publicar",
     publishFailed: "Error al publicar",
     publishInProgress: "Publicación en curso…",
     publishIncomplete: "Publicación incompleta: {{message}}",
@@ -3198,9 +3202,10 @@ export const es: Dictionary = {
     exchangeRate: "Tasa",
     loading: "Cargando precios…",
     multiplier: "Multiplicador",
-    setupDesc: "Configure moneda, tasa y multiplicador para que los precios Discovery coincidan con su margen.",
+    setupDesc:
+      "Configure moneda, tasa y multiplicador antes de publicar. Sin plantilla guardada, el precio en Shopify queda cerca del coste de compra y puede perder dinero tras comisiones.",
     setupTitle: "Configure precios primero",
-    summaryDesc: "Los precios sugeridos Discovery usan esta plantilla.",
+    summaryDesc: "Los precios Discovery y la publicación usan esta plantilla.",
     targetCurrency: "Moneda",
     title: "Estrategia de precios"
   },
@@ -3485,7 +3490,8 @@ export const es: Dictionary = {
     connectShopReason: "Autorice para analizar productos y configurar precios.",
     connectShopAction: "Autorizar",
     configurePricingTitle: "Configurar precios",
-    configurePricingReason: "Los precios sugeridos no son fiables hasta configurar la tarificación.",
+    configurePricingReason:
+      "Guarde una plantilla de precios antes de publicar productos nuevos — sin ella el precio en Shopify queda cerca del coste de compra y puede perder dinero.",
     configurePricingAction: "Configurar ahora",
     confirmPendingTitle: "Confirmar {{count}} enlaces pendientes",
     confirmPendingReason: "Confirme o re-enlace para continuar.",

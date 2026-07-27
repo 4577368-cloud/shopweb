@@ -795,7 +795,11 @@ export const fr: Dictionary = {
   },
   catalogPublish: {
     confirmPublish: "Lister « {{title}} » sur {{shopName}} à {{price}} ?",
+    configurePricing: "Configurer le modèle de prix",
     loadFailed: "Échec du chargement du catalogue : {{error}}",
+    pricingRequired:
+      "Enregistrez un modèle de prix avant la mise en ligne. Sinon le prix Shopify reste proche du coût d'achat et vous pouvez perdre de l'argent après frais.",
+    pricingRequiredTitle: "Configurez les prix avant la mise en ligne",
     publishFailed: "Échec de la mise en ligne",
     publishInProgress: "Mise en ligne en cours…",
     publishIncomplete: "Mise en ligne incomplète : {{message}}",
@@ -3199,9 +3203,10 @@ export const fr: Dictionary = {
     exchangeRate: "Taux",
     loading: "Chargement des prix…",
     multiplier: "Multiplicateur",
-    setupDesc: "Configurez devise, taux et multiplicateur pour que les prix Discovery correspondent à votre marge.",
+    setupDesc:
+      "Configurez devise, taux et multiplicateur avant la mise en ligne. Sans modèle enregistré, le prix Shopify reste proche du coût d'achat et vous pouvez perdre de l'argent après frais.",
     setupTitle: "Configurez d'abord les prix",
-    summaryDesc: "Les prix suggérés Discovery utilisent ce modèle.",
+    summaryDesc: "Les prix Discovery et la mise en ligne utilisent ce modèle.",
     targetCurrency: "Devise",
     title: "Stratégie de prix"
   },
@@ -3486,7 +3491,8 @@ export const fr: Dictionary = {
     connectShopReason: "Autorisez pour analyser les produits et configurer les prix.",
     connectShopAction: "Autoriser",
     configurePricingTitle: "Configurer les prix",
-    configurePricingReason: "Les prix suggérés sont peu fiables tant que la tarification n'est pas configurée.",
+    configurePricingReason:
+      "Enregistrez un modèle de prix avant de lister de nouveaux produits — sinon le prix Shopify reste proche du coût d'achat et vous pouvez perdre de l'argent.",
     configurePricingAction: "Configurer maintenant",
     confirmPendingTitle: "Confirmer {{count}} liens en attente",
     confirmPendingReason: "Confirmez ou re-liez pour continuer.",

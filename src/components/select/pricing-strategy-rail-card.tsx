@@ -4,13 +4,12 @@ import { Coins } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { InfoCard } from "@/components/workbench/info-card";
 import { useT } from "@/i18n/LocaleProvider";
+import { needsPricingSetup } from "@/lib/listing-pricing";
 import type { PricingTemplate } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
 
-export function needsPricingSetup(template: PricingTemplate | null): boolean {
-  return template == null || template.isDefault;
-}
+export { needsPricingSetup };
 
 export interface PricingStrategyRailCardProps {
   template: PricingTemplate | null;

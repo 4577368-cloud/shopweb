@@ -6,6 +6,16 @@ import type { PricingTemplate } from "@/lib/types";
  * Uses the full pricing strategy (FX + multiplier + addend + rounding).
  */
 
+/** Stable error token from publishSourcingHit when template is unset. */
+export const PRICING_TEMPLATE_REQUIRED = "PRICING_TEMPLATE_REQUIRED";
+
+/** True when merchant has not saved a shop pricing template (system default only). */
+export function needsPricingSetup(
+  template: PricingTemplate | null | undefined
+): boolean {
+  return template == null || template.isDefault;
+}
+
 export interface ListingPricingContext {
   template: PricingTemplate;
   targetCurrency: string;

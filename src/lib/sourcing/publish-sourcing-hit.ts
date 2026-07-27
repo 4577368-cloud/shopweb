@@ -9,6 +9,10 @@ import {
   resolvePublishSnapshot,
   toPublishSnapshot,
 } from "@/lib/tangbuy-mall-gateway";
+import {
+  needsPricingSetup,
+  PRICING_TEMPLATE_REQUIRED,
+} from "@/lib/listing-pricing";
 import { hitToCatalogRecommendation } from "@/lib/sourcing/map-catalog";
 import type { SourcingSearchHit } from "@/lib/sourcing/types";
 import type { CatalogRecommendation, PricingTemplate, PublishResult } from "@/lib/types";
@@ -150,6 +154,13 @@ export async function publishSourcingHit(
 ): Promise<PublishSourcingHitResult> {
   const { hit, shopName, template, onPhase } = input;
   onPhase?.("preparing");
+
+  // Discover / list-to-Shopify must use a saved markup template — system default
+  // is near purchase cost and can list at a loss after fees.
+  if (needsPricingSetup(template)) {
+    onPhase?.("failed");
+    return { ok: false, error: PRICING_TEMPLATE_REQUIRED };
+  }
 
   let catalogItem: CatalogRecommendation;
   let poolStatus: string | undefined;

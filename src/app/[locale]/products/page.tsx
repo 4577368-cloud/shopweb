@@ -566,6 +566,7 @@ function SelectContent() {
               onPublishInProgress={schedulePublishMirrorPoll}
               recommendedCategories={recommendedCategories}
               sharedTemplate={template}
+              onConfigurePricing={openPricingDrawer}
               onAppliedFilterSummaryChange={setFilterSummary}
               filterPresetRequest={filterPresetRequest}
               onFilterPresetConsumed={() => setFilterPresetRequest(null)}

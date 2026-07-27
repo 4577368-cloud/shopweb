@@ -7,6 +7,7 @@ import {
 import { api, readableError } from "@/lib/api";
 import { markCatalogPublished } from "@/lib/batch-link/publish-source";
 import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
+import { PRICING_TEMPLATE_REQUIRED } from "@/lib/listing-pricing";
 import { resolveTitleCopyStyle } from "@/lib/products/resolve-title-copy-style";
 import type { ProductsCommandRuntime } from "@/lib/products/agent-command-types";
 import {
@@ -613,6 +614,9 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
         return;
       }
       if (!outcome.ok || !outcome.result) {
+        if (outcome.error === PRICING_TEMPLATE_REQUIRED) {
+          throw new Error(ctx.t("catalogPublish.pricingRequired"));
+        }
         throw new Error(outcome.error ?? ctx.t("catalogPublish.publishFailed"));
       }
       if (

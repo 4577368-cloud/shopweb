@@ -796,7 +796,11 @@ export const en = {
   },
   catalogPublish: {
     confirmPublish: "List「{{title}}」to {{shopName}} at {{price}}?",
+    configurePricing: "Set pricing template",
     loadFailed: "Failed to load catalog: {{error}}",
+    pricingRequired:
+      "Save a pricing template before listing. Without it, Shopify prices stay near purchase cost and you can lose money after fees.",
+    pricingRequiredTitle: "Set pricing before listing",
     publishFailed: "Listing failed",
     publishInProgress: "Listing in progress…",
     publishIncomplete: "Listing incomplete: {{message}}",
@@ -3200,9 +3204,10 @@ export const en = {
     exchangeRate: "FX",
     loading: "Loading pricing…",
     multiplier: "Multiplier",
-    setupDesc: "Configure currency, FX rate, and multiplier so Discovery suggested prices match your margin.",
+    setupDesc:
+      "Configure currency, FX rate, and multiplier before listing. Without a saved template, Shopify prices stay near purchase cost and you can lose money after fees.",
     setupTitle: "Set up pricing first",
-    summaryDesc: "Discovery suggested prices use this template.",
+    summaryDesc: "Discovery suggested prices and list-to-store use this template.",
     targetCurrency: "Currency",
     title: "Pricing strategy"
   },
@@ -3487,7 +3492,8 @@ export const en = {
     connectShopReason: "Authorize to analyze products and set pricing.",
     connectShopAction: "Authorize",
     configurePricingTitle: "Set up pricing",
-    configurePricingReason: "Suggested prices are unreliable until pricing is configured.",
+    configurePricingReason:
+      "Save a pricing template before listing new products — otherwise Shopify prices stay near purchase cost and you can lose money.",
     configurePricingAction: "Configure now",
     confirmPendingTitle: "Confirm {{count}} pending links",
     confirmPendingReason: "Confirm or rebind to continue.",

@@ -11,7 +11,11 @@ import { SmartSourcingFilters } from "@/components/select/smart-sourcing-filters
 import { useOnboarding } from "@/context/onboarding-context";
 import { useLocale, useT } from "@/i18n/LocaleProvider";
 import { api, readableError } from "@/lib/api";
-import { resolveListingPricingContext } from "@/lib/listing-pricing";
+import {
+  needsPricingSetup,
+  PRICING_TEMPLATE_REQUIRED,
+  resolveListingPricingContext,
+} from "@/lib/listing-pricing";
 import { sourcingProcurementDisplay } from "@/lib/sourcing/display-pricing";
 import { hitsToCatalogRecommendations } from "@/lib/sourcing/map-catalog";
 import {
@@ -54,6 +58,8 @@ export function CatalogPublishPanel({
   filtersMountEl = null,
   /** Page-level pricing template; when saved upstream, local list reprices. */
   sharedTemplate = null,
+  /** Open pricing drawer — required before list-to-Shopify. */
+  onConfigurePricing,
   /** Report applied filter chips for PageContext / agents. */
   onAppliedFilterSummaryChange,
   /** Agent one-click preset: apply recommended category by name */
@@ -69,6 +75,7 @@ export function CatalogPublishPanel({
   recommendedCategories?: RecommendedCategory[];
   filtersMountEl?: HTMLElement | null;
   sharedTemplate?: PricingTemplate | null;
+  onConfigurePricing?: () => void;
   onAppliedFilterSummaryChange?: (chips: string[]) => void;
   filterPresetRequest?: {
     categoryName?: string;
@@ -342,6 +349,12 @@ export function CatalogPublishPanel({
     const current = publishState[item.candidateId];
     if (current?.loading) return;
 
+    if (needsPricingSetup(template)) {
+      showToast(t("catalogPublish.pricingRequired"));
+      onConfigurePricing?.();
+      return;
+    }
+
     const hit = sourcingHits.find((h) => {
       const row = hitsToCatalogRecommendations([h], template)[0];
       return row.candidateId === item.candidateId;
@@ -410,6 +423,15 @@ export function CatalogPublishPanel({
       }
 
       if (!outcome.ok || !outcome.result) {
+        if (outcome.error === PRICING_TEMPLATE_REQUIRED) {
+          showToast(t("catalogPublish.pricingRequired"));
+          onConfigurePricing?.();
+          setPublishState((prev) => ({
+            ...prev,
+            [item.candidateId]: { loading: false },
+          }));
+          return;
+        }
         throw new Error(outcome.error ?? t("catalogPublish.publishFailed"));
       }
 
@@ -480,6 +502,7 @@ export function CatalogPublishPanel({
 
   const listingCtx = resolveListingPricingContext(template);
   const targetCurrency = listingCtx?.targetCurrency ?? "USD";
+  const pricingBlocked = !pageLoading && needsPricingSetup(template);
 
   const filtersNode = (
     <SmartSourcingFilters
@@ -500,7 +523,7 @@ export function CatalogPublishPanel({
       onSelectSaved={(s) => void handleSelectSaved(s)}
       onRemoveSaved={handleRemoveSaved}
       onRefresh={() => void loadAll({ showSkeleton: false })}
-      refreshDisabled={pageLoading || pageTurning}
+      refreshDisabled={pageLoading || pageTurning || pricingBlocked}
       refreshing={pageLoading}
     />
   );
@@ -526,22 +549,44 @@ export function CatalogPublishPanel({
         </Card>
       ) : null}
 
-      <CatalogProductGrid
-        items={recommendations}
-        page={page}
-        pageSize={PAGE_SIZE}
-        pageLoading={pageLoading}
-        pageTurning={pageTurning}
-        hasNextPage={hasNextPage}
-        purchasePriceById={purchasePriceById}
-        sourcingMetaById={sourcingMetaById}
-        targetCurrency={targetCurrency}
-        publishState={publishState}
-        onPublish={(item) => void handlePublish(item)}
-        onLink={(item) => setLinkItem(item)}
-        onPrevPage={() => void goToPage(page - 1)}
-        onNextPage={() => void goToPage(page + 1)}
-      />
+      {pricingBlocked ? (
+        <Card className="border-amber-200 bg-amber-50/60">
+          <CardContent className="flex flex-col items-start gap-3 py-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-semibold text-amber-950">
+                {t("catalogPublish.pricingRequiredTitle")}
+              </p>
+              <p className="text-xs leading-5 text-amber-900/80">
+                {t("catalogPublish.pricingRequired")}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="shrink-0"
+              onClick={() => onConfigurePricing?.()}
+            >
+              {t("catalogPublish.configurePricing")}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <CatalogProductGrid
+          items={recommendations}
+          page={page}
+          pageSize={PAGE_SIZE}
+          pageLoading={pageLoading}
+          pageTurning={pageTurning}
+          hasNextPage={hasNextPage}
+          purchasePriceById={purchasePriceById}
+          sourcingMetaById={sourcingMetaById}
+          targetCurrency={targetCurrency}
+          publishState={publishState}
+          onPublish={(item) => void handlePublish(item)}
+          onLink={(item) => setLinkItem(item)}
+          onPrevPage={() => void goToPage(page - 1)}
+          onNextPage={() => void goToPage(page + 1)}
+        />
+      )}
 
       <CatalogLinkDrawer
         open={linkItem != null}

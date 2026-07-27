@@ -5,6 +5,7 @@ import type { ProductFocusSnapshot, CandidateSummary } from "@/lib/agents/produc
 import type { ProductCatalogEntry } from "@/lib/agents/products/resolve-product-target";
 import type { ScanHandoffPayload } from "@/lib/scan/handoff";
 import type { TranslateFn } from "@/i18n/server";
+import { needsPricingSetup } from "@/lib/listing-pricing";
 import {
   resolvePurchaseCostDisplayContext,
 } from "@/lib/purchase-cost-display";
@@ -14,11 +15,6 @@ export interface ProductsPurchaseDisplayContext {
   currency: string;
   exchangeRate: number;
   summaryLine: string;
-}
-
-/** Same rule as PricingStrategyRailCard — keep agent context in sync. */
-function needsPricingSetup(template: PricingTemplate | null): boolean {
-  return template == null || template.isDefault;
 }
 
 export type ProductsTab = "shop" | "catalog";

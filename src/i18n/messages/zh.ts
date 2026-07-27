@@ -791,7 +791,11 @@ export const zh: Dictionary = {
   },
   catalogPublish: {
     confirmPublish: "将「{{title}}」以 {{price}} 上架到 {{shopName}}？",
+    configurePricing: "配置定价模板",
     loadFailed: "加载目录失败：{{error}}",
+    pricingRequired:
+      "上架前请先保存定价模板。未配置时会按接近采购成本的价格挂到 Shopify，手续费后容易亏损。",
+    pricingRequiredTitle: "需要先配置定价才能上架",
     publishFailed: "上架失败",
     publishInProgress: "正在上架…",
     publishIncomplete: "上架未完成：{{message}}",
@@ -3185,9 +3189,10 @@ export const zh: Dictionary = {
     exchangeRate: "汇率",
     loading: "正在加载定价…",
     multiplier: "倍率",
-    setupDesc: "配置目标币种、汇率与倍率，发现新品建议售价才会符合你的利润预期。",
+    setupDesc:
+      "配置目标币种、汇率与倍率后再上架。未配置时建议售价接近采购成本，挂到 Shopify 后容易亏损。",
     setupTitle: "先配置定价",
-    summaryDesc: "发现新品建议售价按此模板计算。",
+    summaryDesc: "发现新品建议售价与上架价按此模板计算。",
     targetCurrency: "币种",
     title: "定价策略"
   },
@@ -3472,7 +3477,8 @@ export const zh: Dictionary = {
     connectShopReason: "授权后才能分析商品与配置定价。",
     connectShopAction: "去授权",
     configurePricingTitle: "先配置定价",
-    configurePricingReason: "未配置时建议售价不准。",
+    configurePricingReason:
+      "发现新品上架必须先保存定价模板，否则会按接近采购成本挂价，容易亏损。",
     configurePricingAction: "立即配置",
     confirmPendingTitle: "确认 {{count}} 个待关联",
     confirmPendingReason: "确认或改绑后即可继续。",

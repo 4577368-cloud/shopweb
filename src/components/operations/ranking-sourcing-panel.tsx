@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { imageSearchCountryForLocale } from "@/lib/batch-link/1688-title-locale";
 import { markCatalogPublished } from "@/lib/batch-link/publish-source";
 import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
+import { PRICING_TEMPLATE_REQUIRED } from "@/lib/listing-pricing";
 import { search1688OffersByKeyword } from "@/lib/sourcing/search-1688";
 import {
   continuePublishAfterPoolInBackground,
@@ -164,7 +165,11 @@ export function RankingSourcingPanel({
         }
 
         if (!outcome.ok || !outcome.result) {
-          throw new Error(t("ops.discovery.board.sourcePublishFailed"));
+          throw new Error(
+            outcome.error === PRICING_TEMPLATE_REQUIRED
+              ? t("catalogPublish.pricingRequired")
+              : t("ops.discovery.board.sourcePublishFailed")
+          );
         }
 
         const productId = outcome.result.shopifyProductId?.trim();
