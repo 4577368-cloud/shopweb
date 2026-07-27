@@ -50,7 +50,15 @@ export interface ProductCommandParams {
   copyTone?: string;
   copyRawText?: string;
   /** Batch: filter scope — which subset of products to process */
-  batchFilter?: "all" | "pending" | "confirmed" | "unbound";
+  batchFilter?:
+    | "all"
+    | "pending"
+    | "confirmed"
+    | "unbound"
+    | "linked"
+    | "listed"
+    | "page"
+    | "recent";
   /** Batch: max number of products to process (0 = all matching) */
   batchLimit?: number;
   /** Batch: resolved product IDs (computed during planning phase) */

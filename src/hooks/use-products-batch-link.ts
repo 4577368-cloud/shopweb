@@ -34,9 +34,10 @@ export function useProductsBatchLink({
   );
   const [pageLinkableScope, setPageLinkableScope] = useState<{
     ids: string[];
+    visibleIds: string[];
     page: number;
     totalPages: number;
-  }>({ ids: [], page: 1, totalPages: 1 });
+  }>({ ids: [], visibleIds: [], page: 1, totalPages: 1 });
 
   const batchLinkRequestSeq = useRef(0);
   const batchLinkBusyRef = useRef(false);

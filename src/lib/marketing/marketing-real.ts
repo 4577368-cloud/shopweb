@@ -1,4 +1,4 @@
-import { marketingCreditsBalance, marketingDossier, marketingPost } from "./marketing-proxy";
+import { marketingCreditsBalance, marketingDossier, marketingImageSearch, marketingPost } from "./marketing-proxy";
 import {
   buildAdspyParams,
   buildCompetitionParams,
@@ -97,7 +97,7 @@ export async function fetchRankListReal(
   params: RankParams
 ): Promise<MarketingResponse<{ list: RankRow[]; page: PageMeta }>> {
   const page = params.page ?? 1;
-  const pageSize = params.pageSize ?? 20;
+  const pageSize = params.pageSize ?? 12;
   const res = await marketingPost(PIPISPY_URI.rankList, buildRankListParams(params));
   const records = extractRecords(res.data);
   const list = records.map(mapRankRow);
@@ -115,7 +115,7 @@ export async function fetchRankListReal(
 export async function fetchSearchAdsReal(
   q: string,
   page = 1,
-  pageSize = 20
+  pageSize = 12
 ): Promise<MarketingResponse<{ list: AdCard[]; page: PageMeta }>> {
   const res = await marketingPost(PIPISPY_URI.productsSearch, buildSearchAdsParams(q, page, pageSize));
   const records = extractRecords(res.data);
@@ -134,7 +134,7 @@ export async function fetchTtsShopsReal(
   params: TtsShopParams
 ): Promise<MarketingResponse<{ list: TtsShopRow[]; page: PageMeta }>> {
   const page = params.page ?? 1;
-  const pageSize = params.pageSize ?? 20;
+  const pageSize = params.pageSize ?? 12;
   const res = await marketingPost(PIPISPY_URI.tiktokShopList, buildTtsShopParams(params));
   const records = extractRecords(res.data);
   const list = records.map(mapTtsShopRow);
@@ -186,7 +186,7 @@ export async function fetchAdspyListReal(
 ): Promise<MarketingResponse<{ list: CreativeBrief[]; page: PageMeta }>> {
   const uri = params.includeStopped ? PIPISPY_URI.adLibraryAds : PIPISPY_URI.adspyList;
   const page = params.page ?? 1;
-  const pageSize = params.pageSize ?? 20;
+  const pageSize = params.pageSize ?? 12;
   const res = await marketingPost(uri, buildAdspyParams(params));
   const records = extractRecords(res.data);
   const list = records.map(mapCreativeBrief);
@@ -375,12 +375,24 @@ export async function fetchStoreDeliveryAnalysisReal(
   };
 }
 
-/** pipispy 以图搜仍为三步 Job；真实链路待接，调用方在 api 层回退 mock。 */
+/**
+ * pipispy 以图搜真实链路：后端 /api/plugin/marketing/ai-search-image 编排
+ * （submit → status 轮询 → resultSummary → product/search，单次计费）。
+ * 支持 imageUrl 或 file 二选一；pageSize 默认 4，expectedCredits = (pageSize+3)*2。
+ */
 export async function fetchImageSearchReal(
-  _imageFile: File,
-  _page = 1
+  opts: { imageUrl?: string; file?: File | null; page?: number; pageSize?: number }
 ): Promise<MarketingResponse<{ list: ImageSearchResult[]; page: PageMeta }>> {
-  throw new Error("IMAGE_SEARCH_NOT_WIRED");
+  const page = opts.page ?? 1;
+  const pageSize = Math.min(Math.max(opts.pageSize ?? 4, 1), 50);
+  const expectedCredits = (pageSize + 3) * 2;
+  return marketingImageSearch({
+    imageUrl: opts.imageUrl,
+    file: opts.file ?? undefined,
+    page,
+    pageSize,
+    expectedCredits,
+  });
 }
 
 // --- 通用 dossier 扇出（一次 N 端点，路由页富内容落地）---

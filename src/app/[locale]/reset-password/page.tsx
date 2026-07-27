@@ -66,7 +66,7 @@ function ResetPasswordForm() {
       if (code === "WEAK_PASSWORD") return tt("auth.errorWeakPassword");
       if (code === "INVALID_REQUEST") return tt("auth.errorResetTokenInvalid");
       if (err.status === 0) return tt("auth.errorNetwork");
-      return err.message;
+      return tt("auth.errorUnknown");
     }
     return t("auth.errorUnknown");
   }

@@ -6,28 +6,26 @@ import { ShopProductsPanel } from "@/components/select/shop-products-panel";
 import type {
   ProductsShopTabSummaryProps,
 } from "@/components/select/products-page/products-shop-tab";
-import type { RecommendedCategory } from "@/lib/catalog-sourcing-types";
 import type { BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
 import type { ShopFilter } from "@/components/select/shop-products-panel";
+import type { CatalogScope } from "@/lib/products/catalog-scope";
 import type { AiFieldEditRecord } from "@/lib/ai-field-edit-feedback";
 import type { CandidateSummary } from "@/lib/agents/products/product-focus-snapshot";
 import type { ImageBindingView, PricingTemplate, ShopMirrorProduct } from "@/lib/types";
 import type { ShopProductMini } from "@/lib/agents/products/shop-minis";
 
 export interface UseProductsShopTabPropsParams {
-  displaySummaryReady: boolean;
-  displaySummaryShopProducts: number;
-  matched: number;
-  pendingCount: number;
-  unbound: number;
   pendingNewAnalysisCount: number;
   pendingNewAnalysisIds: Set<string>;
-  recommendedCategories: RecommendedCategory[];
-  restartScan: () => void;
+  catalogScope: CatalogScope;
+  setCatalogScope: (scope: CatalogScope) => void;
+  scopeCounts: { all: number; linked: number; listed: number };
   setShopFilter: (filter: ShopFilter) => void;
   hasNewProductsToLink: boolean;
   enqueueNewArrivalsBatchLink: () => void;
   batchLinkActive: boolean;
+  listRefreshing?: boolean;
+  onRefreshList?: () => void;
   refreshProductsQuietly: () => void;
   shopFilter: ShopFilter;
   commitAnalysisBaseline: (products: ShopMirrorProduct[]) => void;
@@ -42,11 +40,12 @@ export interface UseProductsShopTabPropsParams {
   handleBatchLinkProgressChange: (progress: BatchLinkProgress) => void;
   setPageLinkableScope: (scope: {
     ids: string[];
+    visibleIds: string[];
     page: number;
     totalPages: number;
   }) => void;
   onBatchLinkFinished: (progress: BatchLinkProgress) => void;
-  setFocusProductId: (id: string | null) => void;
+  setFocusProductId: React.Dispatch<React.SetStateAction<string | null>>;
   setBindingsMap: React.Dispatch<
     React.SetStateAction<Record<string, ImageBindingView>>
   >;
@@ -72,19 +71,17 @@ export function useProductsShopTabProps(
   panel: ComponentProps<typeof ShopProductsPanel>;
 } {
   const {
-    displaySummaryReady,
-    displaySummaryShopProducts,
-    matched,
-    pendingCount,
-    unbound,
     pendingNewAnalysisCount,
     pendingNewAnalysisIds,
-    recommendedCategories,
-    restartScan,
+    catalogScope,
+    setCatalogScope,
+    scopeCounts,
     setShopFilter,
     hasNewProductsToLink,
     enqueueNewArrivalsBatchLink,
     batchLinkActive,
+    listRefreshing = false,
+    onRefreshList,
     refreshProductsQuietly,
     shopFilter,
     commitAnalysisBaseline,
@@ -128,27 +125,13 @@ export function useProductsShopTabProps(
 
   const summary = useMemo(
     (): ProductsShopTabSummaryProps => ({
-      ready: displaySummaryReady,
-      analyzed: displaySummaryShopProducts,
-      matched,
-      pending: pendingCount,
-      unbound,
       pendingNewAnalysis: pendingNewAnalysisCount,
-      recommendedCategories,
-      onRefresh: restartScan,
       onViewNewArrivals,
       onBatchLinkNewArrivals,
       batchLinkBusy: batchLinkActive,
     }),
     [
-      displaySummaryReady,
-      displaySummaryShopProducts,
-      matched,
-      pendingCount,
-      unbound,
       pendingNewAnalysisCount,
-      recommendedCategories,
-      restartScan,
       onViewNewArrivals,
       onBatchLinkNewArrivals,
       batchLinkActive,
@@ -166,7 +149,13 @@ export function useProductsShopTabProps(
   );
 
   const onProductFocus = useCallback(
-    (id: string) => setFocusProductId(id),
+    (id: string) =>
+      setFocusProductId((prev) => (prev === id ? null : id)),
+    [setFocusProductId]
+  );
+
+  const onProductFocusClear = useCallback(
+    () => setFocusProductId(null),
     [setFocusProductId]
   );
 
@@ -195,6 +184,11 @@ export function useProductsShopTabProps(
       onActivity: refreshProductsQuietly,
       filter: shopFilter,
       onFilterChange: setShopFilter,
+      catalogScope,
+      onCatalogScopeChange: setCatalogScope,
+      scopeCounts,
+      onRefresh: onRefreshList,
+      refreshBusy: batchLinkActive || listRefreshing,
       pendingNewAnalysisIds,
       onMirrorAnalysisCommitted: commitAnalysisBaseline,
       focusProductId,
@@ -210,6 +204,7 @@ export function useProductsShopTabProps(
       onBatchLinkFinished,
       onSearchModeConsumed,
       onProductFocus,
+      onProductFocusClear,
       onBindingsChange: setBindingsMap,
       onShopProductsChange: syncSummaryFromShopData,
       onCandidateContextChange,
@@ -224,6 +219,11 @@ export function useProductsShopTabProps(
       refreshProductsQuietly,
       shopFilter,
       setShopFilter,
+      catalogScope,
+      setCatalogScope,
+      scopeCounts,
+      onRefreshList,
+      listRefreshing,
       pendingNewAnalysisIds,
       commitAnalysisBaseline,
       focusProductId,
@@ -239,6 +239,7 @@ export function useProductsShopTabProps(
       onBatchLinkFinished,
       onSearchModeConsumed,
       onProductFocus,
+      onProductFocusClear,
       setBindingsMap,
       syncSummaryFromShopData,
       onCandidateContextChange,

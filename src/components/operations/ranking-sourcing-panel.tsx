@@ -1,5 +1,5 @@
 // 榜单 → 找同款 → 加入 Tangbuy → 上架 Shopify。
-// 复用既有链路：image-aop 图搜（无需 Shopify 镜像商品）+ publishSourcingHit（优选池入库后再上架）。
+// 图搜走 image-aop（无需 Shopify 镜像）；无结果时用标题关键词再试一轮（对齐商品关联图搜的 title tier）。
 "use client";
 
 import { useCallback, useRef, useState } from "react";
@@ -10,8 +10,10 @@ import { useLocale, useT } from "@/i18n/LocaleProvider";
 import { api } from "@/lib/api";
 import { imageSearchCountryForLocale } from "@/lib/batch-link/1688-title-locale";
 import { markCatalogPublished } from "@/lib/batch-link/publish-source";
+import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
 import { search1688OffersByKeyword } from "@/lib/sourcing/search-1688";
 import {
+  continuePublishAfterPoolInBackground,
   publishSourcingHit,
   type PublishSourcingPhase,
 } from "@/lib/sourcing/publish-sourcing-hit";
@@ -19,6 +21,8 @@ import type { SourcingSearchHit } from "@/lib/sourcing/types";
 import type { PricingTemplate } from "@/lib/types";
 
 const MAX_HITS = 8;
+/** 与后端 SearchImageResolver.MAX_QUERY_LEN 对齐，避免过长英文标题干扰召回 */
+const MAX_TITLE_QUERY_LEN = 30;
 
 const PHASE_KEY: Record<PublishSourcingPhase, string> = {
   preparing: "ops.discovery.board.sourcePhasePreparing",
@@ -38,9 +42,17 @@ interface PublishState {
   error?: string;
 }
 
+function titleQuery(title: string): string {
+  const normalized = title.replace(/\s+/g, " ").trim();
+  if (normalized.length < 2) return "";
+  return normalized.length > MAX_TITLE_QUERY_LEN
+    ? normalized.slice(0, MAX_TITLE_QUERY_LEN)
+    : normalized;
+}
+
 export function RankingSourcingPanel({
   shopName,
-  title: _productTitle,
+  title,
   imageUrl,
 }: {
   shopName?: string | null;
@@ -63,12 +75,23 @@ export function RankingSourcingPanel({
     setState("loading");
     setError(null);
     setPublishById({});
+    const country = imageSearchCountryForLocale(locale);
     try {
-      const found = await search1688OffersByKeyword("", {
+      // 1) 纯图搜（后端对非 alicdn 会先 upload→imageId）
+      let found = await search1688OffersByKeyword("", {
         seedImageUrl: seed,
-        country: imageSearchCountryForLocale(locale),
+        country,
         size: MAX_HITS,
       });
+      // 2) 空结果时用截断标题再搜（对齐商品关联链路的 title tier；无 LLM）
+      const kw = titleQuery(title);
+      if (found.length === 0 && kw) {
+        found = await search1688OffersByKeyword(kw, {
+          seedImageUrl: seed,
+          country,
+          size: MAX_HITS,
+        });
+      }
       setHits(found.slice(0, MAX_HITS));
       setState(found.length > 0 ? "done" : "failed");
     } catch (err) {
@@ -76,8 +99,7 @@ export function RankingSourcingPanel({
       setError(err instanceof Error ? err.message : t("ops.discovery.board.sourceFailed"));
       setState("failed");
     }
-  }, [seed, locale, t]);
-
+  }, [seed, title, locale, t]);
   const handlePublish = useCallback(
     async (hit: SourcingSearchHit) => {
       if (!shop) return;
@@ -87,6 +109,16 @@ export function RankingSourcingPanel({
       }
 
       setPublishById((prev) => ({ ...prev, [hit.hitId]: { phase: "preparing" } }));
+
+      const finishPublished = (
+        productId: string,
+        catalogItem: NonNullable<Awaited<ReturnType<typeof publishSourcingHit>>["catalogItem"]>
+      ) => {
+        markCatalogPublished(shop, productId);
+        queuePublishReveal(shop, productId, catalogItem);
+        setPublishById((prev) => ({ ...prev, [hit.hitId]: { published: true } }));
+      };
+
       try {
         if (templateRef.current === undefined) {
           templateRef.current = await api.getPricingTemplate(shop).catch(() => null);
@@ -95,28 +127,62 @@ export function RankingSourcingPanel({
           hit,
           shopName: shop,
           template: templateRef.current,
-          onPhase: (phase) =>
-            setPublishById((prev) => ({ ...prev, [hit.hitId]: { ...prev[hit.hitId], phase } })),
+          onPhase: (phase) => {
+            // 入库轮询阶段立刻切到「可离开」态，不再转圈等待
+            if (phase === "pool_poll") {
+              setPublishById((prev) => ({ ...prev, [hit.hitId]: { pending: true } }));
+              return;
+            }
+            setPublishById((prev) => ({
+              ...prev,
+              [hit.hitId]: { ...prev[hit.hitId], phase, error: undefined },
+            }));
+          },
         });
 
+        if (outcome.awaitingPool) {
+          setPublishById((prev) => ({ ...prev, [hit.hitId]: { pending: true } }));
+          continuePublishAfterPoolInBackground(
+            {
+              hit,
+              shopName: shop,
+              template: templateRef.current,
+            },
+            {
+              onPublished: (productId, catalogItem) => {
+                finishPublished(productId, catalogItem);
+              },
+              onPublishing: () => {
+                setPublishById((prev) => ({
+                  ...prev,
+                  [hit.hitId]: { pending: true },
+                }));
+              },
+            }
+          );
+          return;
+        }
+
         if (!outcome.ok || !outcome.result) {
-          throw new Error(outcome.error ?? t("ops.discovery.board.sourcePublishFailed"));
+          throw new Error(t("ops.discovery.board.sourcePublishFailed"));
         }
 
         const productId = outcome.result.shopifyProductId?.trim();
-        if (outcome.result.publishStatus === "PUBLISHED" && productId) {
-          markCatalogPublished(shop, productId);
-          setPublishById((prev) => ({ ...prev, [hit.hitId]: { published: true } }));
+        if (outcome.result.publishStatus === "PUBLISHED" && productId && outcome.catalogItem) {
+          finishPublished(productId, outcome.catalogItem);
         } else if (outcome.result.publishStatus === "PUBLISHING") {
           setPublishById((prev) => ({ ...prev, [hit.hitId]: { pending: true } }));
+        } else if (outcome.result.publishStatus === "PUBLISHED" && productId) {
+          markCatalogPublished(shop, productId);
+          setPublishById((prev) => ({ ...prev, [hit.hitId]: { published: true } }));
         } else {
-          throw new Error(outcome.result.message ?? outcome.result.publishStatus);
+          throw new Error(t("ops.discovery.board.sourcePublishFailed"));
         }
       } catch (err) {
         setPublishById((prev) => ({
           ...prev,
           [hit.hitId]: {
-            error: err instanceof Error ? err.message : t("ops.discovery.board.sourcePublishFailed"),
+            error: t("ops.discovery.board.sourcePublishFailed"),
           },
         }));
       }
@@ -176,7 +242,7 @@ export function RankingSourcingPanel({
       )}
 
       {state === "failed" && (
-        <p className="mt-2 text-[11px] text-destructive">
+        <p className={`mt-2 text-[11px] ${error ? "text-destructive" : "text-ink-subtle"}`}>
           {error || t("ops.discovery.board.sourceEmpty")}
         </p>
       )}
@@ -185,7 +251,12 @@ export function RankingSourcingPanel({
         <ul className="mt-2 space-y-2">
           {hits.map((hit) => {
             const ps = publishById[hit.hitId];
-            const busy = Boolean(ps?.phase) && !ps?.error;
+            const busy =
+              Boolean(ps?.phase) &&
+              !ps?.error &&
+              !ps?.pending &&
+              !ps?.published &&
+              ps?.phase !== "pool_poll";
             return (
               <li key={hit.hitId} className="flex gap-2 rounded border border-hairline p-1.5">
                 <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded bg-surface-muted">
@@ -233,7 +304,7 @@ export function RankingSourcingPanel({
                         rel="noreferrer"
                         className="inline-flex items-center gap-0.5 text-[11px] text-link hover:underline"
                       >
-                        1688
+                        {t("ops.discovery.board.sourceOpenOffer")}
                         <ExternalLink className="h-3 w-3" />
                       </a>
                     )}

@@ -12,3 +12,15 @@ export class GuardCancelledError extends Error {
 export function isGuardCancel(e: unknown): boolean {
   return e instanceof GuardCancelledError;
 }
+
+/** 余额不足（服务端 402）：视图据此跳过通用错误红框，改由余额不足弹窗引导充值/领取。 */
+export class InsufficientCreditsError extends Error {
+  constructor(public remaining?: number, public estimate?: number) {
+    super("insufficient-credits");
+    this.name = "InsufficientCreditsError";
+  }
+}
+
+export function isInsufficient(e: unknown): boolean {
+  return e instanceof InsufficientCreditsError;
+}

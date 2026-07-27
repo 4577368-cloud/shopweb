@@ -1,4 +1,10 @@
-import type { DossierRaw, DossierRequestItem, MarketingResponse } from "./types";
+import type {
+  DossierRaw,
+  DossierRequestItem,
+  ImageSearchResult,
+  MarketingResponse,
+  PageMeta,
+} from "./types";
 
 export class MarketingApiError extends Error {
   readonly status: number;
@@ -18,6 +24,9 @@ interface PluginEnvelope {
   data?: unknown;
   consumedCredits?: number;
   remainingCredits?: number;
+  chargedCredits?: number;
+  remainingUserCredits?: number;
+  freeWindow?: boolean;
   code?: number;
   message?: string;
 }
@@ -36,6 +45,10 @@ function wrapCredits<T>(body: PluginEnvelope, data: T): MarketingResponse<T> {
     source: "pipispy",
     consumedCredits: body.consumedCredits ?? 0,
     remainingCredits: body.remainingCredits ?? 0,
+    freeWindow: body.freeWindow,
+    chargedCredits: body.chargedCredits,
+    remainingUserCredits: body.remainingUserCredits,
+    message: body.message,
   };
 }
 
@@ -128,4 +141,50 @@ export async function marketingDossier(
   } catch {
     throw new MarketingApiError("Invalid JSON from dossier API", res.status);
   }
+}
+
+/**
+ * POST /api/plugin/marketing/ai-search-image — 以图搜编排端点（multipart）。
+ * 支持 imageUrl（直接 submit/image-url）或 file（上传后服务端托管）二选一，
+ * 外加 page / pageSize / expectedCredits。响应为 MarketingDataResponse 包裹，
+ * 与 /data 同源，复用 wrapCredits 解包。
+ */
+export async function marketingImageSearch(params: {
+  imageUrl?: string;
+  file?: File;
+  page: number;
+  pageSize: number;
+  expectedCredits: number;
+}): Promise<MarketingResponse<{ list: ImageSearchResult[]; page: PageMeta }>> {
+  const fd = new FormData();
+  if (params.imageUrl) fd.append("imageUrl", params.imageUrl);
+  if (params.file) fd.append("file", params.file);
+  fd.append("page", String(params.page));
+  fd.append("pageSize", String(params.pageSize));
+  fd.append("expectedCredits", String(params.expectedCredits));
+  let res: Response;
+  try {
+    res = await fetch("/api/plugin/marketing/ai-search-image", {
+      method: "POST",
+      credentials: "include",
+      body: fd,
+    });
+  } catch (err) {
+    throw new MarketingApiError(
+      `Image search request failed: ${err instanceof Error ? err.message : String(err)}`,
+      0
+    );
+  }
+  const body = await parseEnvelope(res);
+  if (!res.ok || body.ok === false) {
+    throw new MarketingApiError(
+      body.message ?? `Image search failed (${res.status})`,
+      res.status,
+      body.code
+    );
+  }
+  return wrapCredits(body, body.data) as MarketingResponse<{
+    list: ImageSearchResult[];
+    page: PageMeta;
+  }>;
 }

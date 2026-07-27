@@ -403,7 +403,11 @@ function StoreAnalysisSection({ analysis, t }: { analysis: StoreAnalysisState; t
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <span className="text-[11px] font-medium text-ink-muted">{t("ops.competition.analysis.title")}</span>
-        <CostBadge free />
+        {analysis.freeWindow ? (
+          <CostBadge free />
+        ) : (
+          <CostBadge points={analysis.points} />
+        )}
       </div>
       {analysis.loading && (
         <p className="text-[11px] text-ink-subtle">{t("ops.competition.analysis.loading")}</p>

@@ -93,5 +93,14 @@ export async function search1688OffersByKeyword(
       displayMultiplier: DEFAULT_1688_DISPLAY_MULTIPLIER,
     });
   }
+  if (items.length > 0 && out.length === 0 && typeof console !== "undefined") {
+    console.warn("[sourcing/1688] gateway returned items but none had a usable offerId", {
+      raw: items.length,
+      sample: items.slice(0, 2).map((i) => ({
+        offerId: i.offerId,
+        detailUrl: i.detailUrl,
+      })),
+    });
+  }
   return out;
 }

@@ -3,6 +3,9 @@ export interface ProductCatalogEntry {
   title: string;
   bindState?: string;
   shopStatus?: string | null;
+  /** linked = Shopify 原有再绑货源；listed = 经本路径选品上架 */
+  origin?: "linked" | "listed" | null;
+  updatedAt?: string | null;
 }
 
 export type ProductTargetResolution =

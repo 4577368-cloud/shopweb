@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import {
   billingApi,
+  type CreditBucketBreakdown,
   type CreditLotItem,
   type CreditLotListResponse,
   type CreditOverview,
@@ -25,8 +26,6 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { localeHtmlLang } from "@/i18n/config";
 import { cn } from "@/lib/utils";
-import { fetchCreditsBalance } from "@/lib/marketing/api";
-import type { CreditsBalance } from "@/lib/marketing/types";
 import {
   AccountCard,
   AccountEmptyState,
@@ -37,6 +36,7 @@ import {
   AccountSignInState,
 } from "@/components/account/account-primitives";
 import {
+  AccountLedgerTable,
   AccountPagination,
   AccountSegmentedFilter,
   AccountStatItem,
@@ -53,6 +53,9 @@ import {
  *   3. Lots — credit batches (subscription / credit_pack / promo / manual)
  *      with consumption & expiry progress.
  */
+// 与后端 WELCOME_CREDITS 保持一致（CreditService.WELCOME_CREDITS = 30）。
+const WELCOME_CREDITS = 30;
+
 export default function AccountCreditsPage() {
   const t = useT();
   const locale = useLocale();
@@ -63,10 +66,18 @@ export default function AccountCreditsPage() {
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewError, setOverviewError] = useState<string | null>(null);
 
-  // pipispy 实时 API 额度（剩余数量，与运营中心顶部一致）。按 API key 维度，是最真实的剩余。
-  const [apiBalance, setApiBalance] = useState<CreditsBalance | null>(null);
-  const [apiBalanceLoading, setApiBalanceLoading] = useState(true);
-  const [apiBalanceError, setApiBalanceError] = useState<string | null>(null);
+  // L1 用户钱包（双桶：免费 vs 付费；运营中心真实计费口径）
+  const [wallet, setWallet] = useState<CreditBucketBreakdown | null>(null);
+  const [walletLoading, setWalletLoading] = useState(true);
+  const [walletError, setWalletError] = useState<string | null>(null);
+
+  // 欢迎分领取状态（服务端水合，G5e）
+  const [welcomeClaimed, setWelcomeClaimed] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+
+  // 近 7 天每日消耗（绝对值），由流水聚合得出
+  const [trend, setTrend] = useState<number[]>([]);
+  const [trendLoading, setTrendLoading] = useState(true);
 
   // ===== Transactions =====
   const [txType, setTxType] = useState<string>("");
@@ -99,16 +110,40 @@ export default function AccountCreditsPage() {
     }
   }, [t]);
 
-  const loadApiBalance = useCallback(async () => {
-    setApiBalanceLoading(true);
-    setApiBalanceError(null);
+  const loadWelcomeStatus = useCallback(async () => {
     try {
-      const b = await fetchCreditsBalance();
-      setApiBalance(b);
+      const s = await billingApi.welcomeStatus();
+      setWelcomeClaimed(Boolean(s.claimed));
+    } catch {
+      // 水合失败不阻断；领取按钮仍可走 claim 幂等
+    }
+  }, []);
+
+  const loadWallet = useCallback(async () => {
+    setWalletLoading(true);
+    setWalletError(null);
+    try {
+      const w = await billingApi.creditBuckets();
+      setWallet(w);
     } catch (err) {
-      setApiBalanceError(readError(err, t));
+      setWalletError(readError(err, t));
     } finally {
-      setApiBalanceLoading(false);
+      setWalletLoading(false);
+    }
+  }, [t]);
+
+  const loadTrend = useCallback(async () => {
+    setTrendLoading(true);
+    try {
+      const resp: CreditTransactionListResponse = await billingApi.listCreditTransactions({
+        limit: 200,
+        offset: 0,
+      });
+      setTrend(aggregate7d(resp.items ?? []));
+    } catch {
+      setTrend([]);
+    } finally {
+      setTrendLoading(false);
     }
   }, [t]);
 
@@ -159,14 +194,35 @@ export default function AccountCreditsPage() {
     [t]
   );
 
+  // 领取欢迎分（F8：账户页入口；幂等，与运营中心一致）。
+  const handleClaimWelcome = useCallback(async () => {
+    if (claiming) return;
+    setClaiming(true);
+    try {
+      const res = await billingApi.claimWelcome();
+      if (res.claimed || res.alreadyClaimed) {
+        setWelcomeClaimed(true);
+        void loadOverview();
+        void loadWallet();
+        void loadLots(lotOffset);
+      }
+    } catch {
+      // 静默：失败不影响既有余额展示
+    } finally {
+      setClaiming(false);
+    }
+  }, [claiming, loadOverview, loadWallet, loadLots, lotOffset]);
+
   useEffect(() => {
     if (bootstrapping) return;
     if (status !== "authenticated") return;
-    void loadApiBalance();
+    void loadWelcomeStatus();
     void loadOverview();
+    void loadWallet();
+    void loadTrend();
     void loadTransactions("", 0);
     void loadLots(0);
-  }, [bootstrapping, status, loadApiBalance, loadOverview, loadTransactions, loadLots]);
+  }, [bootstrapping, status, loadWelcomeStatus, loadOverview, loadWallet, loadTrend, loadTransactions, loadLots]);
 
   if (bootstrapping) {
     return <AccountLoadingState message={t("common.loading")} />;
@@ -194,17 +250,24 @@ export default function AccountCreditsPage() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              void loadApiBalance();
+              void loadWelcomeStatus();
               void loadOverview();
+              void loadWallet();
+              void loadTrend();
               void loadTransactions(txType, txOffset);
               void loadLots(lotOffset);
             }}
-            disabled={apiBalanceLoading || overviewLoading || txLoading || lotLoading}
+            disabled={
+              overviewLoading ||
+              walletLoading ||
+              txLoading ||
+              lotLoading
+            }
           >
             <RefreshCw
               className={cn(
                 "h-3.5 w-3.5",
-                (apiBalanceLoading || overviewLoading || txLoading || lotLoading) && "animate-spin"
+                (overviewLoading || walletLoading || txLoading || lotLoading) && "animate-spin"
               )}
             />
             {t("accountCredits.refresh")}
@@ -214,38 +277,98 @@ export default function AccountCreditsPage() {
 
       {/* ===== Overview ===== */}
       <AccountCard>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-50 text-purple-700">
-              <Sparkles className="h-5 w-5" />
-            </div>
+        {/* ===== 欢迎分领取入口（F8：账户页此前缺入口） ===== */}
+        {!welcomeClaimed && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-card)] border border-brand-soft bg-brand-soft/40 px-4 py-3">
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
-                {t("accountCredits.currentBalance")}
+              <p className="text-[12px] font-semibold text-ink">{t("accountCredits.welcomeClaimTitle")}</p>
+              <p className="mt-0.5 text-[11px] text-ink-muted">
+                {t("accountCredits.welcomeClaimDesc", { n: WELCOME_CREDITS })}
               </p>
-              {apiBalanceLoading ? (
-                <div className="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {t("accountCredits.loading")}
-                </div>
-              ) : (
-                <p className="mt-0.5 text-2xl font-semibold tabular-nums text-foreground">
-                  {apiBalance?.remainingApiCredits ?? 0}
-                </p>
-              )}
-              {apiBalanceError ? (
-                <p className="mt-1 text-[11px] text-destructive">{apiBalanceError}</p>
-              ) : apiBalance ? (
-                <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground/80">
-                  <p>{t("accountCredits.apiSource")}</p>
-                  <p className="tabular-nums">
-                    {t("accountCredits.monitorRemaining")}:{" "}
-                    {apiBalance.remainingMonitorCredits.toLocaleString()}
-                  </p>
-                </div>
-              ) : null}
             </div>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={handleClaimWelcome}
+              disabled={claiming}
+            >
+              {claiming ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                t("accountCredits.welcomeClaimCta", { n: WELCOME_CREDITS })
+              )}
+            </Button>
           </div>
+        )}
+
+        {/* ===== 用户钱包（L1）— 主余额（运营中心真实计费口径） ===== */}
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-50 text-purple-700">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+              {t("accountCredits.currentBalance")}
+            </p>
+            {walletLoading ? (
+              <div className="mt-1 flex items-center gap-2 text-[12px] text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {t("accountCredits.loading")}
+              </div>
+            ) : walletError ? (
+              <p className="mt-1 text-[11px] text-destructive">{walletError}</p>
+            ) : (
+              <p className="mt-0.5 text-2xl font-semibold tabular-nums text-foreground">
+                {wallet?.balanceCredits ?? 0}{" "}
+                <span className="text-[12px] font-normal text-muted-foreground">
+                  {t("ops.usage.points")}
+                </span>
+              </p>
+            )}
+            {wallet && !walletError && (
+              <div className="mt-2">
+                {/* 双桶：免费(welcome) vs 付费(subscription+pack+promo) */}
+                <div className="flex h-2 w-full max-w-xs overflow-hidden rounded-full bg-muted">
+                  <div className="h-full bg-emerald-500" style={{ width: `${dualPct(wallet).free}%` }} />
+                  <div className="h-full bg-brand-accent" style={{ width: `${dualPct(wallet).paid}%` }} />
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                  <span>
+                    <b className="text-foreground">{wallet.freeCredits.toLocaleString()}</b>{" "}
+                    {t("ops.wallet.free")}
+                  </span>
+                  <span>
+                    <b className="text-foreground">{wallet.subscriptionCredits.toLocaleString()}</b>{" "}
+                    {t("ops.wallet.subscription")}
+                  </span>
+                  <span>
+                    <b className="text-foreground">{wallet.packCredits.toLocaleString()}</b>{" "}
+                    {t("ops.wallet.pack")}
+                  </span>
+                  <span>
+                    <b className="text-foreground">{wallet.promoCredits.toLocaleString()}</b>{" "}
+                    {t("ops.wallet.promo")}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ===== 近 7 天消耗趋势（由流水聚合） ===== */}
+        <div className="mt-4 border-t border-surface-border pt-4">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+            {t("accountCredits.trendTitle")}
+          </p>
+          {trendLoading ? (
+            <div className="mt-2 flex items-center gap-2 text-[12px] text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {t("accountCredits.loading")}
+            </div>
+          ) : (
+            <SevenDayTrend data={trend} locale={locale} />
+          )}
         </div>
 
         <div className="mt-4 border-t border-surface-border pt-4">
@@ -341,51 +464,102 @@ export default function AccountCreditsPage() {
             <AccountEmptyState message={t("accountCredits.transactionsEmpty")} />
           ) : (
             <>
-              <ul className="divide-y divide-surface-border">
-                {transactions.map((tx) => (
-                  <li key={tx.id} className="py-2.5">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <CreditTxTypeTag type={tx.type} t={t} />
-                          {tx.endpoint ? (
-                            <code className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                              {tx.endpoint}
-                            </code>
-                          ) : null}
-                          <span className="text-[10px] text-muted-foreground/80">
-                            {fmtDate(locale, tx.createdAt)}
-                          </span>
-                        </div>
-                        {tx.remark ? (
-                          <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={tx.remark}>
+              <AccountLedgerTable
+                columns={[
+                  {
+                    key: "time",
+                    header: t("accountCommon.ledgerCols.time"),
+                    render: (tx) => (
+                      <span className="text-muted-foreground">
+                        {fmtDate(locale, tx.createdAt)}
+                      </span>
+                    ),
+                    sortValue: (tx) => tx.createdAt,
+                    sortable: true,
+                  },
+                  {
+                    key: "type",
+                    header: t("accountCommon.ledgerCols.type"),
+                    render: (tx) => <CreditTxTypeTag type={tx.type} t={t} />,
+                  },
+                  {
+                    key: "endpoint",
+                    header: t("accountCommon.ledgerCols.endpoint"),
+                    render: (tx) =>
+                      tx.endpoint ? (
+                        <code className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                          {tx.endpoint}
+                        </code>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      ),
+                  },
+                  {
+                    key: "bucket",
+                    header: t("accountCommon.ledgerCols.bucket"),
+                    render: (tx) =>
+                      tx.bucket ? <LotSourceTag source={tx.bucket} t={t} /> : (
+                        <span className="text-muted-foreground/50">—</span>
+                      ),
+                  },
+                  {
+                    key: "amount",
+                    header: t("accountCommon.ledgerCols.amount"),
+                    align: "right",
+                    render: (tx) => (
+                      <span
+                        className={cn(
+                          "font-semibold tabular-nums",
+                          tx.amount >= 0 ? "text-brand-accent" : "text-foreground"
+                        )}
+                      >
+                        {tx.amount >= 0 ? "+" : ""}
+                        {tx.amount}
+                      </span>
+                    ),
+                    sortValue: (tx) => tx.amount,
+                    sortable: true,
+                  },
+                  {
+                    key: "balance",
+                    header: t("accountCommon.ledgerCols.balance"),
+                    align: "right",
+                    render: (tx) => (
+                      <span className="tabular-nums text-muted-foreground">
+                        {tx.balanceAfter}
+                      </span>
+                    ),
+                    sortValue: (tx) => tx.balanceAfter,
+                    sortable: true,
+                  },
+                  {
+                    key: "note",
+                    header: t("accountCommon.ledgerCols.note"),
+                    render: (tx) => {
+                      if (tx.remark) {
+                        return (
+                          <span className="text-muted-foreground" title={tx.remark}>
                             {tx.remark}
-                          </p>
-                        ) : null}
-                        {tx.refId ? (
-                          <p className="mt-0.5 text-[10px] text-muted-foreground/80">
-                            {tx.refType ?? ""} · {tx.refId}
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="text-right">
-                        <p
-                          className={cn(
-                            "text-[13px] font-semibold tabular-nums",
-                            tx.amount >= 0 ? "text-brand-accent" : "text-foreground"
-                          )}
-                        >
-                          {tx.amount >= 0 ? "+" : ""}
-                          {tx.amount}
-                        </p>
-                        <p className="text-[10px] tabular-nums text-muted-foreground/80">
-                          {t("accountCredits.balanceAfterPlatform")}: {tx.balanceAfter}
-                        </p>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                          </span>
+                        );
+                      }
+                      if (tx.refId) {
+                        return (
+                          <span className="text-muted-foreground/80">
+                            {tx.refType ? `${tx.refType} · ` : ""}
+                            {tx.refId}
+                          </span>
+                        );
+                      }
+                      return <span className="text-muted-foreground/50">—</span>;
+                    },
+                  },
+                ]}
+                rows={transactions}
+                rowKey={(tx) => String(tx.id)}
+                zebra
+                minWidth="900px"
+              />
               <AccountPagination
                 offset={txOffset}
                 total={txTotal}
@@ -407,6 +581,26 @@ export default function AccountCreditsPage() {
           <p className="mt-1 text-[11px] text-muted-foreground/80">
             {t("accountCredits.lotsHint")}
           </p>
+          {!lotLoading && !lotError && lots.length > 0 ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] text-muted-foreground/70">{t("accountCredits.lotBySource")}:</span>
+              {(["subscription", "credit_pack", "promo", "manual", "welcome"] as string[]).map((s) => {
+                const total = lots
+                  .filter((l) => l.sourceType === s)
+                  .reduce((a, l) => a + l.remaining, 0);
+                if (total <= 0) return null;
+                return (
+                  <span
+                    key={s}
+                    className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px]"
+                  >
+                    <LotSourceTag source={s} t={t} />
+                    <b className="tabular-nums text-foreground">{total}</b>
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-4">
@@ -421,42 +615,98 @@ export default function AccountCreditsPage() {
             <AccountEmptyState message={t("accountCredits.lotsEmpty")} />
           ) : (
             <>
-              <ul className="divide-y divide-surface-border">
-                {lots.map((lot) => (
-                  <li key={lot.id} className="py-3">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <LotSourceTag source={lot.sourceType} t={t} />
-                          <span className="text-[10px] text-muted-foreground/80">
-                            {fmtDate(locale, lot.createdAt)}
-                          </span>
-                          {lot.expiresAt ? (
-                            <span className="text-[10px] text-muted-foreground/80">
-                              · {t("accountCredits.expiresAt")} {fmtDate(locale, lot.expiresAt)}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-muted-foreground sm:grid-cols-4">
-                          <Detail label={t("accountCredits.lotGranted")} value={lot.amountGranted} />
-                          <Detail label={t("accountCredits.lotConsumed")} value={lot.amountConsumed} />
-                          <Detail label={t("accountCredits.lotExpired")} value={lot.amountExpired} />
-                          <Detail label={t("accountCredits.lotRemaining")} value={lot.remaining} />
-                        </div>
-                        {/* Consumption progress bar */}
-                        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <AccountLedgerTable
+                columns={[
+                  {
+                    key: "source",
+                    header: t("accountCommon.ledgerCols.source"),
+                    render: (lot) => <LotSourceTag source={lot.sourceType} t={t} />,
+                  },
+                  {
+                    key: "granted",
+                    header: t("accountCommon.ledgerCols.granted"),
+                    align: "right",
+                    render: (lot) => (
+                      <span className="tabular-nums text-muted-foreground">
+                        {lot.amountGranted}
+                      </span>
+                    ),
+                    sortValue: (lot) => lot.amountGranted,
+                    sortable: true,
+                  },
+                  {
+                    key: "consumed",
+                    header: t("accountCommon.ledgerCols.consumed"),
+                    align: "right",
+                    render: (lot) => (
+                      <span className="tabular-nums text-muted-foreground">
+                        {lot.amountConsumed}
+                      </span>
+                    ),
+                    sortValue: (lot) => lot.amountConsumed,
+                    sortable: true,
+                  },
+                  {
+                    key: "expired",
+                    header: t("accountCommon.ledgerCols.expired"),
+                    align: "right",
+                    render: (lot) => (
+                      <span className="tabular-nums text-muted-foreground">
+                        {lot.amountExpired}
+                      </span>
+                    ),
+                    sortValue: (lot) => lot.amountExpired,
+                    sortable: true,
+                  },
+                  {
+                    key: "remaining",
+                    header: t("accountCommon.ledgerCols.remaining"),
+                    align: "right",
+                    render: (lot) => (
+                      <span className="font-semibold tabular-nums">
+                        {lot.remaining}
+                      </span>
+                    ),
+                    sortValue: (lot) => lot.remaining,
+                    sortable: true,
+                  },
+                  {
+                    key: "progress",
+                    header: t("accountCommon.ledgerCols.progress"),
+                    render: (lot) => (
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
                           <div
                             className="h-full bg-brand-accent"
-                            style={{
-                              width: `${pctConsumed(lot)}%`,
-                            }}
+                            style={{ width: `${pctConsumed(lot)}%` }}
                           />
                         </div>
+                        <span className="text-[10px] tabular-nums text-muted-foreground">
+                          {pctConsumed(lot)}%
+                        </span>
                       </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    ),
+                  },
+                  {
+                    key: "expiresAt",
+                    header: t("accountCommon.ledgerCols.expiresAt"),
+                    render: (lot) =>
+                      lot.expiresAt ? (
+                        <span className="text-muted-foreground">
+                          {fmtDate(locale, lot.expiresAt)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      ),
+                    sortValue: (lot) => lot.expiresAt ?? "",
+                    sortable: true,
+                  },
+                ]}
+                rows={lots}
+                rowKey={(lot) => String(lot.id)}
+                zebra
+                minWidth="780px"
+              />
               <AccountPagination
                 offset={lotOffset}
                 total={lotTotal}
@@ -471,7 +721,11 @@ export default function AccountCreditsPage() {
 
       <div className="space-y-1 text-[11px] leading-5 text-muted-foreground/80">
         <p>{t("accountCredits.footnote")}</p>
-        <p>{t("accountCredits.footnoteLedger")}</p>
+        <p>
+          <a href={localePath(locale, "/account/refund-policy")} className="text-link hover:underline">
+            {t("accountCredits.refundPolicyLink")}
+          </a>
+        </p>
       </div>
     </section>
   );
@@ -548,6 +802,7 @@ function LotSourceTag({
     subscription: "bg-purple-50 text-purple-700",
     credit_pack: "bg-brand-soft text-brand-accent",
     promo: "bg-emerald-50 text-emerald-700",
+    welcome: "bg-emerald-100 text-emerald-800",
     manual: "bg-muted text-muted-foreground",
   };
   const cls = styles[source] ?? "bg-muted text-muted-foreground";
@@ -567,6 +822,7 @@ function lotSourceLabel(source: string, t: (key: string, params?: Record<string,
   if (source === "subscription") return t("accountCredits.lotSourceSubscription");
   if (source === "credit_pack") return t("accountCredits.lotSourceCreditPack");
   if (source === "promo") return t("accountCredits.lotSourcePromo");
+  if (source === "welcome") return t("accountCredits.lotSourceWelcome");
   if (source === "manual") return t("accountCredits.lotSourceManual");
   return source;
 }
@@ -583,8 +839,61 @@ function readError(err: unknown, t: (key: string, params?: Record<string, string
   if (err instanceof ApiError) {
     if (err.status === 0) return t("auth.errorNetwork");
     if (err.status === 401) return t("accountCredits.errorUnauthenticated");
-    return err.message;
+    return t("auth.errorUnknown");
   }
-  if (err instanceof Error) return err.message;
   return t("auth.errorUnknown");
+}
+
+// ===== D9 helpers =====
+
+/** 双桶占比：免费(welcome) vs 付费(subscription+pack+promo)。 */
+function dualPct(w: CreditBucketBreakdown): { free: number; paid: number } {
+  const total = w.freeCredits + w.paidCredits;
+  if (total <= 0) return { free: 0, paid: 0 };
+  return {
+    free: Math.round((w.freeCredits / total) * 100),
+    paid: Math.round((w.paidCredits / total) * 100),
+  };
+}
+
+/** 由流水聚合近 7 天每日消耗（绝对值）。 */
+function aggregate7d(items: CreditTransactionItem[]): number[] {
+  const days: number[] = [0, 0, 0, 0, 0, 0, 0];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (const tx of items) {
+    if (tx.type !== "consume") continue;
+    const d = new Date(tx.createdAt);
+    if (Number.isNaN(d.getTime())) continue;
+    const diff = Math.floor(
+      (today.getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000
+    );
+    if (diff < 0 || diff > 6) continue;
+    days[6 - diff] += Math.max(0, -tx.amount);
+  }
+  return days;
+}
+
+function SevenDayTrend({ data, locale }: { data: number[]; locale: string }) {
+  const max = Math.max(1, ...data);
+  const lang = localeHtmlLang[locale as keyof typeof localeHtmlLang] ?? locale;
+  const labels = data.map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (data.length - 1 - i));
+    return d.toLocaleDateString(lang, { weekday: "short" });
+  });
+  return (
+    <div className="mt-2 flex items-end gap-1.5" style={{ height: 72 }}>
+      {data.map((v, i) => (
+        <div key={i} className="flex flex-1 flex-col items-center justify-end gap-1">
+          <span className="text-[9px] tabular-nums text-muted-foreground">{v > 0 ? v : ""}</span>
+          <div
+            className="w-full rounded-t bg-brand-accent/70"
+            style={{ height: `${Math.max(2, Math.round((v / max) * 44))}px` }}
+          />
+          <span className="text-[9px] text-muted-foreground/70">{labels[i]}</span>
+        </div>
+      ))}
+    </div>
+  );
 }

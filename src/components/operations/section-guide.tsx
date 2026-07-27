@@ -8,7 +8,7 @@
 import { useT } from "@/i18n/LocaleProvider";
 import { Lightbulb, Sparkles } from "@/lib/ui/icons";
 
-type GuideTab = "discovery" | "competition" | "creatives" | "imageSearch";
+type GuideTab = "discovery" | "competition" | "creatives" | "imageSearch" | "favorites";
 
 /** 右栏板块教程 / 营销文案面板：随 Tab 切换讲解该板块的价值与核心指标。 */
 export function SectionGuide({ tab }: { tab: GuideTab }) {

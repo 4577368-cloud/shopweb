@@ -15,6 +15,7 @@ import { CostBadge } from "./cost-badge";
 import { CoverThumb } from "./cover-thumb";
 import { PlatformBadge } from "./platform-badge";
 import { fmtCompact, fmtInt } from "@/lib/marketing/format";
+import { cn } from "@/lib/utils";
 import type {
   CreativeBrief,
   MarketingResponse,
@@ -29,6 +30,8 @@ interface CreativesViewProps {
   onViewAdvertiser: (name: string) => void;
   initialQuery?: string;
   onQueryChange?: (q: string) => void;
+  favoritedIds?: Set<string>;
+  onToggleFavorite?: (item: { id: string; type: string; title: string; subtitle?: string; image?: string }) => void;
 }
 
 export type CreativesViewHandle = {
@@ -36,7 +39,7 @@ export type CreativesViewHandle = {
 };
 
 export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>(
-  function CreativesView({ run, onViewAdvertiser, initialQuery = "", onQueryChange }, ref) {
+  function CreativesView({ run, onViewAdvertiser, initialQuery = "", onQueryChange, favoritedIds = new Set(), onToggleFavorite }, ref) {
   const t = useT();
   const [query, setQuery] = useState(initialQuery);
   const [platSeg, setPlatSeg] = useState<PlatSeg>("all");
@@ -44,6 +47,7 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
   const [data, setData] = useState<{ list: CreativeBrief[]; page: PageMeta } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [cost, setCost] = useState<{ points: number } | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -60,13 +64,17 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
       const endpoint = stopped ? "ad-library/ads" : "adspy/list";
       try {
         const res = await run(endpoint, cacheKey, () =>
-          fetchAdspyList({ q: kw, includeStopped: stopped, pageSize: 24 })
+          fetchAdspyList({ q: kw, includeStopped: stopped, pageSize: 12 })
         );
         setData(res.data);
-        setCost({ points: res.consumedCredits ?? 0 });
+        setCost({ points: res.chargedCredits ?? res.consumedCredits ?? 0 });
         setLoaded(true);
+        setErrorMsg(null);
       } catch (e) {
-        if (!isGuardCancel(e)) setError(true);
+        if (!isGuardCancel(e)) {
+          setError(true);
+          setErrorMsg(e instanceof Error ? e.message : String(e));
+        }
       } finally {
         setLoading(false);
       }
@@ -74,12 +82,8 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
     [run]
   );
 
-  // 默认着陆：挂载即自动拉公开广告库（无需输入），满屏创意。
-  useEffect(() => {
-    void doFetch("", false);
-    // 仅首次挂载执行一次（避免 query 同步触发重复请求）
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // 注意：公开广告库是「按结果计费」的付费接口（非免费墙）。禁止挂载即静默拉取（§0.2 / D6），
+  // 改为显式 CTA，让用户点击后再计费。
 
   useImperativeHandle(
     ref,
@@ -152,9 +156,22 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
       ) : error ? (
         <div className="flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-destructive-soft bg-destructive-soft px-6 py-12 text-center">
           <p className="text-sm font-medium text-destructive">{t("ops.error.title")}</p>
-          <p className="max-w-md text-[12px] leading-relaxed text-ink-subtle">{t("ops.error.desc")}</p>
+          {errorMsg ? (
+            <p className="max-w-md break-words text-[12px] leading-relaxed text-ink-subtle">{errorMsg}</p>
+          ) : (
+            <p className="max-w-md text-[12px] leading-relaxed text-ink-subtle">{t("ops.error.desc")}</p>
+          )}
           <Button size="sm" variant="secondary" onClick={() => doFetch(query, includeStopped)}>
             {t("ops.error.retry")}
+          </Button>
+        </div>
+      ) : !loaded ? (
+        <div className="flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-hairline bg-surface-muted/40 px-6 py-16 text-center">
+          <p className="text-sm font-medium text-ink">{t("ops.creatives.paidPromptTitle")}</p>
+          <p className="max-w-md text-[12px] leading-relaxed text-ink-muted">{t("ops.creatives.paidPromptDesc")}</p>
+          <Button size="sm" variant="primary" onClick={() => doFetch(query, includeStopped)} disabled={loading}>
+            <Search className="h-3.5 w-3.5" />
+            {t("ops.creatives.loadCta")}
           </Button>
         </div>
       ) : visible.length === 0 ? (
@@ -171,10 +188,31 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
                     <PlatformBadge platform={card.platform} />
                   </span>
                   {!card.isActive && (
-                    <span className="absolute right-2 top-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-ink-muted">
+                    <span className="absolute right-8 top-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-ink-muted">
                       {t("ops.creatives.stopped")}
                     </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleFavorite?.({
+                        id: card.id,
+                        type: "creative",
+                        title: card.title,
+                        image: card.cover,
+                        subtitle: card.advertiser,
+                      });
+                    }}
+                    className={cn(
+                      "absolute right-2 top-2 rounded-full bg-black/40 px-1.5 py-0.5 text-sm",
+                      favoritedIds.has(`creative:${card.id}`)
+                        ? "text-amber-400"
+                        : "text-white/80 hover:text-white"
+                    )}
+                  >
+                    {favoritedIds.has(`creative:${card.id}`) ? "★" : "☆"}
+                  </button>
                 </div>
                 <div className="flex flex-1 flex-col p-2.5">
                   <p className="truncate text-[12px] font-semibold text-ink" title={card.title}>{card.title}</p>

@@ -61,7 +61,11 @@ export function CompareStoresModal({ open, stores, onClose }: CompareStoresModal
       >
         <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
           <h3 className="text-sm font-semibold text-ink">{t("ops.compareModal.title")}</h3>
-          <button onClick={onClose} aria-label={t("ops.compareModal.close")} className="text-ink-muted hover:text-ink">
+          <button
+            onClick={onClose}
+            aria-label={t("ops.compareModal.close")}
+            className="inline-flex items-center justify-center rounded-[var(--radius-control)] p-1 text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 active:scale-[0.97]"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>

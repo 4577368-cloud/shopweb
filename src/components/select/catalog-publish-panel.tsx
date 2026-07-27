@@ -14,7 +14,10 @@ import { api, readableError } from "@/lib/api";
 import { resolveListingPricingContext } from "@/lib/listing-pricing";
 import { sourcingProcurementDisplay } from "@/lib/sourcing/display-pricing";
 import { hitsToCatalogRecommendations } from "@/lib/sourcing/map-catalog";
-import { publishSourcingHit } from "@/lib/sourcing/publish-sourcing-hit";
+import {
+  continuePublishAfterPoolInBackground,
+  publishSourcingHit,
+} from "@/lib/sourcing/publish-sourcing-hit";
 import { searchSourcingHits } from "@/lib/sourcing/search";
 import { setSourcingSession } from "@/lib/sourcing/session";
 import type { SourcingSearchHit } from "@/lib/sourcing/types";
@@ -383,6 +386,28 @@ export function CatalogPublishPanel({
         shopName,
         template,
       });
+
+      if (outcome.awaitingPool) {
+        setPublishState((prev) => ({
+          ...prev,
+          [item.candidateId]: { loading: false },
+        }));
+        onPublishInProgress?.();
+        continuePublishAfterPoolInBackground(
+          { hit: publishHit, shopName, template },
+          {
+            onPublished: (productId, catalogItem) => {
+              markCatalogPublished(shopName, productId);
+              queuePublishReveal(shopName, productId, catalogItem);
+              onPublished?.(productId);
+              onActivity?.();
+            },
+            onPublishing: () => onPublishInProgress?.(),
+          }
+        );
+        showToast(t("catalogPublish.publishInProgress"));
+        return;
+      }
 
       if (!outcome.ok || !outcome.result) {
         throw new Error(outcome.error ?? t("catalogPublish.publishFailed"));

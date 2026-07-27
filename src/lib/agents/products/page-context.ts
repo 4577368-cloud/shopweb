@@ -67,6 +67,8 @@ export interface ProductsPageContext extends BasePageContext {
   focusCandidates: CandidateSummary[];
   /** Mirror catalog for title → productId resolution (rules only). */
   productCatalog: ProductCatalogEntry[];
+  /** Current shop-list page product ids（「本页」批量范围）. */
+  visiblePageProductIds: string[];
   purchaseDisplay: ProductsPurchaseDisplayContext;
   /** One-shot context after scan → result handoff */
   scanHandoff: ScanHandoffPayload | null;
@@ -91,6 +93,7 @@ export interface BuildProductsPageContextInput {
   focusProduct?: ProductFocusSnapshot | null;
   focusCandidates?: CandidateSummary[];
   productCatalog?: ProductCatalogEntry[];
+  visiblePageProductIds?: string[];
   scanHandoff?: ScanHandoffPayload | null;
   shopCurrencyHint?: string | null;
   t: TranslateFn;
@@ -198,6 +201,7 @@ export function buildProductsPageContext(
     focusProduct: input.focusProduct ?? null,
     focusCandidates: input.focusCandidates ?? [],
     productCatalog: input.productCatalog ?? [],
+    visiblePageProductIds: input.visiblePageProductIds ?? [],
     purchaseDisplay,
     scanHandoff: input.scanHandoff ?? null,
   };

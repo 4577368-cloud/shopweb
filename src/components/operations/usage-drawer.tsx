@@ -3,6 +3,7 @@
 
 import { useT } from "@/i18n/LocaleProvider";
 import type { CreditsBalance, UsageEntry } from "@/lib/marketing/types";
+import type { CreditBucketBreakdown } from "@/lib/billing/api";
 import { Drawer } from "./drawer";
 import { MiniBar } from "./intel";
 
@@ -11,10 +12,11 @@ interface UsageDrawerProps {
   entries: UsageEntry[];
   sessionUsed: number;
   account?: CreditsBalance | null;
+  wallet?: CreditBucketBreakdown | null;
   onClose: () => void;
 }
 
-export function UsageDrawer({ open, entries, sessionUsed, account, onClose }: UsageDrawerProps) {
+export function UsageDrawer({ open, entries, sessionUsed, account, wallet, onClose }: UsageDrawerProps) {
   const t = useT();
   // 缓存命中省下的调用次数（每次命中相当于避免一次消耗）。
   const savedCalls = entries.filter((e) => e.cacheHit).length;
@@ -38,6 +40,23 @@ export function UsageDrawer({ open, entries, sessionUsed, account, onClose }: Us
           <p className="text-sm font-semibold text-success">{savedCalls} {t("ops.usage.points")}</p>
         </div>
       </div>
+
+      {wallet && (
+        <div className="mb-3 rounded-[var(--radius-card)] border border-hairline bg-surface-muted/40 px-3 py-2">
+          <div className="mb-1 flex items-center justify-between text-[11px]">
+            <span className="text-ink-subtle">{t("ops.wallet.label")}</span>
+            <span className="tabular-nums text-ink">{wallet.balanceCredits.toLocaleString()} {t("ops.usage.points")}</span>
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-ink-muted">
+            <span>{t("ops.wallet.free")} <b className="text-ink">{wallet.freeCredits}</b></span>
+            <span>{t("ops.wallet.subscription")} <b className="text-ink">{wallet.subscriptionCredits}</b></span>
+            <span>{t("ops.wallet.pack")} <b className="text-ink">{wallet.packCredits}</b></span>
+            {wallet.promoCredits > 0 && (
+              <span>{t("ops.wallet.promo")} <b className="text-ink">{wallet.promoCredits}</b></span>
+            )}
+          </div>
+        </div>
+      )}
 
       {total > 0 && (
         <div className="mb-3 rounded-[var(--radius-card)] border border-hairline bg-surface-muted/40 px-3 py-2">

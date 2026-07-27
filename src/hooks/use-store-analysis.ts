@@ -35,6 +35,10 @@ export interface StoreAnalysisState {
   dataAnalysis?: StoreDataAnalysis;
   regionAnalysis?: StoreRegionAnalysis[];
   delivery?: StoreDeliveryAnalysis;
+  /** 命中店铺级 3 天免费窗口：本次分析未真实扣点。 */
+  freeWindow?: boolean;
+  /** 本次分析实际消耗积分（freeWindow 时为 0）。 */
+  points?: number;
 }
 
 export function useStoreAnalysis(storeId: string, run: MarketingRunFn): StoreAnalysisState {
@@ -61,6 +65,23 @@ export function useStoreAnalysis(storeId: string, run: MarketingRunFn): StoreAna
     ])
       .then(([trend, longest, mostUsed, fb, data, region, delivery]) => {
         if (cancelled) return;
+        const freeWindow = !!(
+          trend.freeWindow ||
+          longest.freeWindow ||
+          mostUsed.freeWindow ||
+          fb.freeWindow ||
+          data.freeWindow ||
+          region.freeWindow ||
+          delivery.freeWindow
+        );
+        const points =
+          (trend.chargedCredits ?? trend.consumedCredits ?? 0) +
+          (longest.chargedCredits ?? longest.consumedCredits ?? 0) +
+          (mostUsed.chargedCredits ?? mostUsed.consumedCredits ?? 0) +
+          (fb.chargedCredits ?? fb.consumedCredits ?? 0) +
+          (data.chargedCredits ?? data.consumedCredits ?? 0) +
+          (region.chargedCredits ?? region.consumedCredits ?? 0) +
+          (delivery.chargedCredits ?? delivery.consumedCredits ?? 0);
         setState({
           loading: false,
           adTrend: trend.data.list,
@@ -70,6 +91,8 @@ export function useStoreAnalysis(storeId: string, run: MarketingRunFn): StoreAna
           dataAnalysis: data.data,
           regionAnalysis: region.data.list,
           delivery: delivery.data,
+          freeWindow,
+          points,
         });
       })
       .catch(() => {

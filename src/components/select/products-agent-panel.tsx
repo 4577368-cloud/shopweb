@@ -183,14 +183,22 @@ export function ProductsAgentPanel({
     }
     examples.push(
       t("productsAgent.examplePrice"),
-      t("productsAgent.exampleTranslate"),
+      context.focusProductId
+        ? t("productsAgent.exampleTranslate")
+        : t("productsAgent.exampleTranslateAll"),
       t("productsAgent.examplePendingOnly")
     );
     if (context.tab !== "catalog") {
       examples.push(t("productsAgent.exampleDraft"));
     }
     return examples.slice(0, 5);
-  }, [context.pendingCount, context.unboundCount, context.tab, t]);
+  }, [
+    context.pendingCount,
+    context.unboundCount,
+    context.tab,
+    context.focusProductId,
+    t,
+  ]);
 
   const dispatchAction = (action: AgentSuggestedAction) => {
     onApplySuggestedAction?.(action);
@@ -679,9 +687,7 @@ export function ProductsAgentPanel({
           <Settings className={cn("h-3.5 w-3.5", context.pricing.configured ? "text-brand-accent" : "text-warning")} />
           <span>
             {context.pricing.configured
-              ? t("productsAgent.pricingConfigured", {
-                  currency: context.pricing.targetCurrency ?? "",
-                })
+              ? t("productsAgent.pricingConfigured")
               : t("productsAgent.configurePricing")}
           </span>
         </button>

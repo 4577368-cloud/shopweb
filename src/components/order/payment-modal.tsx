@@ -133,8 +133,7 @@ export function PaymentModal({ open, order, balanceCny, onClose, onPaid }: Payme
         }
       } catch (err) {
         // 网络异常 / 401 / 500
-        const message = err instanceof Error ? err.message : String(err);
-        setServerError(`${t("order.payment.serverError")} (${message})`);
+        setServerError(t("order.payment.serverError"));
       } finally {
         setPaying(false);
       }

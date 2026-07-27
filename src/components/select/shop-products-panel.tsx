@@ -31,6 +31,11 @@ import { ImageZoomOverlay } from "@/components/ui/image-zoom-overlay";
 import { ThumbImage } from "@/components/ui/thumb-image";
 import { CatalogIngestingBadge } from "@/components/ui/catalog-ingesting-badge";
 import { useCatalogIngestStatus } from "@/hooks/use-catalog-ingest-status";
+import {
+  isShopifyLinkedProduct,
+  isTangbuyListedProduct,
+  type CatalogScope,
+} from "@/lib/products/catalog-scope";
 import { useOnboarding } from "@/context/onboarding-context";
 import {
   AI_BEFORE_AFTER_MS,
@@ -463,6 +468,11 @@ export function ShopProductsPanel({
   onActivity,
   filter: filterProp,
   onFilterChange,
+  catalogScope = "all",
+  onCatalogScopeChange,
+  scopeCounts,
+  onRefresh,
+  refreshBusy = false,
   focusProductId = null,
   scrollToProductId = null,
   onScrollToConsumed,
@@ -475,6 +485,7 @@ export function ShopProductsPanel({
   onBatchLinkFinished,
   onPageLinkableScopeChange,
   onProductFocus,
+  onProductFocusClear,
   onMinisChange,
   onBindingsChange,
   onShopProductsChange,
@@ -492,6 +503,12 @@ export function ShopProductsPanel({
   /** Optional controlled filter — lets the page's top CTA jump straight to e.g. 待确认. */
   filter?: ShopFilter;
   onFilterChange?: (f: ShopFilter) => void;
+  /** Catalog facet: all / linked / listed (Shopify ACTIVE). */
+  catalogScope?: CatalogScope;
+  onCatalogScopeChange?: (scope: CatalogScope) => void;
+  scopeCounts?: { all: number; linked: number; listed: number };
+  onRefresh?: () => void;
+  refreshBusy?: boolean;
   focusProductId?: string | null;
   scrollToProductId?: string | null;
   onScrollToConsumed?: () => void;
@@ -508,11 +525,14 @@ export function ShopProductsPanel({
   /** Current page linkable product ids — for scoped「一键关联」. */
   onPageLinkableScopeChange?: (scope: {
     ids: string[];
+    visibleIds: string[];
     page: number;
     totalPages: number;
     pageSize: number;
   }) => void;
   onProductFocus?: (productId: string) => void;
+  /** Clear card selection (click empty area / Escape). */
+  onProductFocusClear?: () => void;
   onMinisChange?: (minis: {
     pending: ShopProductMini[];
     unbound: ShopProductMini[];
@@ -915,7 +935,7 @@ export function ShopProductsPanel({
     }
     mirrorRefreshSeen.current = mirrorRefreshSignal;
     if (batchLinkBusyRef.current) return;
-    void load({ silent: true });
+    void load({ silent: true, force: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- signal edge only
   }, [mirrorRefreshSignal]);
 
@@ -1038,6 +1058,24 @@ export function ShopProductsPanel({
       result = products.filter((p) => stateOf(p) === null);
     }
 
+    if (catalogScope === "linked") {
+      result = result.filter((p) =>
+        isShopifyLinkedProduct(
+          bindings[p.thirdPlatformItemId],
+          shopName,
+          p.thirdPlatformItemId
+        )
+      );
+    } else if (catalogScope === "listed") {
+      result = result.filter((p) =>
+        isTangbuyListedProduct(
+          bindings[p.thirdPlatformItemId],
+          shopName,
+          p.thirdPlatformItemId
+        )
+      );
+    }
+
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
       result = result.filter(
@@ -1049,7 +1087,16 @@ export function ShopProductsPanel({
     }
 
     return result;
-  }, [products, filter, stateOf, pendingNewAnalysisIds, searchQuery]);
+  }, [
+    products,
+    filter,
+    stateOf,
+    pendingNewAnalysisIds,
+    searchQuery,
+    catalogScope,
+    bindings,
+    shopName,
+  ]);
 
   // Rail「重搜候选」+ page「一键关联」: client-side per-card batch link.
   const rematchSignalSeen = useRef(0);
@@ -1070,7 +1117,7 @@ export function ShopProductsPanel({
 
   useEffect(() => {
     setPage(1);
-  }, [filter, searchQuery]);
+  }, [filter, searchQuery, catalogScope]);
 
   const displayProducts = useMemo(() => {
     const usePagedBatchSort =
@@ -1116,11 +1163,18 @@ export function ShopProductsPanel({
   useEffect(() => {
     onPageLinkableScopeChange?.({
       ids: pageLinkableProducts.map((p) => p.thirdPlatformItemId),
+      visibleIds: paginatedProducts.map((p) => p.thirdPlatformItemId),
       page,
       totalPages,
       pageSize: SHOP_PRODUCTS_PAGE_SIZE,
     });
-  }, [pageLinkableProducts, page, totalPages, onPageLinkableScopeChange]);
+  }, [
+    pageLinkableProducts,
+    paginatedProducts,
+    page,
+    totalPages,
+    onPageLinkableScopeChange,
+  ]);
 
   const batchLinkRequestSeen = useRef(0);
   useEffect(() => {
@@ -1161,24 +1215,78 @@ export function ShopProductsPanel({
     onScrollToConsumed?.();
   }, [scrollToProductId, paginatedProducts, onScrollToConsumed]);
 
+  useEffect(() => {
+    if (!onProductFocusClear || !focusProductId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onProductFocusClear();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusProductId, onProductFocusClear]);
+
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <SegmentedTabs
-          variant="chip"
-          tabs={[
-            { id: "all", label: t("shopProducts.filterAll"), count: counts.all },
-            { id: "pending", label: t("shopProducts.filterPending"), count: counts.pending },
-            { id: "confirmed", label: t("shopProducts.filterConfirmed"), count: counts.confirmed },
-            { id: "unbound", label: t("shopProducts.filterUnbound"), count: counts.unbound },
-          ]}
-          value={filter}
-          onValueChange={(id) => {
-            setFilter(id as ShopFilter);
-          }}
-          highlighted={highlighted}
-        />
-        <div className="flex items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <SegmentedTabs
+            variant="chip"
+            tabs={[
+              { id: "all", label: t("shopProducts.filterAll"), count: counts.all },
+              { id: "pending", label: t("shopProducts.filterPending"), count: counts.pending },
+              { id: "confirmed", label: t("shopProducts.filterConfirmed"), count: counts.confirmed },
+              { id: "unbound", label: t("shopProducts.filterUnbound"), count: counts.unbound },
+            ]}
+            value={filter}
+            onValueChange={(id) => {
+              setFilter(id as ShopFilter);
+            }}
+            highlighted={highlighted}
+          />
+          {onCatalogScopeChange && scopeCounts ? (
+            <label
+              className="relative ml-1 inline-flex h-8 shrink-0 items-center gap-1 rounded-[var(--radius-control)] border border-hairline bg-surface pl-2 pr-6 text-xs text-ink"
+              title={t("sourcing.scopeFilterHint")}
+            >
+              <span className="shrink-0 text-ink-subtle">
+                {t("sourcing.scopeFilterLabel")}
+              </span>
+              <select
+                value={catalogScope}
+                onChange={(e) =>
+                  onCatalogScopeChange(e.target.value as CatalogScope)
+                }
+                style={{
+                  width: `${
+                    (
+                      catalogScope === "linked"
+                        ? `${t("sourcing.scopeLinked")} · ${scopeCounts.linked}`
+                        : catalogScope === "listed"
+                          ? `${t("sourcing.scopeListed")} · ${scopeCounts.listed}`
+                          : `${t("sourcing.scopeAll")} · ${scopeCounts.all}`
+                    ).length + 1
+                  }ch`,
+                }}
+                className="h-full appearance-none border-0 bg-transparent py-0 pl-0 pr-0 text-xs font-medium text-ink focus:outline-none focus:ring-0"
+                aria-label={t("sourcing.scopeFilterAria")}
+              >
+                <option value="all">
+                  {t("sourcing.scopeAll")} · {scopeCounts.all}
+                </option>
+                <option value="linked">
+                  {t("sourcing.scopeLinked")} · {scopeCounts.linked}
+                </option>
+                <option value="listed">
+                  {t("sourcing.scopeListed")} · {scopeCounts.listed}
+                </option>
+              </select>
+              <ChevronDown
+                className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle"
+                aria-hidden
+              />
+            </label>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           {manualAckPendingCount > 0 ? (
             <Button
               size="sm"
@@ -1189,7 +1297,26 @@ export function ShopProductsPanel({
               {batchAcking ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : null}
-              {batchAcking ? t("shopProducts.batchAcking") : t("shopProducts.batchAck", { count: manualAckPendingCount })}
+              {batchAcking
+                ? t("shopProducts.batchAcking")
+                : t("shopProducts.batchAck", { count: manualAckPendingCount })}
+            </Button>
+          ) : null}
+          {onRefresh ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onRefresh}
+              disabled={refreshBusy || linkingLocked}
+              className="h-7 w-7 px-0"
+              title={t("sourcing.refreshTitle")}
+              aria-label={t("sourcing.refreshAria")}
+            >
+              {refreshBusy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
             </Button>
           ) : null}
         </div>
@@ -1242,7 +1369,13 @@ export function ShopProductsPanel({
             }
           />
         ) : (
-          <div className="grid grid-cols-1 gap-3">
+          <div
+            className="grid grid-cols-1 gap-3"
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest("[data-product-id]")) return;
+              onProductFocusClear?.();
+            }}
+          >
             {paginatedProducts.map((p) => (
               <ShopProductCard
                 key={p.id}

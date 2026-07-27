@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 interface CreditConfirmDialogProps {
   open: boolean;
   estimate: number;
-  remaining: number;
+  remaining?: number | null;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -41,10 +41,12 @@ export function CreditConfirmDialog({
         <p className="mt-2 text-[12px] leading-relaxed text-ink-muted">
           {t("ops.guard.desc", { n: estimate })}
         </p>
-        <div className="mt-3 flex items-center justify-between rounded-[var(--radius-control)] bg-muted px-3 py-2 text-[11px]">
-          <span className="text-ink-subtle">{t("ops.guard.remaining")}</span>
-          <span className="font-semibold tabular-nums text-info">{remaining}</span>
-        </div>
+        {remaining != null && (
+          <div className="mt-3 flex items-center justify-between rounded-[var(--radius-control)] bg-muted px-3 py-2 text-[11px]">
+            <span className="text-ink-subtle">{t("ops.guard.remaining")}</span>
+            <span className="font-semibold tabular-nums text-info">{remaining}</span>
+          </div>
+        )}
         <div className="mt-4 flex items-center justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={onCancel}>
             {t("ops.guard.cancel")}

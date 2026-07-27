@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-export type OperationsTab = "discovery" | "competition" | "creatives" | "imageSearch";
+export type OperationsTab = "discovery" | "competition" | "creatives" | "imageSearch" | "favorites";
 export type DiscoverySegment = "ads" | "board" | "tiktok";
 export type AdsSegment = "rank" | "search";
 
@@ -45,7 +45,7 @@ function readParams(): OperationsNavigationState {
   }
   const params = new URLSearchParams(window.location.search);
   const tab = (params.get(TAB_KEY) as OperationsTab | null) ?? "discovery";
-  const validTab = ["discovery", "competition", "creatives", "imageSearch"].includes(tab)
+  const validTab = ["discovery", "competition", "creatives", "imageSearch", "favorites"].includes(tab)
     ? tab
     : "discovery";
   const discoverySeg =
@@ -104,6 +104,12 @@ function writeParams(state: OperationsNavigationState): void {
     params.delete(DISCOVERY_SEG_KEY);
     params.delete(ADS_SEG_KEY);
     params.delete(COMPETITION_Q_KEY);
+  } else if (state.tab === "favorites") {
+    params.delete(DISCOVERY_SEG_KEY);
+    params.delete(ADS_SEG_KEY);
+    params.delete(COMPETITION_Q_KEY);
+    params.delete(COMPETITION_PID_KEY);
+    params.delete(CREATIVES_Q_KEY);
   } else {
     params.delete(DISCOVERY_SEG_KEY);
     params.delete(ADS_SEG_KEY);

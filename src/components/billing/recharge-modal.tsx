@@ -200,7 +200,7 @@ export function RechargeModal({ open, balanceCny, onClose, onSuccess }: Recharge
               </PayPalScriptWrapper>
             ) : (
               <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-[11px] text-amber-700">
-                PayPal 未配置：请在 .env.local 设置 NEXT_PUBLIC_PAYPAL_CLIENT_ID
+                {t("billing.paypalNotConfigured")}
               </div>
             )}
           </div>

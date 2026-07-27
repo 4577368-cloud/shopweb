@@ -64,7 +64,7 @@ export default function ForgotPasswordPage() {
       const code = (err as ApiError & { code?: string }).code;
       if (code === "INVALID_EMAIL") return tt("auth.errorInvalidEmail");
       if (err.status === 0) return tt("auth.errorNetwork");
-      return err.message;
+      return tt("auth.errorUnknown");
     }
     return t("auth.errorUnknown");
   }

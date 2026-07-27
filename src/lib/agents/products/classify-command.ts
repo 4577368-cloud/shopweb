@@ -93,10 +93,12 @@ function tryListingPriceCommand(text: string): ProductCommandDraft | null {
     const fixedMatch = parseListingPrice(text);
     if (!multiplierMatch && !fixedMatch) return null;
     const batchFilter = detectBatchFilter(text);
+    const batchLimit = detectBatchLimit(text);
     return draft(
       "batch_update_listing_price",
       {
         batchFilter,
+        ...(batchLimit ? { batchLimit } : {}),
         batchPriceMultiplier: multiplierMatch ? Number(multiplierMatch[1]) : undefined,
         batchPriceFixed: fixedMatch?.price,
       },
@@ -189,9 +191,43 @@ function detectCopyAction(text: string): "translate" | "rewrite" | "optimize" | 
 }
 
 function refersToBatch(text: string): boolean {
-  return /(所有|全部|批量|每个|所有商品|全部商品|批量商品|一次性|统一|统统|全部改成|全部换成|给所有|都给|每个商品|都改|统一改|都改掉|全部改)/i.test(
+  return /(所有|全部|批量|每个|所有商品|全部商品|批量商品|一次性|统一|统统|全部改成|全部换成|给所有|都给|每个商品|都改|统一改|都改掉|全部改|本页|当前页|这一页|关联商品|已关联商品|上架商品|已上架商品|最近新增|新入库|前\s*\d+|前[十百]|top\s*\d+)/i.test(
     text
   );
+}
+
+function detectBatchLimit(text: string): number | undefined {
+  const digit = text.match(/前\s*(\d{1,3})\s*(?:个|款|条|件)?|(?:top|first)\s*(\d{1,3})/i);
+  if (digit) {
+    const n = Number(digit[1] || digit[2]);
+    if (Number.isFinite(n) && n > 0) return Math.min(n, 200);
+  }
+  if (/前十五/.test(text)) return 15;
+  if (/前二十/.test(text)) return 20;
+  if (/前十/.test(text)) return 10;
+  if (/前五/.test(text)) return 5;
+  return undefined;
+}
+
+function detectBatchFilter(
+  text: string
+):
+  | "all"
+  | "pending"
+  | "confirmed"
+  | "unbound"
+  | "linked"
+  | "listed"
+  | "page"
+  | "recent" {
+  if (/本页|当前页|这一页|this\s*page/i.test(text)) return "page";
+  if (/最近新增|新入库|最近新|recent\s*(new|arrival)/i.test(text)) return "recent";
+  if (/未匹配|未关联|unbound/i.test(text)) return "unbound";
+  if (/待确认|pending/i.test(text)) return "pending";
+  if (/已确认|confirmed/i.test(text)) return "confirmed";
+  if (/已上架|上架商品|选品上架|(?:tangbuy\s*)?listed/i.test(text)) return "listed";
+  if (/已关联|关联商品|店铺关联|linked/i.test(text)) return "linked";
+  return "all";
 }
 
 function tryProductStatusCommand(text: string): ProductCommandDraft | null {
@@ -219,9 +255,12 @@ function tryProductStatusCommand(text: string): ProductCommandDraft | null {
 
   if (wantsDraft) {
     const intent = isBatch ? "batch_draft_products" : "draft_product";
+    const batchLimit = isBatch ? detectBatchLimit(text) : undefined;
     return draft(
       intent,
-      isBatch ? { batchFilter } : { productTitleHint },
+      isBatch
+        ? { batchFilter, ...(batchLimit ? { batchLimit } : {}) }
+        : { productTitleHint },
       {
         targetScope: isBatch ? "all" : productTitleHint ? "explicit" : "current",
         confirmationRequired: true,
@@ -230,9 +269,12 @@ function tryProductStatusCommand(text: string): ProductCommandDraft | null {
   }
 
   const intent = isBatch ? "batch_archive_products" : "archive_product";
+  const batchLimit = isBatch ? detectBatchLimit(text) : undefined;
   return draft(
     intent,
-    isBatch ? { batchFilter } : { productTitleHint },
+    isBatch
+      ? { batchFilter, ...(batchLimit ? { batchLimit } : {}) }
+      : { productTitleHint },
     {
       targetScope: isBatch ? "all" : productTitleHint ? "explicit" : "current",
       confirmationRequired: true,
@@ -254,6 +296,7 @@ function tryProductCopyCommand(text: string): ProductCommandDraft | null {
 
   if (isBatch) {
     const batchFilter = detectBatchFilter(text);
+    const batchLimit = detectBatchLimit(text);
     return draft(
       "batch_update_product_copy",
       {
@@ -262,6 +305,7 @@ function tryProductCopyCommand(text: string): ProductCommandDraft | null {
         copyTargetLang: targetLang,
         copyStyle,
         batchFilter,
+        ...(batchLimit ? { batchLimit } : {}),
       },
       {
         targetScope: "all",
@@ -292,13 +336,6 @@ function tryProductCopyCommand(text: string): ProductCommandDraft | null {
 /** Rule-based product copy intent — used before LLM and in rule fallback. */
 export function matchProductCopyCommand(text: string): ProductCommandDraft | null {
   return tryProductCopyCommand(text.trim().slice(0, PRODUCTS_SHORT_INPUT_MAX));
-}
-
-function detectBatchFilter(text: string): "all" | "pending" | "confirmed" | "unbound" {
-  if (/待确认|pending/i.test(text)) return "pending";
-  if (/已确认|confirmed/i.test(text)) return "confirmed";
-  if (/未匹配|未关联|unbound/i.test(text)) return "unbound";
-  return "all";
 }
 
 function withTitleHint(
@@ -774,7 +811,9 @@ ${langBlock}
    - Examples: 「标题修改为英文」「把它标题改成韩文」「翻译这个商品成为日语」→ update_product_copy, copyAction=translate
    - 「改写/优化」→ rewrite or optimize; batch keywords → batch_update_product_copy
    - Default copyStyle=amazon unless user asks for literal translation
-4. Batch ops — keywords like all/every/batch/each → batch_* intents with targetScope=all
+4. Batch ops — keywords like all/every/batch/each/本页/关联商品/上架商品/最近新增/前N → batch_* intents with targetScope=all
+   - params.batchFilter = all|pending|confirmed|unbound|linked|listed|page|recent
+   - params.batchLimit = number when user says 前10 / top 15
 5. "Show pending only" / "show unlinked" → open_filter
 6. "Re-search candidates" → rerun_candidate_search
 7. "Why recommend this" → explain_product_match (matchExplain=reason)
@@ -797,6 +836,7 @@ ${langBlock}
    - params.copyTargetLang: en/zh/ja/ko/ar/es/fr/de/ru/pt/it/th/vi/tr etc. (translate only)
    - params.copyStyle: amazon|literal
    - confirmationRequired=true for write ops
-- draft/archive batch ops: params.batchFilter = all|pending|confirmed|unbound
+- draft/archive/copy/price batch ops: params.batchFilter = all|pending|confirmed|unbound|linked|listed|page|recent; optional batchLimit
+- Prefer batchFilter over requiring a selected product when user names a scope (本页/关联/上架/最近/全部)
 - If unsure, output {"intent":""}`;
 }

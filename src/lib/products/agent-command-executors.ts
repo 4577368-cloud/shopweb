@@ -9,7 +9,10 @@ import { markCatalogPublished } from "@/lib/batch-link/publish-source";
 import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
 import { resolveTitleCopyStyle } from "@/lib/products/resolve-title-copy-style";
 import type { ProductsCommandRuntime } from "@/lib/products/agent-command-types";
-import { publishSourcingHit } from "@/lib/sourcing/publish-sourcing-hit";
+import {
+  continuePublishAfterPoolInBackground,
+  publishSourcingHit,
+} from "@/lib/sourcing/publish-sourcing-hit";
 import { getSourcingSession } from "@/lib/sourcing/session";
 import {
   listingStatusLabel,
@@ -588,6 +591,27 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
         shopName: ctx.shopName,
         template: tpl,
       });
+      if (outcome.awaitingPool) {
+        // 入库已提交：后台继续解析 goodsId 并上架，不视为失败
+        continuePublishAfterPoolInBackground(
+          { hit, shopName: ctx.shopName, template: tpl },
+          {
+            onPublished: (productId, catalogItem) => {
+              markCatalogPublished(ctx.shopName, productId);
+              queuePublishReveal(ctx.shopName, productId, catalogItem);
+              void ctx.loadSummary({ silent: true, force: true }).then(() => {
+                ctx.bumpMirrorRefresh();
+              });
+            },
+            onPublishing: () => {
+              void ctx.loadSummary({ silent: true, force: true }).then(() => {
+                ctx.bumpMirrorRefresh();
+              });
+            },
+          }
+        );
+        return;
+      }
       if (!outcome.ok || !outcome.result) {
         throw new Error(outcome.error ?? ctx.t("catalogPublish.publishFailed"));
       }

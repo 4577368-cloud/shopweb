@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans } from "next/font/google";
 import { OnboardingProvider } from "@/context/onboarding-context";
 import { UserProvider } from "@/context/user-context";
 import { ToastHost } from "@/components/layout/toast-host";
+import { ChatwootWidget } from "@/components/chatwoot/chatwoot-widget";
 import { APP_DESCRIPTION, APP_FULL_NAME, BRAND_FAVICON } from "@/lib/brand";
 import "./globals.css";
 import "./landing.css";
@@ -53,6 +54,7 @@ export default function RootLayout({
           <OnboardingProvider>
               {children}
               <ToastHost />
+              <ChatwootWidget />
           </OnboardingProvider>
         </UserProvider>
       </body>

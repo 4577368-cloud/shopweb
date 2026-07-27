@@ -41,6 +41,7 @@ import {
   AccountSignInState,
 } from "@/components/account/account-primitives";
 import {
+  AccountLedgerTable,
   AccountPagination,
   AccountSegmentedFilter,
   AccountStatItem,
@@ -340,49 +341,82 @@ export default function AccountBillsPage() {
             <AccountEmptyState message={t("accountBills.transactionsEmpty")} />
           ) : (
             <>
-              <ul className="divide-y divide-surface-border">
-                {transactions.map((tx) => {
-                  const behavior = classifyBehavior(tx);
-                  return (
-                    <li key={tx.id} className="py-2.5">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <BehaviorTag behavior={behavior} t={t} />
-                            <span className="text-[10px] text-muted-foreground/80">
-                              {fmtDate(locale, tx.createdAt)}
-                            </span>
-                          </div>
-                          {tx.remark ? (
-                            <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={tx.remark}>
-                              {tx.remark}
-                            </p>
-                          ) : null}
-                          {tx.refId ? (
-                            <p className="mt-0.5 text-[10px] text-muted-foreground/80">
-                              {behaviorRefLabel(behavior, t)}: {tx.refId}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="text-right">
-                          <p
-                            className={cn(
-                              "text-[13px] font-semibold tabular-nums",
-                              tx.amountCny >= 0 ? "text-brand-accent" : "text-foreground"
-                            )}
-                          >
-                            {tx.amountCny >= 0 ? "+" : ""}
-                            {centsToYuan(tx.amountCny)}
-                          </p>
-                          <p className="text-[10px] tabular-nums text-muted-foreground/80">
-                            {t("accountBills.balanceAfter")}: {centsToYuan(tx.balanceAfter)}
-                          </p>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+              <AccountLedgerTable
+                columns={[
+                  {
+                    key: "time",
+                    header: t("accountCommon.ledgerCols.time"),
+                    render: (tx) => (
+                      <span className="text-muted-foreground">{fmtDate(locale, tx.createdAt)}</span>
+                    ),
+                    sortValue: (tx) => tx.createdAt,
+                    sortable: true,
+                  },
+                  {
+                    key: "type",
+                    header: t("accountCommon.ledgerCols.type"),
+                    render: (tx) => (
+                      <BehaviorTag behavior={classifyBehavior(tx)} t={t} />
+                    ),
+                  },
+                  {
+                    key: "amount",
+                    header: t("accountCommon.ledgerCols.amount"),
+                    align: "right",
+                    render: (tx) => (
+                      <span
+                        className={cn(
+                          "font-semibold tabular-nums",
+                          tx.amountCny >= 0 ? "text-brand-accent" : "text-foreground"
+                        )}
+                      >
+                        {tx.amountCny >= 0 ? "+" : ""}
+                        {centsToYuan(tx.amountCny)}
+                      </span>
+                    ),
+                    sortValue: (tx) => tx.amountCny,
+                    sortable: true,
+                  },
+                  {
+                    key: "balance",
+                    header: t("accountCommon.ledgerCols.balance"),
+                    align: "right",
+                    render: (tx) => (
+                      <span className="tabular-nums text-muted-foreground">
+                        {centsToYuan(tx.balanceAfter)}
+                      </span>
+                    ),
+                    sortValue: (tx) => tx.balanceAfter,
+                    sortable: true,
+                  },
+                  {
+                    key: "note",
+                    header: t("accountCommon.ledgerCols.note"),
+                    render: (tx) => {
+                      const behavior = classifyBehavior(tx);
+                      if (tx.remark) {
+                        return (
+                          <span className="text-muted-foreground" title={tx.remark}>
+                            {tx.remark}
+                          </span>
+                        );
+                      }
+                      if (tx.refId) {
+                        return (
+                          <span className="text-muted-foreground/80">
+                            {behaviorRefLabel(behavior, t)}: {tx.refId}
+                          </span>
+                        );
+                      }
+                      return <span className="text-muted-foreground/50">—</span>;
+                    },
+                  },
+                ]}
+                rows={transactions}
+                rowKey={(tx) => String(tx.id)}
+                zebra
+                minWidth="700px"
+              />
               <AccountPagination
                 offset={txOffset}
                 total={txTotal}
@@ -445,48 +479,38 @@ export default function AccountBillsPage() {
             <AccountEmptyState message={t("accountBills.ordersEmpty")} />
           ) : (
             <>
-              <ul className="divide-y divide-surface-border">
-                {orders.map((o) => (
-                  <li key={o.id} className="py-2.5">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <OrderStatusBadge status={o.status} t={t} />
-                          <span className="text-[12px] font-medium text-foreground">
-                            {orderPurposeLabel(o.purpose, t)}
-                          </span>
-                          {o.refId ? (
-                            <span className="text-[10px] text-muted-foreground/80">
-                              · {o.refId}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-0.5 text-[10px] text-muted-foreground/80">
-                          <Clock className="mr-1 inline h-3 w-3 align-text-bottom" />
-                          {fmtDate(locale, o.createdAt)}
-                          {o.capturedAt ? (
-                            <span className="ml-2">
-                              · {t("accountBills.capturedAt")} {fmtDate(locale, o.capturedAt)}
-                            </span>
-                          ) : null}
-                        </p>
-                        <p
-                          className="mt-0.5 truncate text-[10px] text-muted-foreground/80"
-                          title={o.paypalOrderId}
-                        >
-                          PayPal · {o.paypalOrderId}
-                          {o.paypalCaptureId ? (
-                            <span className="ml-1 text-muted-foreground/80">/ {o.paypalCaptureId}</span>
-                          ) : null}
-                        </p>
-                        {o.failureReason ? (
-                          <p className="mt-0.5 text-[10px] text-destructive">
-                            {o.failureReason}
-                          </p>
-                        ) : null}
-                      </div>
+              <AccountLedgerTable
+                columns={[
+                  {
+                    key: "time",
+                    header: t("accountCommon.ledgerCols.time"),
+                    render: (o) => (
+                      <span className="text-muted-foreground">
+                        {fmtDate(locale, o.createdAt)}
+                      </span>
+                    ),
+                    sortValue: (o) => o.createdAt,
+                    sortable: true,
+                  },
+                  {
+                    key: "purpose",
+                    header: t("accountCommon.ledgerCols.purpose"),
+                    render: (o) => (
+                      <span className="font-medium">{orderPurposeLabel(o.purpose, t)}</span>
+                    ),
+                  },
+                  {
+                    key: "status",
+                    header: t("accountCommon.ledgerCols.status"),
+                    render: (o) => <OrderStatusBadge status={o.status} t={t} />,
+                  },
+                  {
+                    key: "amount",
+                    header: t("accountCommon.ledgerCols.amount"),
+                    align: "right",
+                    render: (o) => (
                       <div className="text-right">
-                        <p className="text-[13px] font-semibold tabular-nums text-foreground">
+                        <p className="font-semibold tabular-nums">
                           ${(Number(o.amountUsdCents) / 100).toFixed(2)}
                         </p>
                         {o.amountCnyCents != null ? (
@@ -495,10 +519,39 @@ export default function AccountBillsPage() {
                           </p>
                         ) : null}
                       </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    ),
+                    sortValue: (o) => o.amountUsdCents,
+                    sortable: true,
+                  },
+                  {
+                    key: "paymentId",
+                    header: t("accountCommon.ledgerCols.paymentId"),
+                    render: (o) => (
+                      <code
+                        className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground"
+                        title={o.paypalOrderId}
+                      >
+                        {o.paypalOrderId}
+                        {o.paypalCaptureId ? ` / ${o.paypalCaptureId}` : ""}
+                      </code>
+                    ),
+                  },
+                  {
+                    key: "refId",
+                    header: t("accountCommon.ledgerCols.refId"),
+                    render: (o) =>
+                      o.refId ? (
+                        <span className="text-muted-foreground">{o.refId}</span>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      ),
+                  },
+                ]}
+                rows={orders}
+                rowKey={(o) => String(o.id)}
+                zebra
+                minWidth="780px"
+              />
               <AccountPagination
                 offset={orderOffset}
                 total={orderTotal}
@@ -713,8 +766,7 @@ function readError(err: unknown, t: (key: string, params?: Record<string, string
   if (err instanceof ApiError) {
     if (err.status === 0) return t("auth.errorNetwork");
     if (err.status === 401) return t("accountBills.errorUnauthenticated");
-    return err.message;
+    return t("auth.errorUnknown");
   }
-  if (err instanceof Error) return err.message;
   return t("auth.errorUnknown");
 }

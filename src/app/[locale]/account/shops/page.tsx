@@ -27,7 +27,7 @@ import {
   AccountPageHeader,
   AccountSignInState,
 } from "@/components/account/account-primitives";
-import { AccountStatItem } from "@/components/account/account-data";
+import { AccountLedgerTable, AccountStatItem } from "@/components/account/account-data";
 
 /**
  * Account → My Shops.
@@ -230,50 +230,78 @@ export default function AccountShopsPage() {
           ctaHref={localePath(locale, "/install")}
         />
       ) : (
-        <ul className="space-y-2.5">
-          {shops.map((s) => {
-            const isActive = s.shopDomain.toLowerCase() === activeDomain;
-            const isMissing = s.authStatus === "MISSING";
-            const switching = switchingDomain === s.shopDomain.toLowerCase();
-            const unbinding = unbindingShopName === s.shopName;
-            return (
-              <li
-                key={s.shopDomain}
-                className={cn(
-                  "rounded-[var(--radius-card)] border bg-surface p-4 shadow-card transition-colors",
-                  isActive ? "border-brand/40 ring-1 ring-brand/20" : "border-surface-border"
-                )}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <Store className="h-4 w-4 shrink-0 text-brand" />
-                      <h3 className="truncate text-sm font-semibold text-foreground">
-                        {s.shopName}
-                      </h3>
-                      {isActive ? (
-                        <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-semibold text-brand-accent">
-                          {t("accountShops.activeBadge")}
-                        </span>
-                      ) : null}
-                      <AuthStatusBadge status={s.authStatus} t={t} />
-                    </div>
-                    <a
-                      href={`https://${s.shopDomain}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-                    >
-                      {s.shopDomain}
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-muted-foreground sm:grid-cols-3">
-                      <Detail label={t("accountShops.fieldProductCount")} value={fmtCount(s.productCount)} />
-                      <Detail label={t("accountShops.fieldBoundAt")} value={fmtDate(locale, s.boundAt)} />
-                      <Detail label={t("accountShops.fieldAuthorizedAt")} value={fmtDate(locale, s.authorizedAt)} />
-                    </dl>
+        <AccountLedgerTable
+          columns={[
+            {
+              key: "shop",
+              header: t("accountCommon.ledgerCols.shop"),
+              render: (s) => {
+                const isActive = s.shopDomain.toLowerCase() === activeDomain;
+                return (
+                  <div className="flex items-center gap-2">
+                    <Store className="h-4 w-4 shrink-0 text-brand" />
+                    <span className="truncate font-semibold text-foreground">{s.shopName}</span>
+                    {isActive ? (
+                      <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-semibold text-brand-accent">
+                        {t("accountShops.activeBadge")}
+                      </span>
+                    ) : null}
                   </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
+                );
+              },
+            },
+            {
+              key: "domain",
+              header: t("accountCommon.ledgerCols.domain"),
+              render: (s) => (
+                <a
+                  href={`https://${s.shopDomain}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                >
+                  {s.shopDomain}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              ),
+            },
+            {
+              key: "status",
+              header: t("accountCommon.ledgerCols.status"),
+              render: (s) => <AuthStatusBadge status={s.authStatus} t={t} />,
+            },
+            {
+              key: "products",
+              header: t("accountCommon.ledgerCols.productCount"),
+              align: "right",
+              render: (s) => (
+                <span className="tabular-nums text-muted-foreground">
+                  {fmtCount(s.productCount)}
+                </span>
+              ),
+              sortValue: (s) => s.productCount ?? 0,
+              sortable: true,
+            },
+            {
+              key: "boundAt",
+              header: t("accountCommon.ledgerCols.boundAt"),
+              render: (s) => (
+                <span className="text-muted-foreground">{fmtDate(locale, s.boundAt)}</span>
+              ),
+              sortValue: (s) => s.boundAt ?? "",
+              sortable: true,
+            },
+            {
+              key: "actions",
+              header: t("accountCommon.ledgerCols.actions"),
+              align: "right",
+              render: (s) => {
+                const isActive = s.shopDomain.toLowerCase() === activeDomain;
+                const isMissing = s.authStatus === "MISSING";
+                const switching = switchingDomain === s.shopDomain.toLowerCase();
+                const unbinding = unbindingShopName === s.shopName;
+                return (
+                  <div className="flex items-center justify-end gap-1.5">
                     {isActive ? null : (
                       <Button
                         type="button"
@@ -306,26 +334,21 @@ export default function AccountShopsPage() {
                       {t("accountShops.unbindAction")}
                     </Button>
                   </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                );
+              },
+            },
+          ]}
+          rows={shops}
+          rowKey={(s) => s.shopDomain}
+          zebra
+          minWidth="900px"
+        />
       )}
 
       <p className="text-[11px] leading-5 text-muted-foreground/80">
         {t("accountShops.footnote")}
       </p>
     </section>
-  );
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col">
-      <dt className="text-[10px] uppercase tracking-wide text-muted-foreground/80">{label}</dt>
-      <dd className="text-muted-foreground">{value}</dd>
-    </div>
   );
 }
 
@@ -407,8 +430,7 @@ function readError(err: unknown, t: (key: string) => string): string {
     if (err.status === 0) return t("auth.errorNetwork");
     if (err.status === 401) return t("accountShops.errorUnauthenticated");
     if (err.status === 404) return t("accountShops.errorNotFound");
-    return err.message;
+    return t("auth.errorUnknown");
   }
-  if (err instanceof Error) return err.message;
   return t("auth.errorUnknown");
 }

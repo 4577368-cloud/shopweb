@@ -135,6 +135,28 @@ function resolveBatchProductIds(
     case "unbound":
       filtered = all.filter((p) => p.bindState === "unbound" || !p.bindState);
       break;
+    case "linked":
+      filtered = all.filter((p) => p.origin === "linked");
+      break;
+    case "listed":
+      filtered = all.filter((p) => p.origin === "listed");
+      break;
+    case "page": {
+      const pageIds = new Set(ctx.visiblePageProductIds);
+      // Never fall back to an arbitrary catalog slice — that can archive/draft the wrong products.
+      filtered = pageIds.size
+        ? all.filter((p) => pageIds.has(p.productId))
+        : [];
+      break;
+    }
+    case "recent": {
+      filtered = [...all].sort((a, b) => {
+        const ta = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+        const tb = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+        return tb - ta;
+      });
+      break;
+    }
     default:
       filtered = all;
   }
@@ -143,7 +165,9 @@ function resolveBatchProductIds(
     filtered = filtered.filter((p) => isActiveShopStatus(p.shopStatus));
   }
 
-  const limit = draft.params.batchLimit ?? 0;
+  // 「最近新增」默认只取前 20；「前 N」由 batchLimit 控制
+  const defaultLimit = filter === "recent" ? 20 : 0;
+  const limit = draft.params.batchLimit ?? defaultLimit;
   const result = limit > 0 ? filtered.slice(0, limit) : filtered;
   const ids = result.map((p) => p.productId);
 
@@ -154,12 +178,22 @@ function resolveBatchProductIds(
     pending: t("agentProducts.filterPendingProducts"),
     confirmed: t("agentProducts.filterConfirmedProducts"),
     unbound: t("agentProducts.filterUnboundProducts"),
+    linked: t("agentProducts.filterLinkedProducts"),
+    listed: t("agentProducts.filterListedProducts"),
+    page: t("agentProducts.filterPageProducts"),
+    recent: t("agentProducts.filterRecentProducts"),
   };
-  const label =
+  let label =
     filterLabels[filter] ??
     (opts?.activeOnly
       ? t("agentProducts.filterAllActive")
       : t("agentProducts.filterAll"));
+  if (draft.params.batchLimit && draft.params.batchLimit > 0) {
+    label = t("agentProducts.filterLimited", {
+      label,
+      count: draft.params.batchLimit,
+    });
+  }
 
   return { ids, label };
 }

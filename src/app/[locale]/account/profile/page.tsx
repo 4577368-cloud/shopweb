@@ -400,8 +400,7 @@ function readError(err: unknown, t: (key: string, params?: Record<string, string
   if (err instanceof ApiError) {
     if (err.status === 0) return t("auth.errorNetwork");
     if (err.status === 401) return t("accountProfile.errorUnauthenticated");
-    return err.message;
+    return t("auth.errorUnknown");
   }
-  if (err instanceof Error) return err.message;
   return t("auth.errorUnknown");
 }

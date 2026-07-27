@@ -25,6 +25,12 @@ export interface MarketingResponse<T> {
   consumedCredits: number;
   /** 命中 pipispy「3 天免费窗口」：榜/搜见过的 product_id 在窗口内再开详情不重复计费。仅 UI 标注用，真实扣点以 consumedCredits 为准。 */
   freeWindow?: boolean;
+  /** 服务端门禁后：实际向用户扣减的积分（= 上游 U × 2）。免费/窗口命中为 0。 */
+  chargedCredits?: number;
+  /** 扣费后用户钱包剩余积分（权威余额，来自服务端）。 */
+  remainingUserCredits?: number;
+  /** 上游/业务真实错误文案（402/5xx 等），前端需直接展示，禁止"代理未接通"兜底。 */
+  message?: string;
 }
 
 /**
@@ -539,15 +545,26 @@ export interface TtsShopParams {
 /** 平台筛选（发现/素材共用）。 */
 export type PlatformFilter = "all" | "tiktok" | "facebook" | "meta";
 
-/** 以图搜结果（v1.5 submit/status/result-summary，mock）。 */
+/** 以图搜结果（submit/status/resultSummary + product/search，真实富字段）。 */
 export interface ImageSearchResult {
   id: string;
   image: string;
   title: string;
   platform: AdPlatform;
   usdPrice: number;
-  similarity: number; // 0..1
+  similarity: number; // 0..1（真实 product/search 不回传相似度，默认 0）
   store: string;
+  // 真实 product/search 富字段（可选；mock 可不填）
+  price?: number | null;
+  currency?: string | null;
+  playCount?: number | null;
+  diggCount?: number | null;
+  commentCount?: number | null;
+  shareCount?: number | null;
+  videoCount?: number | null;
+  putDays?: number | null;
+  popularPersonCount?: number | null;
+  adPlatformList?: string[] | null;
 }
 
 // --- TikTok 商品榜单（tangbuy-plugin /api/plugin/ranking，真实落库，非 pipispy）---
