@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { messages } from "@/i18n/messages";
 import { localePath } from "@/i18n/LocaleLink";
@@ -15,6 +15,7 @@ import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail } from "@/components/workbench/assistant-rail";
 import { WorkbenchSidebar } from "@/components/workbench/workbench-sidebar";
+import { Button } from "@/components/ui/button";
 import { HubRouteGate } from "@/components/workbench/hub-route-gate";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
@@ -34,6 +35,10 @@ import { CompareStoresModal } from "@/components/operations/compare-stores-modal
 import { UsageDrawer } from "@/components/operations/usage-drawer";
 import { UsageCard } from "@/components/operations/usage-card";
 import { CreditsIndicator } from "@/components/operations/credits-indicator";
+import { BillingDrawer } from "@/components/operations/billing-drawer";
+import { CreditInsufficientModal } from "@/components/operations/credit-insufficient-modal";
+import { ChevronDown, ChevronUp } from "@/lib/ui/icons";
+import { billingApi } from "@/lib/billing/api";
 import {
   MarketingCopilot,
   type CopilotContext,
@@ -87,7 +92,17 @@ function OperationsCenterContent() {
   const shopApiName = resolveShopApiName(shop);
 
   const ledger = useMarketingLedger();
-  const { account, ctx, lastConsume, consumeError, run } = useMarketingRunner(ledger.record);
+  const {
+    account,
+    wallet,
+    insufficient,
+    clearInsufficient,
+    refreshWallet,
+    ctx,
+    lastConsume,
+    consumeError,
+    run,
+  } = useMarketingRunner(ledger.record);
   const nav = useOperationsNavigation();
   const watchlist = useOperationsWatchlist();
   const competitorTogglingIds = watchlist.togglingIds;
@@ -122,6 +137,41 @@ function OperationsCenterContent() {
   const [detailTtsShop, setDetailTtsShop] = useState<TtsShopRow | null>(null);
   const [detailTtsShopDetail, setDetailTtsShopDetail] = useState<TtsShopDetail | null>(null);
   const [usageOpen, setUsageOpen] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
+  const [claimed, setClaimed] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+
+  // 领取欢迎分（幂等；§4.2）。成功后刷新钱包。
+  const handleClaimWelcome = useCallback(async () => {
+    if (claiming) return;
+    setClaiming(true);
+    try {
+      const res = await billingApi.claimWelcome();
+      if (res.claimed || res.alreadyClaimed) {
+        setClaimed(true);
+        refreshWallet();
+      }
+    } catch {
+      // 静默：不足弹窗仍可引导去充值
+    } finally {
+      setClaiming(false);
+    }
+  }, [claiming, refreshWallet]);
+
+  // G5e：从服务端水合欢迎领取状态，避免花完 welcome 后顶栏按钮反复出现
+  useEffect(() => {
+    let cancelled = false;
+    billingApi
+      .welcomeStatus()
+      .then((s) => {
+        if (!cancelled && s.claimed) setClaimed(true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 竞店对比弹窗
   const [compareStores, setCompareStores] = useState<StoreRow[] | null>(null);
@@ -295,8 +345,10 @@ function OperationsCenterContent() {
   const sidebarFooter = (
     <UsageCard
       account={account}
+      wallet={wallet}
       sessionUsed={ledger.sessionUsed}
       onOpenDetail={() => setUsageOpen(true)}
+      onOpenBilling={() => setBillingOpen(true)}
     />
   );
 
@@ -308,11 +360,23 @@ function OperationsCenterContent() {
           assistantContent={<SectionGuide tab={nav.tab} />}
           strategyCards={
             <div className="flex min-h-0 max-h-[42vh] flex-col overflow-hidden">
-              <MarketingCopilot
-                messages={copilotMsgs}
-                onSend={handleCopilotSend}
-                context={copilotContext}
-              />
+              <button
+                type="button"
+                onClick={() => setCopilotOpen((v) => !v)}
+                className="flex items-center justify-between rounded-[var(--radius-control)] border border-hairline bg-surface px-2.5 py-1.5 text-[11px] font-medium text-ink-muted hover:bg-surface-muted"
+              >
+                <span>{t("ops.copilotPreviewTitle")}</span>
+                {copilotOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+              </button>
+              {copilotOpen && (
+                <div className="mt-1 min-h-0 flex-1 overflow-hidden">
+                  <MarketingCopilot
+                    messages={copilotMsgs}
+                    onSend={handleCopilotSend}
+                    context={copilotContext}
+                  />
+                </div>
+              )}
             </div>
           }
         />
@@ -320,13 +384,27 @@ function OperationsCenterContent() {
       {...wb.shellProps}
     >
       <WorkbenchPanel title={t("ops.pageTitle")} breadcrumbs={breadcrumbs} {...wb.panelProps}>
-        <div className="mb-4 flex justify-end">
+        <div className="mb-4 flex items-center justify-end gap-2">
+          {wallet && wallet.freeCredits === 0 && !claimed && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={claiming}
+              onClick={handleClaimWelcome}
+              title={t("ops.claim.claim")}
+            >
+              {claiming ? t("ops.claim.claiming") : t("ops.claim.claim")}
+            </Button>
+          )}
           <CreditsIndicator
             apiRemaining={account?.remainingApiCredits ?? 0}
             monitorRemaining={account?.remainingMonitorCredits ?? 0}
+            wallet={wallet}
             context={ctx}
             consumeError={consumeError}
             onOpenUsage={() => setUsageOpen(true)}
+            onOpenBilling={() => setBillingOpen(true)}
             onFetch={handleMarketingFetch}
             fetchDisabled={fetchDisabled}
           />
@@ -352,6 +430,9 @@ function OperationsCenterContent() {
             onLearnCreatives={handleLearnCreatives}
             initialSegment={nav.discoverySeg}
             onSegmentChange={nav.setDiscoverySeg}
+            welcomeClaimed={claimed}
+            onClaimWelcome={handleClaimWelcome}
+            onOpenBilling={() => setBillingOpen(true)}
             favoritedIds={favIdSet}
             onToggleFavorite={(item) =>
               favorites.toggleFavorite({
@@ -400,6 +481,7 @@ function OperationsCenterContent() {
         {nav.tab === "imageSearch" && (
           <AiImageSearch
             run={run}
+            walletBalance={wallet?.balanceCredits ?? null}
             onOpenDetail={handleViewDetail}
             onFollowStore={handleFollowStore}
             onViewStore={handleViewStore}
@@ -472,7 +554,29 @@ function OperationsCenterContent() {
         entries={ledger.entries}
         sessionUsed={ledger.sessionUsed}
         account={account}
+        wallet={wallet}
         onClose={() => setUsageOpen(false)}
+      />
+
+      <BillingDrawer
+        open={billingOpen}
+        wallet={wallet ? { balanceCredits: wallet.balanceCredits } : null}
+        onClose={() => setBillingOpen(false)}
+        onPurchased={() => {
+          refreshWallet();
+          setBillingOpen(false);
+        }}
+      />
+
+      <CreditInsufficientModal
+        open={insufficient}
+        welcomed={claimed}
+        onClaim={handleClaimWelcome}
+        onOpenBilling={() => {
+          clearInsufficient();
+          setBillingOpen(true);
+        }}
+        onClose={clearInsufficient}
       />
     </WorkbenchShell>
   );

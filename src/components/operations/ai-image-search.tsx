@@ -12,23 +12,27 @@ import type { ImageSearchResult, MarketingResponse, PageMeta } from "@/lib/marke
 import { isGuardCancel } from "@/lib/marketing/guard";
 import { CoverThumb } from "./cover-thumb";
 import { PlatformBadge } from "./platform-badge";
+import { CreditConfirmDialog } from "./credit-confirm-dialog";
 import { fmtUsd } from "@/lib/marketing/format";
 
 interface AiImageSearchProps {
   run: <T extends MarketingResponse<unknown>>(endpoint: string, cacheKey: string, fn: () => Promise<T>) => Promise<T>;
   onOpenDetail: (adId: string) => void;
+  /** 用户钱包剩余积分（用于确认弹窗展示）。 */
+  walletBalance?: number | null;
   /** 关注此店：把结果店铺名加入左栏关注（竞店）清单。 */
   onFollowStore?: (store: string) => void;
   /** 看竞店：跳到竞店 Tab 并以该店铺名搜。 */
   onViewStore?: (store: string) => void;
 }
 
-export function AiImageSearch({ run, onOpenDetail, onFollowStore, onViewStore }: AiImageSearchProps) {
+export function AiImageSearch({ run, onOpenDetail, walletBalance, onFollowStore, onViewStore }: AiImageSearchProps) {
   const t = useT();
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [results, setResults] = useState<{ list: ImageSearchResult[]; page: PageMeta } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -61,6 +65,12 @@ export function AiImageSearch({ run, onOpenDetail, onFollowStore, onViewStore }:
       setSubmitting(false);
     }
   }, [run, imageFile]);
+
+  // 图搜 U=3 → 收 6（§2.2），强制二次确认（D7）。
+  const requestSubmit = useCallback(() => {
+    if (!imageFile) return;
+    setConfirmOpen(true);
+  }, [imageFile]);
 
   useEffect(() => {
     return () => {
@@ -104,12 +114,23 @@ export function AiImageSearch({ run, onOpenDetail, onFollowStore, onViewStore }:
       </div>
 
       <div className="mb-3 flex items-center gap-2">
-        <Button variant="primary" size="sm" onClick={submit} disabled={!imageFile || submitting}>
+        <Button variant="primary" size="sm" onClick={requestSubmit} disabled={!imageFile || submitting}>
           <Search className="h-3.5 w-3.5" />
           {submitting ? t("ops.imageSearch.searching") : t("ops.imageSearch.submit")}
         </Button>
-        <span className="text-[11px] text-ink-subtle">{t("ops.imageSearch.credits", { n: IMAGE_SEARCH_CREDITS })}</span>
+        <span className="text-[11px] text-ink-subtle">{t("ops.imageSearch.credits", { n: IMAGE_SEARCH_CREDITS * 2 })}</span>
       </div>
+
+      <CreditConfirmDialog
+        open={confirmOpen}
+        estimate={IMAGE_SEARCH_CREDITS * 2}
+        remaining={walletBalance}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          void submit();
+        }}
+        onCancel={() => setConfirmOpen(false)}
+      />
 
       {error && (
         <div className="mb-3 flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-destructive-soft bg-destructive-soft px-6 py-10 text-center">

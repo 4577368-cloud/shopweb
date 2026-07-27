@@ -97,6 +97,7 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
   const [data, setData] = useState<{ stores: StoreRow[]; products?: AdCard[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [resolved, setResolved] = useState<StoreSearchResult | null>(null);
   const [searchNotFound, setSearchNotFound] = useState(false);
@@ -174,7 +175,10 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
         setResolved(resolvedStore);
         writeMarketingViewState("competition", { query: q, data: res.data });
       } catch (e) {
-        if (!isGuardCancel(e)) setError(true);
+        if (!isGuardCancel(e)) {
+          setError(true);
+          setErrorMsg(e instanceof Error ? e.message : String(e));
+        }
       } finally {
         setLoading(false);
       }
@@ -271,7 +275,7 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
           <Search className="h-3.5 w-3.5" />
           {t("ops.competition.queryBtn")}
         </Button>
-        <CostBadge free />
+        <CostBadge points={1} />
       </div>
 
       {/* 免费服务提示：该店的在投商品列表（competition/products）0 积分，鼓励先用免费入口 */}
@@ -378,7 +382,11 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
       ) : error ? (
         <div className="flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-destructive-soft bg-destructive-soft px-6 py-12 text-center">
           <p className="text-sm font-medium text-destructive">{t("ops.error.title")}</p>
-          <p className="max-w-md text-[12px] leading-relaxed text-ink-subtle">{t("ops.error.desc")}</p>
+          {errorMsg ? (
+            <p className="max-w-md break-words text-[12px] leading-relaxed text-ink-subtle">{errorMsg}</p>
+          ) : (
+            <p className="max-w-md text-[12px] leading-relaxed text-ink-subtle">{t("ops.error.desc")}</p>
+          )}
           <Button size="sm" variant="secondary" onClick={() => doSearch(query)}>{t("ops.error.retry")}</Button>
         </div>
       ) : !searched || !data ? (
@@ -391,7 +399,10 @@ export const CompetitionView = forwardRef<CompetitionViewHandle, CompetitionView
         <div className="space-y-3">
           {activeProductId && data?.products && data.products.length > 0 && (
             <div>
-              <p className="mb-2 text-[11px] font-medium text-ink">{t("ops.competition.relatedProducts")}</p>
+              <p className="mb-2 flex items-center gap-2 text-[11px] font-medium text-ink">
+                {t("ops.competition.relatedProducts")}
+                <CostBadge free />
+              </p>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {data.products.map((p) => (
                   <div key={p.id} className="w-40 shrink-0 overflow-hidden rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">

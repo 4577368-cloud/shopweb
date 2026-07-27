@@ -18,6 +18,9 @@ interface PluginEnvelope {
   data?: unknown;
   consumedCredits?: number;
   remainingCredits?: number;
+  chargedCredits?: number;
+  remainingUserCredits?: number;
+  freeWindow?: boolean;
   code?: number;
   message?: string;
 }
@@ -36,6 +39,10 @@ function wrapCredits<T>(body: PluginEnvelope, data: T): MarketingResponse<T> {
     source: "pipispy",
     consumedCredits: body.consumedCredits ?? 0,
     remainingCredits: body.remainingCredits ?? 0,
+    freeWindow: body.freeWindow,
+    chargedCredits: body.chargedCredits,
+    remainingUserCredits: body.remainingUserCredits,
+    message: body.message,
   };
 }
 

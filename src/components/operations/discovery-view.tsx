@@ -57,6 +57,10 @@ interface DiscoveryViewProps {
   favoritedIds?: Set<string>;
   /** 点击 ☆ 时调。 */
   onToggleFavorite?: (item: { id: string; type: string; title: string; subtitle?: string; image?: string }) => void;
+  /** G5f：是否已领欢迎分 */
+  welcomeClaimed?: boolean;
+  onClaimWelcome?: () => void;
+  onOpenBilling?: () => void;
 }
 
 export type DiscoveryViewHandle = {
@@ -113,6 +117,9 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
   onSegmentChange,
   favoritedIds = new Set(),
   onToggleFavorite,
+  welcomeClaimed = false,
+  onClaimWelcome,
+  onOpenBilling,
   },
   ref
 ) {
@@ -221,7 +228,7 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
               countGrowthMin: gMin,
               countGrowthMax: gMax,
               page: p,
-              pageSize: 20,
+              pageSize: 12,
             })
         );
         setRank(res.data);
@@ -251,7 +258,7 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
         const res = await run(
           "ad-products/search",
           `search:${q}:${p}`,
-          () => fetchSearchAds(q, p, 20)
+          () => fetchSearchAds(q, p, 12)
         );
         setSearch(res.data);
         setSearchLoadedQuery(q);
@@ -280,7 +287,7 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
           fetchTtsShops({
             region: ttsRegion === "all" ? undefined : ttsRegion,
             page: 1,
-            pageSize: 20,
+            pageSize: 12,
           })
       );
       setTtsShops(res.data.list);
@@ -441,6 +448,27 @@ export const DiscoveryView = forwardRef<DiscoveryViewHandle, DiscoveryViewProps>
         }}
         className="mb-3"
       />
+
+      {/* G5f：免费榜单 vs 付费情报说明（薄版） */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-card)] border border-hairline bg-surface-muted/40 px-3 py-2">
+        <p className="text-[12px] leading-relaxed text-ink-muted">
+          <span className="font-medium text-ink">{t("ops.discovery.valueCard.free")}</span>
+          {" · "}
+          {t("ops.discovery.valueCard.paid")}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {!welcomeClaimed && onClaimWelcome ? (
+            <Button type="button" size="sm" variant="secondary" onClick={onClaimWelcome}>
+              {t("ops.discovery.valueCard.claimCta")}
+            </Button>
+          ) : null}
+          {onOpenBilling ? (
+            <Button type="button" size="sm" variant="primary" onClick={onOpenBilling}>
+              {t("ops.discovery.valueCard.plansCta")}
+            </Button>
+          ) : null}
+        </div>
+      </div>
 
       {/* 筛选栏 */}
       <div className="mb-3 flex flex-wrap items-end gap-2">

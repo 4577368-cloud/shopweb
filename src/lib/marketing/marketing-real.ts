@@ -97,7 +97,7 @@ export async function fetchRankListReal(
   params: RankParams
 ): Promise<MarketingResponse<{ list: RankRow[]; page: PageMeta }>> {
   const page = params.page ?? 1;
-  const pageSize = params.pageSize ?? 20;
+  const pageSize = params.pageSize ?? 12;
   const res = await marketingPost(PIPISPY_URI.rankList, buildRankListParams(params));
   const records = extractRecords(res.data);
   const list = records.map(mapRankRow);
@@ -115,7 +115,7 @@ export async function fetchRankListReal(
 export async function fetchSearchAdsReal(
   q: string,
   page = 1,
-  pageSize = 20
+  pageSize = 12
 ): Promise<MarketingResponse<{ list: AdCard[]; page: PageMeta }>> {
   const res = await marketingPost(PIPISPY_URI.productsSearch, buildSearchAdsParams(q, page, pageSize));
   const records = extractRecords(res.data);
@@ -134,7 +134,7 @@ export async function fetchTtsShopsReal(
   params: TtsShopParams
 ): Promise<MarketingResponse<{ list: TtsShopRow[]; page: PageMeta }>> {
   const page = params.page ?? 1;
-  const pageSize = params.pageSize ?? 20;
+  const pageSize = params.pageSize ?? 12;
   const res = await marketingPost(PIPISPY_URI.tiktokShopList, buildTtsShopParams(params));
   const records = extractRecords(res.data);
   const list = records.map(mapTtsShopRow);
@@ -186,7 +186,7 @@ export async function fetchAdspyListReal(
 ): Promise<MarketingResponse<{ list: CreativeBrief[]; page: PageMeta }>> {
   const uri = params.includeStopped ? PIPISPY_URI.adLibraryAds : PIPISPY_URI.adspyList;
   const page = params.page ?? 1;
-  const pageSize = params.pageSize ?? 20;
+  const pageSize = params.pageSize ?? 12;
   const res = await marketingPost(uri, buildAdspyParams(params));
   const records = extractRecords(res.data);
   const list = records.map(mapCreativeBrief);

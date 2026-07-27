@@ -454,7 +454,7 @@ export async function fetchRankList(
 ): Promise<MarketingResponse<{ list: RankRow[]; page: PageMeta }>> {
   if (!USE_MOCK) return fetchRankListReal(params);
   await delay();
-  const pageSize = params.pageSize ?? 20;
+  const pageSize = params.pageSize ?? 12;
   const page = params.page ?? 1;
   let list = [...ALL_RANK];
   // 服务端过滤（真实由 pipispy 承担；mock 用 MOCK_RANK_META 侧信道演示，不在 RankRow 上挂合成字段）
@@ -493,7 +493,7 @@ export async function fetchRankList(
 export async function fetchSearchAds(
   q: string,
   page = 1,
-  pageSize = 20
+  pageSize = 12
 ): Promise<MarketingResponse<{ list: AdCard[]; page: PageMeta }>> {
   if (!USE_MOCK) return fetchSearchAdsReal(q, page, pageSize);
   await delay();
@@ -522,7 +522,7 @@ export async function fetchAdspyList(
   let list = [...ALL_CREATIVES];
   if (kw) list = list.filter((c) => c.title.toLowerCase().includes(kw) || c.copy.toLowerCase().includes(kw) || c.advertiser.toLowerCase().includes(kw));
   if (!includeStopped) list = list.filter((c) => c.isActive);
-  const pageSize = params.pageSize ?? 20;
+  const pageSize = params.pageSize ?? 12;
   const page = params.page ?? 1;
   const start = (page - 1) * pageSize;
   const sliced = list.slice(start, start + pageSize);
@@ -542,7 +542,7 @@ export async function fetchTtsShops(
 ): Promise<MarketingResponse<{ list: TtsShopRow[]; page: PageMeta }>> {
   if (!USE_MOCK) return fetchTtsShopsReal(params);
   await delay();
-  const pageSize = params.pageSize ?? 20;
+  const pageSize = params.pageSize ?? 12;
   const page = params.page ?? 1;
   let list = [...ALL_TTS];
   if (params.region) list = list.filter((r) => r.regions.includes(params.region!));

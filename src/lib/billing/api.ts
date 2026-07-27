@@ -144,6 +144,10 @@ export interface CapturePayPalOrderResponse {
   /** balance_recharge 时返回新余额（分 CNY）；order_payment 时为 null */
   balanceAfter: number | null;
   errorCode: string | null;
+  /** subscribe / credit_pack 时返回本次发放积分数 */
+  grantedCredits: number | null;
+  /** subscribe / credit_pack 时返回发放后用户积分余额 */
+  creditsAfter: number | null;
 }
 
 // ===== Payment Orders (P3.5) =====
@@ -206,7 +210,38 @@ export interface CreditTransactionItem {
   refId: string | null;
   endpoint: string | null;
   remark: string | null;
+  idempotencyKey: string | null;
+  /** 扣减桶：welcome(免费) / promo(促销) / subscription(月订) / credit_pack(加购) / manual。 */
+  bucket: string | null;
+  /** 跨桶扣减路径 JSON（跨桶时有值）：[{"bucket":"welcome","amount":12},{"bucket":"subscription","amount":2}] */
+  bucketsJson: string | null;
+  /** 上游实际消耗 U（pipispy consumed_credits）；用户实扣 = U × 2。 */
+  upstreamCredits: number | null;
   createdAt: string;
+}
+
+/** 双桶拆分（§4.5）：免费分 vs 付费分。 */
+export interface CreditBucketBreakdown {
+  userId: number;
+  balanceCredits: number;
+  freeCredits: number;
+  paidCredits: number;
+  subscriptionCredits: number;
+  packCredits: number;
+  promoCredits: number;
+}
+
+/** 欢迎分领取响应（§4.2）。 */
+export interface WelcomeClaimResponse {
+  claimed: boolean;
+  alreadyClaimed: boolean;
+  granted: number;
+  balanceAfter: number;
+}
+
+/** GET /credits/welcome/status */
+export interface WelcomeStatusResponse {
+  claimed: boolean;
 }
 
 export interface CreditTransactionListResponse {
@@ -218,7 +253,7 @@ export interface CreditTransactionListResponse {
 
 export interface CreditLotItem {
   id: number;
-  sourceType: "subscription" | "credit_pack" | "promo" | "manual";
+  sourceType: "welcome" | "subscription" | "credit_pack" | "promo" | "manual";
   sourceId: number | null;
   amountGranted: number;
   amountConsumed: number;
@@ -235,27 +270,9 @@ export interface CreditLotListResponse {
   offset: number;
 }
 
-export interface ConsumeCreditsPayload {
-  /** 调用的接口名（如 ad-products/search）。 */
-  endpoint: string;
-  /** 消耗积分数（必须 > 0）。 */
-  amount: number;
-  /** 关联业务类型（默认 marketing_api）。 */
-  refType?: string;
-  refId?: string;
-  remark?: string;
-}
-
-export interface ConsumeCreditsResult {
-  success: boolean;
-  balanceAfter: number;
-  transactionId: number | null;
-  errorCode: "INSUFFICIENT_CREDITS" | "INVALID_AMOUNT" | "ENDPOINT_REQUIRED" | null;
-}
-
 export interface GrantCreditsPayload {
   amount: number;
-  sourceType?: "subscription" | "credit_pack" | "promo" | "manual";
+  sourceType?: "welcome" | "subscription" | "credit_pack" | "promo" | "manual";
   sourceId?: number;
   /** ISO-8601 字符串（如 2026-12-31T23:59:59Z），不传 = 永不过期。 */
   expiresAtStr?: string;
@@ -270,6 +287,27 @@ export interface GrantCreditsResult {
 }
 
 // ===== API =====
+
+/** 商品项（catalog/plans）：订阅档或加购包。 */
+export interface CatalogItem {
+  code: string;
+  kind: "subscription" | "pack";
+  name: string;
+  priceUsdCents: number;
+  /** 常规积分（长期价）。 */
+  creditsNormal: number;
+  /** 促销积分（promo_until 内有效，否则回退 creditsNormal）。 */
+  creditsPromo: number;
+  /** 当前是否处于促销期（promo_until > now）。 */
+  promoActive: boolean;
+  durationDays: number;
+}
+
+/** catalog/plans 响应：订阅档 + 加购包。 */
+export interface CatalogResponse {
+  plans: CatalogItem[];
+  packages: CatalogItem[];
+}
 
 export const billingApi = {
   /** GET /overview — 账户概览（懒创建账户）。 */
@@ -383,14 +421,6 @@ export const billingApi = {
     );
   },
 
-  /** POST /consume/credits — 积分消耗（运营中心调用）。 */
-  consumeCredits: (payload: ConsumeCreditsPayload) =>
-    billingRequest<ConsumeCreditsResult>(`${BILLING_BASE}/consume/credits`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
-
   /** POST /credits/grant — 发放积分（P4 测试用，P5 接入支付后由订阅流程替代）。 */
   grantCredits: (payload: GrantCreditsPayload) =>
     billingRequest<GrantCreditsResult>(`${BILLING_BASE}/credits/grant`, {
@@ -398,6 +428,48 @@ export const billingApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+
+// ===== 商业化（§3–§5） =====
+
+/** GET /credits/buckets — 双桶拆分（免费分 vs 付费分）。 */
+  creditBuckets: () =>
+    billingRequest<CreditBucketBreakdown>(`${BILLING_BASE}/credits/buckets`),
+
+  /** POST /credits/welcome/claim — 领取欢迎分（幂等）。 */
+  claimWelcome: () =>
+    billingRequest<WelcomeClaimResponse>(`${BILLING_BASE}/credits/welcome/claim`, {
+      method: "POST",
+    }),
+
+  /** GET /credits/welcome/status — 是否已领（水合，不发放）。 */
+  welcomeStatus: () =>
+    billingRequest<WelcomeStatusResponse>(`${BILLING_BASE}/credits/welcome/status`),
+
+  /** GET /catalog/plans — 三档商品目录（含促销标记）。 */
+  catalog: () =>
+    billingRequest<CatalogResponse>(`${BILLING_BASE}/catalog/plans`),
+
+  /** POST /paypal/create-subscription — 创建月订 PayPal 订单。 */
+  createSubscription: (planCode: string) =>
+    billingRequest<CreatePayPalOrderResponse>(
+      `${BILLING_BASE}/paypal/create-subscription`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planCode }),
+      }
+    ),
+
+  /** POST /paypal/create-pack-order — 创建加购包 PayPal 订单。 */
+  createPackOrder: (packageCode: string) =>
+    billingRequest<CreatePayPalOrderResponse>(
+      `${BILLING_BASE}/paypal/create-pack-order`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packageCode }),
+      }
+    ),
 };
 
 // ===== 金额格式化工具（前端展示） =====

@@ -25,6 +25,12 @@ export interface MarketingResponse<T> {
   consumedCredits: number;
   /** 命中 pipispy「3 天免费窗口」：榜/搜见过的 product_id 在窗口内再开详情不重复计费。仅 UI 标注用，真实扣点以 consumedCredits 为准。 */
   freeWindow?: boolean;
+  /** 服务端门禁后：实际向用户扣减的积分（= 上游 U × 2）。免费/窗口命中为 0。 */
+  chargedCredits?: number;
+  /** 扣费后用户钱包剩余积分（权威余额，来自服务端）。 */
+  remainingUserCredits?: number;
+  /** 上游/业务真实错误文案（402/5xx 等），前端需直接展示，禁止"代理未接通"兜底。 */
+  message?: string;
 }
 
 /**
