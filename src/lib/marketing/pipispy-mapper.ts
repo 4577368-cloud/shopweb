@@ -2,6 +2,10 @@ import type {
   AdCard,
   AdDetail,
   Advertiser,
+  AdspyAiAnalysis,
+  AdspyAudience,
+  AdspyContentItem,
+  AdspyDetail,
   CompetitionProductRow,
   CreativeBrief,
   AdPlatform,
@@ -284,6 +288,10 @@ export function mapCreativeBrief(r: PipispyRecord): CreativeBrief {
   const adStatus = num(r.ad_status ?? r.status, 1);
   const endedAt = numOrNull(r.ended_at ?? r.ad_ended_at);
   const isActive = endedAt == null ? adStatus === 1 : false;
+  // adspy/list 返回视频信息：video_url（可播）/ type（1=视频 2=图片）/ duration / video_id。
+  // 旧设计文档误称 pipispy 不返 video_url，仅基于 rank/detail 接口；adspy/list 确有 video_url。
+  const videoType = (num(r.type, 1) === 1 ? 1 : 2) as 1 | 2;
+  const videoUrl = videoType === 1 ? str(r.video_url ?? r.videoUrl) : "";
   return {
     id: str(r.id ?? r.ad_id, str(r.ad_id)),
     cover,
@@ -299,6 +307,104 @@ export function mapCreativeBrief(r: PipispyRecord): CreativeBrief {
     activeDays: num(r.days ?? r.active_days ?? r.put_days),
     ctaType: str(r.cta_type ?? r.button_type ?? r.cta, "Others"),
     isActive,
+    videoUrl: videoUrl || undefined,
+    videoId: str(r.video_id ?? r.videoId) || undefined,
+    videoType,
+    duration: num(r.duration) || undefined,
+  };
+}
+
+/**
+ * Adspy 详情映射（adspy/detail；按列表 video_id 取）。
+ * 富字段：video_url/cover/duration(字符串秒)/type + ai_analysis / audience / content_list[] / ad_fee / min_max_cpm / cpa / tiktok_* / app_*。
+ * 全部容错：缺失块（ai_analysis / audience 可能为空）置 undefined，避免详情抽屉被饿死。
+ */
+export function mapAdspyDetail(r: PipispyRecord, id: string): AdspyDetail {
+  const cover = str(r.cover ?? r.image_url ?? r.thumbnail ?? r.image);
+  const title = str(r.title ?? r.ad_title ?? r.name);
+  const platform = platFromCode(r.platform ?? r.plat_type);
+  const platforms = strArray(r.ad_platform ?? r.platforms);
+  const videoType = (num(r.type, 1) === 1 ? 1 : 2) as 1 | 2;
+  const videoUrl = videoType === 1 ? str(r.video_url ?? r.videoUrl) : "";
+  const adStatus = num(r.ad_status ?? r.status, 1);
+  const endedAt = numOrNull(r.ended_at ?? r.ad_ended_at);
+  const isActive = endedAt == null ? adStatus === 1 : false;
+
+  // AI 创意分析块（可能缺失）
+  const aiRaw = asRecord(r.ai_analysis) ?? {};
+  const aiAnalysis: AdspyAiAnalysis | undefined = Object.keys(aiRaw).length
+    ? {
+        language: str(aiRaw.language),
+        humanPresenter: str(aiRaw.human_presenter ?? aiRaw.human_present),
+        mainHook: str(aiRaw.main_hook ?? aiRaw.hook),
+        script: str(aiRaw.script ?? aiRaw.copy ?? aiRaw.text),
+        tags: strArray(aiRaw.tags ?? aiRaw.tag),
+      }
+    : undefined;
+
+  // 受众定向块（可能缺失）
+  const audRaw = asRecord(r.audience) ?? {};
+  const audience: AdspyAudience | undefined = Object.keys(audRaw).length
+    ? {
+        region: strArray(audRaw.region ?? audRaw.regions),
+        gender: str(audRaw.gender),
+        age: str(audRaw.age),
+        category: str(audRaw.category),
+        covered: str(audRaw.covered ?? audRaw.cover),
+      }
+    : undefined;
+
+  // 落地页 / 内容列表（content_list[]）
+  const contentRaw = Array.isArray(r.content_list)
+    ? (r.content_list as unknown[])
+    : Array.isArray(r.contents)
+    ? (r.contents as unknown[])
+    : [];
+  const contentList: AdspyContentItem[] = contentRaw.map((c) => {
+    const o = asRecord(c) ?? {};
+    return {
+      cta: str(o.cta ?? o.button),
+      landingPage: str(o.landing_page ?? o.landingPage ?? o.url ?? o.link),
+      title: str(o.title ?? o.name),
+      desc: str(o.desc ?? o.description ?? o.text),
+    };
+  });
+
+  // 成本（min_max_cpm 为 [min, max] 数组）
+  const minMaxCpm = Array.isArray(r.min_max_cpm) ? (r.min_max_cpm as unknown[]) : [];
+  // app_* 附属字段（app_name / app_url / …），归集为 map
+  const app: Record<string, string> = {};
+  for (const k of Object.keys(r)) {
+    if (k.startsWith("app_")) app[k] = str(r[k]);
+  }
+
+  return {
+    id: str(r.id ?? r.ad_id, id),
+    videoUrl,
+    cover,
+    duration: parseInt(str(r.duration ?? r.duration_sec ?? "0"), 10) || 0,
+    videoType,
+    title,
+    advertiser: str(r.advertiser_name ?? r.page_name ?? r.store_name ?? r.advertiser, title),
+    advertiserPage: str(r.advertiser_link ?? r.page_link ?? r.ads_library_link) || undefined,
+    platform,
+    platforms: platforms.length ? platforms : [platform.toUpperCase()],
+    likes: num(r.likes ?? r.like_count),
+    comments: num(r.comments ?? r.comment_count),
+    shares: num(r.shares ?? r.share_count),
+    activeDays: num(r.days ?? r.active_days ?? r.put_days),
+    ctaType: str(r.cta_type ?? r.button_type ?? r.cta, "Others"),
+    isActive,
+    aiAnalysis,
+    audience,
+    contentList,
+    adFee: numOrNull(r.ad_fee) ?? undefined,
+    minCpm: minMaxCpm.length ? num(minMaxCpm[0]) : undefined,
+    maxCpm: minMaxCpm.length ? num(minMaxCpm[1]) : undefined,
+    cpa: numOrNull(r.cpa) ?? undefined,
+    tiktokAuthor: str(r.tiktok_author ?? r.tiktokAuthor) || undefined,
+    tiktokShop: str(r.tiktok_shop ?? r.tiktokShop) || undefined,
+    app: Object.keys(app).length ? app : undefined,
   };
 }
 

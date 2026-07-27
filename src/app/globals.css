@@ -402,3 +402,28 @@ select {
 .pipeline-done-flash {
   animation: pipeline-done-flash 0.6s ease-out 2;
 }
+
+/*
+ * Chatwoot widget width override.
+ * The SDK injects a fixed-width container (~380px). We widen it
+ * so the chat window feels more spacious on desktop.
+ */
+.woot-widget-wrapper {
+  width: 360px !important;
+  max-width: calc(100vw - 24px) !important;
+}
+
+.woot-widget-wrapper .woot-widget-holder,
+.woot-widget-wrapper iframe {
+  width: 100% !important;
+}
+
+/* On small screens keep the default compact size */
+@media (max-width: 480px) {
+  .woot-widget-wrapper {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    right: 0 !important;
+    left: 0 !important;
+  }
+}

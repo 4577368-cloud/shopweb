@@ -1,7 +1,7 @@
 // 素材视图 · 创意打法库（路线图 P0 第三步 / §4.3）。
-// 新定位：不搜也有满屏高价值创意。默认着陆自动拉 adspy/list（公开广告库，关键词可空），
+// 定位：不搜也有满屏高价值创意。默认着陆自动拉 adspy/list（公开广告库，关键词可空），
 // 无需输入即铺满；关键词搜索走同一端点；「含已停投」开关切到 ad-library/ads（Meta 公开广告库）。
-// 卡片展示：封面 / 标题 / 钩子文案 / 点赞·评论·分享 / 投放天数 / CTA / 投放方 —— 商家可直接"抄作业"。
+// 卡片展示：封面 / 视频（type=1 可播）/ 标题 / 钩子文案 / 点赞·评论·分享 / 投放天数 / CTA / 投放方 —— 商家可直接"抄作业"。
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
@@ -9,14 +9,18 @@ import { useT } from "@/i18n/LocaleProvider";
 import { Button } from "@/components/ui/button";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Search } from "@/lib/ui/icons";
-import { fetchAdspyList } from "@/lib/marketing/api";
+import { fetchAdspyList, fetchAdspyDetail } from "@/lib/marketing/api";
 import { isGuardCancel } from "@/lib/marketing/guard";
+import { readMarketingApiCache } from "@/lib/marketing/session-cache";
 import { CostBadge } from "./cost-badge";
 import { CoverThumb } from "./cover-thumb";
 import { PlatformBadge } from "./platform-badge";
+import { AdspyDetailDrawer } from "./adspy-detail-drawer";
 import { fmtCompact, fmtInt } from "@/lib/marketing/format";
 import { cn } from "@/lib/utils";
 import type {
+  AdspyDetail,
+  AdspyParams,
   CreativeBrief,
   MarketingResponse,
   PageMeta,
@@ -28,6 +32,8 @@ interface CreativesViewProps {
   run: <T extends MarketingResponse<unknown>>(endpoint: string, cacheKey: string, fn: () => Promise<T>) => Promise<T>;
   /** 看投放方 / 对标店：跳竞店 Tab 用该名字作种子搜索。 */
   onViewAdvertiser: (name: string) => void;
+  /** 让 Copilot 分析该创意详情（详情抽屉"分析"按钮）。 */
+  onAnalyzeAdspy?: (detail: AdspyDetail) => void;
   initialQuery?: string;
   onQueryChange?: (q: string) => void;
   favoritedIds?: Set<string>;
@@ -38,8 +44,32 @@ export type CreativesViewHandle = {
   fetchCurrent: () => void;
 };
 
+const REGION_OPTIONS = ["US", "GB", "MY", "HK", "SG", "CA", "AU", "DE", "FR", "JP", "TH", "VN", "PH", "ID", "BR", "IN"];
+const SHOP_TYPE_OPTIONS = ["shopify", "magento", "shoplazza", "shopline", "shopyy", "squarespace", "wix", "woocommerce"];
+const LANGUAGE_OPTIONS = ["en", "zh-cn", "zh-tw", "es", "fr", "de", "ja", "ko", "pt", "th", "vi", "id"];
+const FORMAT_OPTIONS: { value: number; key: "video" | "image" | "carousel" }[] = [
+  { value: 1, key: "video" },
+  { value: 2, key: "image" },
+  { value: 3, key: "carousel" },
+];
+const SORT_OPTIONS: { value: number; key: "play" | "create" | "found" | "days" | "engage" | "cost" }[] = [
+  { value: 4, key: "play" },
+  { value: 2, key: "create" },
+  { value: 1, key: "found" },
+  { value: 5, key: "days" },
+  { value: 6, key: "engage" },
+  { value: 21, key: "cost" },
+];
+
+function toggleStr(arr: string[], v: string): string[] {
+  return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+}
+function toggleNum(arr: number[], v: number): number[] {
+  return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+}
+
 export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>(
-  function CreativesView({ run, onViewAdvertiser, initialQuery = "", onQueryChange, favoritedIds = new Set(), onToggleFavorite }, ref) {
+  function CreativesView({ run, onViewAdvertiser, onAnalyzeAdspy, initialQuery = "", onQueryChange, favoritedIds = new Set(), onToggleFavorite }, ref) {
   const t = useT();
   const [query, setQuery] = useState(initialQuery);
   const [platSeg, setPlatSeg] = useState<PlatSeg>("all");
@@ -50,6 +80,20 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [cost, setCost] = useState<{ points: number } | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // —— 创意详情抽屉状态（adspy/detail，按列表 video_id 取，享 3 天免费窗口）——
+  const [detailBrief, setDetailBrief] = useState<CreativeBrief | null>(null);
+  const [detailData, setDetailData] = useState<AdspyDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailConsume, setDetailConsume] = useState<{ actual: number; cacheHit: boolean; freeWindow?: boolean } | null>(null);
+  // —— 筛选器状态（对齐 adspy/list 文档可选参数）——
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [region, setRegion] = useState<string[]>([]);
+  const [shopType, setShopType] = useState<string[]>([]);
+  const [language, setLanguage] = useState<string[]>([]);
+  const [formatType, setFormatType] = useState<number[]>([]);
+  const [adCostMin, setAdCostMin] = useState("");
+  const [adCostMax, setAdCostMax] = useState("");
+  const [sort, setSort] = useState<number>(4);
 
   useEffect(() => {
     setQuery(initialQuery);
@@ -60,12 +104,27 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
       const kw = q.trim();
       setLoading(true);
       setError(false);
-      const cacheKey = `creative:${stopped ? "stopped" : "active"}:${kw.toLowerCase()}`;
+      const platType = platSeg === "tiktok" ? 1 : platSeg === "facebook" || platSeg === "meta" ? 2 : undefined;
+      const params: AdspyParams = {
+        q: kw,
+        includeStopped: stopped,
+        pageSize: 12,
+        region: region.length ? region : undefined,
+        platType,
+        shopType: shopType.length ? shopType : undefined,
+        language: language.length ? language : undefined,
+        formatType: formatType.length ? formatType : undefined,
+        adCostMin: adCostMin ? Number(adCostMin) : undefined,
+        adCostMax: adCostMax ? Number(adCostMax) : undefined,
+        sort,
+        sortType: "desc",
+      };
+      // 筛选组合进 cacheKey：同一组合复用会话缓存，避免重复计费。
+      const filterKey = JSON.stringify({ region, platType, shopType, language, formatType, adCostMin, adCostMax, sort });
+      const cacheKey = `creative:${stopped ? "stopped" : "active"}:${kw.toLowerCase()}:${filterKey}`;
       const endpoint = stopped ? "ad-library/ads" : "adspy/list";
       try {
-        const res = await run(endpoint, cacheKey, () =>
-          fetchAdspyList({ q: kw, includeStopped: stopped, pageSize: 12 })
-        );
+        const res = await run(endpoint, cacheKey, () => fetchAdspyList(params));
         setData(res.data);
         setCost({ points: res.chargedCredits ?? res.consumedCredits ?? 0 });
         setLoaded(true);
@@ -77,6 +136,41 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
         }
       } finally {
         setLoading(false);
+      }
+    },
+    [run, platSeg, region, shopType, language, formatType, adCostMin, adCostMax, sort]
+  );
+
+  // 创意详情：按列表 video_id 取 adspy/detail（1 积分/次，3 天内查过或出现在列表结果中免费）。
+  // 计费授权：显式「详情」按钮 = 用户确认（与列表「Load creatives」一致，不另弹 CreditConfirmDialog）。
+  // run 复用会话缓存（5min TTL）+ fetchAdspyDetail 内部 isDetailFree/recordDetailSeen 3 天窗口。
+  const openDetail = useCallback(
+    async (card: CreativeBrief) => {
+      if (!card.videoId) return;
+      setDetailBrief(card);
+      setDetailData(null);
+      setDetailConsume(null);
+      setDetailLoading(true);
+      const cacheKey = `adspy-detail:${card.videoId}`;
+      // 调 run 前探测会话缓存：run 命中缓存时返回历史响应，需据此把徽标标为 cached 且本次消耗记 0。
+      const wasCached = readMarketingApiCache(cacheKey) !== undefined;
+      try {
+        const res = await run("adspy/detail", cacheKey, () => fetchAdspyDetail(card.videoId!));
+        setDetailData(res.data);
+        setDetailConsume({
+          actual: wasCached ? 0 : (res.consumedCredits ?? 0),
+          cacheHit: wasCached,
+          freeWindow: res.freeWindow,
+        });
+      } catch (e) {
+        if (isGuardCancel(e)) {
+          // 用户取消计费确认：关闭抽屉。
+          setDetailBrief(null);
+        } else {
+          setDetailData(null);
+        }
+      } finally {
+        setDetailLoading(false);
       }
     },
     [run]
@@ -95,7 +189,19 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
     [doFetch, query, includeStopped]
   );
 
-  const visible = data?.list.filter((c) => platSeg === "all" || c.platform === platSeg) ?? [];
+  const visible = data?.list ?? [];
+  const hasFilters = region.length || shopType.length || language.length || formatType.length || adCostMin || adCostMax || sort !== 4 || platSeg !== "all";
+
+  const resetFilters = () => {
+    setRegion([]);
+    setShopType([]);
+    setLanguage([]);
+    setFormatType([]);
+    setAdCostMin("");
+    setAdCostMax("");
+    setSort(4);
+    setPlatSeg("all");
+  };
 
   return (
     <div>
@@ -115,6 +221,15 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
           <Search className="h-3.5 w-3.5" />
           {t("ops.discovery.segSearch")}
         </Button>
+        <Button
+          variant={filtersOpen ? "secondary" : "ghost"}
+          size="sm"
+          onClick={() => setFiltersOpen((v) => !v)}
+          className={cn(hasFilters && "text-brand-strong")}
+        >
+          {t("ops.creatives.filters.title")}
+          {hasFilters ? ` · ${region.length + shopType.length + language.length + formatType.length + (adCostMin || adCostMax ? 1 : 0) + (sort !== 4 ? 1 : 0)}` : ""}
+        </Button>
         <label className="flex cursor-pointer items-center gap-1.5 rounded-[var(--radius-control)] border border-hairline bg-surface px-2.5 py-1.5 text-[12px] text-ink-muted">
           <input
             type="checkbox"
@@ -130,6 +245,135 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
         </label>
       </div>
 
+      {filtersOpen && (
+        <div className="mb-3 rounded-[var(--radius-card)] border border-hairline bg-surface-muted/40 p-3 text-[12px]">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="font-medium text-ink">{t("ops.creatives.filters.title")}</span>
+            <button type="button" onClick={resetFilters} className="text-ink-muted hover:text-brand">
+              {t("ops.creatives.filters.reset")}
+            </button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <div className="mb-1 text-ink-muted">{t("ops.creatives.filters.region")}</div>
+              <div className="flex flex-wrap gap-1">
+                {REGION_OPTIONS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setRegion((prev) => toggleStr(prev, r))}
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[11px]",
+                      region.includes(r) ? "bg-brand text-white" : "bg-surface text-ink-muted hover:bg-muted"
+                    )}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 text-ink-muted">{t("ops.creatives.filters.shopType")}</div>
+              <div className="flex flex-wrap gap-1">
+                {SHOP_TYPE_OPTIONS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setShopType((prev) => toggleStr(prev, s))}
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[11px]",
+                      shopType.includes(s) ? "bg-brand text-white" : "bg-surface text-ink-muted hover:bg-muted"
+                    )}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 text-ink-muted">{t("ops.creatives.filters.language")}</div>
+              <div className="flex flex-wrap gap-1">
+                {LANGUAGE_OPTIONS.map((l) => (
+                  <button
+                    key={l}
+                    type="button"
+                    onClick={() => setLanguage((prev) => toggleStr(prev, l))}
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[11px]",
+                      language.includes(l) ? "bg-brand text-white" : "bg-surface text-ink-muted hover:bg-muted"
+                    )}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 text-ink-muted">{t("ops.creatives.filters.format")}</div>
+              <div className="flex flex-wrap gap-1">
+                {FORMAT_OPTIONS.map((f) => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    onClick={() => setFormatType((prev) => toggleNum(prev, f.value))}
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[11px]",
+                      formatType.includes(f.value) ? "bg-brand text-white" : "bg-surface text-ink-muted hover:bg-muted"
+                    )}
+                  >
+                    {t(`ops.creatives.adType.${f.key}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 text-ink-muted">{t("ops.creatives.filters.adCost")}</div>
+              <div className="flex items-center gap-2">
+                <input
+                  value={adCostMin}
+                  onChange={(e) => setAdCostMin(e.target.value.replace(/[^0-9.]/g, ""))}
+                  placeholder={t("ops.creatives.filters.adCostMin")}
+                  className="h-7 w-20 rounded border border-hairline bg-surface px-2 text-[11px] text-ink"
+                />
+                <span className="text-ink-muted">~</span>
+                <input
+                  value={adCostMax}
+                  onChange={(e) => setAdCostMax(e.target.value.replace(/[^0-9.]/g, ""))}
+                  placeholder={t("ops.creatives.filters.adCostMax")}
+                  className="h-7 w-20 rounded border border-hairline bg-surface px-2 text-[11px] text-ink"
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 text-ink-muted">{t("ops.creatives.filters.sort")}</div>
+              <select
+                value={sort}
+                onChange={(e) => setSort(Number(e.target.value))}
+                className="h-7 rounded border border-hairline bg-surface px-2 text-[11px] text-ink"
+              >
+                {SORT_OPTIONS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {t(`ops.creatives.sortBy.${s.key}`)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-3 flex justify-end">
+            <Button size="sm" variant="primary" onClick={() => doFetch(query, includeStopped)} disabled={loading}>
+              {t("ops.discovery.segSearch")}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <SegmentedTabs
           variant="chip"
@@ -140,7 +384,10 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
             { id: "meta", label: t("ops.creatives.segMeta") },
           ]}
           value={platSeg}
-          onValueChange={(id) => setPlatSeg(id as PlatSeg)}
+          onValueChange={(id) => {
+            setPlatSeg(id as PlatSeg);
+            void doFetch(query, includeStopped);
+          }}
         />
         {cost && (
           <CostBadge points={cost.points} />
@@ -182,10 +429,28 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {visible.map((card) => (
               <div key={card.id} className="flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-hairline bg-surface shadow-card">
-                <div className="relative h-44 w-full overflow-hidden">
-                  <CoverThumb src={card.cover} label={card.title} />
+                <div className="relative h-44 w-full overflow-hidden bg-black">
+                  {card.videoType === 1 && card.videoUrl ? (
+                    <video
+                      src={card.videoUrl}
+                      poster={card.cover}
+                      controls
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="h-full w-full object-contain"
+                    />
+                  ) : (
+                    <CoverThumb src={card.cover} label={card.title} />
+                  )}
                   <span className="absolute left-2 top-2">
                     <PlatformBadge platform={card.platform} />
+                  </span>
+                  <span className="absolute left-2 bottom-2 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white">
+                    {card.videoType === 1 && card.videoUrl
+                      ? t("ops.creatives.adType.video")
+                      : t("ops.creatives.adType.image")}
+                    {card.duration ? ` · ${card.duration}s` : ""}
                   </span>
                   {!card.isActive && (
                     <span className="absolute right-8 top-2 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-ink-muted">
@@ -247,6 +512,15 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
                   ) : null}
 
                   <div className="mt-2 flex flex-col gap-1">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full"
+                      disabled={!card.videoId}
+                      onClick={() => openDetail(card)}
+                    >
+                      {t("ops.creatives.card.viewDetail")}
+                    </Button>
                     <Button variant="secondary" size="sm" className="w-full" onClick={() => onViewAdvertiser(card.advertiser)}>
                       {t("ops.creatives.card.viewAdvertiser")}
                     </Button>
@@ -267,6 +541,15 @@ export const CreativesView = forwardRef<CreativesViewHandle, CreativesViewProps>
           </div>
         </>
       )}
+
+      <AdspyDetailDrawer
+        brief={detailBrief}
+        detail={detailData}
+        consume={detailConsume}
+        loading={detailLoading}
+        onClose={() => setDetailBrief(null)}
+        onAnalyze={(d) => onAnalyzeAdspy?.(d)}
+      />
     </div>
   );
 });

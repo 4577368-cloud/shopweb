@@ -13,6 +13,8 @@ export const PIPISPY_URI = {
   aiImageResult: "/v3/api/open/ai-search/image/resultSummary",
   // 创意打法库（公开广告库，关键词可空 → 无需输入即满屏高价值创意）
   adspyList: "/v3/api/open/adspy/list",
+  // 创意详情（按列表 video_id 取，1 积分/次，3 天内查过或出现在列表结果中免费）
+  adspyDetail: "/v3/api/open/adspy/detail",
   // 含已停投：Meta 公开广告库（补全创意完整生命周期）
   adLibraryAds: "/v3/api/open/ad-library/ads",
   // 竞店检索（store/list，域名/店名 → 13 字符 ID 解析，1 积分/条）

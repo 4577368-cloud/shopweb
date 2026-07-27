@@ -11,6 +11,7 @@ import {
 import {
   mapAdCard,
   mapAdDetail,
+  mapAdspyDetail,
   mapCompetitionProduct,
   mapCreativeBrief,
   mapCreditsBalance,
@@ -34,6 +35,7 @@ import { isDetailFree, isStoreFree, recordDetailSeen, recordStoreSeen } from "./
 import type {
   AdCard,
   AdDetail,
+  AdspyDetail,
   AdspyParams,
   CompetitionParams,
   CompetitionProductRow,
@@ -212,7 +214,30 @@ export async function fetchAdspyListReal(
   };
 }
 
-/** 店下在投商品（store/detail/competition/products，pipispy 文档标注免费端点）。 */
+/**
+ * Adspy 创意详情（adspy/detail；按列表 video_id 取）。
+ * 计费：pipispy 侧「3 天免费窗口」——同一 video_id 3 天内复开详情不重复计费（真实扣点以响应 consumedCredits 为准）。
+ * 注意：列表登记的是 ad_id（mapCreativeBrief.id），与详情的 video_id 不同字段，故列表不会把详情"洗成免费"；
+ * 首开详情按 pipispy 真实 consumedCredits 计费，打开后本端 recordDetailSeen(video_id) 登记，再做会话级（5min）复用。
+ */
+export async function fetchAdspyDetailReal(
+  id: string
+): Promise<MarketingResponse<AdspyDetail>> {
+  const freeWindow = isDetailFree(id);
+  const res = await marketingPost(PIPISPY_URI.adspyDetail, { id });
+  const row =
+    asRecord(res.data) ??
+    asRecord(extractRecords(res.data)[0]) ??
+    {};
+  recordDetailSeen(id);
+  return {
+    data: mapAdspyDetail(row, id),
+    source: res.source,
+    consumedCredits: res.consumedCredits,
+    remainingCredits: res.remainingCredits,
+    freeWindow,
+  };
+}
 export async function fetchCompetitionProductsReal(
   params: CompetitionProductsParams
 ): Promise<MarketingResponse<{ list: CompetitionProductRow[] }>> {

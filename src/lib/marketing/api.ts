@@ -3,6 +3,7 @@
 
 import {
   fetchAdDetailReal,
+  fetchAdspyDetailReal,
   fetchAdspyListReal,
   fetchCompetitionProductsReal,
   fetchCompetitionReal,
@@ -28,6 +29,7 @@ import { PIPISPY_URI } from "./pipispy-uris";
 import {
   makeAdCards,
   makeAdDetail,
+  makeAdspyDetail,
   makeCompetitionProducts,
   makeCreativeBriefs,
   makeImageResults,
@@ -54,6 +56,7 @@ export { MOCK_RANK_META };
 import type {
   AdCard,
   AdDetail,
+  AdspyDetail,
   AdspyParams,
   CompetitionParams,
   CompetitionProductRow,
@@ -594,6 +597,22 @@ export async function fetchAdDetail(id: string): Promise<MarketingResponse<AdDet
   const consumed = CREDIT_PER_CALL;
   return {
     data: makeAdDetail(id),
+    source: "mock",
+    remainingCredits: consumeApi(consumed),
+    consumedCredits: consumed,
+    freeWindow,
+  };
+}
+
+// --- Adspy 创意详情（adspy/detail，按列表 video_id 取，享 3 天免费窗口）---
+export async function fetchAdspyDetail(id: string): Promise<MarketingResponse<AdspyDetail>> {
+  if (!USE_MOCK) return fetchAdspyDetailReal(id);
+  await delay();
+  const freeWindow = isDetailFree(id);
+  recordDetailSeen(id);
+  const consumed = freeWindow ? 0 : CREDIT_PER_CALL;
+  return {
+    data: makeAdspyDetail(id),
     source: "mock",
     remainingCredits: consumeApi(consumed),
     consumedCredits: consumed,

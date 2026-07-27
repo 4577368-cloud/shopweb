@@ -12,6 +12,7 @@ import {
 import type {
   AdCard,
   AdDetail,
+  AdspyDetail,
   CompetitionProductRow,
   CreativeBrief,
   ImageSearchResult,
@@ -601,6 +602,77 @@ export function makeAdDetail(id: string): AdDetail {
     platformCode: code as 1 | 2 | 3,
     videoId: `vid_${randInt(rng, 100000, 999999)}`,
     copyUnavailable: true,
+  };
+}
+
+/** Adspy 创意详情（adspy/detail，按列表 video_id 取，mock 富字段，配可播样例视频）。 */
+export function makeAdspyDetail(id: string): AdspyDetail {
+  const rng = mulberry32(7700 + (id ? id.length * 29 : 5));
+  const plat = pick(rng, ["tiktok", "facebook", "meta"] as const);
+  const platforms =
+    plat === "tiktok"
+      ? ["TIKTOK"]
+      : plat === "facebook"
+        ? rng() > 0.5
+          ? ["FACEBOOK", "INSTAGRAM"]
+          : ["FACEBOOK"]
+        : rng() > 0.5
+          ? ["AUDIENCE_NETWORK", "MESSENGER"]
+          : ["THREADS"];
+  const advertiser = makeName(rng);
+  const coverId = `ad_${randInt(rng, 100000, 999999)}`;
+  const videoId = id || `vid_${randInt(rng, 100000, 999999)}`;
+  const isActive = rng() > 0.18;
+  const duration = randInt(rng, 8, 58);
+  const tags = ["Hook", "UGC", "Testimonial", "Before/After", "Tutorial", "Unboxing", "Demo", "Story"];
+  const aiAnalysis = {
+    language: pick(rng, ["en", "es", "zh-cn", "pt", "fr"]),
+    humanPresenter: pick(rng, ["真人出镜", "画外音", "无真人"]),
+    mainHook: pick(rng, AD_HOOKS),
+    script: `${pick(rng, AD_HOOKS)}. ${pick(rng, AD_HOOKS)} — 点击链接立即体验，限时优惠。`,
+    tags: Array.from(new Set(Array.from({ length: randInt(rng, 2, 4) }, () => pick(rng, tags)))),
+  };
+  const audience = {
+    region: Array.from(new Set(Array.from({ length: randInt(rng, 1, 3) }, () => pick(rng, REGIONS).code))),
+    gender: pick(rng, ["female", "male", "all"]),
+    age: pick(rng, ["18-24", "25-34", "35-44", "45-54", "all"]),
+    category: pick(rng, AD_CATEGORIES).code,
+    covered: pick(rng, ["高覆盖", "精准定向", "宽受众"]),
+  };
+  const contentList = Array.from({ length: randInt(rng, 1, 3) }, () => ({
+    cta: pick(rng, CTA_BUTTONS).code,
+    landingPage: `https://${advertiser.toLowerCase().replace(/[^a-z]/g, "")}.myshopify.com/p/landing-${randInt(rng, 100, 999)}`,
+    title: makeTitle(rng),
+    desc: pick(rng, AD_HOOKS),
+  }));
+  return {
+    id: videoId,
+    // mock 阶段用公开样例 MP4，接后端后由 pipispy video_url 覆盖。
+    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+    cover: `https://picsum.photos/seed/${coverId}/360/640`,
+    duration,
+    videoType: 1,
+    title: makeTitle(rng),
+    advertiser: `${advertiser} Official`,
+    advertiserPage: `https://facebook.com/${advertiser.toLowerCase().replace(/[^a-z]/g, "")}`,
+    platform: plat,
+    platforms,
+    likes: randInt(rng, 500, 2_400_000),
+    comments: randInt(rng, 20, 80_000),
+    shares: randInt(rng, 10, 140_000),
+    activeDays: randInt(rng, 2, 540),
+    ctaType: pick(rng, CTA_BUTTONS).code,
+    isActive,
+    aiAnalysis,
+    audience,
+    contentList,
+    adFee: randInt(rng, 200, 50_000),
+    minCpm: +randFloat(rng, 4, 25).toFixed(2),
+    maxCpm: +randFloat(rng, 25, 130).toFixed(2),
+    cpa: randInt(rng, 50, 2000),
+    tiktokAuthor: rng() > 0.5 ? `@${advertiser.toLowerCase().replace(/[^a-z]/g, "")}` : undefined,
+    tiktokShop: rng() > 0.5 ? `https://shop.tiktok.com/@${advertiser.toLowerCase().replace(/\s+/g, "")}` : undefined,
+    app: { app_name: "Demo App", app_url: "https://example.com/app" },
   };
 }
 

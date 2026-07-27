@@ -69,18 +69,27 @@ export function buildSearchAdsParams(q: string, page: number, pageSize: number):
 }
 
 export function buildAdspyParams(p: AdspyParams): Record<string, unknown> {
+  // 对齐 pipispy adspy/list 文档 schema（POST /open-api/v1/data, uri=/v3/api/open/adspy/list）。
+  // 注意：分页用 current_page/page_size，排序用 sort/sort_type，关键词走 extend_keywords[{type,keyword}]+search_type。
   const params: Record<string, unknown> = {
-    page: p.page ?? 1,
-    per_page: p.pageSize ?? 20,
-    order_by: "ad_started_at",
-    direction: "desc",
+    current_page: p.page ?? 1,
+    page_size: p.pageSize ?? 20,
+    sort: p.sort ?? 4, // 默认按播放次数降序（最易"抄作业"）
+    sort_type: p.sortType ?? "desc",
   };
   const kw = (p.q ?? "").trim();
   if (kw) {
-    params.keyword = kw;
-    params.q = kw;
+    params.search_type = 1; // 1=广告关键词
+    params.extend_keywords = [{ type: 1, keyword: kw }];
   }
-  // includeStopped 本身不改变 adspy/list 参数；切到 ad-library/ads 在 api 层处理。
+  if (p.region?.length) params.region = p.region;
+  if (p.platType != null) params.plat_type = p.platType;
+  if (p.adCostMin != null) params.ad_cost_min = p.adCostMin;
+  if (p.adCostMax != null) params.ad_cost_max = p.adCostMax;
+  if (p.shopType?.length) params.shop_type = p.shopType;
+  if (p.language?.length) params.ad_language = p.language;
+  if (p.formatType?.length) params.format_type = p.formatType;
+  // includeStopped 走 ad-library/ads 端点（api 层处理），此处参数不变。
   return params;
 }
 

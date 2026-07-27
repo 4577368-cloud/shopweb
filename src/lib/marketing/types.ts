@@ -200,6 +200,10 @@ export interface CreativeBrief {
   activeDays: number; // 持续投放天数
   ctaType: string; // CTA 按钮文案
   isActive: boolean; // 是否在投（含已停投开关用）
+  videoUrl?: string; // 视频地址（type=1 视频广告时有效，可直接 <video> 播放）
+  videoId?: string; // 视频 ID（访问广告详情用）
+  videoType?: 1 | 2; // 1=视频广告 2=图片广告（type=3 轮播归为图片展示）
+  duration?: number; // 时长（秒，type=1 时有效）
 }
 
 /** 创意打法库查询入参（adspy/list 或 ad-library/ads）。 */
@@ -209,6 +213,76 @@ export interface AdspyParams {
   pageSize?: number;
   /** 含已停投：true 时切到 ad-library/ads（Meta 公开广告库，含已停投创意）。 */
   includeStopped?: boolean;
+  // —— 以下为 adspy/list 文档可选筛选参数（对齐 pipispy schema）——
+  region?: string[]; // 地区/国家，如 ["US","HK"]
+  platType?: number; // 平台类型 1=TikTok 2=Facebook（meta 库走 includeStopped 分支）
+  adCostMin?: number; // 广告成本下限
+  adCostMax?: number; // 广告成本上限
+  shopType?: string[]; // 电商系统 magento/shopify/shoplazza/shopline/shopyy/squarespace/wix/woocommerce
+  language?: string[]; // 广告语言，如 ["en","zh-cn"]
+  formatType?: number[]; // 广告形式 1=视频 2=图片 3=轮播
+  sort?: number; // 排序方式 1=发现时间 2=创建时间 3=首次发现 4=播放次数 21=广告成本 …
+  sortType?: "desc" | "asc";
+}
+
+/** Adspy 详情 — AI 创意分析块（adspy/detail 真实返回）。 */
+export interface AdspyAiAnalysis {
+  language: string; // 广告语言
+  humanPresenter: string; // human_presenter（是否真人出镜）
+  mainHook: string; // main_hook（主钩子）
+  script: string; // script（广告文案正文 / 脚本）
+  tags: string[]; // tags[]（题材标签）
+}
+
+/** Adspy 详情 — 受众定向块（adspy/detail 真实返回）。 */
+export interface AdspyAudience {
+  region: string[]; // region[]（投放地区）
+  gender: string; // gender（gender）
+  age: string; // age（年龄段）
+  category: string; // category（品类定向）
+  covered: string; // covered（覆盖描述）
+}
+
+/** Adspy 详情 — 落地页 / 内容条目（content_list[]，adspy/detail 真实返回）。 */
+export interface AdspyContentItem {
+  cta: string; // CTA 文案
+  landingPage: string; // landing_page（落地页 URL）
+  title: string; // 标题
+  desc: string; // 描述
+}
+
+/**
+ * Adspy 详细信息（adspy/detail；按列表 video_id 取）。
+ * 与 CreativeBrief（列表简版）不同：本类型承载「AI 脚本 / 受众定向 / 落地页 / 广告费 / TikTok 关联」富字段，
+ * 用于详情抽屉"一次付费拿满"而非薄列表。真实字段映射见 pipispy-mapper.mapAdspyDetail（pipispy 真实 schema 容错）。
+ */
+export interface AdspyDetail {
+  id: string;
+  videoUrl: string; // video_url（可播）
+  cover: string; // cover（视频首帧 / 封面）
+  duration: number; // duration（字符串秒，parseInt）
+  videoType: 1 | 2; // 1=视频 2=图片
+  title: string;
+  advertiser: string; // 投放方 / 店铺名
+  advertiserPage?: string; // 投放方主页外链
+  platform: AdPlatform; // 主平台
+  platforms: string[]; // 全平台原始编码
+  likes: number;
+  comments: number;
+  shares: number;
+  activeDays: number; // 持续投放天数
+  ctaType: string; // CTA 按钮文案
+  isActive: boolean; // 是否在投
+  aiAnalysis?: AdspyAiAnalysis; // AI 创意分析块（可能缺失）
+  audience?: AdspyAudience; // 受众定向块（可能缺失）
+  contentList: AdspyContentItem[]; // 落地页 / 内容列表
+  adFee?: number; // ad_fee（广告费）
+  minCpm?: number; // min_max_cpm[0]
+  maxCpm?: number; // min_max_cpm[1]
+  cpa?: number; // cpa
+  tiktokAuthor?: string; // tiktok_author（TikTok 作者）
+  tiktokShop?: string; // tiktok_shop（TikTok 店铺）
+  app?: Record<string, string>; // app_* 附属字段（app_name / app_url / …）
 }
 
 /** 榜单行（rank/ad-product/list，严格对齐 pipispy rank 真实响应）。 */

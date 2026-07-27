@@ -20,10 +20,10 @@ import { HubRouteGate } from "@/components/workbench/hub-route-gate";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { useMarketingLedger } from "@/lib/marketing/ledger";
-import { fmtCompact } from "@/lib/marketing/format";
+import { fmtCompact, fmtUsd } from "@/lib/marketing/format";
 import { ctaLabel } from "@/lib/marketing/enums";
 import { isGuardCancel } from "@/lib/marketing/guard";
-import type { AdDetail, CompetitionProductRow, StoreRow, TtsShopDetail, TtsShopRow } from "@/lib/marketing/types";
+import type { AdDetail, AdspyDetail, CompetitionProductRow, StoreRow, TtsShopDetail, TtsShopRow } from "@/lib/marketing/types";
 import { DiscoveryView, type DiscoveryViewHandle } from "@/components/operations/discovery-view";
 import { CompetitionView, type CompetitionViewHandle } from "@/components/operations/competition-view";
 import { CreativesView, type CreativesViewHandle } from "@/components/operations/creatives-view";
@@ -327,6 +327,27 @@ function OperationsCenterContent() {
     [t]
   );
 
+  // 让 Copilot 分析 Adspy 创意详情（详情抽屉"分析"按钮）。
+  const handleAnalyzeAdspy = useCallback(
+    (detail: AdspyDetail) => {
+      setSubject(detail.title);
+      const ai = detail.aiAnalysis;
+      const hookLine = ai ? ` 主钩子：${ai.mainHook}` : "";
+      const dataLine = `«${detail.title}» — ${t(`ops.platform.${detail.platform}`)} · ${fmtCompact(detail.likes)} ${t(
+        "ops.creatives.card.likes"
+      )} · ${detail.activeDays} ${t("ops.creatives.card.days")} · CTA ${ctaLabel(detail.ctaType)} · 广告费 ${
+        detail.adFee != null ? fmtUsd(detail.adFee) : "—"
+      }.${hookLine}`;
+      const reply = `${dataLine}\n\n${t("ops.copilot.replyHooks")}`;
+      setCopilotMsgs((prev) => [
+        ...prev,
+        { id: `u_${Date.now()}`, role: "user", text: t("ops.copilot.chips.hooks") },
+        { id: `b_${Date.now()}`, role: "bot", text: reply },
+      ]);
+    },
+    [t]
+  );
+
 
 
   const breadcrumbs = [
@@ -464,6 +485,7 @@ function OperationsCenterContent() {
             ref={creativesRef}
             run={run}
             onViewAdvertiser={handleViewCompetitorStore}
+            onAnalyzeAdspy={handleAnalyzeAdspy}
             initialQuery={nav.creativesQuery}
             onQueryChange={nav.setCreativesQuery}
             favoritedIds={favIdSet}
