@@ -40,8 +40,9 @@ import {
 import {
   buildAutoSuggestions,
   buildPreviewMatches,
-  COVERAGE_MATCH_THRESHOLD,
+  deriveMatchConfidenceTier,
   type DrawerPhase,
+  type MatchConfidenceTier,
   autoAssignSupplementGaps,
   assignSupplementMerchantToVariants,
   filterSupplementCandidates,
@@ -75,8 +76,6 @@ import {
 import {
   countUnbound,
   deriveVariantDisplayState,
-  displayStateLabel,
-  type SkuVariantDisplayState,
 } from "@/lib/sku-align/display";
 import { mergeV1DetailIntoProductOverview } from "@/lib/sku-align/merge-v1-overview";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
@@ -397,13 +396,7 @@ export function SkuProductWorkbench({
     [product.variants, matrix, selections, llmScores, visionByVariant]
   );
 
-  const previewMatches = useMemo(
-    () => buildPreviewMatches(product.variants, matrix, llmScores, visionByVariant),
-    [product.variants, matrix, llmScores, visionByVariant]
-  );
-
   const suggestCount = Object.keys(autoSuggestions).length;
-  const previewCount = Object.keys(previewMatches).length;
 
   const alignedCount = useMemo(
     () =>
@@ -1076,8 +1069,11 @@ export function SkuProductWorkbench({
 
   const runMatchPreview = useCallback(async () => {
     if (matchAnimating || !matrix.length) return;
+    // 有高置信建议时优先应用；否则按中置信阈值重新跑一遍匹配
     const assignments =
-      suggestCount > 0 ? autoSuggestions : previewMatches;
+      suggestCount > 0
+        ? autoSuggestions
+        : buildPreviewMatches(product.variants, matrix, llmScores, visionByVariant);
     const count = Object.keys(assignments).length;
     if (count === 0) {
       showToast(t("skuWorkbench.toastNoSuggestions"));
@@ -1130,10 +1126,11 @@ export function SkuProductWorkbench({
     }
   }, [
     matchAnimating,
-    matrix.length,
+    matrix,
     suggestCount,
     autoSuggestions,
-    previewMatches,
+    llmScores,
+    visionByVariant,
     product.variants,
     showToast,
     t,
@@ -1471,7 +1468,6 @@ export function SkuProductWorkbench({
             sourceProductUrl={sourceProductUrl}
             currentSourceLabel={t("skuWorkbench.currentSource")}
             suggestCount={suggestCount}
-            previewCount={previewCount}
             matchAnimating={matchAnimating}
             matchProgress={matchProgress}
             supplementGaps={supplementGaps}
@@ -1614,7 +1610,6 @@ function PrimaryComparePanel({
   sourceProductUrl,
   currentSourceLabel,
   suggestCount,
-  previewCount,
   matchAnimating,
   matchProgress,
   supplementGaps,
@@ -1642,7 +1637,6 @@ function PrimaryComparePanel({
   sourceProductUrl: string | null;
   currentSourceLabel: string;
   suggestCount: number;
-  previewCount: number;
   matchAnimating: boolean;
   matchProgress: { done: number; total: number };
   supplementGaps: SkuVariant[];
@@ -1694,7 +1688,7 @@ function PrimaryComparePanel({
               variant="secondary"
               className="h-8 gap-1 text-[11px]"
               onClick={onRunMatchPreview}
-              disabled={matchAnimating || previewCount === 0 || !canPick || loading}
+              disabled={matchAnimating || !canPick || loading || matrix.length === 0}
               title={
                 suggestCount > 0
                   ? t("skuWorkbench.applySuggestionsTitle")
@@ -1820,16 +1814,28 @@ function PrimaryComparePanel({
 }
 
 /** One Shopify variant ↔ current-source mapping row. */
-function variantDisplayStateClass(state: SkuVariantDisplayState): string {
-  switch (state) {
-    case "active_auto":
+function matchTierClass(tier: MatchConfidenceTier): string {
+  switch (tier) {
+    case "high":
       return "bg-success-soft text-success";
-    case "manual_active":
-      return "bg-info-soft text-info";
-    case "needs_review":
+    case "medium":
       return "bg-warning-soft text-warning";
     default:
       return "bg-muted text-ink-muted";
+  }
+}
+
+function matchTierLabel(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  tier: MatchConfidenceTier
+): string {
+  switch (tier) {
+    case "high":
+      return t("skuWorkbench.matchTierHigh");
+    case "medium":
+      return t("skuWorkbench.matchTierMedium");
+    default:
+      return t("skuWorkbench.matchTierNone");
   }
 }
 
@@ -1840,7 +1846,7 @@ function PrimaryCompareRow({
   shopCurrency,
   pricingTemplate,
   value,
-  isGap,
+  isGap: _isGap,
   highlighted,
   rowRef,
   onSelect,
@@ -1860,6 +1866,9 @@ function PrimaryCompareRow({
   onGoSupplement: () => void;
   visionByVariant: Record<string, Record<string, number>>;
 }) {
+  void _isGap;
+  void highlighted;
+  void merchantTitle;
   const t = useT();
   const displayState = deriveVariantDisplayState(variant);
   const ranked = useMemo(
@@ -1872,9 +1881,16 @@ function PrimaryCompareRow({
   );
   const bestScore = ranked[0]?.matchScore ?? 0;
 
+  const hasLocalSelection = Boolean(value.trim());
   const effectiveSkuId = value || variant.bound?.tangbuySkuId?.trim() || "";
   const row = effectiveSkuId ? findSourceSkuRow(matrix, effectiveSkuId) : undefined;
   const matched = Boolean(row);
+  const matchTier = deriveMatchConfidenceTier({
+    bestScore,
+    matched,
+    hasLocalSelection,
+    displayState,
+  });
   const listingPriceLabel = `${t("skuWorkbench.listingPrice")} ${formatShopListingPrice(variant.price, shopCurrency)}`;
   const sourceTitle =
     row?.specLabel?.trim() ||
@@ -1890,15 +1906,15 @@ function PrimaryCompareRow({
       id={`sku-compare-row-${variant.thirdPlatformSkuId}`}
       className="rounded-[var(--radius-control)] border border-[#E8E8E8] bg-[#FAFBFC] px-4 py-4 transition-colors"
     >
-      {/* 状态标签 */}
+      {/* 状态标签：高置信 / 中置信请人工检查 / 无近似规格 */}
       <div className="flex items-center gap-2">
         <span
           className={cn(
             "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-            variantDisplayStateClass(displayState)
+            matchTierClass(matchTier)
           )}
         >
-          {displayStateLabel(t, displayState)}
+          {matchTierLabel(t, matchTier)}
         </span>
       </div>
 
@@ -1952,11 +1968,8 @@ function PrimaryCompareRow({
         onConfirm={(skuId) => onSelect(skuId)}
       />
 
-      {/* 补充货源入口 */}
-      {(displayState === "unbound" ||
-        displayState === "needs_review" ||
-        isGap ||
-        bestScore < COVERAGE_MATCH_THRESHOLD) && (
+      {/* 仅「无近似规格」且尚未选定映射时提示补充货源 */}
+      {matchTier === "none" && !matched && !hasLocalSelection && (
         <button
           type="button"
           onClick={onGoSupplement}

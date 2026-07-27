@@ -18,6 +18,35 @@ import type { ImageSearchProduct, SkuVariant } from "@/lib/types";
 export const AUTO_SUGGEST_THRESHOLD = 0.8;
 export const COVERAGE_MATCH_THRESHOLD = 0.5;
 
+/** UI 三档匹配文案：高置信 / 中置信请人工检查 / 无近似规格。 */
+export type MatchConfidenceTier = "high" | "medium" | "none";
+
+export function deriveMatchConfidenceTier(input: {
+  bestScore: number;
+  /** 右侧已有可展示的货源规格（含手工选择或已绑定且在矩阵中）。 */
+  matched: boolean;
+  /** 本会话手工选择（selections 非空）。 */
+  hasLocalSelection: boolean;
+  displayState: ReturnType<typeof deriveVariantDisplayState>;
+}): MatchConfidenceTier {
+  const { bestScore, matched, hasLocalSelection, displayState } = input;
+  if (hasLocalSelection || displayState === "manual_active") return "high";
+  if (
+    displayState === "active_auto" ||
+    (matched && bestScore >= AUTO_SUGGEST_THRESHOLD)
+  ) {
+    return "high";
+  }
+  if (
+    matched ||
+    bestScore >= COVERAGE_MATCH_THRESHOLD ||
+    displayState === "needs_review"
+  ) {
+    return "medium";
+  }
+  return "none";
+}
+
 function rankOptsForVariant(
   variant: SkuVariant,
   visionByVariant?: Record<string, Record<string, number>>,
@@ -105,12 +134,13 @@ export function buildAutoSuggestions(
   return out;
 }
 
-/** Best matrix SKU per variant — used for match replay / demo. */
+/** Best matrix SKU per variant — used for match replay (medium+ confidence). */
 export function buildPreviewMatches(
   variants: SkuVariant[],
   matrix: SourceSkuRow[],
   llmByKey?: Record<string, number>,
-  visionByVariant?: Record<string, Record<string, number>>
+  visionByVariant?: Record<string, Record<string, number>>,
+  minScore: number = COVERAGE_MATCH_THRESHOLD
 ): Record<string, string> {
   const out: Record<string, string> = {};
   if (!matrix.length) return out;
@@ -122,7 +152,7 @@ export function buildPreviewMatches(
     );
     if (llmByKey) ranked = applyLlmToRanked(variant.optionLabel, ranked, llmByKey);
     const top = ranked[0];
-    if (top && top.matchScore >= AUTO_SUGGEST_THRESHOLD && top.skuId) {
+    if (top && top.matchScore >= minScore && top.skuId) {
       out[variant.thirdPlatformSkuId] = top.skuId;
     }
   }

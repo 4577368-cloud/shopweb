@@ -28,7 +28,8 @@ export type SizeSystem =
   | "volume" // 归一「ml」
   | "capacity" // 归一「GB」
   | "voltage" // 「V」
-  | "shoe"; // 归一「EU 码」
+  | "shoe" // 归一「EU 码」
+  | "dimension"; // L×W×H（cm），近邻容差
 
 export type SizeSpec =
   | { system: "letter"; code: string; ord: number }
@@ -39,7 +40,8 @@ export type SizeSpec =
   | { system: "volume"; min: number; max: number }
   | { system: "capacity"; min: number; max: number }
   | { system: "voltage"; min: number; max: number }
-  | { system: "shoe"; eu: number };
+  | { system: "shoe"; eu: number }
+  | { system: "dimension"; axes: number[] };
 
 export interface ParsedSpec {
   raw: string;
@@ -228,6 +230,10 @@ const VOLTAGE_ONE = /(\d{2,3})\s*v\b/gi;
 const SHOE_SYS = /\b(us|uk|eu)\s*(\d{1,2}(?:\.\d)?)/gi;
 const SHOE_MM = /(\d{3})\s*mm/gi;
 const SHOE_MA = /(\d{2})\s*码/gi;
+/** 三维/二维尺寸：60*45*25、61x45x25、76×51×25（先三维后二维，避免截断）。 */
+const DIM3 =
+  /(\d+(?:\.\d+)?)\s*[x×*]+\s*(\d+(?:\.\d+)?)\s*[x×*]+\s*(\d+(?:\.\d+)?)/gi;
+const DIM2 = /(\d+(?:\.\d+)?)\s*[x×*]+\s*(\d+(?:\.\d+)?)/gi;
 
 /** 解析规格标签为结构化属性。 */
 export function parseSpec(label: string | null | undefined): ParsedSpec {
@@ -247,6 +253,11 @@ export function parseSpec(label: string | null | undefined): ParsedSpec {
   };
 
   const isMonth = (u: string) => /月|month/i.test(u);
+  // L×W×H 优先抽出，避免 60/45/25 落入 identity 互相否决
+  consume(DIM3, (m) =>
+    sizes.push({ system: "dimension", axes: [+m[1], +m[2], +m[3]] })
+  );
+  consume(DIM2, (m) => sizes.push({ system: "dimension", axes: [+m[1], +m[2]] }));
   // 区间优先，避免单值正则吃掉区间端点
   consume(WEIGHT_RANGE, (m) =>
     sizes.push({ system: "weight", min: toJin(+m[1], m[3]), max: toJin(+m[2], m[3]) })
@@ -390,6 +401,22 @@ function bySystem(sizes: SizeSpec[]): Map<SizeSystem, SizeSpec[]> {
   return m;
 }
 
+/** 各轴容差：≥2cm 或 5%（取大），近邻尺寸（60↔61）视为同规格。 */
+function scoreDimensionAxes(a: number[], b: number[]): number {
+  if (a.length !== b.length) return 0;
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) {
+    const av = a[i]!;
+    const bv = b[i]!;
+    const diff = Math.abs(av - bv);
+    const tol = Math.max(2, 0.05 * Math.max(av, bv, 1));
+    if (diff <= tol) sum += 1;
+    else if (diff <= tol * 2) sum += 0.55;
+    else return 0;
+  }
+  return sum / a.length;
+}
+
 /** 同体系尺码比对 0–1；冲突返回 0。 */
 function scoreSizeSystem(system: SizeSystem, as: SizeSpec[], bs: SizeSpec[]): number {
   if (system === "free") return 1;
@@ -403,6 +430,15 @@ function scoreSizeSystem(system: SizeSystem, as: SizeSpec[], bs: SizeSpec[]): nu
       for (const b of bs as Array<{ eu: number }>) {
         const diff = Math.abs(a.eu - b.eu);
         best = Math.max(best, diff <= 0.5 ? 1 : diff <= 1.5 ? 0.6 : 0);
+      }
+    }
+    return best;
+  }
+  if (system === "dimension") {
+    let best = 0;
+    for (const a of as as Array<{ axes: number[] }>) {
+      for (const b of bs as Array<{ axes: number[] }>) {
+        best = Math.max(best, scoreDimensionAxes(a.axes, b.axes));
       }
     }
     return best;
