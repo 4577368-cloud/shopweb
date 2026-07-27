@@ -2738,7 +2738,8 @@ function ShopProductCard({
         </div>
       </div>
 
-      {/* Footer actions — secondary links + primary on the right */}
+      {/* Footer: left badges | right cluster (secondary links + primary). Keep 2 flex children so
+          justify-between does not park the link row in the middle when Confirm is present. */}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2 border-t border-surface-border pt-3">
         <div className="flex flex-wrap items-center gap-x-1.5">
           <span
@@ -2790,96 +2791,98 @@ function ShopProductCard({
             </span>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[12px]">
-          <button
-            type="button"
-            className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
-            disabled={searching || !hasImage}
-            title={
-              !hasImage
-                ? t("shopProducts.noImageNoSearch")
-                : result && result.items.length > 0
-                  ? t("shopProducts.expandLastSearch")
-                  : t("shopProducts.imageSearchMatch")
-            }
-            onClick={(e) => {
-              e.stopPropagation();
-              void openOrRunSearch(false);
-            }}
-          >
-            {searching ? t("shopProducts.searching") : t("shopProducts.rematch")}
-          </button>
-          <span className="text-surface-border">|</span>
-          <button
-            type="button"
-            className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
-            disabled={cardActionsLocked || !isMallGatewayConfigured()}
-            title={
-              !isMallGatewayConfigured()
-                ? t("shopProducts.mallUnavailable")
-                : t("shopProducts.manualMatchHint")
-            }
-            onClick={(e) => {
-              e.stopPropagation();
-              setManualDrawerOpen(true);
-            }}
-          >
-            {t("shopProducts.manualMatch")}
-          </button>
-          {!fromPublish ? (
-            <>
-              <span className="text-surface-border">|</span>
-              <button
-                type="button"
-                className="font-medium text-muted-foreground hover:text-destructive disabled:opacity-50"
-                disabled={
-                  !boundOfferId ||
-                  (cardState === "pending" ? rejecting || acking : unbinding || acking)
-                }
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (cardState === "pending") void rejectBinding();
-                  else void unbindBinding();
-                }}
-              >
-                {rejecting || unbinding
-                  ? rejecting
-                    ? t("shopProducts.rejecting")
-                    : t("shopProducts.processing")
-                  : t("shopProducts.cancelLink")}
-              </button>
-            </>
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[12px]">
+            <button
+              type="button"
+              className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+              disabled={searching || !hasImage}
+              title={
+                !hasImage
+                  ? t("shopProducts.noImageNoSearch")
+                  : result && result.items.length > 0
+                    ? t("shopProducts.expandLastSearch")
+                    : t("shopProducts.imageSearchMatch")
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                void openOrRunSearch(false);
+              }}
+            >
+              {searching ? t("shopProducts.searching") : t("shopProducts.rematch")}
+            </button>
+            <span className="text-surface-border">|</span>
+            <button
+              type="button"
+              className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+              disabled={cardActionsLocked || !isMallGatewayConfigured()}
+              title={
+                !isMallGatewayConfigured()
+                  ? t("shopProducts.mallUnavailable")
+                  : t("shopProducts.manualMatchHint")
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                setManualDrawerOpen(true);
+              }}
+            >
+              {t("shopProducts.manualMatch")}
+            </button>
+            {!fromPublish ? (
+              <>
+                <span className="text-surface-border">|</span>
+                <button
+                  type="button"
+                  className="font-medium text-muted-foreground hover:text-destructive disabled:opacity-50"
+                  disabled={
+                    !boundOfferId ||
+                    (cardState === "pending" ? rejecting || acking : unbinding || acking)
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (cardState === "pending") void rejectBinding();
+                    else void unbindBinding();
+                  }}
+                >
+                  {rejecting || unbinding
+                    ? rejecting
+                      ? t("shopProducts.rejecting")
+                      : t("shopProducts.processing")
+                    : t("shopProducts.cancelLink")}
+                </button>
+              </>
+            ) : null}
+            <span className="text-surface-border">|</span>
+            <AccountManagerContactCta
+              context="products"
+              className="border-0 bg-transparent px-0 py-0 shadow-none hover:bg-transparent"
+            />
+          </div>
+          {primaryLabel ? (
+            <Button
+              size="sm"
+              className="h-8 min-w-[4.5rem]"
+              disabled={
+                cardActionsLocked ||
+                searching ||
+                autoAcking ||
+                (cardState === "unbound" && !hasImage && !current) ||
+                confirmingId != null ||
+                acking ||
+                rejecting
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                onPrimary();
+              }}
+            >
+              {(confirmingId || acking || searching) && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              )}
+              {confirmingId ? t("shopProducts.processing") : primaryLabel}
+            </Button>
           ) : null}
-          <span className="text-surface-border">|</span>
-          <AccountManagerContactCta
-            context="products"
-            className="border-0 bg-transparent px-0 py-0 shadow-none hover:bg-transparent"
-          />
         </div>
-        {primaryLabel ? (
-          <Button
-            size="sm"
-            className="h-8 min-w-[4.5rem]"
-            disabled={
-              cardActionsLocked ||
-              searching ||
-              autoAcking ||
-              (cardState === "unbound" && !hasImage && !current) ||
-              confirmingId != null ||
-              acking ||
-              rejecting
-            }
-            onClick={(e) => {
-              e.stopPropagation();
-              onPrimary();
-            }}
-          >
-            {(confirmingId || acking || searching) && (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            )}
-            {confirmingId ? t("shopProducts.processing") : primaryLabel}
-          </Button>
-        ) : null}
       </div>
 
       {confirmError ? (
