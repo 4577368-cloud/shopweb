@@ -1068,7 +1068,15 @@ export const fr: Dictionary = {
     connectButton: "Connect Boutique",
     connectDesc: "Saisissez votre domaine Shopify pour lancer l'autorisation officielle.",
     connectNote: "You'll continue on Shopify's official consent screen. Permissions are scoped to sync and listing; you can revoke access anytime.",
+    connectNoteLoginFirst:
+      "Sign in to Tangbuy before connecting. We'll keep this shop domain and continue Shopify authorization after login.",
     connectTitle: "Connectez votre boutique",
+    loginFirstTitle: "Connectez-vous / inscrivez-vous d'abord sur Tangbuy",
+    loginFirstDesc:
+      "Votre boutique Shopify est liée à votre compte Tangbuy. L'autorisation ne peut pas aboutir sans connexion.",
+    navLogin: "Connexion",
+    navRegister: "Inscription gratuite",
+    waitAuth: "Vérification de la connexion — réessayez de connecter dans un instant…",
     coreCapabilities: "Core capabilities",
     coreCapabilitiesDesc: "All capabilities below are already implemented.",
     devNoticeDesc: "This app is in developer testing and is not yet listed on the Shopify App Boutique. It is open to test Boutiques only. Authorization uses Shopify's official OAuth and reads Produits, inventory, and orders read-only for analysis and Source matching — it never modifies or deletes your Boutique data.",

@@ -44,6 +44,19 @@ export interface LaunchInstallResult {
 }
 
 /**
+ * Validate and remember shop domain for later restore (login bounce, language switch, authorize).
+ * Returns normalized domain or null when invalid.
+ */
+export function rememberShopDomain(rawDomain: string): string | null {
+  const shopDomain = normalizeShopDomain(rawDomain);
+  if (!shopDomain || !SHOP_DOMAIN_PATTERN.test(shopDomain)) return null;
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);
+  }
+  return shopDomain;
+}
+
+/**
  * Validate a shop domain, remember it, and navigate to the backend install endpoint (which 302s to
  * Shopify's consent screen). Returns {ok:false,errorCode} without navigating when the domain is
  * missing/invalid or the API base is unconfigured, so callers can show an inline/toast message.

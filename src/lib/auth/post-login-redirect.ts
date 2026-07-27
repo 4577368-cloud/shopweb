@@ -21,8 +21,11 @@ export function resolvePostLoginPath(
   from: string | null | undefined,
   ops: { isAuthorized: boolean; operationsHubReady: boolean }
 ): string {
-  if (from && from.startsWith("/") && !isAuthRoutePath(from)) {
-    return from;
+  if (from && from.startsWith("/") && !from.startsWith("//") && !isAuthRoutePath(from)) {
+    const qIndex = from.indexOf("?");
+    const pathOnly = qIndex >= 0 ? from.slice(0, qIndex) : from;
+    const query = qIndex >= 0 ? from.slice(qIndex) : "";
+    return `${localePath(locale, pathOnly || "/")}${query}`;
   }
   if (!ops.isAuthorized) return localePath(locale, "/authorize");
   if (ops.operationsHubReady) return localePath(locale, "/order-center");

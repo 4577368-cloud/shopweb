@@ -1067,7 +1067,15 @@ export const es: Dictionary = {
     connectButton: "Connect Tienda",
     connectDesc: "Introduce tu dominio de Shopify para iniciar la autorización oficial.",
     connectNote: "You'll continue on Shopify's official consent screen. Permissions are scoped to sync and listing; you can revoke access anytime.",
+    connectNoteLoginFirst:
+      "Sign in to Tangbuy before connecting. We'll keep this shop domain and continue Shopify authorization after login.",
     connectTitle: "Conecta tu tienda",
+    loginFirstTitle: "Sign in / register with Tangbuy first",
+    loginFirstDesc:
+      "Your Shopify store is bound to your Tangbuy account. Authorization can't complete while signed out.",
+    navLogin: "Iniciar sesión",
+    navRegister: "Registro gratis",
+    waitAuth: "Confirming your login status — try connecting again in a moment…",
     coreCapabilities: "Core capabilities",
     coreCapabilitiesDesc: "All capabilities below are already implemented.",
     devNoticeDesc: "This app is in developer testing and is not yet listed on the Shopify App Tienda. It is open to test Tiendas only. Authorization uses Shopify's official OAuth and reads Productos, inventory, and orders read-only for analysis and Fuente matching — it never modifies or deletes your Tienda data.",
