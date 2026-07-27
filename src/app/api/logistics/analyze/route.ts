@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { buildEmptyAnalysis } from "@/lib/logistics/decision-engine";
-import { loadLogisticsAnalysis } from "@/lib/logistics/server-analysis";
+import {
+  loadLogisticsAnalysis,
+  upstreamAuthFromRequest,
+} from "@/lib/logistics/server-analysis";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,11 +22,16 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await loadLogisticsAnalysis(shopName, force);
+    const result = await loadLogisticsAnalysis(shopName, force, {
+      auth: upstreamAuthFromRequest(request),
+    });
     return NextResponse.json(result);
   } catch (error) {
     const message = errorMessage(error);
     console.error("[logistics/analyze]", shopName, message, error);
-    return NextResponse.json({ error: message }, { status: 502 });
+    const status = /登录已失效|UNAUTHENTICATED|Unauthorized/i.test(message)
+      ? 401
+      : 502;
+    return NextResponse.json({ error: message }, { status });
   }
 }

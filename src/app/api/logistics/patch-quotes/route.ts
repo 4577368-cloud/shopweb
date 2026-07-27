@@ -4,7 +4,10 @@ import {
   upsertAcceptances,
   type StoredVariantAcceptance,
 } from "@/lib/logistics/accept-decisions-store";
-import { loadLogisticsAnalysis } from "@/lib/logistics/server-analysis";
+import {
+  loadLogisticsAnalysis,
+  upstreamAuthFromRequest,
+} from "@/lib/logistics/server-analysis";
 import type { LogisticsLine, QuoteStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -66,7 +69,9 @@ export async function POST(request: Request) {
     }
 
     await upsertAcceptances(shopName, patches);
-    const analysis = await loadLogisticsAnalysis(shopName, false);
+    const analysis = await loadLogisticsAnalysis(shopName, false, {
+      auth: upstreamAuthFromRequest(request),
+    });
 
     return NextResponse.json({
       patchedCount: patches.length,

@@ -37,15 +37,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const cookie = request.headers.get("cookie");
+  const authHeaders: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+  if (cookie?.trim()) authHeaders.Cookie = cookie;
+
   if (API_BASE) {
     try {
       const upstreamUrl = `${API_BASE}/api/plugin/logistics/correct-type`;
       await fetch(upstreamUrl, {
         method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
+        headers: authHeaders,
         body: JSON.stringify({ shopName, thirdPlatformItemId, logisticsType }),
       });
     } catch {
@@ -60,7 +64,7 @@ export async function POST(request: Request) {
     try {
       const skuUrl = `${API_BASE}/api/plugin/match/sku/overview?shopName=${encodeURIComponent(shopName)}`;
       const skuRes = await fetch(skuUrl, {
-        headers: { Accept: "application/json" },
+        headers: authHeaders,
       });
       const skuText = await skuRes.text();
       const skuRaw = skuText ? JSON.parse(skuText) : undefined;

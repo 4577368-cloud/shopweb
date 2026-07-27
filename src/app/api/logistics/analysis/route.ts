@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { loadLogisticsAnalysis } from "@/lib/logistics/server-analysis";
+import {
+  loadLogisticsAnalysis,
+  upstreamAuthFromRequest,
+} from "@/lib/logistics/server-analysis";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,11 +23,15 @@ export async function GET(request: Request) {
   try {
     const result = await loadLogisticsAnalysis(shopName, false, {
       includeSkuOverview: true,
+      auth: upstreamAuthFromRequest(request),
     });
     return NextResponse.json(result);
   } catch (error) {
     const message = errorMessage(error);
     console.error("[logistics/analysis]", shopName, message, error);
-    return NextResponse.json({ error: message }, { status: 502 });
+    const status = /登录已失效|UNAUTHENTICATED|Unauthorized/i.test(message)
+      ? 401
+      : 502;
+    return NextResponse.json({ error: message }, { status });
   }
 }
