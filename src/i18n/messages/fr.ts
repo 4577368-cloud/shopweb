@@ -1976,6 +1976,7 @@ export const fr: Dictionary = {
         sourceFind: "Recherche par image 1688",
         sourceRetry: "Relancer la recherche",
         sourceEmpty: "Aucun fournisseur similaire trouvé. Réessayez ou choisissez un autre produit.",
+        sourceFailed: "La recherche par image a échoué. Réessayez.",
         sourceAdd: "Ajouter et publier",
         sourceNoShop: "Connectez d'abord une boutique Shopify",
         sourcePublished: "Publié",

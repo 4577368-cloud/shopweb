@@ -45,7 +45,7 @@ function pickPrice(item: Offer1688SearchItem): number | null {
   );
 }
 
-/** Keyword-assisted 1688 image search (requires a public seed image). */
+/** Keyword-assisted 1688 image search (requires a public seed image). Keyword may be empty. */
 export async function search1688OffersByKeyword(
   keyword: string,
   opts?: {
@@ -56,8 +56,6 @@ export async function search1688OffersByKeyword(
   }
 ): Promise<SourcingSearchHit[]> {
   const kw = keyword.trim();
-  if (!kw) return [];
-
   const seed = opts?.seedImageUrl?.trim();
   if (!seed) {
     if (typeof console !== "undefined") {
@@ -66,44 +64,34 @@ export async function search1688OffersByKeyword(
     return [];
   }
 
-  try {
-    const res = await api.search1688Offers({
-      keyword: kw,
-      imageUrl: seed,
-      country: opts?.country,
-      page: opts?.page ?? 1,
-      size: opts?.size ?? 12,
-    });
-    const items = res.items ?? [];
-    const out: SourcingSearchHit[] = [];
+  const res = await api.search1688Offers({
+    keyword: kw,
+    imageUrl: seed,
+    country: opts?.country,
+    page: opts?.page ?? 1,
+    size: opts?.size ?? 12,
+  });
+  const items = res.items ?? [];
+  const out: SourcingSearchHit[] = [];
 
-    for (const item of items) {
-      const offerId =
-        item.offerId?.trim() ||
-        extractOfferIdFromUrl(item.detailUrl) ||
-        null;
-      if (!offerId || !isOfferId1688(offerId)) continue;
-      out.push({
-        hitId: `1688:${offerId}`,
-        source: "1688",
-        title: pickTitle(item),
-        imageUrl: item.imageUrl,
-        costCny: pickPrice(item),
-        currency: "CNY",
-        supplierShop: item.companyName,
-        offerId1688: offerId,
-        detailUrl1688: item.detailUrl,
-        displayMultiplier: DEFAULT_1688_DISPLAY_MULTIPLIER,
-      });
-    }
-    return out;
-  } catch (err) {
-    if (typeof console !== "undefined") {
-      console.error("[sourcing/1688] search failed", {
-        keyword: kw,
-        error: err instanceof Error ? err.message : err,
-      });
-    }
-    return [];
+  for (const item of items) {
+    const offerId =
+      item.offerId?.trim() ||
+      extractOfferIdFromUrl(item.detailUrl) ||
+      null;
+    if (!offerId || !isOfferId1688(offerId)) continue;
+    out.push({
+      hitId: `1688:${offerId}`,
+      source: "1688",
+      title: pickTitle(item),
+      imageUrl: item.imageUrl,
+      costCny: pickPrice(item),
+      currency: "CNY",
+      supplierShop: item.companyName,
+      offerId1688: offerId,
+      detailUrl1688: item.detailUrl,
+      displayMultiplier: DEFAULT_1688_DISPLAY_MULTIPLIER,
+    });
   }
+  return out;
 }

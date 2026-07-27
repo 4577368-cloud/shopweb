@@ -894,14 +894,14 @@ export const api = {
 
   /** 1688 keyword-assisted image search (discover tab dual-source). */
   search1688Offers: (opts: {
-    keyword: string;
+    keyword?: string;
     imageUrl: string;
     country?: string;
     page?: number;
     size?: number;
   }) => {
     const params = new URLSearchParams();
-    params.set("keyword", opts.keyword);
+    if (opts.keyword?.trim()) params.set("keyword", opts.keyword.trim());
     params.set("imageUrl", opts.imageUrl);
     if (opts.country) params.set("country", opts.country);
     if (opts.page != null) params.set("page", String(opts.page));

@@ -162,13 +162,19 @@ export async function searchSourcingHits(
   let merged: SourcingSearchHit[] = [...tangbuyHits];
 
   if (sourceFilter !== "tangbuy" && keywords) {
-    const from1688 = await search1688OffersByKeyword(keywords, {
-      seedImageUrl: seedImage,
-      country: localeCountry,
-      page: Math.floor(offset / limit) + 1,
-      size: Math.min(limit, 20),
-    });
-    merged = [...merged, ...from1688];
+    try {
+      const from1688 = await search1688OffersByKeyword(keywords, {
+        seedImageUrl: seedImage,
+        country: localeCountry,
+        page: Math.floor(offset / limit) + 1,
+        size: Math.min(limit, 20),
+      });
+      merged = [...merged, ...from1688];
+    } catch (err) {
+      if (typeof console !== "undefined") {
+        console.error("[sourcing] 1688 image search failed", err);
+      }
+    }
   }
 
   merged = dedupeHits(merged);
