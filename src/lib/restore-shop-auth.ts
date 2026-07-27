@@ -168,7 +168,11 @@ function fmtAuthorizedAt(iso?: string | null): string {
     : d.toLocaleString("zh-CN", { hour12: false });
 }
 
-/** Resolve which shop domain to probe on cold load (URL → account shops → stale localStorage). */
+/**
+ * Resolve which shop domain to probe on cold load.
+ * Priority: URL ?shop= → remembered localStorage (if still authorized) → first authorized shop.
+ * Multi-shop: never overwrite a valid remembered shop with shops[0].
+ */
 export async function resolveShopDomainToRestore(): Promise<string | null> {
   if (typeof window === "undefined") return null;
 
@@ -183,18 +187,21 @@ export async function resolveShopDomainToRestore(): Promise<string | null> {
   try {
     const list = await api.listAuthorizedShops();
     const shops = Array.isArray(list) ? list : [];
-    if (shops.length > 0) {
-      const domain = shops[0]?.shopDomain?.trim();
-      if (domain) {
-        window.localStorage.setItem(SHOP_STORAGE_KEY, domain);
-        return domain;
-      }
+    if (shops.length === 0) {
+      // Logged-in user has no shops — ignore orphan localStorage from another session.
+      if (stored) clearRememberedShopDomain();
+      return null;
     }
-    // Logged-in user has no shops — ignore orphan localStorage from another session.
-    if (stored) {
-      clearRememberedShopDomain();
+
+    const storedNorm = stored?.toLowerCase() ?? "";
+    const match = storedNorm
+      ? shops.find((s) => s.shopDomain?.trim().toLowerCase() === storedNorm)
+      : undefined;
+    const domain = (match?.shopDomain ?? shops[0]?.shopDomain)?.trim() || null;
+    if (domain) {
+      window.localStorage.setItem(SHOP_STORAGE_KEY, domain);
     }
-    return null;
+    return domain;
   } catch {
     return stored;
   }
