@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode } from "react";
-import { ArrowLeft, Coins, FileText, Person, ShieldCheck, Store } from "@/lib/ui/icons";
+import { ArrowLeft, Person, ShieldCheck, Store } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { StepSidebar } from "@/components/workbench/step-sidebar";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
@@ -19,7 +19,8 @@ import { cn } from "@/lib/utils";
  *     <main>. Users reach account via the sidebar user menu, so returning to
  *     the workflow rail is the natural back-out path.
  *   - Center: compact header (breadcrumb + back-to-workbench) + horizontal
- *     tab bar (shops / profile / security / bills / credits) + scroll body.
+ *     tab bar (shops / profile / security) + scroll body.
+ *     Bills / credits retired — this product does not charge.
  *   - Right: no assistant rail — account pages are read/edit surfaces, not
  *     copilot workflows, so a two-column focus mode is the right density.
  *
@@ -41,8 +42,6 @@ export default function AccountLayout({ children }: { children: ReactNode }) {
     { key: "shops", href: "/account/shops", icon: Store, label: t("accountNav.shops") },
     { key: "profile", href: "/account/profile", icon: Person, label: t("accountNav.profile") },
     { key: "security", href: "/account/security", icon: ShieldCheck, label: t("accountNav.security") },
-    { key: "bills", href: "/account/bills", icon: FileText, label: t("accountNav.bills") },
-    { key: "credits", href: "/account/credits", icon: Coins, label: t("accountNav.credits") },
   ] as const;
 
   const isActive = (href: string) => {

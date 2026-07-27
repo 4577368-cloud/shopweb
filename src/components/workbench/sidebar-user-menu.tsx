@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeftRight,
   ChevronUp,
-  Coins,
   Exit,
   Person,
   Settings,
@@ -18,12 +17,11 @@ import { localePath } from "@/i18n/LocaleLink";
 import { SHOP_STORAGE_KEY } from "@/lib/shopify-install";
 import { cn } from "@/lib/utils";
 
-type UserMenuAction = "shops" | "profile" | "bills" | "settings" | "signOut";
+type UserMenuAction = "shops" | "profile" | "settings" | "signOut";
 
 const MENU_ITEMS: { id: Exclude<UserMenuAction, "signOut">; icon: typeof ArrowLeftRight }[] = [
   { id: "shops", icon: ArrowLeftRight },
   { id: "profile", icon: Person },
-  { id: "bills", icon: Coins },
   { id: "settings", icon: Settings },
 ];
 
@@ -122,10 +120,6 @@ export function SidebarUserMenu({ className }: { className?: string }) {
     }
     if (action === "profile") {
       router.push(localePath(locale, "/account/profile"));
-      return;
-    }
-    if (action === "bills") {
-      router.push(localePath(locale, "/account/bills"));
       return;
     }
     if (action === "settings") {
