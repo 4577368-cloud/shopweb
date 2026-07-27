@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, readableError } from "@/lib/api";
 import { createDefaultLogisticsTemplate } from "@/lib/logistics/default-template";
 import {
@@ -136,6 +136,8 @@ export function useLogisticsMirrorLoad({
   const [loading, setLoading] = useState(() => !cacheBootstrap?.analysis);
   const [classifying, setClassifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const templatesRef = useRef(templates);
+  templatesRef.current = templates;
 
   const applyLogisticsPayload = useCallback(
     (
@@ -144,12 +146,17 @@ export function useLogisticsMirrorLoad({
       pt: PricingTemplate | null
     ) => {
       setAnalysis(a);
-      setTemplates(ts);
+      setTemplates((prev) => {
+        // Silent/stale reload returning [] must not wipe a just-saved template
+        // (empty-list API trick races with upsert → quote).
+        if (ts.length === 0 && prev.length > 0) return prev;
+        return ts;
+      });
       setPricingTemplate(pt);
       if (ts.length > 0) {
         setActiveTemplate(ts[0]);
       } else {
-        setActiveTemplate(createDefaultLogisticsTemplate(shopName));
+        setActiveTemplate((prev) => prev ?? createDefaultLogisticsTemplate(shopName));
       }
     },
     [shopName]
@@ -201,10 +208,17 @@ export function useLogisticsMirrorLoad({
         const { analysis: enriched, meta } =
           await enrichAnalysisWithTangbuyMailLimits(a, shopName);
         const refreshStats = computeMailLimitRefreshStats(a, enriched, meta);
-        applyLogisticsPayload(enriched, ts, pt);
+        // Prefer local saved templates over empty list from API defaultTemplate.
+        const effectiveTs =
+          ts.length > 0
+            ? ts
+            : templatesRef.current.length > 0
+              ? templatesRef.current
+              : ts;
+        applyLogisticsPayload(enriched, effectiveTs, pt);
         const payload = {
           analysis: enriched,
-          templates: ts,
+          templates: effectiveTs,
           pricingTemplate: pt,
         };
         setLogisticsMirrorCache(shopName, payload);
@@ -212,17 +226,19 @@ export function useLogisticsMirrorLoad({
         markScanned("logistics", scanShopKey);
         warmLaunchSummaryPartial(shopMirrorKey, shopName, shopDomain, t, {
           logisticsAnalysis: enriched,
-          logisticsTemplates: ts,
+          logisticsTemplates: effectiveTs,
           pricingTemplate: pt ?? undefined,
         });
         return refreshStats;
       } catch (err) {
         setError(readableError(err));
         const ts = await api.listLogisticsTemplates(shopName).catch(() => []);
-        setTemplates(ts);
-        setActiveTemplate(
-          ts.length > 0 ? ts[0] : createDefaultLogisticsTemplate(shopName)
-        );
+        if (ts.length > 0 || templatesRef.current.length === 0) {
+          setTemplates(ts);
+          setActiveTemplate(
+            ts.length > 0 ? ts[0] : createDefaultLogisticsTemplate(shopName)
+          );
+        }
         return null;
       } finally {
         setClassifying(false);

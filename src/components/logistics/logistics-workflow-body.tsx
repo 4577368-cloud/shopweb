@@ -8,7 +8,6 @@ import type { LogisticsWorkflowStep } from "@/lib/logistics/page-constants";
 import type { LogisticsPlanMetrics } from "@/lib/logistics/display";
 import type { CompletionGateResult } from "@/lib/logistics/completion-gate";
 import type { LogisticsAnalysis } from "@/lib/types";
-import { LogisticsWorkflowSetupSection } from "@/components/logistics/logistics-workflow-setup-section";
 import {
   LogisticsDecisionWorkspace,
   type LogisticsDecisionWorkspaceProps,
@@ -122,14 +121,25 @@ export function LogisticsWorkflowBody({
         />
       ) : null}
 
-      <LogisticsWorkflowSetupSection
-        workflowStep={workflowStep}
-        hasSavedTemplate={hasSavedTemplate}
-        loading={loading}
-        hasAnalysis={Boolean(analysis)}
-        onOpenTemplate={onOpenTemplateDrawer}
-        onStartEstimate={onStartEstimate}
-      />
+      {!hasSavedTemplate && !loading && analysis ? (
+        <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50/70 px-4 py-3 sm:flex sm:items-center sm:justify-between sm:gap-3">
+          <div className="min-w-0 space-y-0.5">
+            <p className="text-sm font-semibold text-amber-950">
+              {t("logistics.templateRequiredTitle")}
+            </p>
+            <p className="text-xs leading-5 text-amber-900/80">
+              {t("logistics.templateRequiredDesc")}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            className="mt-2 shrink-0 sm:mt-0"
+            onClick={onOpenTemplateDrawer}
+          >
+            {t("logistics.templateRequiredCta")}
+          </Button>
+        </div>
+      ) : null}
 
       {planStatus ? <LogisticsPlanStatusCard {...planStatus} /> : null}
 

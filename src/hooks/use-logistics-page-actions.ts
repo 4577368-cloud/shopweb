@@ -8,6 +8,11 @@ import {
   deriveLogisticsStepSnapshot,
   evaluateLogisticsCompletionGate,
 } from "@/lib/logistics/completion-gate";
+import {
+  peekLogisticsMirrorCache,
+  setLogisticsMirrorCache,
+} from "@/lib/logistics/logistics-mirror-cache";
+import { setLogisticsSession } from "@/lib/logistics/logistics-session-cache";
 import type { LogisticsTemplateUpsert } from "@/lib/types";
 import { stashLogisticsSyncExceptionCount } from "@/lib/logistics/sync-handoff";
 import { resolveQuoteMarketCode } from "@/lib/logistics/template-params";
@@ -230,6 +235,24 @@ export function useLogisticsPageActions({
       setTemplates([saved]);
       suppressScopeSwitchToastRef.current = true;
       setActiveTemplate(saved);
+      const cached = peekLogisticsMirrorCache(shopName);
+      const payload = {
+        analysis: analysis ?? cached?.analysis ?? null,
+        templates: [saved],
+        pricingTemplate: cached?.pricingTemplate ?? null,
+      };
+      if (payload.analysis) {
+        setLogisticsMirrorCache(shopName, {
+          analysis: payload.analysis,
+          templates: payload.templates,
+          pricingTemplate: payload.pricingTemplate,
+        });
+        setLogisticsSession(shopName, {
+          analysis: payload.analysis,
+          templates: payload.templates,
+          pricingTemplate: payload.pricingTemplate,
+        });
+      }
       showToast(t("logistics.toastTemplateSavedEstimate"));
       setWorkflowStep("estimate");
       setShowDrawer(false);

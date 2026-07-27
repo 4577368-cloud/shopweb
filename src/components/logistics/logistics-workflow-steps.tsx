@@ -11,8 +11,7 @@ export type { LogisticsWorkflowStep } from "@/lib/logistics/page-constants";
 export function deriveLogisticsWorkflowStep(input: {
   hasSavedTemplate: boolean;
   metrics: LogisticsPlanMetrics;
-}): LogisticsWorkflowStep {
-  if (!input.hasSavedTemplate) return "setup";
+}): Exclude<LogisticsWorkflowStep, "setup"> {
   if (input.metrics.pendingQuoteCount > 0) return "estimate";
   return "confirm";
 }
@@ -31,9 +30,9 @@ export function LogisticsWorkflowSteps({
   const t = useT();
   const pending = pendingWorkCount(metrics);
   const attention = needsAttentionCount(metrics);
+  const active = step === "setup" ? "estimate" : step;
 
   const tabs = [
-    { id: "setup" as const, label: t("logisticsWorkflow.stepSetup") },
     {
       id: "estimate" as const,
       label: t("logisticsWorkflow.stepEstimate"),
@@ -58,7 +57,7 @@ export function LogisticsWorkflowSteps({
       <SegmentedTabs
         variant="chip"
         tabs={tabs}
-        value={step}
+        value={active}
         onValueChange={(id) => onStepChange(id as LogisticsWorkflowStep)}
       />
     </div>

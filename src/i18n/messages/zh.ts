@@ -1333,7 +1333,11 @@ export const zh: Dictionary = {
     toastRoutesFetched: "{{withLine}} / {{total}} 个 SKU 已获线路（{{country}}，{{speed}}）",
     toastTemplateDeleted: "模板已删除",
     toastTemplateSaved: "模板已保存",
-    toastTemplateSavedEstimate: "模板已保存，请重新运行智能预估",
+    toastTemplateSavedEstimate: "物流策略已保存，可继续运费预估",
+    templateRequiredTitle: "报价前请先保存物流策略",
+    templateRequiredDesc:
+      "请在右侧或策略卡中配置目的地、包装与时效并保存，否则无法拉取运费线路。",
+    templateRequiredCta: "配置物流策略",
     toastMailLimitNoData: "刷新完成：{{total}} 个 SKU 暂无 Tangbuy 邮限，已保留原分类结果",
     toastMailLimitUpdated: "刷新完成：{{mail}} 个 SKU 已使用 Tangbuy 邮限，替换 {{changed}} 个分类",
     toastMailLimitListingEmpty:
@@ -1741,10 +1745,19 @@ export const zh: Dictionary = {
     view: "查看"
   },
   logisticsWorkflow: {
-    hint: "配置物流步骤",
-    stepConfirm: "3 · 确认方案",
-    stepEstimate: "2 · 运费预估",
-    stepSetup: "1 · 配置策略"
+    hint: "运费预估与确认方案",
+    stepConfirm: "2 · 确认方案",
+    stepEstimate: "1 · 运费预估",
+    stepSetup: "配置策略"
+  },
+  logisticsStrategyRail: {
+    adjust: "编辑",
+    configureNow: "配置物流策略",
+    setupDesc:
+      "选择目的地市场、包装与时效。保存后即可报价；也可随时在右侧或顶部策略卡修改。",
+    setupTitle: "先配置物流策略",
+    summaryDesc: "报价与线路匹配按此策略计算。点击编辑可修改。",
+    title: "物流策略"
   },
   manualMatch: {
     cancel: "取消",

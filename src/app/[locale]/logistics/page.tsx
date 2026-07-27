@@ -51,6 +51,13 @@ import type { LogisticsFocusTarget, MeasureOverride } from "@/components/logisti
 
 const LogisticsAgentPanel = dynamic(() => import("@/components/logistics/logistics-agent-panel").then((m) => ({ default: m.LogisticsAgentPanel })), { ssr: false });
 const LogisticsTemplateDrawer = dynamic(() => import("@/components/logistics/logistics-template-drawer").then((m) => ({ default: m.LogisticsTemplateDrawer })), { ssr: false });
+const LogisticsStrategyRailCard = dynamic(
+  () =>
+    import("@/components/logistics/logistics-strategy-rail-card").then((m) => ({
+      default: m.LogisticsStrategyRailCard,
+    })),
+  { ssr: false }
+);
 
 function LogisticsContent() {
   const router = useRouter();
@@ -150,6 +157,17 @@ function LogisticsContent() {
   );
   const planMetrics = workbench.metrics;
   const hasSavedTemplate = hasSavedLogisticsTemplate(templates);
+
+  const openTemplateDrawer = useCallback(() => setShowDrawer(true), []);
+
+  const startEstimateGuarded = useCallback(() => {
+    if (!hasSavedTemplate) {
+      showToast(t("logistics.templateRequiredDesc"));
+      setShowDrawer(true);
+      return;
+    }
+    handleStartEstimate();
+  }, [hasSavedTemplate, handleStartEstimate, showToast, t]);
 
   const {
     saving,
@@ -269,14 +287,13 @@ function LogisticsContent() {
       t,
     });
 
-  const showDecisionWorkspace =
-    hasSavedTemplate && Boolean(analysis) && workflowStep !== "setup";
+  const showDecisionWorkspace = Boolean(analysis);
 
   const logisticsPlanStatus = useMemo(() => {
-    if (!hasSavedTemplate || !analysis || workflowStep === "setup") return null;
+    if (!analysis) return null;
     return {
       analysis,
-      activeTemplate,
+      activeTemplate: hasSavedTemplate ? activeTemplate : null,
       filterMode,
       onFilterModeChange: setFilterMode,
       postalLimitFilter,
@@ -287,9 +304,8 @@ function LogisticsContent() {
       quoteResults,
     };
   }, [
-    hasSavedTemplate,
     analysis,
-    workflowStep,
+    hasSavedTemplate,
     activeTemplate,
     filterMode,
     postalLimitFilter,
@@ -413,7 +429,7 @@ function LogisticsContent() {
               onFocusStatus={handleFocusStatus}
               onAcceptAllReady={() => void handleAcceptAllReady()}
               onFetchQuotes={() => void handleFetchQuotes()}
-              onOpenTemplate={() => setShowDrawer(true)}
+              onOpenTemplate={openTemplateDrawer}
               pipelineProgress={pipeline.progress}
               pipelineActive={pipeline.pipelineActive}
               pendingReviewCount={planMetrics.pendingQuoteCount}
@@ -426,7 +442,7 @@ function LogisticsContent() {
               pipelineRunning={pipeline.pipelineRunning}
               saving={saving}
               skuBindingGap={skuBindingGap}
-              onStartEstimate={handleStartEstimate}
+              onStartEstimate={startEstimateGuarded}
               onSaveAndSync={handleSaveAndSync}
               onViewUnidentified={() => {
                 setFilterMode("needs_attention");
@@ -446,6 +462,14 @@ function LogisticsContent() {
               onFocusProduct={handleRailFocusProduct}
             />
           }
+          strategyCards={
+            <LogisticsStrategyRailCard
+              hasSavedTemplate={hasSavedTemplate}
+              activeTemplate={activeTemplate}
+              analysisReady={Boolean(analysis)}
+              onConfigure={openTemplateDrawer}
+            />
+          }
           railFooter={<AccountManagerRailFooter context="logistics" />}
         />
       }
@@ -457,7 +481,7 @@ function LogisticsContent() {
         titleSuffix={<img src="/brand/on-time-guarantee-tag.svg" alt="" className="h-[18px] w-auto" />}
         {...wb.panelProps}
         actions={
-          hasSavedTemplate && analysis ? (
+          analysis ? (
             <div className="flex flex-wrap items-center justify-end gap-2">
               {needsPreIngestCount > 0 || batchPreIngesting ? (
                 <Button
@@ -508,18 +532,21 @@ function LogisticsContent() {
                   size="sm"
                   variant="secondary"
                   className="shrink-0 whitespace-nowrap"
-                  onClick={handleStartEstimate}
+                  onClick={startEstimateGuarded}
                   disabled={
                     loading ||
                     pipeline.pipelineRunning ||
+                    !hasSavedTemplate ||
                     !workbench.actions.canEstimate
                   }
                   title={
-                    planMetrics.pendingQuoteCount > 0
-                      ? t("logistics.estimateTitle", {
-                          count: planMetrics.pendingQuoteCount,
-                        })
-                      : t("logistics.estimatePipelineHint")
+                    !hasSavedTemplate
+                      ? t("logistics.templateRequiredDesc")
+                      : planMetrics.pendingQuoteCount > 0
+                        ? t("logistics.estimateTitle", {
+                            count: planMetrics.pendingQuoteCount,
+                          })
+                        : t("logistics.estimatePipelineHint")
                   }
                 >
                   {pipeline.pipelineRunning ? (
@@ -621,8 +648,8 @@ function LogisticsContent() {
           hasSavedTemplate={hasSavedTemplate}
           planMetrics={planMetrics}
           onWorkflowStepChange={handleWorkflowStepChange}
-          onOpenTemplateDrawer={() => setShowDrawer(true)}
-          onStartEstimate={() => handleWorkflowStepChange("estimate")}
+          onOpenTemplateDrawer={openTemplateDrawer}
+          onStartEstimate={startEstimateGuarded}
           planStatus={logisticsPlanStatus}
           showSyncConfirm={showSyncConfirm}
           completionGate={completionGate}

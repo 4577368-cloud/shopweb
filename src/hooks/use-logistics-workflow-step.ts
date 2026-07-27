@@ -7,17 +7,18 @@ import type { Locale } from "@/i18n/config";
 import {
   isLogisticsWorkflowStep,
   LOGISTICS_DEFAULT_WORKFLOW_STEP,
+  normalizeLogisticsWorkflowStep,
   type LogisticsWorkflowStep,
 } from "@/lib/logistics/page-constants";
 
-/** URL `?step=setup|estimate|confirm` ↔ workflow step state. */
+/** URL `?step=estimate|confirm` ↔ workflow step (`setup` remaps to estimate). */
 export function useLogisticsWorkflowStep(locale: Locale) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlStep = searchParams.get("step");
-  const parsedUrlStep: LogisticsWorkflowStep = isLogisticsWorkflowStep(urlStep)
-    ? urlStep
-    : LOGISTICS_DEFAULT_WORKFLOW_STEP;
+  const parsedUrlStep: LogisticsWorkflowStep = normalizeLogisticsWorkflowStep(
+    isLogisticsWorkflowStep(urlStep) ? urlStep : LOGISTICS_DEFAULT_WORKFLOW_STEP
+  );
 
   const [workflowStep, setWorkflowStepLocal] =
     useState<LogisticsWorkflowStep>(parsedUrlStep);
@@ -28,11 +29,12 @@ export function useLogisticsWorkflowStep(locale: Locale) {
 
   const setWorkflowStep = useCallback(
     (next: LogisticsWorkflowStep) => {
-      setWorkflowStepLocal(next);
+      const normalized = normalizeLogisticsWorkflowStep(next);
+      setWorkflowStepLocal(normalized);
       const current = searchParams.get("step");
-      if (current === next) return;
+      if (current === normalized) return;
       startTransition(() => {
-        router.replace(localePath(locale, `/logistics?step=${next}`), {
+        router.replace(localePath(locale, `/logistics?step=${normalized}`), {
           scroll: false,
         });
       });

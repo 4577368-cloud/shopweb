@@ -66,6 +66,7 @@ import {
 } from "@/lib/logistics/template-params";
 import { resolveTangbuyCountryId } from "@/lib/logistics/tangbuy-country";
 import {
+  peekLogisticsMirrorCache,
   setLogisticsMirrorCache,
 } from "@/lib/logistics/logistics-mirror-cache";
 import { setLogisticsSession } from "@/lib/logistics/logistics-session-cache";
@@ -135,6 +136,11 @@ export function useLogisticsQuoteEstimate({
   const [selectedLineByVariant, setSelectedLineByVariant] = useState<
     Map<string, string>
   >(new Map());
+
+  const resolveTemplatesForCache = useCallback((): LogisticsTemplate[] => {
+    if (templates.length > 0) return templates;
+    return peekLogisticsMirrorCache(shopName)?.templates ?? [];
+  }, [templates, shopName]);
 
   const prevScopeKeyRef = useRef<string | null>(null);
   const skipQuoteCacheHydrateRef = useRef(false);
@@ -865,7 +871,7 @@ export function useLogisticsQuoteEstimate({
       setAnalysis(result.analysis);
       const cachePayload = {
         analysis: result.analysis,
-        templates,
+        templates: resolveTemplatesForCache(),
         pricingTemplate,
       };
       setLogisticsMirrorCache(shopName, cachePayload);
@@ -895,7 +901,7 @@ export function useLogisticsQuoteEstimate({
       setAnalysis(result.analysis);
       const cachePayload = {
         analysis: result.analysis,
-        templates,
+        templates: resolveTemplatesForCache(),
         pricingTemplate,
       };
       setLogisticsMirrorCache(shopName, cachePayload);
@@ -983,7 +989,7 @@ export function useLogisticsQuoteEstimate({
       setAnalysis(result.analysis);
       const payload = {
         analysis: result.analysis,
-        templates,
+        templates: resolveTemplatesForCache(),
         pricingTemplate,
       };
       setLogisticsMirrorCache(shopName, payload);

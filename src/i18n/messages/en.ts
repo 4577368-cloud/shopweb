@@ -1341,7 +1341,11 @@ export const en = {
     toastRoutesFetched: "{{withLine}} / {{total}} SKUs got routes ({{country}}, {{speed}})",
     toastTemplateDeleted: "Template deleted",
     toastTemplateSaved: "Template saved",
-    toastTemplateSavedEstimate: "Template saved — run smart estimate again",
+    toastTemplateSavedEstimate: "Logistics strategy saved — continue estimating",
+    templateRequiredTitle: "Save a logistics strategy before quoting",
+    templateRequiredDesc:
+      "Configure destination, packaging, and speed in the right rail or strategy card, then save.",
+    templateRequiredCta: "Set logistics strategy",
     toastMailLimitNoData:
       "Refresh complete: {{total}} SKUs had no Tangbuy mail-limit data; kept classifier results",
     toastMailLimitUpdated:
@@ -1754,10 +1758,19 @@ export const en = {
     view: "View"
   },
   logisticsWorkflow: {
-    hint: "Configure logistics steps",
-    stepConfirm: "3 · Confirm",
-    stepEstimate: "2 · Estimate",
-    stepSetup: "1 · Strategy"
+    hint: "Estimate freight and confirm plans",
+    stepConfirm: "2 · Confirm",
+    stepEstimate: "1 · Estimate",
+    stepSetup: "Strategy"
+  },
+  logisticsStrategyRail: {
+    adjust: "Edit",
+    configureNow: "Set logistics strategy",
+    setupDesc:
+      "Choose destination markets, packaging, and speed. Save before quoting; edit anytime from this card or the strategy chip.",
+    setupTitle: "Set logistics strategy first",
+    summaryDesc: "Quotes use this strategy. Click edit to change it.",
+    title: "Logistics strategy"
   },
   manualMatch: {
     cancel: "Cancel",

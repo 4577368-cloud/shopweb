@@ -42,11 +42,9 @@ export function useLogisticsWorkflowNavigation({
     setFilterMode((prev) => coerceLogisticsFilterMode(prev, planMetrics));
   }, [planMetrics, setFilterMode]);
 
+  // Migrate leftover setup step / auto-pick estimate vs confirm from metrics.
+  // Never force setup — template lives on the rail card like pricing.
   useEffect(() => {
-    if (!hasSavedTemplate) {
-      setWorkflowStep("setup");
-      return;
-    }
     if (workflowStep === "setup") {
       setWorkflowStep(
         deriveLogisticsWorkflowStep({ hasSavedTemplate, metrics: planMetrics })
@@ -56,11 +54,12 @@ export function useLogisticsWorkflowNavigation({
 
   const handleWorkflowStepChange = useCallback(
     (step: LogisticsWorkflowStep) => {
-      setWorkflowStep(step);
-      if (step === "estimate") {
+      const next = step === "setup" ? "estimate" : step;
+      setWorkflowStep(next);
+      if (next === "estimate") {
         setFilterMode("pending_quote");
         scrollToLogisticsList();
-      } else if (step === "confirm") {
+      } else if (next === "confirm") {
         const attention =
           planMetrics.exceptionCount + planMetrics.skuUnlinkedCount;
         setFilterMode(attention > 0 ? "needs_attention" : "pending_confirm");

@@ -1340,7 +1340,11 @@ export const fr: Dictionary = {
     toastRoutesFetched: "{{withLine}} / {{total}} SKUs got routes ({{country}}, {{speed}})",
     toastTemplateDeleted: "Template deleted",
     toastTemplateSaved: "Template saved",
-    toastTemplateSavedEstimate: "Template saved — run smart estimate again",
+    toastTemplateSavedEstimate: "Stratégie logistique enregistrée — continuez l'estimation",
+    templateRequiredTitle: "Enregistrez une stratégie avant de cotation",
+    templateRequiredDesc:
+      "Configurez destination, emballage et délai dans le rail droit ou la carte stratégie, puis enregistrez.",
+    templateRequiredCta: "Configurer la stratégie",
     toastMailLimitNoData:
       "Refresh complete: {{total}} SKUs had no Tangbuy mail-limit data; kept classifier results",
     toastMailLimitUpdated:
@@ -1751,10 +1755,19 @@ export const fr: Dictionary = {
     view: "View"
   },
   logisticsWorkflow: {
-    hint: "Configurer les étapes logistiques",
-    stepSetup: "1 · Stratégie",
-    stepEstimate: "2 · Estimation",
-    stepConfirm: "3 · Confirmation"
+    hint: "Estimer le fret et confirmer les plans",
+    stepConfirm: "2 · Confirmation",
+    stepEstimate: "1 · Estimation",
+    stepSetup: "Stratégie"
+  },
+  logisticsStrategyRail: {
+    adjust: "Modifier",
+    configureNow: "Configurer la stratégie",
+    setupDesc:
+      "Choisissez destinations, emballage et délai. Enregistrez avant de cotation ; modifiez ici ou via la puce stratégie.",
+    setupTitle: "Configurez d'abord la stratégie logistique",
+    summaryDesc: "Les cotations utilisent cette stratégie. Cliquez pour modifier.",
+    title: "Stratégie logistique"
   },
   manualMatch: {
     cancel: "Annuler",

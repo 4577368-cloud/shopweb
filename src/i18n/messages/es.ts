@@ -1339,7 +1339,11 @@ export const es: Dictionary = {
     toastRoutesFetched: "{{withLine}} / {{total}} SKUs got routes ({{country}}, {{speed}})",
     toastTemplateDeleted: "Template deleted",
     toastTemplateSaved: "Template saved",
-    toastTemplateSavedEstimate: "Template saved — run smart estimate again",
+    toastTemplateSavedEstimate: "Estrategia logística guardada — continúe estimando",
+    templateRequiredTitle: "Guarde una estrategia antes de cotizar",
+    templateRequiredDesc:
+      "Configure destino, embalaje y velocidad en el panel derecho o la tarjeta de estrategia, luego guarde.",
+    templateRequiredCta: "Configurar estrategia",
     toastMailLimitNoData:
       "Refresh complete: {{total}} SKUs had no Tangbuy mail-limit data; kept classifier results",
     toastMailLimitUpdated:
@@ -1750,10 +1754,19 @@ export const es: Dictionary = {
     view: "View"
   },
   logisticsWorkflow: {
-    hint: "Configurar pasos logísticos",
-    stepSetup: "1 · Estrategia",
-    stepEstimate: "2 · Estimación",
-    stepConfirm: "3 · Confirmación"
+    hint: "Estimar flete y confirmar planes",
+    stepConfirm: "2 · Confirmación",
+    stepEstimate: "1 · Estimación",
+    stepSetup: "Estrategia"
+  },
+  logisticsStrategyRail: {
+    adjust: "Editar",
+    configureNow: "Configurar estrategia",
+    setupDesc:
+      "Elija destinos, embalaje y velocidad. Guarde antes de cotizar; edite aquí o en el chip de estrategia.",
+    setupTitle: "Configure primero la estrategia logística",
+    summaryDesc: "Las cotizaciones usan esta estrategia. Pulse editar para cambiarla.",
+    title: "Estrategia logística"
   },
   manualMatch: {
     cancel: "Cancelar",
