@@ -3857,6 +3857,7 @@ export const es: Dictionary = {
     goTo: "Go to {{title}}",
     hubLockedUntilProductMatch:
       "Desbloquee el centro de operaciones cuando la vinculación de fuentes de producto alcance el {{target}}% (actualmente {{current}}%).",
+    hubLockedRedirecting: "El centro de operaciones aún no está desbloqueado — volviendo a la configuración…",
     hubUnavailable: "El centro de operaciones no está habilitado en este entorno",
     progress: "Progreso",
     upgradeLabel: "Upgrade",

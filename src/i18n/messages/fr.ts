@@ -3858,6 +3858,7 @@ export const fr: Dictionary = {
     goTo: "Go to {{title}}",
     hubLockedUntilProductMatch:
       "Débloquez le hub opérations lorsque la liaison des sources produit atteint {{target}} % (actuellement {{current}} %).",
+    hubLockedRedirecting: "Le hub opérations n'est pas encore débloqué — retour à la configuration…",
     hubUnavailable: "Le hub opérations n'est pas activé dans cet environnement",
     progress: "Progression",
     upgradeLabel: "Upgrade",

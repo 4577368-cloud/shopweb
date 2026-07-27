@@ -3844,6 +3844,7 @@ export const zh: Dictionary = {
     goTo: "前往：{{title}}",
     hubLockedUntilProductMatch:
       "商品货源关联达到 {{target}}% 后可使用运营中枢（当前 {{current}}%）",
+    hubLockedRedirecting: "运营中枢尚未解锁，正在返回开店流程…",
     hubUnavailable: "运营中枢尚未在本环境开放",
     progress: "进度",
     upgradeLabel: "Upgrade",

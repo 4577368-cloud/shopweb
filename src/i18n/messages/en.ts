@@ -3862,6 +3862,7 @@ export const en = {
     goTo: "Go to {{title}}",
     hubLockedUntilProductMatch:
       "Unlock Operations Hub when product source linking reaches {{target}}% (currently {{current}}%).",
+    hubLockedRedirecting: "Operations Hub is still locked — returning to setup…",
     hubUnavailable: "Operations Hub is not enabled in this environment",
     progress: "Progress",
     upgradeLabel: "Upgrade",

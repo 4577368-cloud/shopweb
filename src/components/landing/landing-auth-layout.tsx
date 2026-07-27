@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { CyberBackground } from "@/components/landing/cyber-background";
 import { LandingNav } from "@/components/landing/landing-nav";
 import { LandingHero } from "@/components/landing/landing-hero";
@@ -63,17 +63,22 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
     operationsHubReady,
   });
 
+  // Only hard-redirect once when session becomes authenticated — avoid re-firing
+  // when hub readiness flips and would otherwise yank the user to a hub URL.
+  const redirectedRef = useRef(false);
   useEffect(() => {
-    if (authStatus !== "authenticated") return;
+    if (authStatus !== "authenticated") {
+      redirectedRef.current = false;
+      return;
+    }
+    if (redirectedRef.current) return;
+    redirectedRef.current = true;
     window.location.assign(postLoginTarget);
   }, [authStatus, postLoginTarget]);
 
   const entryHref =
     authStatus === "authenticated"
-      ? localePath(
-          locale,
-          !isAuthorized ? "/authorize" : operationsHubReady ? "/order-center" : "/products"
-        )
+      ? localePath(locale, !isAuthorized ? "/authorize" : "/products")
       : null;
 
   const onModeChange = useCallback(
@@ -88,14 +93,14 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
 
   const onClose = useCallback(() => {
     if (from && from.startsWith("/") && !from.startsWith("//")) {
-      const qIndex = from.indexOf("?");
-      const pathOnly = qIndex >= 0 ? from.slice(0, qIndex) : from;
-      const query = qIndex >= 0 ? from.slice(qIndex) : "";
-      router.push(`${localePath(locale, pathOnly || "/")}${query}`);
+      // Reuse post-login rules so closing the panel cannot bounce into a locked hub URL.
+      router.push(
+        resolvePostLoginPath(locale, from, { isAuthorized, operationsHubReady })
+      );
       return;
     }
     router.push(localePath(locale, "/"));
-  }, [from, locale, router]);
+  }, [from, locale, router, isAuthorized, operationsHubReady]);
 
   const showAuth = useCallback(
     (m: LandingAuthMode) => {

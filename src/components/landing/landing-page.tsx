@@ -47,10 +47,7 @@ export function LandingPage() {
 
   const entryHref =
     authStatus === "authenticated"
-      ? localePath(
-          locale,
-          !isAuthorized ? "/authorize" : operationsHubReady ? "/order-center" : "/products"
-        )
+      ? localePath(locale, !isAuthorized ? "/authorize" : "/products")
       : null;
 
   const showAuth = (m: AuthMode) => {
