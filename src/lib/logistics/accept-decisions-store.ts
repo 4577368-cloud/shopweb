@@ -28,6 +28,42 @@ function acceptancePath(shopName: string): string {
   return path.join(STORAGE_DIR, `${safe}-acceptances.json`);
 }
 
+function revokedPath(shopName: string): string {
+  const safe = shopName.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return path.join(STORAGE_DIR, `${safe}-revoked.json`);
+}
+
+function readLocalRevoked(shopName: string): Set<string> {
+  try {
+    ensureStorageDir();
+    const filePath = revokedPath(shopName);
+    if (!fs.existsSync(filePath)) return new Set();
+    const raw = JSON.parse(fs.readFileSync(filePath, "utf-8")) as {
+      skuIds?: string[];
+    };
+    return new Set((raw.skuIds ?? []).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeLocalRevoked(shopName: string, skuIds: Set<string>): void {
+  ensureStorageDir();
+  fs.writeFileSync(
+    revokedPath(shopName),
+    JSON.stringify({ shopName, skuIds: Array.from(skuIds) }, null, 2)
+  );
+}
+
+function filterRevoked(
+  shopName: string,
+  rows: StoredVariantAcceptance[]
+): StoredVariantAcceptance[] {
+  const revoked = readLocalRevoked(shopName);
+  if (revoked.size === 0) return rows;
+  return rows.filter((row) => !revoked.has(row.thirdPlatformSkuId));
+}
+
 function normalizeAcceptance(row: StoredVariantAcceptance): StoredVariantAcceptance {
   const hasLine = Boolean(
     row.recommendedLine?.lineName?.trim() || row.recommendedLine?.lineCode?.trim()
@@ -147,8 +183,8 @@ export async function readAcceptances(
   shopName: string
 ): Promise<StoredVariantAcceptance[]> {
   const backend = await fetchAcceptancesFromBackend(shopName);
-  if (backend !== null) return backend;
-  return readLocalAcceptances(shopName);
+  const rows = backend !== null ? backend : readLocalAcceptances(shopName);
+  return filterRevoked(shopName, rows);
 }
 
 /**
@@ -159,9 +195,43 @@ export async function upsertAcceptances(
   shopName: string,
   incoming: StoredVariantAcceptance[]
 ): Promise<StoredVariantAcceptance[]> {
+  // 重新确认时清掉对应撤销标记
+  if (incoming.length > 0) {
+    const revoked = readLocalRevoked(shopName);
+    let changed = false;
+    for (const row of incoming) {
+      if (revoked.delete(row.thirdPlatformSkuId)) changed = true;
+    }
+    if (changed) writeLocalRevoked(shopName, revoked);
+  }
+
   const backend = await upsertAcceptancesToBackend(shopName, incoming);
-  if (backend !== null) return backend;
-  return upsertLocalAcceptances(shopName, incoming);
+  if (backend !== null) return filterRevoked(shopName, backend);
+  return filterRevoked(shopName, upsertLocalAcceptances(shopName, incoming));
+}
+
+/**
+ * 撤销已确认决策，允许用户重选线路后再确认。
+ * 本地 tombstone 保证后续 merge 不再把这些 SKU 标为已确认；
+ * 同时从本地 acceptances 文件中移除。
+ */
+export async function removeAcceptances(
+  shopName: string,
+  skuIds: string[]
+): Promise<StoredVariantAcceptance[]> {
+  const idSet = new Set(skuIds.filter(Boolean));
+  if (idSet.size === 0) return readAcceptances(shopName);
+
+  const revoked = readLocalRevoked(shopName);
+  for (const id of idSet) revoked.add(id);
+  writeLocalRevoked(shopName, revoked);
+
+  const local = readLocalAcceptances(shopName).filter(
+    (row) => !idSet.has(row.thirdPlatformSkuId)
+  );
+  writeLocalAcceptances(shopName, local);
+
+  return readAcceptances(shopName);
 }
 
 // ===== 兼容旧同步调用方（仅本地文件，不再推荐使用） =====

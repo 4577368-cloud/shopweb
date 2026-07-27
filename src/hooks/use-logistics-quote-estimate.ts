@@ -34,6 +34,7 @@ import {
   mapWithConcurrency,
 } from "@/lib/logistics/estimate-batch";
 import { mergeQuoteAcceptancesIntoAnalysis } from "@/lib/logistics/merge-acceptances-into-analysis";
+import { unconfirmVariantsInAnalysis } from "@/lib/logistics/unconfirm-variants";
 import {
   readMeasureOverrides,
   writeMeasureOverrides,
@@ -121,6 +122,9 @@ export function useLogisticsQuoteEstimate({
     () => new Set()
   );
   const [accepting, setAccepting] = useState(false);
+  const [reopeningVariantId, setReopeningVariantId] = useState<string | null>(
+    null
+  );
   const [batchFailedVariantIds, setBatchFailedVariantIds] = useState<string[]>(
     []
   );
@@ -879,6 +883,37 @@ export function useLogisticsQuoteEstimate({
     }
   };
 
+  const handleReselectVariant = async (variant: VariantLogisticsDecision) => {
+    if (reopeningVariantId || accepting || !shopName?.trim()) return;
+    const skuId = variant.thirdPlatformSkuId;
+    setReopeningVariantId(skuId);
+    try {
+      const result = await api.reopenLogisticsDecision({
+        shopName,
+        variantIds: [skuId],
+      });
+      setAnalysis(result.analysis);
+      const cachePayload = {
+        analysis: result.analysis,
+        templates,
+        pricingTemplate,
+      };
+      setLogisticsMirrorCache(shopName, cachePayload);
+      setLogisticsSession(shopName, cachePayload);
+      setFilterMode("pending_confirm");
+      showToast(t("logistics.toastReselected"));
+    } catch (err) {
+      // 本地乐观回退：即便 API 失败也允许当场改选
+      setAnalysis((prev) =>
+        prev ? unconfirmVariantsInAnalysis(prev, [skuId]) : prev
+      );
+      setFilterMode("pending_confirm");
+      showToast(readableError(err));
+    } finally {
+      setReopeningVariantId(null);
+    }
+  };
+
   const handleAcceptAllReady = async (opts?: {
     onProgress?: (
       current: number,
@@ -1018,6 +1053,8 @@ export function useLogisticsQuoteEstimate({
     handleBatchPreIngest: () => void runBatchPreIngest({ force: true }),
     batchPreIngesting,
     handleAcceptAi,
+    handleReselectVariant,
+    reopeningVariantId,
     handleAcceptAllReady,
     handleStartEstimate,
     handleRetryPipeline,

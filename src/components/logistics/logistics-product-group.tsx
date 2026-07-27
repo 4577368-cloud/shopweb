@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Loader2,
   Package,
+  Pencil,
   RefreshCw,
 } from "@/lib/ui/icons";
 import type { LogisticsEstimateResult } from "@/lib/api";
@@ -117,6 +118,9 @@ function FulfillmentSkuRow({
   onSaveMeasures,
   onAcceptAi,
   onCorrect,
+  onReanalyze,
+  onReselect,
+  reopening,
   measureEditPanel,
   hideQuoteActions = false,
   productLevelSkuAlign = false,
@@ -141,6 +145,11 @@ function FulfillmentSkuRow({
   onSaveMeasures: (next: MeasureOverride) => void;
   onAcceptAi: () => void;
   onCorrect: (type: LogisticsTypeCode) => void;
+  /** 否定当前报价结论，重新拉线路。 */
+  onReanalyze?: () => void;
+  /** 已确认后重选：撤销确认，回到待确认。 */
+  onReselect?: () => void;
+  reopening?: boolean;
   measureEditPanel: ReactNode;
   hideQuoteActions?: boolean;
   productLevelSkuAlign?: boolean;
@@ -182,6 +191,14 @@ function FulfillmentSkuRow({
     pipelineActive,
     quoteResult,
   });
+  const isConfirmed =
+    Boolean(mergedDecision.decisionConfirmed) ||
+    mergedDecision.decisionStatus === "confirmed";
+  const hasQuoteLine = Boolean(selectedLine);
+  const canReanalyze =
+    !isConfirmed &&
+    Boolean(onReanalyze) &&
+    (hasQuoteLine || showAccept || rowStatus === "pending_review");
   const needsMeasure =
     exception &&
     (mergedDecision.decisionReason?.includes("重量") ||
@@ -203,21 +220,62 @@ function FulfillmentSkuRow({
         {t("logisticsProduct.addDimensions")}
       </Button>
     );
-  } else if (showAccept) {
+  } else if (isConfirmed && onReselect) {
     primaryAction = (
       <Button
+        type="button"
         size="sm"
-        className="h-7 min-w-[4rem]"
-        onClick={onAcceptAi}
-        disabled={busy || accepting || quotingThis || quotingThisVariant}
+        variant="secondary"
+        className="h-7 w-7 px-0"
+        onClick={onReselect}
+        disabled={busy || accepting || reopening || quotingThis || quotingThisVariant}
+        title={t("logisticsProduct.reselectTitle")}
+        aria-label={t("logisticsProduct.reselectAria")}
       >
-        {accepting ? (
-          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+        {reopening ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
         ) : (
-          <Check className="mr-1 h-3.5 w-3.5" />
+          <Pencil className="h-3.5 w-3.5" />
         )}
-        {t("logisticsProduct.confirm")}
       </Button>
+    );
+  } else if (showAccept || canReanalyze) {
+    primaryAction = (
+      <div className="flex items-center justify-end gap-1">
+        {canReanalyze ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="h-7 w-7 px-0"
+            onClick={onReanalyze}
+            disabled={busy || accepting || quotingThis || quotingThisVariant}
+            title={t("logisticsProduct.reanalyzeTitle")}
+            aria-label={t("logisticsProduct.reanalyzeAria")}
+          >
+            {quotingThisVariant ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        ) : null}
+        {showAccept ? (
+          <Button
+            size="sm"
+            className="h-7 min-w-[4rem]"
+            onClick={onAcceptAi}
+            disabled={busy || accepting || quotingThis || quotingThisVariant}
+          >
+            {accepting ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="mr-1 h-3.5 w-3.5" />
+            )}
+            {t("logisticsProduct.confirm")}
+          </Button>
+        ) : null}
+      </div>
     );
   } else if (rowStatus === "pending_review" && exception && !hideQuoteActions) {
     primaryAction = (
@@ -360,13 +418,14 @@ function FulfillmentSkuRow({
         ) : null}
       </div>
 
-      {exception && !editingMeasures ? (
+      {(!isConfirmed && (exception || hasQuoteLine || showAccept)) && !editingMeasures ? (
         <div className="mt-2">
           <Select
             value={profile.dominantLogisticsType || "GENERAL"}
             disabled={busy}
             onChange={(e) => onCorrect(e.target.value as LogisticsTypeCode)}
             className="h-7 w-36 text-[11px]"
+            title={t("logisticsProduct.changeTypeTitle")}
           >
             {typeOptions.map((o) => (
               <option key={o.value} value={o.value}>
@@ -403,6 +462,8 @@ export function LogisticsProductGroup({
   onIngestProductSource,
   onCatalogIngestComplete,
   onFetchVariantQuote,
+  onReselectVariant,
+  reopeningVariantId = null,
   onCorrect,
   onMeasureOverride,
   renderMeasureEditPanel,
@@ -437,6 +498,8 @@ export function LogisticsProductGroup({
     variant: VariantLogisticsDecision,
     override?: MeasureOverride
   ) => void;
+  onReselectVariant?: (variant: VariantLogisticsDecision) => void;
+  reopeningVariantId?: string | null;
   onCorrect: (type: LogisticsTypeCode) => void;
   onMeasureOverride?: (variantId: string, next: MeasureOverride) => void;
   quotingProduct?: boolean;
@@ -517,7 +580,8 @@ export function LogisticsProductGroup({
       const quote = quoteResults.get(variant.thirdPlatformSkuId);
       if (variant.decisionStatus === "pending_sku") return false;
       if (variant.decisionConfirmed || variant.decisionStatus === "confirmed") {
-        return false;
+        // 已确认也可低调重选
+        return Boolean(onReselectVariant);
       }
       const exception = isVariantException(variant);
       const needsMeasure =
@@ -529,10 +593,19 @@ export function LogisticsProductGroup({
       if (shouldShowManualAcceptAction(variant, { pipelineActive, quoteResult: quote })) {
         return true;
       }
+      // 待确认：允许重新分析
+      if (onFetchVariantQuote && (quote || exception)) return true;
       if (exception) return true;
       return false;
     });
-  }, [allSkuUnlinked, variants, quoteResults, pipelineActive]);
+  }, [
+    allSkuUnlinked,
+    variants,
+    quoteResults,
+    pipelineActive,
+    onReselectVariant,
+    onFetchVariantQuote,
+  ]);
 
   return (
     <article
@@ -697,6 +770,17 @@ export function LogisticsProductGroup({
                 onSaveMeasures={(next) => onSaveMeasures(variantId, next)}
                 onAcceptAi={() => onAcceptAi(variant)}
                 onCorrect={onCorrect}
+                onReanalyze={
+                  onFetchVariantQuote
+                    ? () => onFetchVariantQuote(variant)
+                    : undefined
+                }
+                onReselect={
+                  onReselectVariant
+                    ? () => onReselectVariant(variant)
+                    : undefined
+                }
+                reopening={reopeningVariantId === variantId}
                 productLevelSkuAlign={needsSkuAlign}
                 hideQuoteActions={!showOpsColumn}
                 selectedLineKey={selectedLineByVariant?.get(variantId)}

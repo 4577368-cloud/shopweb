@@ -40,6 +40,8 @@ export interface UseLogisticsDecisionWorkspacePropsParams {
     variant: VariantLogisticsDecision,
     override?: MeasureOverride
   ) => void;
+  onReselectVariant: (variant: VariantLogisticsDecision) => void;
+  reopeningVariantId: string | null;
   onMeasureOverride: (variantId: string, next: MeasureOverride) => void;
   accepting: boolean;
   quotingProductId: string | null;
@@ -73,6 +75,8 @@ export function useLogisticsDecisionWorkspaceProps(
     onIngestProductSource,
     onCatalogIngestComplete,
     onFetchVariantQuote,
+    onReselectVariant,
+    reopeningVariantId,
     onMeasureOverride,
     accepting,
     quotingProductId,
@@ -104,6 +108,8 @@ export function useLogisticsDecisionWorkspaceProps(
       onIngestProductSource,
       onCatalogIngestComplete,
       onFetchVariantQuote,
+      onReselectVariant,
+      reopeningVariantId,
       onMeasureOverride,
       accepting,
       quotingProductId,
@@ -133,6 +139,8 @@ export function useLogisticsDecisionWorkspaceProps(
     onIngestProductSource,
     onCatalogIngestComplete,
     onFetchVariantQuote,
+    onReselectVariant,
+    reopeningVariantId,
     onMeasureOverride,
     accepting,
     quotingProductId,

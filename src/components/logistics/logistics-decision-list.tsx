@@ -165,6 +165,8 @@ export function LogisticsDecisionList({
   onIngestProductSource,
   onCatalogIngestComplete,
   onFetchVariantQuote,
+  onReselectVariant,
+  reopeningVariantId = null,
   onClearFocus,
   onMeasureOverride,
   accepting,
@@ -198,6 +200,8 @@ export function LogisticsDecisionList({
     variant: VariantLogisticsDecision,
     override?: MeasureOverride
   ) => void;
+  onReselectVariant?: (variant: VariantLogisticsDecision) => void;
+  reopeningVariantId?: string | null;
   onClearFocus: () => void;
   onMeasureOverride?: (variantId: string, next: MeasureOverride) => void;
   accepting?: boolean;
@@ -504,6 +508,8 @@ export function LogisticsDecisionList({
             }
             onCatalogIngestComplete={onCatalogIngestComplete}
             onFetchVariantQuote={onFetchVariantQuote}
+            onReselectVariant={onReselectVariant}
+            reopeningVariantId={reopeningVariantId}
             onCorrect={(type) => onCorrect(productId, type)}
             onMeasureOverride={onMeasureOverride}
             renderMeasureEditPanel={renderMeasureEditPanel}

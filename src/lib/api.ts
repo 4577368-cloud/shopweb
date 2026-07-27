@@ -440,6 +440,16 @@ export interface LogisticsPatchQuotesResult {
   analysis: LogisticsAnalysis;
 }
 
+export interface LogisticsReopenDecisionRequest {
+  shopName: string;
+  variantIds: string[];
+}
+
+export interface LogisticsReopenDecisionResult {
+  reopenedCount: number;
+  analysis: LogisticsAnalysis;
+}
+
 /**
  * Absolute URL of the backend Shopify OAuth install entrypoint for a given shop domain.
  * In the browser we use same-origin `/api/plugin/...` so Next rewrites proxy to tangbuy-plugin
@@ -1050,6 +1060,13 @@ export const api = {
 
   patchLogisticsQuotes: (body: LogisticsPatchQuotesRequest) =>
     localRequest<LogisticsPatchQuotesResult>("/api/logistics/patch-quotes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
+  reopenLogisticsDecision: (body: LogisticsReopenDecisionRequest) =>
+    localRequest<LogisticsReopenDecisionResult>("/api/logistics/reopen-decision", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
