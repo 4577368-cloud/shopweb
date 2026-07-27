@@ -53,7 +53,6 @@ export function LogisticsWorkflowSteps({
 
   return (
     <div className="rounded-[var(--radius-card)] border border-hairline bg-surface px-3 py-2.5 shadow-card">
-      <p className="mb-2 text-[11px] text-ink-subtle">{t("logisticsWorkflow.hint")}</p>
       <SegmentedTabs
         variant="chip"
         tabs={tabs}
