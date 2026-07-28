@@ -3879,8 +3879,8 @@ export const es: Dictionary = {
     hubLockedRedirecting: "El centro de operaciones aún no está desbloqueado — volviendo a la configuración…",
     hubUnavailable: "El centro de operaciones no está habilitado en este entorno",
     progress: "Progreso",
-    upgradeLabel: "Upgrade",
-    upgradeAria: "Abrir dropshipping de Tangbuy en una pestaña nueva",
+    upgradeLabel: "Pedidos y fulfillment",
+    upgradeAria: "Abrir la guía de Tangbuy Dropshipping",
   },
   sku: {
     acceptPage: "Accept all",
@@ -4398,7 +4398,7 @@ export const es: Dictionary = {
   },
   syncCeremony: {
     completionCongrats: "Todo está listo para lanzar",
-    completionDesc: "El enlace de fuentes, el mapeo de SKU y la checklist de lanzamiento ya están listos. Revisa el resumen o sigue operando la tienda.",
+    completionDesc: "El enlace de fuentes, el mapeo de SKU y la checklist ya están listos. Para pedidos y fulfillment, usa Tangbuy Dropshipping.",
     completionHeading: "Configuración",
     completionHeadingLine2: "completa",
     enterWorkbench: "Entrar al workbench",
@@ -4427,6 +4427,25 @@ export const es: Dictionary = {
     taskSourceDetail: "{{shown}} / {{total}} enlazados",
     taskSourceLinks: "Enlazar fuentes",
     viewSummary: "Ver resumen"
+  },
+  handoff: {
+    appBlurb: "Instálalo en esta tienda y gestiona pedidos, fulfillment y envíos con la misma cuenta Tangbuy.",
+    appName: "Tangbuy Dropshipping",
+    appStoreBadge: "Shopify App Store",
+    bridge: "60s Sourcing terminó la preparación. Gestiona pedidos, fulfillment, seguimiento y consultas a proveedores con la app Tangbuy Dropshipping.",
+    capFulfillment: "Fulfillment dropshipping en un clic",
+    capInquiry: "Consultas a proveedores, personalización y sourcing de fábrica",
+    capOrders: "Sincronizar pedidos de Shopify y pagos de compra",
+    capTracking: "Seguimiento de envíos y posventa",
+    continueSourcing: "Seguir haciendo sourcing",
+    installAria: "Instalar Tangbuy Dropshipping en el Shopify App Store",
+    installCta: "Instalar en Shopify",
+    learnMoreOfficial: "Sobre Tangbuy",
+    openWeb: "¿Ya instalado? Abrir el espacio web (misma cuenta)",
+    sameAccount: "Registrarte aquí crea tu cuenta Tangbuy — sin un segundo registro.",
+    stayHere: "Quedarse en esta app",
+    upgradeHeading: "Siguiente: pedidos y fulfillment",
+    upgradeLead: "El listing sigue aquí; pedidos y dropshipping viven en Tangbuy Dropshipping."
   },
   syncUi: {
     carouselCount: " · {{count}} mostrados en la vista previa",

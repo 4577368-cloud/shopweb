@@ -3,20 +3,19 @@
 import Link from "next/link";
 import { ArrowRight } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
-import { TANGBUY_DROPSHIPPING_URL } from "@/lib/brand";
-import { useT } from "@/i18n/LocaleProvider";
+import { useT, useLocale } from "@/i18n/LocaleProvider";
+import { localePath } from "@/i18n/LocaleLink";
 import { cn } from "@/lib/utils";
 
-/** Opens Tangbuy dropshipping portal — sidebar footer, above account row. */
+/** Opens shared Tangbuy Dropshipping handoff page (same as sync complete). */
 export function SidebarUpgradeCta({ className }: { className?: string }) {
   const t = useT();
+  const locale = useLocale();
 
   return (
     <div className={cn("shrink-0 px-4 pb-3", className)}>
       <Link
-        href={TANGBUY_DROPSHIPPING_URL}
-        target="_blank"
-        rel="noopener noreferrer"
+        href={localePath(locale, "/upgrade")}
         className="block w-full"
         aria-label={t("sidebar.upgradeAria")}
       >

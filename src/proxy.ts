@@ -16,6 +16,7 @@ const PROTECTED_PREFIXES = [
   "/products",
   "/sku-align",
   "/sync",
+  "/upgrade",
 ];
 
 function detectLocale(req: NextRequest): string {

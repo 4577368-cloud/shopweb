@@ -3884,8 +3884,8 @@ export const en = {
     hubLockedRedirecting: "Operations Hub is still locked — returning to setup…",
     hubUnavailable: "Operations Hub is not enabled in this environment",
     progress: "Progress",
-    upgradeLabel: "Upgrade",
-    upgradeAria: "Open Tangbuy dropshipping in a new tab",
+    upgradeLabel: "Orders & fulfillment",
+    upgradeAria: "Open Tangbuy Dropshipping handoff",
   },
   sku: {
     acceptPage: "Accept all",
@@ -4403,7 +4403,7 @@ export const en = {
   },
   syncCeremony: {
     completionCongrats: "Everything is ready for launch",
-    completionDesc: "Your product linking, SKU mapping, and launch checklist are in place. Review the summary or continue operating the store.",
+    completionDesc: "Product linking, SKU mapping, and your launch checklist are ready. For orders and fulfillment, use Tangbuy Dropshipping.",
     completionHeading: "Store setup",
     completionHeadingLine2: "complete",
     enterWorkbench: "Enter workbench",
@@ -4432,6 +4432,25 @@ export const en = {
     taskSourceDetail: "{{shown}} / {{total}} linked",
     taskSourceLinks: "Link source offers",
     viewSummary: "View summary"
+  },
+  handoff: {
+    appBlurb: "Install on this store, then manage orders, fulfillment, and shipping with the same Tangbuy account.",
+    appName: "Tangbuy Dropshipping",
+    appStoreBadge: "Shopify App Store",
+    bridge: "60s Sourcing finished listing prep. Run the store—orders, fulfillment, tracking, and sourcing inquiries—with the separate Tangbuy Dropshipping app.",
+    capFulfillment: "One-click dropshipping fulfillment",
+    capInquiry: "Supplier inquiry, customization, and factory sourcing",
+    capOrders: "Sync Shopify orders and handle procurement payments",
+    capTracking: "Shipment tracking and after-sales follow-up",
+    continueSourcing: "Keep sourcing products",
+    installAria: "Install Tangbuy Dropshipping on the Shopify App Store",
+    installCta: "Install on Shopify",
+    learnMoreOfficial: "About Tangbuy",
+    openWeb: "Already installed? Open the web workspace (same account)",
+    sameAccount: "Signing up here creates your Tangbuy account—no second registration.",
+    stayHere: "Stay in this app",
+    upgradeHeading: "Next: orders & fulfillment",
+    upgradeLead: "Listing stays here; orders and dropshipping live in Tangbuy Dropshipping."
   },
   syncUi: {
     carouselCount: " · showing {{count}} in preview",

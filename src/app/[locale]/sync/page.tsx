@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
-import { CompletionScreen } from "@/components/sync/completion-screen";
+import { CompletionScreen } from "@/components/sync/tangbuy-handoff-screen";
 import { FollowUpList } from "@/components/sync/follow-up-list";
 import { LaunchMetricsGrid } from "@/components/sync/launch-metrics-grid";
 import { ProductFlipCard } from "@/components/sync/product-flip-card";

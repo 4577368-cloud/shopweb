@@ -3866,8 +3866,8 @@ export const zh: Dictionary = {
     hubLockedRedirecting: "运营中枢尚未解锁，正在返回开店流程…",
     hubUnavailable: "运营中枢尚未在本环境开放",
     progress: "进度",
-    upgradeLabel: "Upgrade",
-    upgradeAria: "在新标签页打开 Tangbuy 代发平台",
+    upgradeLabel: "经营与订单",
+    upgradeAria: "打开 Tangbuy Dropshipping 引导页",
   },
   sku: {
     acceptPage: "批量确认",
@@ -4385,7 +4385,7 @@ export const zh: Dictionary = {
   },
   syncCeremony: {
     completionCongrats: "开店准备已经就绪",
-    completionDesc: "货源关联、SKU 映射与开店检查清单已准备完成，可先查看总结再继续运营店铺。",
+    completionDesc: "货源关联、SKU 映射与开店检查清单已准备完成。订单与履约请使用 Tangbuy Dropshipping。",
     completionHeading: "开店准备",
     completionHeadingLine2: "已完成",
     enterWorkbench: "进入工作台",
@@ -4414,6 +4414,25 @@ export const zh: Dictionary = {
     taskSourceDetail: "已关联 {{shown}} / {{total}}",
     taskSourceLinks: "关联货源",
     viewSummary: "查看总结"
+  },
+  handoff: {
+    appBlurb: "在同一店铺安装后，用同一 Tangbuy 账号管理订单、履约与物流。",
+    appName: "Tangbuy Dropshipping",
+    appStoreBadge: "Shopify App Store",
+    bridge: "60s Sourcing 已帮你完成上架准备。店铺经营——订单、履约、物流跟踪与询盘定制——请使用独立的 Tangbuy Dropshipping 应用。",
+    capFulfillment: "一件代发履约，快速出单",
+    capInquiry: "询盘、定制与工厂直采沟通",
+    capOrders: "同步并管理 Shopify 订单与采购支付",
+    capTracking: "物流进度跟踪与售后跟进",
+    continueSourcing: "继续选品补货",
+    installAria: "在 Shopify App Store 安装 Tangbuy Dropshipping",
+    installCta: "在 Shopify 安装",
+    learnMoreOfficial: "了解 Tangbuy",
+    openWeb: "已安装？用同一账号打开 Web 工作台",
+    sameAccount: "注册本应用即拥有 Tangbuy 账号，无需重新注册。",
+    stayHere: "留在本应用",
+    upgradeHeading: "下一步：经营与履约",
+    upgradeLead: "开店上架在这里；订单与代发在 Tangbuy Dropshipping。"
   },
   syncUi: {
     carouselCount: " · 预览 {{count}} 个商品",
