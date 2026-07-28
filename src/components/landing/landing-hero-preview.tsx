@@ -221,7 +221,10 @@ function ProductRow({ product, index, matched }: { product: MockupProduct; index
 function AnimatedCounter({ value, active }: { value: number; active: boolean }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
-    if (!active) return;
+    if (!active) {
+      setDisplay(0);
+      return;
+    }
     const timer = setTimeout(() => {
       let start = 0;
       const duration = 400;
@@ -240,16 +243,34 @@ function AnimatedCounter({ value, active }: { value: number; active: boolean }) 
   return <span>{active ? display : 0}</span>;
 }
 
+const LOOP_HOLD_MS = 4200;
+const SCAN_START_MS = 1200;
+const MATCH_START_MS = 1900;
+const MATCH_STEP_MS = 180;
+const DONE_MS = 2900;
+
 export function LandingHeroPreview() {
   const t = useT();
   const [phase, setPhase] = useState<"idle" | "scanning" | "done">("idle");
   const [matchedRows, setMatchedRows] = useState<boolean[]>([false, false, false, false]);
+  const [cycle, setCycle] = useState(0);
 
   useEffect(() => {
-    const timers: NodeJS.Timeout[] = [];
-    // 1.5s 后开始扫描
-    timers.push(setTimeout(() => setPhase("scanning"), 1500));
-    // 逐行匹配完成
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (reduced) {
+      setPhase("done");
+      setMatchedRows(PRODUCTS.map(() => true));
+      return;
+    }
+
+    setPhase("idle");
+    setMatchedRows(PRODUCTS.map(() => false));
+
+    timers.push(setTimeout(() => setPhase("scanning"), SCAN_START_MS));
     PRODUCTS.forEach((_, i) => {
       timers.push(
         setTimeout(() => {
@@ -258,13 +279,15 @@ export function LandingHeroPreview() {
             next[i] = true;
             return next;
           });
-        }, 2200 + i * 180)
+        }, MATCH_START_MS + i * MATCH_STEP_MS)
       );
     });
-    // 扫描结束
-    timers.push(setTimeout(() => setPhase("done"), 3200));
+    timers.push(setTimeout(() => setPhase("done"), DONE_MS));
+    // Hold the finished state, then replay.
+    timers.push(setTimeout(() => setCycle((c) => c + 1), DONE_MS + LOOP_HOLD_MS));
+
     return () => timers.forEach(clearTimeout);
-  }, []);
+  }, [cycle]);
 
   return (
     <motion.div
