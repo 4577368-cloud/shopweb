@@ -295,6 +295,7 @@ export const fr: Dictionary = {
     namePlaceholder: "Votre nom",
     passwordHint: "Au moins 8 caractères, avec lettres et chiffres.",
     passwordLabel: "Mot de passe",
+    passwordPlaceholder: "Saisissez votre mot de passe",
     registerLink: "En créer un",
     registerPrompt: "Pas de compte ?",
     registerSubmit: "Créer un compte",

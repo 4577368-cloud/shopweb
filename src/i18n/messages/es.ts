@@ -293,6 +293,7 @@ export const es: Dictionary = {
     namePlaceholder: "Tu nombre",
     passwordHint: "Mínimo 8 caracteres, con letras y números.",
     passwordLabel: "Contraseña",
+    passwordPlaceholder: "Introduce tu contraseña",
     registerLink: "Crear una",
     registerPrompt: "¿No tienes cuenta?",
     registerSubmit: "Crear cuenta",

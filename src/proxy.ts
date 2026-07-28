@@ -52,6 +52,38 @@ function isProtected(pathname: string): boolean {
   );
 }
 
+/**
+ * Embedded Admin often strips ?host=&embedded=1 on left-nav clicks.
+ * Cookie auth cannot be relied on inside Safari iframes (ITP), so detect the
+ * iframe / Admin parent instead of bouncing to /login (which flashes in a loop
+ * once session-token auth succeeds and sends the merchant back).
+ */
+function isEmbeddedRequest(req: NextRequest): boolean {
+  const host = req.nextUrl.searchParams.get("host")?.trim();
+  const embeddedFlag = req.nextUrl.searchParams.get("embedded");
+  if (host || embeddedFlag === "1" || embeddedFlag === "true") return true;
+
+  if (req.headers.get("sec-fetch-dest") === "iframe") return true;
+
+  const referer = req.headers.get("referer") || "";
+  if (/admin\.shopify\.com/i.test(referer)) return true;
+
+  // Same-origin hop inside the Admin iframe (Referer is ai.tangbuy.com/…).
+  try {
+    if (referer) {
+      const ref = new URL(referer);
+      const here = req.nextUrl;
+      if (ref.origin === here.origin && /[?&](host|embedded)=/i.test(ref.search)) {
+        return true;
+      }
+    }
+  } catch {
+    /* ignore bad referer */
+  }
+
+  return false;
+}
+
 export function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
@@ -65,15 +97,10 @@ export function proxy(req: NextRequest) {
   }
 
   // Auth gate: standalone requires tb_access cookie.
-  // Embedded Admin loads with ?host= / ?embedded=1 and uses session-token Bearer
-  // (no cookie) — do not bounce those navigations to /login.
+  // Embedded Admin uses session-token Bearer (no cookie) — never bounce to /login.
   if (isProtected(pathname)) {
     const hasAccess = Boolean(req.cookies.get("tb_access")?.value);
-    const host = req.nextUrl.searchParams.get("host")?.trim();
-    const embeddedFlag = req.nextUrl.searchParams.get("embedded");
-    const isEmbedded =
-      Boolean(host) || embeddedFlag === "1" || embeddedFlag === "true";
-    if (!hasAccess && !isEmbedded) {
+    if (!hasAccess && !isEmbeddedRequest(req)) {
       const segments = pathname.split("/");
       const locale = isLocale(segments[1]) ? segments[1] : detectLocale(req);
       const loginUrl = req.nextUrl.clone();
@@ -88,10 +115,7 @@ export function proxy(req: NextRequest) {
 
   // Embedded Admin iframe: reinforce frame-ancestors (also set in next.config headers).
   // App home for embedded: marketing install page (not bare landing or authorize).
-  const host = req.nextUrl.searchParams.get("host")?.trim();
-  const embeddedFlag = req.nextUrl.searchParams.get("embedded");
-  const isEmbedded =
-    Boolean(host) || embeddedFlag === "1" || embeddedFlag === "true";
+  const isEmbedded = isEmbeddedRequest(req);
 
   if (isLocale(maybeLocale)) {
     const stripped = "/" + segments.slice(2).join("/");

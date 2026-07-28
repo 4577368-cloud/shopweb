@@ -62,7 +62,9 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
     isAuthorized,
   });
 
-  // Only hard-redirect once when session becomes authenticated.
+  // Only redirect once when session becomes authenticated.
+  // Embedded: soft-nav with host/embedded preserved — hard assign drops query and
+  // used to bounce Admin merchants through /login in a flash loop.
   const redirectedRef = useRef(false);
   useEffect(() => {
     if (authStatus !== "authenticated") {
@@ -71,8 +73,18 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
     }
     if (redirectedRef.current) return;
     redirectedRef.current = true;
-    window.location.assign(postLoginTarget);
-  }, [authStatus, postLoginTarget]);
+    void (async () => {
+      const { readEmbeddedMode } = await import(
+        "@/host/embedded/use-embedded-mode"
+      );
+      if (readEmbeddedMode().isEmbedded) {
+        const { replaceInApp } = await import("@/host/adapters/navigation");
+        replaceInApp(postLoginTarget, router);
+        return;
+      }
+      window.location.assign(postLoginTarget);
+    })();
+  }, [authStatus, postLoginTarget, router]);
 
   const entryHref =
     authStatus === "authenticated"

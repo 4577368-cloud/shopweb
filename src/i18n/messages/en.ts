@@ -296,6 +296,7 @@ export const en = {
     namePlaceholder: "Your name",
     passwordHint: "At least 8 chars, with letters and digits.",
     passwordLabel: "Password",
+    passwordPlaceholder: "Enter your password",
     registerLink: "Create one",
     registerPrompt: "Don't have an account?",
     registerSubmit: "Create account",

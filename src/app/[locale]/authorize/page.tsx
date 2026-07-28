@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { LinkInApp } from "@/host/link-in-app";
 import {
   AlertTriangle,
   ArrowRight,
@@ -644,12 +645,12 @@ function AuthorizePageContent() {
                     publishedCount={publishedCount}
                   />
                   {/* Primary next-step CTA: guide the user into sourcing right under the shop info. */}
-                  <Link href={localePath(locale, "/products")} className="mt-3 block">
+                  <LinkInApp href={localePath(locale, "/products")} className="mt-3 block">
                     <Button className="w-full">
                       {t("authorize.goProducts")}
                       <ArrowRight className="h-4 w-4" />
                     </Button>
-                  </Link>
+                  </LinkInApp>
                 </>
               ) : phase === "restoring" ? (
                 <RestoringBlock t={t} />

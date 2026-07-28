@@ -292,6 +292,7 @@ export const zh: Dictionary = {
     namePlaceholder: "你的姓名",
     passwordHint: "至少 8 位，包含字母和数字。",
     passwordLabel: "密码",
+    passwordPlaceholder: "输入密码",
     registerLink: "注册",
     registerPrompt: "还没有账号？",
     registerSubmit: "注册",
