@@ -11,6 +11,8 @@ import {
   Layers,
   Loader2,
   RefreshCw,
+  Search,
+  X,
 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
 import { WorkbenchSidebar } from "@/components/workbench/workbench-sidebar";
@@ -24,6 +26,8 @@ import { AccountManagerRailFooter } from "@/components/account-manager/account-m
 import { type ScanTaskStatus } from "@/components/workbench/scan-stage";
 import { SkuAlignScanView } from "@/components/sku-align/sku-align-scan-view";
 import { SkuAlignResultBody } from "@/components/sku-align/sku-align-result-body";
+import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 import { useSkuAlignMirrorLoad } from "@/hooks/use-sku-align-mirror-load";
 import { useSkuAlignEntry } from "@/hooks/use-sku-align-entry";
 import {
@@ -86,6 +90,7 @@ function SkuAlignContent() {
   const wb = useWorkbenchPage("sku-align");
   const t = useT();
   const locale = useLocale();
+  const { isEmbedded } = useEmbeddedMode();
 
   const breadcrumbs = [
     { label: t("nav.workbench"), href: localePath(locale, "/") },
@@ -448,6 +453,38 @@ function SkuAlignContent() {
         title={t("sku.title")}
         breadcrumbs={breadcrumbs}
         {...wb.panelProps}
+        toolbar={
+          isEmbedded ? (
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-3">
+              <SegmentedTabs
+                variant="chip"
+                tabs={filterTabs}
+                value={filter}
+                onValueChange={(id) => handleFilterChange(id as FilterId)}
+              />
+              <div className="relative min-w-[12rem] flex-1 sm:w-56 sm:flex-none">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t("sku.searchPlaceholder")}
+                  className="h-8 w-full rounded-[var(--radius-control)] border border-hairline bg-surface pl-8 pr-8 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft"
+                />
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
+                    aria-label={t("sku.clearSearchAria")}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null
+        }
         actions={
           <div className="flex items-center gap-2">
             {needsReviewOnPage > 0 ? (
@@ -470,12 +507,27 @@ function SkuAlignContent() {
             <Button
               size="sm"
               variant="secondary"
-              onClick={restartScan}
+              onClick={() => {
+                if (isEmbedded) {
+                  void load();
+                  return;
+                }
+                restartScan();
+              }}
               className="h-7 w-7 px-0"
-              title={t("sku.rescanTitle")}
-              aria-label={t("sku.rescanAria")}
+              disabled={isEmbedded ? loading || refreshing : false}
+              title={
+                isEmbedded ? t("sku.refreshListAria") : t("sku.rescanTitle")
+              }
+              aria-label={
+                isEmbedded ? t("sku.refreshListAria") : t("sku.rescanAria")
+              }
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              {isEmbedded && (loading || refreshing) ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
             </Button>
           </div>
         }
@@ -499,6 +551,7 @@ function SkuAlignContent() {
           onRefresh={() => void load()}
           onAligned={() => void load()}
           showToast={showToast}
+          showListChrome={!isEmbedded}
         />
       </WorkbenchPanel>
     </WorkbenchShell>

@@ -69,6 +69,12 @@ export default function RootLayout({
       className={`${displayFont.variable} h-full antialiased`}
     >
       <head>
+        {/* Detect Admin iframe before React so left rail never flashes standalone. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var q=new URLSearchParams(location.search);var emb=q.get("host")||q.get("embedded")==="1"||q.get("embedded")==="true";if(!emb){try{emb=window.self!==window.top}catch(e){emb=true}}if(emb){document.documentElement.dataset.embedded="1";try{sessionStorage.setItem("tb_embedded_mode_v1",JSON.stringify({isEmbedded:true,host:(q.get("host")||"").trim(),shop:(q.get("shop")||"").trim().toLowerCase()}))}catch(e){}}}catch(e){}})();`,
+          }}
+        />
         {shopifyApiKey ? (
           <>
             {/*

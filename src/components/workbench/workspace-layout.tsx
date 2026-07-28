@@ -82,7 +82,10 @@ export function WorkspaceLayout({
       style={{ gridTemplateColumns }}
     >
       {hasLeft ? (
-        <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+        <div
+          data-wb-left-rail
+          className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
+        >
           {leftSidebar}
         </div>
       ) : null}

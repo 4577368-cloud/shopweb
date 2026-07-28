@@ -38,11 +38,13 @@ export async function POST(request: Request) {
   }
 
   const cookie = request.headers.get("cookie");
+  const authorization = request.headers.get("authorization");
   const authHeaders: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
   };
   if (cookie?.trim()) authHeaders.Cookie = cookie;
+  if (authorization?.trim()) authHeaders.Authorization = authorization;
 
   if (API_BASE) {
     try {

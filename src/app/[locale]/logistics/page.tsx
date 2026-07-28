@@ -48,6 +48,7 @@ import type {
 } from "@/lib/types";
 import { LogisticsWorkflowBody } from "@/components/logistics/logistics-workflow-body";
 import type { LogisticsFocusTarget, MeasureOverride } from "@/components/logistics/logistics-decision-list";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 
 const LogisticsAgentPanel = dynamic(() => import("@/components/logistics/logistics-agent-panel").then((m) => ({ default: m.LogisticsAgentPanel })), { ssr: false });
 const LogisticsTemplateDrawer = dynamic(() => import("@/components/logistics/logistics-template-drawer").then((m) => ({ default: m.LogisticsTemplateDrawer })), { ssr: false });
@@ -55,6 +56,13 @@ const LogisticsStrategyRailCard = dynamic(
   () =>
     import("@/components/logistics/logistics-strategy-rail-card").then((m) => ({
       default: m.LogisticsStrategyRailCard,
+    })),
+  { ssr: false }
+);
+const LogisticsWorkflowSteps = dynamic(
+  () =>
+    import("@/components/logistics/logistics-workflow-steps").then((m) => ({
+      default: m.LogisticsWorkflowSteps,
     })),
   { ssr: false }
 );
@@ -70,6 +78,7 @@ function LogisticsContent() {
   const wb = useWorkbenchPage("logistics");
   const t = useT();
   const locale = useLocale();
+  const { isEmbedded } = useEmbeddedMode();
   const { workflowStep, setWorkflowStep } = useLogisticsWorkflowStep(locale);
 
   const breadcrumbs = [
@@ -480,6 +489,16 @@ function LogisticsContent() {
         breadcrumbs={breadcrumbs}
         titleSuffix={<img src="/brand/on-time-guarantee-tag.svg" alt="" className="h-[18px] w-auto" />}
         {...wb.panelProps}
+        toolbar={
+          isEmbedded && (!loading || analysis) ? (
+            <LogisticsWorkflowSteps
+              step={workflowStep}
+              onStepChange={handleWorkflowStepChange}
+              hasSavedTemplate={hasSavedTemplate}
+              metrics={planMetrics}
+            />
+          ) : null
+        }
         actions={
           analysis ? (
             <div className="flex flex-wrap items-center justify-end gap-2">
@@ -667,6 +686,7 @@ function LogisticsContent() {
           skuUnlinkedCount={planMetrics.skuUnlinkedCount}
           pipelineRunning={pipeline.pipelineRunning}
           pipelineProgress={pipeline.progress}
+          showStepper={!isEmbedded}
         />
       </WorkbenchPanel>
 

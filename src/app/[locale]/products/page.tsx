@@ -54,6 +54,7 @@ import type { AiPanelContent } from "@/lib/types";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { prefetchSkuAlignListCache } from "@/lib/sku-align/prefetch-list-cache";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 
 const PricingTemplateDrawer = dynamic(() => import("@/components/select/pricing-template-drawer").then((m) => ({ default: m.PricingTemplateDrawer })), { ssr: false });
 const ProductsAgentPanel = dynamic(() => import("@/components/select/products-agent-panel").then((m) => ({ default: m.ProductsAgentPanel })), { ssr: false });
@@ -68,6 +69,7 @@ function SelectContent() {
   const wb = useWorkbenchPage("products");
   const t = useT();
   const locale = useLocale();
+  const { isEmbedded } = useEmbeddedMode();
   const { tab, setTab } = useProductsPageTab(locale);
   const breadcrumbs = [
     { label: t("nav.workbench"), href: localePath(locale, "/") },
@@ -75,6 +77,10 @@ function SelectContent() {
   ];
 
   const [shopFilter, setShopFilter] = useState<ShopFilter>("all");
+  const [shopFiltersMountEl, setShopFiltersMountEl] =
+    useState<HTMLDivElement | null>(null);
+  const [catalogFiltersMountEl, setCatalogFiltersMountEl] =
+    useState<HTMLDivElement | null>(null);
   const { newArrivalStats, refreshNewArrivalAwareness, commitAnalysisBaseline } =
     useProductsNewArrivals(shopName, shopMirrorKey);
 
@@ -515,6 +521,27 @@ function SelectContent() {
     { id: "catalog", label: t("products.tabDiscover") },
   ];
 
+  const pageTabs = (
+    <SegmentedTabs
+      variant="solid"
+      tabs={tabs}
+      value={tab}
+      onValueChange={(id) => setTab(id as ProductsPageTab)}
+    />
+  );
+
+  const embeddedToolbar = isEmbedded ? (
+    <div className="flex w-full min-w-0 flex-col gap-2">
+      {pageTabs}
+      {tab === "shop" ? (
+        <div ref={setShopFiltersMountEl} className="min-w-0" />
+      ) : null}
+      {tab === "catalog" ? (
+        <div ref={setCatalogFiltersMountEl} className="min-w-0" />
+      ) : null}
+    </div>
+  ) : null;
+
   return (
     <WorkbenchShell
       sidebar={<WorkbenchSidebar />}
@@ -525,6 +552,7 @@ function SelectContent() {
         title={t("products.title")}
         breadcrumbs={breadcrumbs}
         {...wb.panelProps}
+        toolbar={embeddedToolbar}
         actions={
           <ProductsPageHeaderActions
             searchQuery={searchQuery}
@@ -545,21 +573,19 @@ function SelectContent() {
         }
       >
         <div className="space-y-3">
-          {/* 1) Tabs — above all tab-specific context */}
-          <SegmentedTabs
-            variant="solid"
-            tabs={tabs}
-            value={tab}
-            onValueChange={(id) => setTab(id as ProductsPageTab)}
-          />
+          {!isEmbedded ? pageTabs : null}
 
-          {/* 2–3) Shop tab vs Discover filter mount + results */}
           {tab === "shop" ? (
-            <ProductsShopTab summary={shopTab.summary} panel={shopTab.panel} />
+            <ProductsShopTab
+              summary={shopTab.summary}
+              panel={shopTab.panel}
+              filtersMountEl={isEmbedded ? shopFiltersMountEl : null}
+            />
           ) : null}
 
           {tab === "catalog" ? (
             <ProductsCatalogTab
+              filtersMountEl={isEmbedded ? catalogFiltersMountEl : null}
               onActivity={refreshMirrorFromServer}
               onBindingLinked={refreshMirrorFromServer}
               onPublished={refreshMirrorFromServer}

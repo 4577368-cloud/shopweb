@@ -338,21 +338,59 @@ function maybeBackfillBindingSnapshots(shop: string): void {
   });
 }
 
-async function localRequest<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Same-origin BFF calls (e.g. /api/logistics/*). Must use auth-transport so
+ * embedded Admin sessions send Bearer — cookies alone are absent in the iframe.
+ */
+async function localRequest<T>(
+  path: string,
+  init?: RequestInit,
+  retried = false
+): Promise<T> {
   const url = path.startsWith("/") ? path : `/${path}`;
+
+  const { resolveAuthStrategyFromLocation } = await import(
+    "@/host/adapters/auth-transport"
+  );
+  const strategy = resolveAuthStrategyFromLocation();
+  const auth = await strategy.prepareRequest();
+
+  const mergedHeaders: Record<string, string> = {
+    Accept: "application/json",
+    ...auth.headers,
+  };
+  const initHeaders = init?.headers;
+  if (initHeaders instanceof Headers) {
+    initHeaders.forEach((value, key) => {
+      mergedHeaders[key] = value;
+    });
+  } else if (Array.isArray(initHeaders)) {
+    for (const [key, value] of initHeaders) mergedHeaders[key] = value;
+  } else if (initHeaders) {
+    Object.assign(mergedHeaders, initHeaders);
+  }
 
   let res: Response;
   try {
     res = await fetch(url, {
       ...init,
-      credentials: "same-origin",
-      headers: {
-        Accept: "application/json",
-        ...(init?.headers ?? {}),
-      },
+      credentials: init?.credentials ?? auth.credentials,
+      headers: mergedHeaders,
     });
   } catch (cause) {
     throw new ApiError(`Local request failed: ${url}`, 0, cause);
+  }
+
+  if (res.status === 401 && !retried && typeof window !== "undefined") {
+    let refreshed = false;
+    if (strategy.kind === "session-token") {
+      refreshed = await strategy.refreshAfterUnauthorized();
+    } else {
+      refreshed = await refreshAccessCookie();
+    }
+    if (refreshed) {
+      return localRequest<T>(path, init, true);
+    }
   }
 
   const text = await res.text();

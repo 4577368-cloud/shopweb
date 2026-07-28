@@ -28,6 +28,42 @@ const EMPTY: EmbeddedModeSnapshot = {
   shop: "",
 };
 
+const STICKY_KEY = "tb_embedded_mode_v1";
+
+/** Survives soft-nav remounts so getServerSnapshot does not flash standalone. */
+let stickyClientSnapshot: EmbeddedModeSnapshot | null = null;
+
+function readStickyFromSession(): EmbeddedModeSnapshot | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(STICKY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as EmbeddedModeSnapshot;
+    if (parsed && typeof parsed.isEmbedded === "boolean") return parsed;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function persistSticky(next: EmbeddedModeSnapshot): void {
+  stickyClientSnapshot = next;
+  if (typeof window === "undefined") return;
+  try {
+    if (next.isEmbedded) {
+      sessionStorage.setItem(STICKY_KEY, JSON.stringify(next));
+      document.documentElement.dataset.embedded = "1";
+      document.body.dataset.embedded = "1";
+    } else {
+      sessionStorage.removeItem(STICKY_KEY);
+      delete document.documentElement.dataset.embedded;
+      delete document.body.dataset.embedded;
+    }
+  } catch {
+    /* private mode / quota */
+  }
+}
+
 function readSearchParams(): URLSearchParams {
   if (typeof window === "undefined") return new URLSearchParams();
   return new URLSearchParams(window.location.search);
@@ -48,6 +84,14 @@ function snapshotFromSearch(search: URLSearchParams): EmbeddedModeSnapshot {
     }
     if (window.shopify) isEmbedded = true;
   }
+  // Soft-nav can drop host; keep sticky shop/host when still embedded.
+  if (isEmbedded && stickyClientSnapshot?.isEmbedded) {
+    return {
+      isEmbedded: true,
+      host: host || stickyClientSnapshot.host,
+      shop: shop || stickyClientSnapshot.shop,
+    };
+  }
   return { isEmbedded, host, shop };
 }
 
@@ -58,7 +102,15 @@ function snapshotFromSearch(search: URLSearchParams): EmbeddedModeSnapshot {
 let cachedClientSnapshot: EmbeddedModeSnapshot = EMPTY;
 
 function getClientSnapshot(): EmbeddedModeSnapshot {
+  if (!stickyClientSnapshot) {
+    stickyClientSnapshot = readStickyFromSession();
+  }
   const next = snapshotFromSearch(readSearchParams());
+  if (next.isEmbedded) {
+    persistSticky(next);
+  } else if (stickyClientSnapshot?.isEmbedded) {
+    persistSticky(EMPTY);
+  }
   if (
     cachedClientSnapshot.isEmbedded === next.isEmbedded &&
     cachedClientSnapshot.host === next.host &&
@@ -70,7 +122,11 @@ function getClientSnapshot(): EmbeddedModeSnapshot {
   return cachedClientSnapshot;
 }
 
-/** Server / first paint: always standalone so SSR matches non-embedded HTML. */
+/**
+ * SSR / hydration: always standalone so markup matches the server.
+ * Soft-nav remounts use getClientSnapshot (sticky + sessionStorage).
+ * First-paint left-rail flash is covered by html[data-embedded] CSS.
+ */
 function getServerSnapshot(): EmbeddedModeSnapshot {
   return EMPTY;
 }

@@ -19,6 +19,11 @@ interface WorkbenchPanelProps {
   /** Top-right header actions (buttons/links). Primary CTA goes here. */
   actions?: ReactNode;
   /**
+   * Sticky page toolbar (tabs / filters / primary CTAs). In embedded mode this
+   * replaces the title row and stays outside the scroll region.
+   */
+  toolbar?: ReactNode;
+  /**
    * When set, renders a fixed {@link AssistantToggle} after {@link actions}
    * (center header — not inside the right rail).
    */
@@ -42,12 +47,16 @@ interface WorkbenchPanelProps {
  * the single scroll region, and an opt-in sticky footer. Supersedes {@code PageHeader} for migrated
  * pages while keeping the same visual language. Sticky footer is a shell capability, enabled only when
  * a {@link WorkbenchPanelProps.footer} is passed (per prototype: /sku-align uses it, /authorize does not).
+ *
+ * Embedded: hide title/breadcrumbs (Admin nav names the page); keep sticky toolbar + actions.
+ * Standalone: unchanged title + crumbs; toolbar may still sit in the sticky header when provided.
  */
 export function WorkbenchPanel({
   title,
   description,
   breadcrumbs,
   actions,
+  toolbar,
   assistantOpen,
   onAssistantToggle,
   footer,
@@ -59,61 +68,104 @@ export function WorkbenchPanel({
 }: WorkbenchPanelProps) {
   const { isEmbedded } = useEmbeddedMode();
   const showAssistantToggle = typeof onAssistantToggle === "function";
+  const showTitleBlock = !isEmbedded;
+  const hasHeaderChrome =
+    showTitleBlock || Boolean(toolbar) || Boolean(actions) || showAssistantToggle;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header
-        className={cn(
-          "shrink-0 border-b border-hairline bg-canvas/80 px-[var(--wb-gutter)] pb-3 backdrop-blur",
-          isEmbedded ? "pt-3" : "pt-4"
-        )}
-      >
-        <div className="mx-auto w-full" style={{ maxWidth }}>
-          {breadcrumbs && breadcrumbs.length > 0 ? (
-            <nav className="mb-1.5 flex items-center gap-1 text-[11px] text-ink-subtle">
-              {breadcrumbs.map((item, index) => (
-                <span key={item.label} className="flex items-center gap-1">
-                  {index > 0 ? <ChevronRight className="h-3 w-3" /> : null}
-                  {item.href ? (
-                    <Link href={item.href} className="hover:text-ink-muted">
-                      {item.label}
-                    </Link>
-                  ) : (
-                    <span className="text-ink-muted">{item.label}</span>
+      {hasHeaderChrome ? (
+        <header
+          className={cn(
+            "shrink-0 border-b border-hairline bg-canvas/80 px-[var(--wb-gutter)] backdrop-blur",
+            isEmbedded ? "py-2.5" : "pb-3 pt-4"
+          )}
+        >
+          <div className="mx-auto w-full" style={{ maxWidth }}>
+            {showTitleBlock && breadcrumbs && breadcrumbs.length > 0 ? (
+              <nav className="mb-1.5 flex items-center gap-1 text-[11px] text-ink-subtle">
+                {breadcrumbs.map((item, index) => (
+                  <span key={item.label} className="flex items-center gap-1">
+                    {index > 0 ? <ChevronRight className="h-3 w-3" /> : null}
+                    {item.href ? (
+                      <Link href={item.href} className="hover:text-ink-muted">
+                        {item.label}
+                      </Link>
+                    ) : (
+                      <span className="text-ink-muted">{item.label}</span>
+                    )}
+                  </span>
+                ))}
+              </nav>
+            ) : null}
+            {showTitleBlock ? (
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <h1
+                  className={cn(
+                    "flex min-w-0 items-center gap-2 text-[22px] font-semibold leading-7 tracking-tight text-ink",
+                    titleClassName
                   )}
-                </span>
-              ))}
-            </nav>
-          ) : null}
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <h1 className={cn("flex min-w-0 items-center gap-2 text-[22px] font-semibold leading-7 tracking-tight text-ink", titleClassName)}>
-              {title}
-              {titleSuffix ? <span className="inline-flex items-center">{titleSuffix}</span> : null}
-            </h1>
-            {actions || showAssistantToggle ? (
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                {actions}
-                {showAssistantToggle ? (
-                  <AssistantToggle
-                    open={assistantOpen ?? true}
-                    onToggle={onAssistantToggle}
-                  />
+                >
+                  {title}
+                  {titleSuffix ? (
+                    <span className="inline-flex items-center">{titleSuffix}</span>
+                  ) : null}
+                </h1>
+                {actions || showAssistantToggle ? (
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                    {actions}
+                    {showAssistantToggle ? (
+                      <AssistantToggle
+                        open={assistantOpen ?? true}
+                        onToggle={onAssistantToggle}
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {showTitleBlock && description ? (
+              <p
+                className={cn(
+                  "mt-1 max-w-3xl text-sm leading-5 text-ink-muted",
+                  descriptionClassName
+                )}
+              >
+                {description}
+              </p>
+            ) : null}
+            {toolbar || (!showTitleBlock && (actions || showAssistantToggle)) ? (
+              <div
+                className={cn(
+                  "flex flex-wrap items-center gap-2",
+                  showTitleBlock && (description || breadcrumbs?.length)
+                    ? "mt-3"
+                    : showTitleBlock
+                      ? "mt-2"
+                      : null
+                )}
+              >
+                {toolbar ? (
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                    {toolbar}
+                  </div>
+                ) : null}
+                {!showTitleBlock && (actions || showAssistantToggle) ? (
+                  <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+                    {actions}
+                    {showAssistantToggle ? (
+                      <AssistantToggle
+                        open={assistantOpen ?? true}
+                        onToggle={onAssistantToggle}
+                      />
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             ) : null}
           </div>
-          {description ? (
-            <p
-              className={cn(
-                "mt-1 max-w-3xl text-sm leading-5 text-ink-muted",
-                descriptionClassName,
-              )}
-            >
-              {description}
-            </p>
-          ) : null}
-        </div>
-      </header>
+        </header>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-[var(--wb-gutter)] py-4">
         <div className={cn("mx-auto w-full")} style={{ maxWidth }}>
@@ -129,7 +181,10 @@ export function WorkbenchPanel({
             isEmbedded && "pb-1"
           )}
         >
-          <div className="mx-auto w-full px-[var(--wb-gutter)]" style={{ maxWidth }}>
+          <div
+            className="mx-auto w-full px-[var(--wb-gutter)]"
+            style={{ maxWidth }}
+          >
             {footer}
           </div>
         </div>

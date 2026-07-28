@@ -73,6 +73,8 @@ export interface LogisticsWorkflowBodyProps {
   skuUnlinkedCount: number;
   pipelineRunning: boolean;
   pipelineProgress: LogisticsDecisionWorkspaceProps["pipelineProgress"];
+  /** When false, workflow stepper is rendered by the parent sticky toolbar. */
+  showStepper?: boolean;
 }
 
 /** Main logistics panel: workflow chrome, setup, plan status, load/error, decision list. */
@@ -101,6 +103,7 @@ export function LogisticsWorkflowBody({
   skuUnlinkedCount,
   pipelineRunning,
   pipelineProgress,
+  showStepper = true,
 }: LogisticsWorkflowBodyProps) {
   const t = useT();
 
@@ -112,7 +115,7 @@ export function LogisticsWorkflowBody({
         </div>
       ) : null}
 
-      {!loading || analysis ? (
+      {showStepper && (!loading || analysis) ? (
         <LogisticsWorkflowSteps
           step={workflowStep}
           onStepChange={onWorkflowStepChange}

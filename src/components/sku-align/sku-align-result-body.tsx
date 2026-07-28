@@ -40,6 +40,8 @@ export interface SkuAlignResultBodyProps {
   onRefresh: () => void;
   onAligned: () => void | Promise<void>;
   showToast: (message: string) => void;
+  /** When false, filter/search/refresh are rendered by the parent sticky toolbar. */
+  showListChrome?: boolean;
 }
 
 export function SkuAlignResultBody({
@@ -61,6 +63,7 @@ export function SkuAlignResultBody({
   onRefresh,
   onAligned,
   showToast,
+  showListChrome = true,
 }: SkuAlignResultBodyProps) {
   const t = useT();
 
@@ -68,6 +71,7 @@ export function SkuAlignResultBody({
     <div className="space-y-4">
       <MetricSummaryCards items={metrics} />
 
+      {showListChrome ? (
       <div className="flex flex-wrap items-center gap-3">
         <SegmentedTabs
           variant="chip"
@@ -113,6 +117,7 @@ export function SkuAlignResultBody({
           </Button>
         </div>
       </div>
+      ) : null}
 
       {error ? (
         <Card className="border-red-200">

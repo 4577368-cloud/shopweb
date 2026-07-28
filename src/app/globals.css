@@ -114,6 +114,11 @@ html[data-embedded="1"] body {
   overflow: hidden;
 }
 
+/* Hide in-app left rail before React hydrates (boot script sets data-embedded). */
+html[data-embedded="1"] [data-wb-left-rail] {
+  display: none !important;
+}
+
 @theme inline {
   --color-background: var(--page-canvas);
   --color-foreground: var(--foreground);

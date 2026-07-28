@@ -2,9 +2,7 @@
 
 import type { ComponentProps } from "react";
 import { SmartSourcingSummaryBar } from "@/components/select/smart-sourcing-summary-bar";
-import {
-  ShopProductsPanel,
-} from "@/components/select/shop-products-panel";
+import { ShopProductsPanel } from "@/components/select/shop-products-panel";
 
 export interface ProductsShopTabSummaryProps {
   pendingNewAnalysis: number;
@@ -16,10 +14,16 @@ export interface ProductsShopTabSummaryProps {
 export interface ProductsShopTabProps {
   summary: ProductsShopTabSummaryProps;
   panel: ComponentProps<typeof ShopProductsPanel>;
+  /** Optional sticky-toolbar host for filter chips (embedded). */
+  filtersMountEl?: HTMLElement | null;
 }
 
 /** Shop tab: optional new-arrivals banner + mirror product pool. */
-export function ProductsShopTab({ summary, panel }: ProductsShopTabProps) {
+export function ProductsShopTab({
+  summary,
+  panel,
+  filtersMountEl = null,
+}: ProductsShopTabProps) {
   return (
     <>
       <SmartSourcingSummaryBar
@@ -28,7 +32,7 @@ export function ProductsShopTab({ summary, panel }: ProductsShopTabProps) {
         onBatchLinkNewArrivals={summary.onBatchLinkNewArrivals}
         batchLinkBusy={summary.batchLinkBusy}
       />
-      <ShopProductsPanel {...panel} />
+      <ShopProductsPanel {...panel} filtersMountEl={filtersMountEl} />
     </>
   );
 }
