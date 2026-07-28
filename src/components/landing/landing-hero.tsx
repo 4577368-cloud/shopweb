@@ -67,9 +67,14 @@ export function LandingHero({ onStart, compact = false }: LandingHeroProps) {
               transition={{ duration: 2, repeat: Infinity }}
             />
           </div>
-          <div className="flex flex-col">
-            <span className="text-lg font-bold text-[--landing-text] md:text-xl">
-              {t("landing.heroSeconds")}
+          <div className="flex flex-col justify-center gap-0.5">
+            <span className="flex items-baseline gap-1.5 leading-none">
+              <span className="text-4xl font-extrabold tracking-tight text-[--landing-text] md:text-5xl">
+                {t("landing.heroSecondsUnit")}
+              </span>
+              <span className="text-lg font-bold text-[--landing-text] md:text-xl">
+                {t("landing.heroSecondsLabel")}
+              </span>
             </span>
             <span className="text-sm text-[--landing-text-muted]">
               {t("landing.heroSecondsSub")}
