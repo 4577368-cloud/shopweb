@@ -432,7 +432,7 @@ function AuthorizePageContent() {
             </Button>
           ) : (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-2.5 py-1 text-[11px] font-medium text-ink-muted">
-              <ShieldCheck className="h-3.5 w-3.5 text-brand" />
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
               {t("authorize.securityBadge")}
             </span>
           )
