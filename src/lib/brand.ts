@@ -12,6 +12,9 @@ export const BRAND_LOGO_FULL = "/brand/logo60-svg.svg";
 /** Browser tab / PWA icon (source: docs/logo-60.svg). */
 export const BRAND_FAVICON = "/brand/logo-60.svg";
 
+/** Tangbuy square mark — Dropshipping companion / App Store card. */
+export const TANGBUY_LOGO_MARK = "/brand/logo-tangbuy.png";
+
 /** @deprecated Use {@link APP_TAGLINE} */
 export const APP_SUBTITLE = APP_TAGLINE;
 

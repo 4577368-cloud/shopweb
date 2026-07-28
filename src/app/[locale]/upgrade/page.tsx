@@ -7,7 +7,7 @@ import { useOnboarding } from "@/context/onboarding-context";
 
 /**
  * Shared handoff surface (also used after sync complete).
- * Scrollable column — do not vertically center (clips tall content).
+ * Column fills the main pane; install card docks to the bottom (always visible).
  */
 export default function UpgradeHandoffPage() {
   const { shop } = useOnboarding();
@@ -15,10 +15,8 @@ export default function UpgradeHandoffPage() {
 
   return (
     <WorkbenchShell sidebar={<HubAwareSidebar />}>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-[var(--wb-gutter)] py-8 pb-16">
-          <TangbuyHandoffScreen shopDomain={shopDomain} mode="upgrade" />
-        </div>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <TangbuyHandoffScreen shopDomain={shopDomain} mode="upgrade" />
       </div>
     </WorkbenchShell>
   );

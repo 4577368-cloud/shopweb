@@ -60,7 +60,7 @@ function isFullSummary(summary: LaunchSummary): boolean {
 }
 
 export default function SyncPage() {
-  const { shop, isAuthorized, completeSyncCeremony, showToast } = useOnboarding();
+  const { shop, isAuthorized, completeSyncCeremony } = useOnboarding();
   const shopName = resolveShopApiName(shop);
   const shopMirrorKey = useMemo(
     () => productsMirrorShopKey(shop.name, shop.domain),
@@ -357,38 +357,11 @@ export default function SyncPage() {
     [summary, t]
   );
 
-  const handleExportReport = () => {
-    const text = launchReportText.trim();
-    if (!text) {
-      showToast(t("sync.exportSoon"));
-      return;
-    }
-    const shop =
-      summary?.meta.shopDomain?.trim() ||
-      summary?.meta.shopName?.trim() ||
-      "shop";
-    const safe = shop.replace(/[^\w.-]+/g, "_").slice(0, 48);
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `launch-report-${safe}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   useEffect(() => {
     if (phase === "summary") {
       setReportInstant(true);
     }
   }, [phase]);
-
-  const handleViewSummary = () => {
-    setReportInstant(true);
-    sessionStorage.setItem(SYNC_CEREMONY_SUMMARY_VIEWED_KEY, "1");
-    setCeremonyPercent(100);
-    setPhase("summary");
-  };
 
   const skipCeremonyAnimation = useCallback(() => {
     completeSyncCeremony();
@@ -464,17 +437,13 @@ export default function SyncPage() {
   if (phase === "complete" && summary) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />}>
-        <div className="relative min-h-0 flex-1 overflow-y-auto">
-          <div className="sticky top-0 z-10 flex justify-end px-[var(--wb-gutter)] pt-4">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div className="absolute right-[var(--wb-gutter)] top-4 z-10">
             {replayAction}
           </div>
-          <div className="mx-auto w-full max-w-3xl px-[var(--wb-gutter)] pb-16 pt-2">
-            <CompletionScreen
-              shopDomain={summary.meta.shopDomain || summary.meta.shopName}
-              onExportReport={handleExportReport}
-              onViewSummary={handleViewSummary}
-            />
-          </div>
+          <CompletionScreen
+            shopDomain={summary.meta.shopDomain || summary.meta.shopName}
+          />
         </div>
       </WorkbenchShell>
     );
