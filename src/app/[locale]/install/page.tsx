@@ -37,7 +37,7 @@ import { hrefInApp, replaceInApp } from "@/host/adapters/navigation";
 const CONNECT_ANCHOR = "install-connect";
 
 function InstallPageContent() {
-  const { showToast } = useOnboarding();
+  const { showToast, isAuthorized } = useOnboarding();
   const { status: authStatus, bootstrapping } = useUser();
   const { isEmbedded } = useEmbeddedMode();
   const router = useRouter();
@@ -49,6 +49,9 @@ function InstallPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
   const [justRegistered, setJustRegistered] = useState(false);
+  const [embeddedGate, setEmbeddedGate] = useState<"checking" | "ready">(
+    isEmbedded ? "checking" : "ready"
+  );
 
   useEffect(() => {
     setJustRegistered(consumeJustRegistered());
@@ -157,35 +160,60 @@ function InstallPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resume once when auth ready
   }, [authStatus, bootstrapping, searchParams, isEmbedded]);
 
-  // Embedded App URL = /install. If session-token already works, skip marketing and
-  // enter the authorize / workbench step (post-OAuth happy path).
+  // Embedded App URL = /install. If the shop is already installed / session works,
+  // skip marketing and enter authorize (or products when already bound in-app).
   useEffect(() => {
-    if (!isEmbedded) return;
+    if (!isEmbedded) {
+      setEmbeddedGate("ready");
+      return;
+    }
     let cancelled = false;
+    setEmbeddedGate("checking");
     void (async () => {
       const { exchangeSessionToken } = await import(
         "@/host/embedded/exchange-session-token"
       );
       const result = await exchangeSessionToken(true);
-      if (cancelled || !result.ok) return;
-      replaceInApp(localePath(locale, "/authorize"), router);
+      if (cancelled) return;
+      if (result.ok) {
+        replaceInApp(
+          localePath(locale, isAuthorized ? "/products" : "/authorize"),
+          router
+        );
+        return;
+      }
+      setEmbeddedGate("ready");
     })();
     return () => {
       cancelled = true;
     };
-  }, [isEmbedded, locale, router]);
+  }, [isEmbedded, isAuthorized, locale, router]);
 
   // Embedded uses session-token silent provision — never show Tangbuy login/signup chrome.
   const needsLogin =
     !isEmbedded && !bootstrapping && authStatus !== "authenticated";
   const showWorkbenchLink =
-    !isEmbedded && !needsLogin && authStatus === "authenticated";
+    (!isEmbedded && !needsLogin && authStatus === "authenticated") ||
+    (isEmbedded && embeddedGate === "ready" && isAuthorized);
+  const workbenchHref = localePath(
+    locale,
+    isAuthorized ? "/products" : "/authorize"
+  );
   const trustSignals = [
     t("install.trustOfficialOAuth"),
     t("install.trustScoped"),
     t("install.trustRevocable"),
     t("install.trustEncrypted"),
   ];
+
+  if (isEmbedded && embeddedGate === "checking") {
+    return (
+      <main className="flex min-h-full flex-col items-center justify-center gap-3 bg-canvas px-5">
+        <Loader2 className="h-8 w-8 animate-spin text-brand" />
+        <p className="text-sm font-medium text-ink">{t("authorize.loading")}</p>
+      </main>
+    );
+  }
 
   if (redirecting && searchParams.get("shop")) {
     return (
@@ -223,7 +251,7 @@ function InstallPageContent() {
               </div>
             ) : showWorkbenchLink ? (
               <Link
-                href={hrefInApp(localePath(locale, "/authorize"))}
+                href={hrefInApp(workbenchHref)}
                 className="text-xs font-medium text-[--landing-text-muted] hover:text-[--landing-text]"
               >
                 {t("install.authorizedHint")}
