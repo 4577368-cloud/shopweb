@@ -32,7 +32,7 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { consumeJustRegistered } from "@/lib/auth/just-registered";
 import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
-import { replaceInApp } from "@/host/adapters/navigation";
+import { hrefInApp } from "@/host/adapters/navigation";
 
 const CONNECT_ANCHOR = "install-connect";
 
@@ -50,18 +50,6 @@ function InstallPageContent() {
   const [redirecting, setRedirecting] = useState(false);
   const [justRegistered, setJustRegistered] = useState(false);
 
-  // Admin App URL often points here, but /install is a marketing shell without the
-  // workbench step rail. Authorize IS step 1 — send embedded merchants there so
-  // they see the 5-step sidebar immediately (current = Authorize store).
-  useEffect(() => {
-    if (!isEmbedded) return;
-    const q = searchParams.toString();
-    replaceInApp(
-      localePath(locale, q ? `/authorize?${q}` : "/authorize"),
-      router
-    );
-  }, [isEmbedded, locale, router, searchParams]);
-
   useEffect(() => {
     setJustRegistered(consumeJustRegistered());
   }, []);
@@ -72,17 +60,25 @@ function InstallPageContent() {
       setHandle(shopHandleFromDomain(remembered));
     }
 
-    if (!bootstrapping && authStatus !== "authenticated") {
+    // Standalone: Tangbuy cookie login first. Embedded: silent session-token —
+    // do not bounce to /login; go straight to Shopify OAuth.
+    if (
+      !isEmbedded &&
+      !bootstrapping &&
+      authStatus !== "authenticated"
+    ) {
       const shopQ = remembered
         ? `?shop=${encodeURIComponent(remembered)}`
         : "";
       const from = `/install${shopQ}`;
       router.push(
-        localePath(locale, `/login?from=${encodeURIComponent(from)}`)
+        hrefInApp(
+          localePath(locale, `/login?from=${encodeURIComponent(from)}`)
+        )
       );
       return;
     }
-    if (bootstrapping) {
+    if (!isEmbedded && bootstrapping) {
       showToast(t("install.waitAuth"));
       return;
     }
@@ -112,7 +108,11 @@ function InstallPageContent() {
       : "";
     const from = `/install${shopQ}`;
     const base = mode === "register" ? "/register" : "/login";
-    router.push(localePath(locale, `${base}?from=${encodeURIComponent(from)}`));
+    router.push(
+      hrefInApp(
+        localePath(locale, `${base}?from=${encodeURIComponent(from)}`)
+      )
+    );
   };
 
   const scrollToConnect = useCallback(() => {
@@ -140,7 +140,9 @@ function InstallPageContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (bootstrapping || authStatus !== "authenticated") return;
+    // Standalone: wait for Tangbuy cookie. Embedded: proceed without cookie login.
+    if (!isEmbedded && (bootstrapping || authStatus !== "authenticated")) return;
+    if (isEmbedded && bootstrapping) return;
     const shop =
       searchParams.get("shop")?.trim() ||
       (typeof window !== "undefined"
@@ -151,24 +153,19 @@ function InstallPageContent() {
     setHandle(shopHandleFromDomain(shop));
     connectWithDomain(shop);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resume once when auth ready
-  }, [authStatus, bootstrapping, searchParams]);
+  }, [authStatus, bootstrapping, searchParams, isEmbedded]);
 
-  const needsLogin = !bootstrapping && authStatus !== "authenticated";
+  // Embedded uses session-token silent provision — never show Tangbuy login/signup chrome.
+  const needsLogin =
+    !isEmbedded && !bootstrapping && authStatus !== "authenticated";
+  const showWorkbenchLink =
+    !isEmbedded && !needsLogin && authStatus === "authenticated";
   const trustSignals = [
     t("install.trustOfficialOAuth"),
     t("install.trustScoped"),
     t("install.trustRevocable"),
     t("install.trustEncrypted"),
   ];
-
-  if (isEmbedded) {
-    return (
-      <main className="flex min-h-full flex-col items-center justify-center gap-3 bg-canvas px-5">
-        <Loader2 className="h-8 w-8 animate-spin text-brand" />
-        <p className="text-sm font-medium text-ink">{t("authorize.loading")}</p>
-      </main>
-    );
-  }
 
   if (redirecting && searchParams.get("shop")) {
     return (
@@ -204,14 +201,14 @@ function InstallPageContent() {
                   {t("install.navRegister")}
                 </button>
               </div>
-            ) : (
+            ) : showWorkbenchLink ? (
               <Link
-                href={localePath(locale, "/authorize")}
+                href={hrefInApp(localePath(locale, "/authorize"))}
                 className="text-xs font-medium text-[--landing-text-muted] hover:text-[--landing-text]"
               >
                 {t("install.authorizedHint")}
               </Link>
-            )}
+            ) : null}
           </div>
         </div>
       </header>

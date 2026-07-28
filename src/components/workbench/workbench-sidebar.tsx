@@ -8,6 +8,7 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { ShopSwitcher } from "@/components/workbench/shop-switcher";
 import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
 import { SidebarUpgradeCta } from "@/components/workbench/sidebar-upgrade-cta";
+import { SidebarAdCarousel } from "@/components/workbench/sidebar-ad-carousel";
 import { SidebarUserMenu } from "@/components/workbench/sidebar-user-menu";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
@@ -111,7 +112,7 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
 
       {!isEmbedded ? <ShopSwitcher /> : null}
 
-      <div className="px-4 pb-3 pt-1">
+      <div className="shrink-0 px-4 pb-3 pt-1">
         <div className="mb-1.5 flex items-center justify-between text-[11px] text-ink-muted">
           <span>{t("sidebar.progress")}</span>
           <span className="font-semibold tabular-nums text-ink">{progress}%</span>
@@ -124,8 +125,9 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
         </div>
       </div>
 
+      {/* Steps stay compact — do not flex-grow (avoids a tall empty void above the footer). */}
       <nav
-        className="min-h-0 flex-1 overflow-y-auto px-3 pb-2"
+        className="min-h-0 shrink-0 overflow-y-auto px-3 pb-2"
         aria-label={t("nav.workbench")}
       >
         <ul className="space-y-0.5">
@@ -170,6 +172,11 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
       </nav>
 
       <SidebarUpgradeCta />
+
+      {/* Soft product / companion promo — fills leftover height without orphaning the footer. */}
+      <div className="mt-auto min-h-0 shrink-0 overflow-hidden px-4 pb-2 pt-1">
+        <SidebarAdCarousel />
+      </div>
 
       <div className="flex shrink-0 items-center gap-2 border-t border-hairline px-4 py-2.5">
         <SidebarUserMenu className="min-w-0 flex-1" />

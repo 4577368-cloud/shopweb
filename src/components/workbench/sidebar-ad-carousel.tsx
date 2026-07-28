@@ -59,7 +59,7 @@ export function SidebarAdCarousel({ className }: { className?: string }) {
     <div
       className={cn("shrink-0", className)}
       aria-roledescription="carousel"
-      aria-label="Promotions"
+      aria-label="Product tips"
     >
       <div
         className="relative overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted"
@@ -89,7 +89,7 @@ export function SidebarAdCarousel({ className }: { className?: string }) {
       <div
         className="mt-2 flex items-center justify-center gap-1.5"
         role="tablist"
-        aria-label="Promotion slides"
+        aria-label="Product tip slides"
       >
         {SLIDES.map((slide, index) => (
           <button

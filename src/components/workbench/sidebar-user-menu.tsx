@@ -85,6 +85,22 @@ export function SidebarUserMenu({ className }: { className?: string }) {
   }
 
   if (status !== "authenticated" || !user) {
+    // Embedded: session-token silent provision — no Tangbuy Sign-in CTA in the rail.
+    if (isEmbedded) {
+      return (
+        <div
+          className={cn(
+            "inline-flex h-7 w-full min-w-0 items-center gap-1 rounded-[var(--radius-control)] border border-surface-border bg-surface px-2",
+            className
+          )}
+          aria-label={t("userMenu.openMenu")}
+        >
+          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+            {t("common.loading")}
+          </span>
+        </div>
+      );
+    }
     return (
       <LinkInApp
         href={localePath(locale, "/login")}
@@ -114,8 +130,8 @@ export function SidebarUserMenu({ className }: { className?: string }) {
         showToast(t("userMenu.toastSignedOut"));
         // Navigate to landing so the user sees a clear state change.
         // Server components on the landing page do not require auth.
-        // Embedded: stay on authorize (Admin) rather than marketing landing.
-        push(localePath(locale, isEmbedded ? "/authorize" : "/"));
+        // Embedded: stay on install (App URL) rather than marketing landing.
+        push(localePath(locale, isEmbedded ? "/install" : "/"));
       } catch {
         showToast(t("userMenu.signOutFailed"));
       } finally {
