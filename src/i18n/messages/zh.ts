@@ -1090,7 +1090,7 @@ export const zh: Dictionary = {
     workSku: "已预对齐 {{auto}} 个 SKU，{{pending}} 个待确认。",
   },
   install: {
-    authorizedHint: "已授权？进入工作台 →",
+    authorizedHint: "工作台",
     browserLabelProducts: "商品关联",
     connectButton: "连接店铺",
     connectDesc: "输入 Shopify 域名以发起官方授权。",

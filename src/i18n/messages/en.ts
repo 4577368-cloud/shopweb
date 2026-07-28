@@ -1095,7 +1095,7 @@ export const en = {
     workSku: "{{auto}} SKUs pre-aligned, {{pending}} to confirm.",
   },
   install: {
-    authorizedHint: "Already authorized? Open the workbench →",
+    authorizedHint: "Workbench",
     browserLabelProducts: "Product linking",
     connectButton: "Connect store",
     connectDesc: "Enter your Shopify domain to start the official authorization.",

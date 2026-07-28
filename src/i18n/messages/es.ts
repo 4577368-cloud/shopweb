@@ -1093,7 +1093,7 @@ export const es: Dictionary = {
     workSku: "{{auto}} SKU pre-alineados, {{pending}} por confirmar.",
   },
   install: {
-    authorizedHint: "Already authorized? Open the workbench →",
+    authorizedHint: "Workbench",
     browserLabelProducts: "Enlaces de Productoos",
     connectButton: "Connect Tienda",
     connectDesc: "Introduce tu dominio de Shopify para iniciar la autorización oficial.",
