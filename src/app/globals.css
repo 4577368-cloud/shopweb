@@ -93,6 +93,27 @@
   --wb-gutter: 20px;
 }
 
+/* Shopify Admin iframe: fill the frame, never 100vh (clips under Admin chrome). */
+html[data-embedded="1"],
+html[data-embedded="1"] body {
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+html[data-embedded="1"] body {
+  display: flex;
+  flex-direction: column;
+}
+
+.embedded-host-root {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
 @theme inline {
   --color-background: var(--page-canvas);
   --color-foreground: var(--foreground);

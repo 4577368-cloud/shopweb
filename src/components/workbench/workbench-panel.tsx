@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ChevronRight } from "@/lib/ui/icons";
 import { AssistantToggle } from "@/components/workbench/assistant-toggle";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 import { cn } from "@/lib/utils";
 
 interface Breadcrumb {
@@ -56,11 +57,17 @@ export function WorkbenchPanel({
   titleSuffix,
   children,
 }: WorkbenchPanelProps) {
+  const { isEmbedded } = useEmbeddedMode();
   const showAssistantToggle = typeof onAssistantToggle === "function";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="shrink-0 border-b border-hairline bg-canvas/80 px-[var(--wb-gutter)] pb-3 pt-4 backdrop-blur">
+      <header
+        className={cn(
+          "shrink-0 border-b border-hairline bg-canvas/80 px-[var(--wb-gutter)] pb-3 backdrop-blur",
+          isEmbedded ? "pt-3" : "pt-4"
+        )}
+      >
         <div className="mx-auto w-full" style={{ maxWidth }}>
           {breadcrumbs && breadcrumbs.length > 0 ? (
             <nav className="mb-1.5 flex items-center gap-1 text-[11px] text-ink-subtle">
@@ -115,7 +122,13 @@ export function WorkbenchPanel({
       </div>
 
       {footer ? (
-        <div className="shrink-0 border-t border-hairline bg-surface">
+        <div
+          className={cn(
+            "shrink-0 border-t border-hairline bg-surface",
+            // Leave a little air above Admin iframe edge.
+            isEmbedded && "pb-1"
+          )}
+        >
           <div className="mx-auto w-full px-[var(--wb-gutter)]" style={{ maxWidth }}>
             {footer}
           </div>

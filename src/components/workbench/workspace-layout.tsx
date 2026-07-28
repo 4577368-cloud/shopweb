@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { useState } from "react";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
+import { EmbeddedTopChrome } from "@/host/embedded/embedded-top-chrome";
 import { cn } from "@/lib/utils";
 
 export type WorkspaceMode = "with-assistant" | "focus";
 
 export interface WorkspaceLayoutProps {
-  /** Left process / nav column. */
-  leftSidebar: ReactNode;
+  /** Left process / nav column. Pass null/undefined to hide (embedded Admin). */
+  leftSidebar?: ReactNode | null;
   /**
    * Center work surface — typically {@link WorkbenchPanel} (header + scroll body).
    * Owns its own scrolling; this shell only allocates the column.
@@ -33,9 +36,8 @@ export interface WorkspaceLayoutProps {
  * - {@code with-assistant}: three columns (sidebar | main | rail)
  * - {@code focus}: two columns (sidebar | main) — assistant collapsed so main can widen
  *
- * Page composition: use {@link useWorkbenchPage} / {@link WorkbenchPageFrame} for toggle wiring,
- * and {@link AssistantRail} slots (`assistantContent` / `strategyCards`) for rail content.
- * Toggle belongs in the center header ({@link AssistantToggle}), not inside the rail.
+ * Embedded Admin: no left rail (Shopify app nav owns steps); height fills the
+ * iframe (`h-full`) instead of `h-screen` to avoid clipping under Admin chrome.
  */
 export function WorkspaceLayout({
   leftSidebar,
@@ -45,33 +47,50 @@ export function WorkspaceLayout({
   assistantDefaultOpen = true,
   className,
 }: WorkspaceLayoutProps) {
+  const { isEmbedded } = useEmbeddedMode();
   const [uncontrolledOpen] = useState(assistantDefaultOpen);
   const isControlled = assistantOpenProp !== undefined;
   const assistantOpen = isControlled ? assistantOpenProp : uncontrolledOpen;
 
+  const hasLeft = Boolean(leftSidebar);
   const hasAssistant = Boolean(assistantPanel);
   const mode: WorkspaceMode =
     hasAssistant && assistantOpen ? "with-assistant" : "focus";
   const showAssistant = mode === "with-assistant";
 
+  let gridTemplateColumns: string;
+  if (showAssistant && hasLeft) {
+    gridTemplateColumns = "var(--wb-sidebar-w) minmax(0, 1fr) var(--wb-rail-w)";
+  } else if (showAssistant) {
+    gridTemplateColumns = "minmax(0, 1fr) var(--wb-rail-w)";
+  } else if (hasLeft) {
+    gridTemplateColumns = "var(--wb-sidebar-w) minmax(0, 1fr)";
+  } else {
+    gridTemplateColumns = "minmax(0, 1fr)";
+  }
+
   return (
     <div
       className={cn(
-        "grid h-screen min-h-0 overflow-hidden bg-canvas text-ink",
+        "grid min-h-0 overflow-hidden bg-canvas text-ink",
+        // iframe: fill parent (Admin sizes the frame). 100vh overflows and clips.
+        isEmbedded ? "h-full max-h-full" : "h-screen",
         className
       )}
       data-workspace-mode={mode}
-      style={{
-        gridTemplateColumns: showAssistant
-          ? "var(--wb-sidebar-w) minmax(0, 1fr) var(--wb-rail-w)"
-          : "var(--wb-sidebar-w) minmax(0, 1fr)",
-      }}
+      data-embedded={isEmbedded ? "1" : undefined}
+      style={{ gridTemplateColumns }}
     >
-      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-        {leftSidebar}
-      </div>
+      {hasLeft ? (
+        <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+          {leftSidebar}
+        </div>
+      ) : null}
       <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-        {children}
+        {isEmbedded ? <EmbeddedTopChrome /> : null}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {children}
+        </div>
       </main>
       {showAssistant ? (
         <div className="min-h-0 min-w-0 overflow-hidden">{assistantPanel}</div>

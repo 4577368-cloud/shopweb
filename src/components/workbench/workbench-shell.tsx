@@ -2,9 +2,10 @@
 
 import type { ReactNode } from "react";
 import { WorkspaceLayout } from "@/components/workbench/workspace-layout";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 
 interface WorkbenchShellProps {
-  /** Left rail — typically <StepSidebar />. */
+  /** Left rail — typically <StepSidebar />. Hidden automatically when embedded. */
   sidebar: ReactNode;
   /** Center column — typically <WorkbenchPanel /> (owns its own header/scroll/footer). */
   children: ReactNode;
@@ -25,6 +26,9 @@ interface WorkbenchShellProps {
  * Canonical workbench frame adapter over {@link WorkspaceLayout}.
  * Existing pages keep `{ sidebar, children, rail }`; pages that need collapse pass
  * {@code assistantOpen} / {@code onAssistantOpenChange}.
+ *
+ * Embedded Admin: drops the in-app step rail (Shopify left nav already lists steps)
+ * and hosts account + language in the top chrome.
  */
 export function WorkbenchShell({
   sidebar,
@@ -34,9 +38,11 @@ export function WorkbenchShell({
   onAssistantOpenChange,
   assistantDefaultOpen = true,
 }: WorkbenchShellProps) {
+  const { isEmbedded } = useEmbeddedMode();
+
   return (
     <WorkspaceLayout
-      leftSidebar={sidebar}
+      leftSidebar={isEmbedded ? null : sidebar}
       assistantPanel={rail}
       assistantOpen={assistantOpen}
       onAssistantOpenChange={onAssistantOpenChange}

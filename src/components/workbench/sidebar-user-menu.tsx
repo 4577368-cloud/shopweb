@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeftRight,
+  ChevronDown,
   ChevronUp,
   Exit,
   Person,
@@ -39,7 +40,14 @@ const MENU_ITEMS: { id: Exclude<UserMenuAction, "signOut">; icon: typeof ArrowLe
  * - unauthenticated embedded: silently re-exchange Shopify session (no login CTA).
  * - authenticated: user email + action menu.
  */
-export function SidebarUserMenu({ className }: { className?: string }) {
+export function SidebarUserMenu({
+  className,
+  menuPlacement = "up",
+}: {
+  className?: string;
+  /** Top chrome opens downward; sidebar footer opens upward. */
+  menuPlacement?: "up" | "down";
+}) {
   const t = useT();
   const locale = useLocale();
   const { push } = useNavigateInApp();
@@ -193,6 +201,8 @@ export function SidebarUserMenu({ className }: { className?: string }) {
     ? [shopEmail, shopDomain].filter(Boolean).join(" · ") || user.email
     : user.email;
 
+  const Chevron = menuPlacement === "down" ? ChevronDown : ChevronUp;
+
   return (
     <div ref={rootRef} className={cn("relative min-w-0", className)}>
       <button
@@ -208,10 +218,10 @@ export function SidebarUserMenu({ className }: { className?: string }) {
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
           {displayLabel}
         </span>
-        <ChevronUp
+        <Chevron
           className={cn(
             "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-180"
+            open && (menuPlacement === "down" ? "rotate-180" : "rotate-180")
           )}
           aria-hidden
         />
@@ -220,7 +230,10 @@ export function SidebarUserMenu({ className }: { className?: string }) {
       {open ? (
         <div
           role="menu"
-          className="absolute bottom-full left-0 right-0 z-40 mb-1 overflow-hidden rounded-[var(--radius-control)] border border-surface-border bg-surface py-1 shadow-card"
+          className={cn(
+            "absolute left-0 right-0 z-40 overflow-hidden rounded-[var(--radius-control)] border border-surface-border bg-surface py-1 shadow-card",
+            menuPlacement === "down" ? "top-full mt-1" : "bottom-full mb-1"
+          )}
         >
           {isEmbedded ? (
             <div className="px-2.5 py-1.5 text-[10px] leading-4 text-muted-foreground">
