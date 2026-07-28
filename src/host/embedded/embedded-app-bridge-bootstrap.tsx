@@ -1,0 +1,53 @@
+"use client";
+
+import { useEffect, useRef, type ReactNode } from "react";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
+import { exchangeSessionToken } from "@/host/embedded/exchange-session-token";
+
+const APP_BRIDGE_CDN = "https://cdn.shopify.com/shopifycloud/app-bridge.js";
+
+/**
+ * Loads App Bridge CDN when embedded and apiKey is configured, then exchanges
+ * session token → Tangbuy Bearer. No-op on standalone.
+ */
+export function EmbeddedAppBridgeBootstrap({ children }: { children: ReactNode }) {
+  const { isEmbedded, host } = useEmbeddedMode();
+  const started = useRef(false);
+  const apiKey = (process.env.NEXT_PUBLIC_SHOPIFY_API_KEY ?? "").trim();
+
+  useEffect(() => {
+    if (!isEmbedded || !apiKey || started.current) return;
+    started.current = true;
+
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src="${APP_BRIDGE_CDN}"]`
+    );
+    const runExchange = () => {
+      void exchangeSessionToken(true).then((result) => {
+        if (!result.ok && process.env.NODE_ENV === "development") {
+          console.warn("[embedded] session-token exchange:", result.code, result.message);
+        }
+      });
+    };
+
+    if (existing) {
+      runExchange();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = APP_BRIDGE_CDN;
+    script.async = true;
+    script.dataset.apiKey = apiKey;
+    if (host) script.dataset.host = host;
+    script.onload = () => runExchange();
+    script.onerror = () => {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[embedded] failed to load App Bridge CDN");
+      }
+    };
+    document.head.appendChild(script);
+  }, [isEmbedded, apiKey, host]);
+
+  return <>{children}</>;
+}

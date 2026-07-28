@@ -84,6 +84,11 @@ export function proxy(req: NextRequest) {
   if (isLocale(maybeLocale)) {
     // Already localized — keep locale cookie in sync.
     const res = NextResponse.next();
+    // Embedded Admin iframe: reinforce frame-ancestors (also set in next.config headers).
+    res.headers.set(
+      "Content-Security-Policy",
+      "frame-ancestors https://admin.shopify.com https://*.myshopify.com https://*.shopify.com;"
+    );
     if (req.cookies.get("locale")?.value !== maybeLocale) {
       res.cookies.set("locale", maybeLocale, {
         path: "/",

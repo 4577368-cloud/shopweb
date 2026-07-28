@@ -557,7 +557,8 @@ function buildLaunchSummary(params: {
       pendingReview:
         (skuOverview?.unresolvedVariantsCount ?? 0) + logistics.reviewCount,
       footnote: FULFILLMENT_PREP_FOOTNOTE,
-      showLocalLogisticsGap: logistics.confirmedCount > 0,
+      // Acceptances persist in tangbuy-plugin — no longer a local-only gap.
+      showLocalLogisticsGap: false,
       ctaHref: "/sku-align",
       ctaLabel: "sync.ctaViewSku",
     },
@@ -767,9 +768,12 @@ export async function assembleLaunchSummaryFull(
   shopDomain?: string | null
 ): Promise<LaunchSummary> {
   try {
-    const [bundle, logisticsTemplates] = await Promise.all([
+    // Bundle VO logistics is type-profile only (no variant decisions). Honest
+    // confirmed counts need getLogisticsAnalysis (variants + persisted acceptances).
+    const [bundle, logisticsTemplates, logisticsAnalysis] = await Promise.all([
       api.getLaunchSummaryBundle(shopName),
       api.listLogisticsTemplates(shopName).catch(() => [] as LogisticsTemplate[]),
+      api.getLogisticsAnalysis(shopName).catch(() => null),
     ]);
     return assembleLaunchSummaryFromBundle(
       {
@@ -777,7 +781,7 @@ export async function assembleLaunchSummaryFull(
         shopProducts: bundle.shopProducts ?? [],
         bindings: bundle.bindings ?? [],
         skuOverview: bundle.skuOverview ?? null,
-        logisticsAnalysis: bundle.logisticsAnalysis ?? null,
+        logisticsAnalysis: logisticsAnalysis ?? bundle.logisticsAnalysis ?? null,
         pricingTemplate: bundle.pricingTemplate ?? null,
         logisticsTemplates,
         productStatusCounts: bundle.productStatusCounts,

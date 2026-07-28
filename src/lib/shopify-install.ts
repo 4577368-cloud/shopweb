@@ -4,6 +4,8 @@
 // builds the backend install URL and navigates the top-level window (Shopify consent can't be framed).
 
 import { shopifyInstallUrl } from "@/lib/api";
+import { openExternal } from "@/host/adapters/external-link";
+import { readEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 
 /** Remembers the shop the user launched OAuth for, so /authorize can restore state after the redirect. */
 export const SHOP_STORAGE_KEY = "tangbuy.shopDomain";
@@ -79,7 +81,12 @@ export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
     const url = shopifyInstallUrl(shopDomain);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);
-      window.location.href = url;
+      // Embedded: break out of Admin iframe for Shopify consent.
+      if (readEmbeddedMode().isEmbedded) {
+        openExternal(url, { newTab: false });
+      } else {
+        window.location.href = url;
+      }
     }
     return { ok: true };
   } catch {

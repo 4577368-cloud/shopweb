@@ -71,8 +71,8 @@
     "logisticsConfirmed": 155,
     "logisticsTotal": 169,
     "pendingReview": 16,
-    "footnote": "SKU 映射已保存；物流线路确认与模板策略待同步，尚未完成履约对接。",
-    "showLocalLogisticsGap": true,
+    "footnote": "SKU links and logistics plans are saved on your Tangbuy account for later fulfillment.",
+    "showLocalLogisticsGap": false,
     "ctaHref": "/sku-align",
     "ctaLabel": "查看 SKU 映射详情"
   },

@@ -17,6 +17,7 @@ import {
   TANGBUY_LOGO_MARK,
   TANGBUY_OFFICIAL_URL,
 } from "@/lib/brand";
+import { openExternal } from "@/host/adapters/external-link";
 import { cn } from "@/lib/utils";
 
 const CAPABILITY_ICONS = [ListChecks, Truck, Package, Wand2] as const;
@@ -136,6 +137,10 @@ export function TangbuyHandoffScreen({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-link hover:underline"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      openExternal(webHref, { newTab: true });
+                    }}
                   >
                     {t("handoff.openWeb")}
                   </a>
@@ -157,6 +162,10 @@ export function TangbuyHandoffScreen({
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={t("handoff.installAria")}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    openExternal(appStoreHref, { newTab: true });
+                  }}
                 >
                   {t("handoff.installCta")}
                   <ExternalLink className="h-3.5 w-3.5 opacity-90" aria-hidden />

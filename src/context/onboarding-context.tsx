@@ -12,8 +12,6 @@ import {
 import {
   defaultLogisticsForm,
   initialSteps,
-  mockProductMatches,
-  mockSkuAlignments,
 } from "@/data/mock";
 import { buildDashboardActivities } from "@/lib/dashboard/activities";
 import { EMPTY_OVERVIEW } from "@/lib/dashboard/overview";
@@ -124,8 +122,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const t = useT();
   const [steps, setSteps] = useState(initialSteps);
   const [overview, setOverview] = useState(EMPTY_OVERVIEW);
-  const [productMatches, setProductMatches] = useState(mockProductMatches);
-  const [skuAlignments, setSkuAlignments] = useState(mockSkuAlignments);
+  const [productMatches, setProductMatches] = useState<ProductMatch[]>([]);
+  const [skuAlignments, setSkuAlignments] = useState<SkuAlignment[]>([]);
   const [logisticsForm, setLogisticsForm] = useState(defaultLogisticsForm);
   const [selectedLogisticsPlanId, setSelectedLogisticsPlanId] = useState("lp1");
   const [logisticsCompleted, setLogisticsCompleted] = useState(false);

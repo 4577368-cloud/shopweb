@@ -4,6 +4,12 @@ import type { VariantAcceptanceRecord } from "@/lib/logistics/merge-acceptances-
 
 export type StoredVariantAcceptance = VariantAcceptanceRecord;
 
+/** Auth forwarded from Next route handlers to tangbuy-plugin. */
+export type UpstreamAuthHeaders = {
+  cookie?: string | null;
+  authorization?: string | null;
+};
+
 export interface AcceptDecisionsFile {
   shopName: string;
   acceptances: StoredVariantAcceptance[];
@@ -12,8 +18,8 @@ export interface AcceptDecisionsFile {
 const STORAGE_DIR = path.join(process.cwd(), ".data", "logistics");
 
 /**
- * 后端 API 基址。Next.js 服务端读取 NEXT_PUBLIC_API_BASE（与 api.ts 保持一致）。
- * 设置时优先调用后端 /api/plugin/logistics/acceptances；未设置或调用失败时回退到本地文件。
+ * Backend API base. When set, prefer plugin `/api/plugin/logistics/acceptances`.
+ * Local `.data` files remain a last-resort fallback for offline/dev only.
  */
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
 
@@ -28,42 +34,6 @@ function acceptancePath(shopName: string): string {
   return path.join(STORAGE_DIR, `${safe}-acceptances.json`);
 }
 
-function revokedPath(shopName: string): string {
-  const safe = shopName.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return path.join(STORAGE_DIR, `${safe}-revoked.json`);
-}
-
-function readLocalRevoked(shopName: string): Set<string> {
-  try {
-    ensureStorageDir();
-    const filePath = revokedPath(shopName);
-    if (!fs.existsSync(filePath)) return new Set();
-    const raw = JSON.parse(fs.readFileSync(filePath, "utf-8")) as {
-      skuIds?: string[];
-    };
-    return new Set((raw.skuIds ?? []).filter(Boolean));
-  } catch {
-    return new Set();
-  }
-}
-
-function writeLocalRevoked(shopName: string, skuIds: Set<string>): void {
-  ensureStorageDir();
-  fs.writeFileSync(
-    revokedPath(shopName),
-    JSON.stringify({ shopName, skuIds: Array.from(skuIds) }, null, 2)
-  );
-}
-
-function filterRevoked(
-  shopName: string,
-  rows: StoredVariantAcceptance[]
-): StoredVariantAcceptance[] {
-  const revoked = readLocalRevoked(shopName);
-  if (revoked.size === 0) return rows;
-  return rows.filter((row) => !revoked.has(row.thirdPlatformSkuId));
-}
-
 function normalizeAcceptance(row: StoredVariantAcceptance): StoredVariantAcceptance {
   const hasLine = Boolean(
     row.recommendedLine?.lineName?.trim() || row.recommendedLine?.lineCode?.trim()
@@ -75,8 +45,6 @@ function normalizeAcceptance(row: StoredVariantAcceptance): StoredVariantAccepta
   return row;
 }
 
-// ===== 本地文件（fallback） =====
-
 function readLocalAcceptances(shopName: string): StoredVariantAcceptance[] {
   try {
     ensureStorageDir();
@@ -84,14 +52,7 @@ function readLocalAcceptances(shopName: string): StoredVariantAcceptance[] {
     if (!fs.existsSync(filePath)) return [];
     const raw = JSON.parse(fs.readFileSync(filePath, "utf-8")) as AcceptDecisionsFile;
     if (!raw || !Array.isArray(raw.acceptances)) return [];
-    const normalized = raw.acceptances.map(normalizeAcceptance);
-    const needsRewrite = normalized.some(
-      (row, index) => row.quoteStatus !== raw.acceptances[index]?.quoteStatus
-    );
-    if (needsRewrite) {
-      writeLocalAcceptances(shopName, normalized);
-    }
-    return normalized;
+    return raw.acceptances.map(normalizeAcceptance);
   } catch {
     return [];
   }
@@ -111,9 +72,7 @@ function upsertLocalAcceptances(
   incoming: StoredVariantAcceptance[]
 ): StoredVariantAcceptance[] {
   const existing = readLocalAcceptances(shopName);
-  const bySku = new Map(
-    existing.map((a) => [a.thirdPlatformSkuId, a] as const)
-  );
+  const bySku = new Map(existing.map((a) => [a.thirdPlatformSkuId, a] as const));
   for (const row of incoming) {
     bySku.set(row.thirdPlatformSkuId, row);
   }
@@ -122,10 +81,18 @@ function upsertLocalAcceptances(
   return merged;
 }
 
-// ===== 后端 API =====
+function authHeaders(auth?: UpstreamAuthHeaders): Record<string, string> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  const cookie = auth?.cookie?.trim();
+  if (cookie) headers.Cookie = cookie;
+  const authorization = auth?.authorization?.trim();
+  if (authorization) headers.Authorization = authorization;
+  return headers;
+}
 
 async function fetchAcceptancesFromBackend(
-  shopName: string
+  shopName: string,
+  auth?: UpstreamAuthHeaders
 ): Promise<StoredVariantAcceptance[] | null> {
   if (!API_BASE) return null;
   try {
@@ -133,115 +100,144 @@ async function fetchAcceptancesFromBackend(
       `${API_BASE}/api/plugin/logistics/acceptances?shopName=${encodeURIComponent(shopName)}`,
       {
         method: "GET",
-        headers: { Accept: "application/json" },
+        headers: authHeaders(auth),
         cache: "no-store",
       }
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(
+        `[acceptances] GET failed status=${res.status} shop=${shopName}`
+      );
+      return null;
+    }
     const data = await res.json();
     if (!Array.isArray(data)) return null;
     return data
       .filter((row): row is StoredVariantAcceptance => row != null && typeof row === "object")
       .map(normalizeAcceptance);
-  } catch {
+  } catch (e) {
+    console.warn(`[acceptances] GET network error shop=${shopName}`, e);
     return null;
   }
 }
 
 async function upsertAcceptancesToBackend(
   shopName: string,
-  incoming: StoredVariantAcceptance[]
+  incoming: StoredVariantAcceptance[],
+  auth?: UpstreamAuthHeaders
 ): Promise<StoredVariantAcceptance[] | null> {
   if (!API_BASE) return null;
   try {
     const res = await fetch(`${API_BASE}/api/plugin/logistics/acceptances`, {
       method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      headers: {
+        ...authHeaders(auth),
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ shopName, acceptances: incoming }),
       cache: "no-store",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(
+        `[acceptances] POST upsert failed status=${res.status} shop=${shopName}`
+      );
+      return null;
+    }
     const data = await res.json();
     const list = data?.acceptances;
     if (!Array.isArray(list)) return null;
     return list
       .filter((row): row is StoredVariantAcceptance => row != null && typeof row === "object")
       .map(normalizeAcceptance);
-  } catch {
+  } catch (e) {
+    console.warn(`[acceptances] POST network error shop=${shopName}`, e);
     return null;
   }
 }
 
-// ===== 公共 API（backend-first，本地文件 fallback） =====
-
-/**
- * 读取某 shop 的全量接受决策。
- * API_BASE 已配置时优先调用后端 /api/plugin/logistics/acceptances；
- * 后端不可达或未配置时回退到本地 .data/logistics/*.json。
- */
-export async function readAcceptances(
-  shopName: string
-): Promise<StoredVariantAcceptance[]> {
-  const backend = await fetchAcceptancesFromBackend(shopName);
-  const rows = backend !== null ? backend : readLocalAcceptances(shopName);
-  return filterRevoked(shopName, rows);
+async function removeAcceptancesFromBackend(
+  shopName: string,
+  skuIds: string[],
+  auth?: UpstreamAuthHeaders
+): Promise<StoredVariantAcceptance[] | null> {
+  if (!API_BASE) return null;
+  try {
+    const res = await fetch(`${API_BASE}/api/plugin/logistics/acceptances/remove`, {
+      method: "POST",
+      headers: {
+        ...authHeaders(auth),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ shopName, skuIds }),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      console.warn(
+        `[acceptances] POST remove failed status=${res.status} shop=${shopName}`
+      );
+      return null;
+    }
+    const data = await res.json();
+    const list = data?.acceptances;
+    if (!Array.isArray(list)) return null;
+    return list
+      .filter((row): row is StoredVariantAcceptance => row != null && typeof row === "object")
+      .map(normalizeAcceptance);
+  } catch (e) {
+    console.warn(`[acceptances] remove network error shop=${shopName}`, e);
+    return null;
+  }
 }
 
-/**
- * 批量 UPSERT 接受决策。后端优先；失败时回退本地文件。
- * 返回合并后的全量列表（与后端返回一致；fallback 时返回本地合并结果）。
- */
+/** Read acceptances — plugin first (with auth), local file fallback. */
+export async function readAcceptances(
+  shopName: string,
+  auth?: UpstreamAuthHeaders
+): Promise<StoredVariantAcceptance[]> {
+  const backend = await fetchAcceptancesFromBackend(shopName, auth);
+  if (backend !== null) return backend;
+  return readLocalAcceptances(shopName);
+}
+
+/** Batch UPSERT — plugin first; local fallback only if backend unreachable. */
 export async function upsertAcceptances(
   shopName: string,
-  incoming: StoredVariantAcceptance[]
+  incoming: StoredVariantAcceptance[],
+  auth?: UpstreamAuthHeaders
 ): Promise<StoredVariantAcceptance[]> {
-  // 重新确认时清掉对应撤销标记
-  if (incoming.length > 0) {
-    const revoked = readLocalRevoked(shopName);
-    let changed = false;
-    for (const row of incoming) {
-      if (revoked.delete(row.thirdPlatformSkuId)) changed = true;
-    }
-    if (changed) writeLocalRevoked(shopName, revoked);
-  }
-
-  const backend = await upsertAcceptancesToBackend(shopName, incoming);
-  if (backend !== null) return filterRevoked(shopName, backend);
-  return filterRevoked(shopName, upsertLocalAcceptances(shopName, incoming));
+  const backend = await upsertAcceptancesToBackend(shopName, incoming, auth);
+  if (backend !== null) return backend;
+  return upsertLocalAcceptances(shopName, incoming);
 }
 
 /**
- * 撤销已确认决策，允许用户重选线路后再确认。
- * 本地 tombstone 保证后续 merge 不再把这些 SKU 标为已确认；
- * 同时从本地 acceptances 文件中移除。
+ * Reopen (revoke) confirmed decisions so the user can re-pick lines.
+ * Prefer plugin soft-delete; fall back to editing the local JSON file.
  */
 export async function removeAcceptances(
   shopName: string,
-  skuIds: string[]
+  skuIds: string[],
+  auth?: UpstreamAuthHeaders
 ): Promise<StoredVariantAcceptance[]> {
   const idSet = new Set(skuIds.filter(Boolean));
-  if (idSet.size === 0) return readAcceptances(shopName);
+  if (idSet.size === 0) return readAcceptances(shopName, auth);
 
-  const revoked = readLocalRevoked(shopName);
-  for (const id of idSet) revoked.add(id);
-  writeLocalRevoked(shopName, revoked);
+  const backend = await removeAcceptancesFromBackend(shopName, [...idSet], auth);
+  if (backend !== null) return backend;
 
   const local = readLocalAcceptances(shopName).filter(
     (row) => !idSet.has(row.thirdPlatformSkuId)
   );
   writeLocalAcceptances(shopName, local);
-
-  return readAcceptances(shopName);
+  return local;
 }
 
-// ===== 兼容旧同步调用方（仅本地文件，不再推荐使用） =====
-
-/** @deprecated 使用异步 readAcceptances；本函数仅读本地文件，不查后端。 */
+/** @deprecated Use async {@link readAcceptances}. */
 export function readAcceptancesSync(shopName: string): StoredVariantAcceptance[] {
   return readLocalAcceptances(shopName);
 }
 
-/** @deprecated 使用异步 upsertAcceptances；本函数仅写本地文件，不同步后端。 */
+/** @deprecated Use async {@link upsertAcceptances}. */
 export function writeAcceptances(
   shopName: string,
   acceptances: StoredVariantAcceptance[]

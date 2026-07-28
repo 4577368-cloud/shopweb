@@ -37,7 +37,7 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "variant">,
     VariantProps<typeof buttonVariants> {
   /**
    * 仿 shadcn Slot 行为：当 asChild 为 true，把唯一子元素（如 <Link>）克隆出来、

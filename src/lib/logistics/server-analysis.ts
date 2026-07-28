@@ -2,7 +2,7 @@ import {
   type LegacyLogisticsAnalysis,
   transformLegacyAnalysis,
 } from "@/lib/logistics/decision-engine";
-import { readAcceptances } from "@/lib/logistics/accept-decisions-store";
+import { readAcceptances, type UpstreamAuthHeaders } from "@/lib/logistics/accept-decisions-store";
 import { mergeAcceptancesIntoAnalysis } from "@/lib/logistics/merge-acceptances-into-analysis";
 import { normalizeShopApiName } from "@/lib/resolve-shop-api-name";
 import type {
@@ -17,13 +17,14 @@ const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
 const UPSTREAM_RETRIES = 2;
 const UPSTREAM_TIMEOUT_MS = 45_000;
 
-export type UpstreamAuthHeaders = {
-  cookie?: string | null;
-};
+export type { UpstreamAuthHeaders };
 
-/** Pull browser auth cookies so server→plugin calls pass JwtAuthFilter. */
+/** Pull browser auth so server→plugin calls pass JwtAuthFilter (cookie and/or Bearer). */
 export function upstreamAuthFromRequest(request: Request): UpstreamAuthHeaders {
-  return { cookie: request.headers.get("cookie") };
+  return {
+    cookie: request.headers.get("cookie"),
+    authorization: request.headers.get("authorization"),
+  };
 }
 
 async function fetchUpstream(
@@ -43,6 +44,8 @@ async function fetchUpstream(
       };
       const cookie = auth?.cookie?.trim();
       if (cookie) headers.Cookie = cookie;
+      const authorization = auth?.authorization?.trim();
+      if (authorization) headers.Authorization = authorization;
 
       const res = await fetch(url, {
         ...init,
@@ -107,7 +110,7 @@ export async function loadLogisticsAnalysis(
     const { buildEmptyAnalysis } = await import("@/lib/logistics/decision-engine");
     return mergeAcceptancesIntoAnalysis(
       buildEmptyAnalysis(shopName) as LogisticsAnalysis,
-      await readAcceptances(shopName)
+      await readAcceptances(shopName, options?.auth)
     );
   }
 
@@ -176,7 +179,7 @@ export async function loadLogisticsAnalysis(
     highRiskTypes: transformed.highRiskTypes,
   };
 
-  return mergeAcceptancesIntoAnalysis(base, await readAcceptances(shopName));
+  return mergeAcceptancesIntoAnalysis(base, await readAcceptances(shopName, auth));
 }
 
 export function collectAcceptableVariants(

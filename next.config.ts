@@ -15,6 +15,24 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  /**
+   * Allow Shopify Admin to embed this app (App Store embedded mode).
+   * frame-ancestors replaces X-Frame-Options for modern browsers.
+   */
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value:
+              "frame-ancestors https://admin.shopify.com https://*.myshopify.com https://*.shopify.com;",
+          },
+        ],
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       {

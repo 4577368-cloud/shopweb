@@ -38,14 +38,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const analysis = await loadLogisticsAnalysis(shopName, false, {
-      auth: upstreamAuthFromRequest(request),
-    });
+    const auth = upstreamAuthFromRequest(request);
+    const analysis = await loadLogisticsAnalysis(shopName, false, { auth });
     const { readAcceptances } = await import(
       "@/lib/logistics/accept-decisions-store"
     );
     const alreadyAccepted = new Set(
-      (await readAcceptances(shopName)).map((a) => a.thirdPlatformSkuId)
+      (await readAcceptances(shopName, auth)).map((a) => a.thirdPlatformSkuId)
     );
 
     const targets = collectAcceptableVariants(analysis, {
@@ -82,10 +81,10 @@ export async function POST(request: Request) {
       };
     });
 
-    await upsertAcceptances(shopName, incoming);
+    await upsertAcceptances(shopName, incoming, auth);
     const refreshed = mergeAcceptancesIntoAnalysis(
       analysis,
-      await readAcceptances(shopName)
+      await readAcceptances(shopName, auth)
     );
 
     return NextResponse.json({

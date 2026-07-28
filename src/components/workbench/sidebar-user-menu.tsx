@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeftRight,
@@ -14,6 +12,10 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { useUser } from "@/context/user-context";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
+import { useNavigateInApp } from "@/host/use-navigate-in-app";
+import { LinkInApp } from "@/host/link-in-app";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
+import { clearEmbeddedAccessToken } from "@/host/embedded/session-token-store";
 import { SHOP_STORAGE_KEY } from "@/lib/shopify-install";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +40,8 @@ const MENU_ITEMS: { id: Exclude<UserMenuAction, "signOut">; icon: typeof ArrowLe
 export function SidebarUserMenu({ className }: { className?: string }) {
   const t = useT();
   const locale = useLocale();
-  const router = useRouter();
+  const { push } = useNavigateInApp();
+  const { isEmbedded } = useEmbeddedMode();
   const { showToast } = useOnboarding();
   const { user, status, bootstrapping, logout } = useUser();
   const [open, setOpen] = useState(false);
@@ -83,7 +86,7 @@ export function SidebarUserMenu({ className }: { className?: string }) {
 
   if (status !== "authenticated" || !user) {
     return (
-      <Link
+      <LinkInApp
         href={localePath(locale, "/login")}
         className={cn(
           "inline-flex h-7 w-full min-w-0 items-center justify-center gap-1 rounded-[var(--radius-control)] border border-brand/40 bg-brand-soft px-2 text-[11px] font-medium text-brand transition-colors hover:border-brand/60 hover:bg-brand-soft/80",
@@ -92,7 +95,7 @@ export function SidebarUserMenu({ className }: { className?: string }) {
       >
         <Person className="h-3.5 w-3.5 shrink-0" aria-hidden />
         {t("userMenu.signIn")}
-      </Link>
+      </LinkInApp>
     );
   }
 
@@ -107,10 +110,12 @@ export function SidebarUserMenu({ className }: { className?: string }) {
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(SHOP_STORAGE_KEY);
         }
+        clearEmbeddedAccessToken();
         showToast(t("userMenu.toastSignedOut"));
         // Navigate to landing so the user sees a clear state change.
         // Server components on the landing page do not require auth.
-        router.push(localePath(locale, "/"));
+        // Embedded: stay on authorize (Admin) rather than marketing landing.
+        push(localePath(locale, isEmbedded ? "/authorize" : "/"));
       } catch {
         showToast(t("userMenu.signOutFailed"));
       } finally {
@@ -119,19 +124,19 @@ export function SidebarUserMenu({ className }: { className?: string }) {
       return;
     }
     if (action === "profile") {
-      router.push(localePath(locale, "/account/profile"));
+      push(localePath(locale, "/account/profile"));
       return;
     }
     if (action === "settings") {
       // Settings surfaces as the security page (password + sessions) for now.
       // Add a dedicated /account/settings route when notification prefs,
       // API tokens, etc. warrant a separate page.
-      router.push(localePath(locale, "/account/security"));
+      push(localePath(locale, "/account/security"));
       return;
     }
     if (action === "shops") {
       // Shop management: list bound shops, switch active shop, or unbind.
-      router.push(localePath(locale, "/account/shops"));
+      push(localePath(locale, "/account/shops"));
       return;
     }
     showToast(t("userMenu.comingSoon"));

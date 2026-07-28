@@ -69,45 +69,18 @@ export const mockShop: ShopInfo = {
   productCount: 42,
 };
 
+/** @deprecated Unused — overview comes from EMPTY_OVERVIEW / live APIs. Kept only for fixtures. */
 export const mockOverview: OverviewMetrics = {
   authStatus: "unauthorized",
-  analyzedProducts: 42,
-  matchedProducts: 31,
-  pendingConfirmProducts: 8,
-  autoAlignedSkus: 86,
-  needsConfirmSkus: 14,
+  analyzedProducts: 0,
+  matchedProducts: 0,
+  pendingConfirmProducts: 0,
+  autoAlignedSkus: 0,
+  needsConfirmSkus: 0,
 };
 
-export const mockActivities: ActivityItem[] = [
-  {
-    id: "a1",
-    time: "14:28",
-    title: "商品匹配完成",
-    detail: "已完成 42 个店铺商品分析，生成 31 个高匹配候选。",
-    level: "success",
-  },
-  {
-    id: "a2",
-    time: "14:25",
-    title: "SKU 自动对齐",
-    detail: "86 个 variant 已自动映射到货源 SKU，14 个待人工确认。",
-    level: "info",
-  },
-  {
-    id: "a3",
-    time: "14:22",
-    title: "店铺授权成功",
-    detail: "Northwind Home 已连接，商品与订单权限同步完成。",
-    level: "success",
-  },
-  {
-    id: "a4",
-    time: "14:21",
-    title: "物流方案预计算",
-    detail: "按美国站默认规则生成 3 套物流方案，待你确认偏好。",
-    level: "info",
-  },
-];
+/** @deprecated Unused — activities come from buildDashboardActivities(). */
+export const mockActivities: ActivityItem[] = [];
 
 export const mockProductMatches: ProductMatch[] = [
   {

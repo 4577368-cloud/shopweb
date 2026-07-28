@@ -45,7 +45,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const existing = await readAcceptances(shopName);
+    const auth = upstreamAuthFromRequest(request);
+    const existing = await readAcceptances(shopName, auth);
     const bySku = new Map(
       existing.map((row) => [row.thirdPlatformSkuId, row] as const)
     );
@@ -68,10 +69,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "没有可更新的已确认规格" }, { status: 400 });
     }
 
-    await upsertAcceptances(shopName, patches);
-    const analysis = await loadLogisticsAnalysis(shopName, false, {
-      auth: upstreamAuthFromRequest(request),
-    });
+    await upsertAcceptances(shopName, patches, auth);
+    const analysis = await loadLogisticsAnalysis(shopName, false, { auth });
 
     return NextResponse.json({
       patchedCount: patches.length,

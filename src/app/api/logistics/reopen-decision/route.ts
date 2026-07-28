@@ -34,10 +34,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    await removeAcceptances(shopName, variantIds);
-    const loaded = await loadLogisticsAnalysis(shopName, false, {
-      auth: upstreamAuthFromRequest(request),
-    });
+    const auth = upstreamAuthFromRequest(request);
+    await removeAcceptances(shopName, variantIds, auth);
+    const loaded = await loadLogisticsAnalysis(shopName, false, { auth });
     const analysis: LogisticsAnalysis = unconfirmVariantsInAnalysis(
       loaded,
       variantIds

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { CheckCircle2 } from "@/lib/ui/icons";
@@ -12,6 +11,8 @@ import { SidebarUpgradeCta } from "@/components/workbench/sidebar-upgrade-cta";
 import { SidebarUserMenu } from "@/components/workbench/sidebar-user-menu";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
+import { LinkInApp } from "@/host/link-in-app";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 import { cn } from "@/lib/utils";
 import type { WorkflowStepSnapshot, WorkflowStatusKey } from "@/lib/workflow-step-snapshots";
 
@@ -52,6 +53,7 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
   const pathname = usePathname();
   const t = useT();
   const locale = useLocale();
+  const { isEmbedded } = useEmbeddedMode();
   const {
     steps,
     syncCompleted,
@@ -86,20 +88,28 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
       } satisfies WorkflowStepSnapshot),
   }));
 
-  const shellClass = embedded
+  // Nested layout prop OR Shopify Admin embedded host — compact chrome.
+  const compact = Boolean(embedded || isEmbedded);
+  const shellClass = compact
     ? "flex min-h-0 flex-1 flex-col bg-surface"
     : "flex h-full w-[15.5rem] shrink-0 flex-col border-r border-hairline bg-surface";
 
   return (
     <aside className={shellClass}>
-      <div className="shrink-0 px-4 pb-3 pt-4 leading-none">
-        <AppLogo
-          variant="sidebar"
-          href={localePath(locale, isAuthorized ? "/" : "/authorize")}
-        />
-      </div>
+      {!isEmbedded ? (
+        <div className="shrink-0 px-4 pb-3 pt-4 leading-none">
+          <AppLogo
+            variant="sidebar"
+            href={localePath(locale, isAuthorized ? "/" : "/authorize")}
+          />
+        </div>
+      ) : (
+        <div className="shrink-0 px-4 pb-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+          {t("sidebar.progress")}
+        </div>
+      )}
 
-      <ShopSwitcher />
+      {!isEmbedded ? <ShopSwitcher /> : null}
 
       <div className="px-4 pb-3 pt-1">
         <div className="mb-1.5 flex items-center justify-between text-[11px] text-ink-muted">
@@ -126,7 +136,7 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
 
             return (
               <li key={step.id}>
-                <Link
+                <LinkInApp
                   href={step.href}
                   aria-current={current ? "page" : undefined}
                   title={t("sidebar.goTo", { title: step.title })}
@@ -152,7 +162,7 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
                   >
                     {step.order}. {step.title}
                   </span>
-                </Link>
+                </LinkInApp>
               </li>
             );
           })}

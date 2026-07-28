@@ -188,15 +188,34 @@ export function shopSummaryMatchesDomain(
  * Resolve which shop domain to probe on cold load.
  * Priority: URL ?shop= → remembered localStorage (if still authorized) → first authorized shop.
  * Multi-shop: never overwrite a valid remembered shop with shops[0].
+ * Embedded: never treat localStorage as truth — only URL `shop` (session token derives shop server-side).
  */
 export async function resolveShopDomainToRestore(): Promise<string | null> {
   if (typeof window === "undefined") return null;
 
-  const shopFromUrl = new URLSearchParams(window.location.search).get("shop")?.trim();
+  const search = new URLSearchParams(window.location.search);
+  const shopFromUrl = search.get("shop")?.trim();
+  const isEmbedded =
+    Boolean(search.get("host")?.trim()) ||
+    search.get("embedded") === "1" ||
+    search.get("embedded") === "true";
+
   if (shopFromUrl) {
     const normalizedUrl = normalizeShopDomain(shopFromUrl) || shopFromUrl;
-    window.localStorage.setItem(SHOP_STORAGE_KEY, normalizedUrl);
+    // Embedded: do not treat localStorage as shop truth — URL/session-token win.
+    if (!isEmbedded) {
+      window.localStorage.setItem(SHOP_STORAGE_KEY, normalizedUrl);
+    }
     return normalizedUrl;
+  }
+
+  // Embedded without shop query: wait for session-token exchange to provide shopDomain.
+  if (isEmbedded) {
+    const { getEmbeddedShopDomain } = await import(
+      "@/host/embedded/session-token-store"
+    );
+    const fromToken = getEmbeddedShopDomain();
+    return fromToken ? normalizeShopDomain(fromToken) || fromToken : null;
   }
 
   const stored = window.localStorage.getItem(SHOP_STORAGE_KEY)?.trim() || null;

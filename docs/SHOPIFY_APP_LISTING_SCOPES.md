@@ -11,6 +11,12 @@ Partner / App Store checklist for **this** app (separate listing from [Tangbuy D
 | Account | Same Tangbuy account | Same Tangbuy account |
 | In-app handoff | `/upgrade` + sync complete → App Store install card | — |
 
+## Pricing (App Store)
+
+- **Price:** Free  
+- **In-app purchases / subscriptions / Shopify Billing:** none  
+- Account UI exposes shops / profile / security only — former bills & credits routes redirect away  
+
 ## Recommended OAuth scopes (narrow)
 
 Request only what listing / product config needs. **Do not** request order or fulfillment scopes on this app.
@@ -65,3 +71,11 @@ Paste into App Store listing **Description** / **Details** (EN example):
 - Listing permissions text must match requested scopes (products, not orders)
 - Authorize UI copy must not claim “order access” for this app
 - Handoff must remain optional
+- Full pre-submit checklist: [`SHOPIFY_APP_REVIEW.md`](./SHOPIFY_APP_REVIEW.md)
+
+## Webhooks (mandatory + product mirror)
+
+Declared in `shopify.app.toml`; handled by `tangbuy-plugin`:
+
+- Operational: `app/uninstalled`, `products/create|update|delete` → `/api/plugin/shopify/webhooks`
+- GDPR: `customers/data_request`, `customers/redact`, `shop/redact` → `/api/plugin/shopify/webhooks/compliance`

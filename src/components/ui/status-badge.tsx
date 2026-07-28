@@ -176,7 +176,7 @@ const rowActionVariants = cva(
 );
 
 export interface RowActionProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "tone">,
     VariantProps<typeof rowActionVariants> {}
 
 export function RowAction({ className, tone, ...props }: RowActionProps) {

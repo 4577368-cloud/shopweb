@@ -126,14 +126,33 @@ async function requestWithRetry<T>(
     ? path
     : `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 
+  const { resolveAuthStrategyFromLocation } = await import(
+    "@/host/adapters/auth-transport"
+  );
+  const strategy = resolveAuthStrategyFromLocation();
+  const auth = await strategy.prepareRequest();
+
+  const mergedHeaders: Record<string, string> = {
+    Accept: "application/json",
+    ...auth.headers,
+  };
+  const initHeaders = init?.headers;
+  if (initHeaders instanceof Headers) {
+    initHeaders.forEach((value, key) => {
+      mergedHeaders[key] = value;
+    });
+  } else if (Array.isArray(initHeaders)) {
+    for (const [key, value] of initHeaders) mergedHeaders[key] = value;
+  } else if (initHeaders) {
+    Object.assign(mergedHeaders, initHeaders);
+  }
+
   let res: Response;
   try {
     res = await fetch(url, {
       ...init,
-      headers: {
-        Accept: "application/json",
-        ...(init?.headers ?? {}),
-      },
+      credentials: init?.credentials ?? auth.credentials,
+      headers: mergedHeaders,
     });
   } catch (cause) {
     // Network or CORS failures surface here as a TypeError with no HTTP status.
@@ -142,7 +161,12 @@ async function requestWithRetry<T>(
 
   // 401 on a protected endpoint → try one silent refresh, then retry.
   if (res.status === 401 && !retried && typeof window !== "undefined") {
-    const refreshed = await refreshAccessCookie();
+    let refreshed = false;
+    if (strategy.kind === "session-token") {
+      refreshed = await strategy.refreshAfterUnauthorized();
+    } else {
+      refreshed = await refreshAccessCookie();
+    }
     if (refreshed) {
       return requestWithRetry<T>(path, init, true);
     }
@@ -671,16 +695,25 @@ export const api = {
     });
   },
 
-  /** Batch-acknowledge multiple pending image bindings. */
-  batchAckImageBindings: (shop: string, thirdPlatformItemIds: string[]) =>
-    request<{ success: boolean; ok: number; failed: string[] }>(
-      `/api/plugin/match/image-search/batch-ack`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shopName: shop, thirdPlatformItemIds }),
+  /** Batch-acknowledge multiple pending image bindings via real single-ack endpoint. */
+  batchAckImageBindings: async (shop: string, thirdPlatformItemIds: string[]) => {
+    const ids = thirdPlatformItemIds.filter(Boolean);
+    if (ids.length === 0) {
+      return { success: true, ok: 0, failed: [] as string[] };
+    }
+    const failed: string[] = [];
+    let ok = 0;
+    // Sequential to avoid stampeding the plugin; auth headers come from requestWithRetry.
+    for (const id of ids) {
+      try {
+        await api.ackImageBinding(shop, id);
+        ok += 1;
+      } catch {
+        failed.push(id);
       }
-    ),
+    }
+    return { success: failed.length === 0, ok, failed };
+  },
 
   /** "取消关联": soft-unbind a product's image binding (PENDING or ACTIVE). */
   unbindImageBinding: (shop: string, thirdPlatformItemId: string) => {
@@ -1008,6 +1041,19 @@ export const api = {
     localRequest<LogisticsAnalysis>(
       `/api/logistics/analysis?shopName=${encodeURIComponent(shop)}`
     ),
+
+  /** Persisted logistics acceptances from tangbuy-plugin (auth via cookie/Bearer). */
+  listLogisticsAcceptances: (shop: string) =>
+    request<
+      Array<{
+        thirdPlatformSkuId: string;
+        thirdPlatformItemId: string;
+        acceptedAt: string;
+        recommendedLine?: LogisticsLine;
+        alternativeLines?: LogisticsLine[];
+        quoteStatus?: QuoteStatus;
+      }>
+    >(`/api/plugin/logistics/acceptances?shopName=${encodeURIComponent(shop)}`),
 
   correctLogisticsType: (
     shop: string,

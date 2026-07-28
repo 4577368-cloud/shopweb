@@ -28,6 +28,7 @@ import type { MutableRefObject } from "react";
 
 import type { Locale } from "@/i18n/config";
 import type { WorkflowSkuProgress } from "@/lib/workflow-progress";
+import { navigateInApp } from "@/host/adapters/navigation";
 
 type TranslateFn = (
   key: string,
@@ -280,7 +281,7 @@ export function useLogisticsPageActions({
           if (syncExceptionCount && syncExceptionCount > 0) {
             stashLogisticsSyncExceptionCount(syncExceptionCount);
           }
-          router.push(localePath(locale, "/sync"));
+          navigateInApp(localePath(locale, "/sync"), router);
         }
       } finally {
         setSaving(false);

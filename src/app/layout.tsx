@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { OnboardingProvider } from "@/context/onboarding-context";
 import { UserProvider } from "@/context/user-context";
+import { HostModeProvider } from "@/host/host-mode-provider";
+import { EmbeddedAppBridgeBootstrap } from "@/host/embedded/embedded-app-bridge-bootstrap";
+import { EmbeddedHostChrome } from "@/host/embedded/embedded-host-chrome";
 import { ToastHost } from "@/components/layout/toast-host";
 import { ChatwootWidget } from "@/components/chatwoot/chatwoot-widget";
 import { APP_DESCRIPTION, APP_FULL_NAME, BRAND_FAVICON } from "@/lib/brand";
@@ -50,13 +53,19 @@ export default function RootLayout({
         translate="no"
         suppressHydrationWarning
       >
-        <UserProvider>
-          <OnboardingProvider>
-              {children}
-              <ToastHost />
-              <ChatwootWidget />
-          </OnboardingProvider>
-        </UserProvider>
+        <HostModeProvider>
+          <EmbeddedAppBridgeBootstrap>
+            <EmbeddedHostChrome>
+              <UserProvider>
+                <OnboardingProvider>
+                  {children}
+                  <ToastHost />
+                  <ChatwootWidget />
+                </OnboardingProvider>
+              </UserProvider>
+            </EmbeddedHostChrome>
+          </EmbeddedAppBridgeBootstrap>
+        </HostModeProvider>
       </body>
     </html>
   );

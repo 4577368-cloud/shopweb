@@ -1,0 +1,43 @@
+# Tangbuy AI Sourcing (60s) — Shopify app config
+# Docs: https://shopify.dev/docs/apps/tools/cli/configuration
+# Partner dashboard scopes must stay aligned with client_id scopes below and docs/SHOPIFY_APP_LISTING_SCOPES.md
+
+name = "Tangbuy AI Sourcing"
+client_id = "REPLACE_WITH_SHOPIFY_API_KEY"
+application_url = "https://ai.tangbuy.com"
+embedded = true
+
+[access_scopes]
+# Free product tool — products only. Orders/fulfillment live on Tangbuy Dropshipping companion.
+scopes = "read_products,write_products"
+
+[auth]
+redirect_urls = [
+  "https://ai.tangbuy.com/api/plugin/shopify/auth/callback",
+  "https://shop-x2mw.onrender.com/api/plugin/shopify/auth/callback"
+]
+
+[webhooks]
+api_version = "2025-01"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "/api/plugin/shopify/webhooks"
+
+  [[webhooks.subscriptions]]
+  topics = ["products/create", "products/update", "products/delete"]
+  uri = "/api/plugin/shopify/webhooks"
+
+  # GDPR mandatory webhooks (compliance topics)
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "/api/plugin/shopify/webhooks/compliance"
+
+[app_proxy]
+# Optional later — not required for sourcing workbench v1
+# url = "https://ai.tangbuy.com/apps/tangbuy"
+# subpath = "tangbuy"
+# prefix = "apps"
+
+[pos]
+embedded = false
