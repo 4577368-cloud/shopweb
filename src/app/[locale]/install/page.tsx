@@ -28,6 +28,7 @@ import {
 } from "@/components/shopify/shop-domain-connect-field";
 
 import { AppLogo } from "@/components/brand/app-logo";
+import { LandingHeroPreview } from "@/components/landing/landing-hero-preview";
 import { APP_FULL_NAME } from "@/lib/brand";
 import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
@@ -286,23 +287,9 @@ function InstallPageContent() {
             </div>
           </div>
 
-          <div className="rounded-[var(--radius-card)] border border-hairline bg-surface p-3 shadow-card">
-            <BrowserFrame label={t("install.browserLabelProducts")}>
-              <div className="grid gap-2.5 p-3 sm:grid-cols-2">
-                {valuePoints.slice(0, 2).map(({ icon: Icon, title, desc }) => (
-                  <div
-                    key={title}
-                    className="rounded-[var(--radius-control)] border border-hairline bg-canvas px-3 py-3"
-                  >
-                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
-                      <Icon className="h-3.5 w-3.5" />
-                    </span>
-                    <p className="mt-2 text-xs font-medium text-ink">{title}</p>
-                    <p className="mt-0.5 text-[10px] leading-4 text-ink-muted">{desc}</p>
-                  </div>
-                ))}
-              </div>
-            </BrowserFrame>
+          {/* Same animated workbench mockup as the marketing home hero. */}
+          <div className="landing-root !min-h-0 !overflow-visible bg-transparent">
+            <LandingHeroPreview />
           </div>
         </section>
 
