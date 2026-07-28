@@ -49,6 +49,14 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Server-read so a missing build-time NEXT_PUBLIC_ value cannot silently disable
+  // App Bridge in Admin. The client id is public (it appears in the OAuth URL).
+  const shopifyApiKey = (
+    process.env.SHOPIFY_API_KEY ??
+    process.env.NEXT_PUBLIC_SHOPIFY_API_KEY ??
+    ""
+  ).trim();
+
   return (
     <html
       lang="en"
@@ -60,6 +68,11 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${displayFont.variable} h-full antialiased`}
     >
+      <head>
+        {shopifyApiKey ? (
+          <meta name="shopify-api-key" content={shopifyApiKey} />
+        ) : null}
+      </head>
       <body
         className="min-h-full bg-app-shell font-sans text-foreground"
         translate="no"

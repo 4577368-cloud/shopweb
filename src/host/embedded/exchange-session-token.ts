@@ -16,8 +16,23 @@ export type SessionTokenExchangeResult =
   | { ok: true; shopDomain: string; shopName: string }
   | { ok: false; code: string; message: string; shopDomain?: string };
 
+/**
+ * App Bridge CDN is injected on mount, so the first exchange can run before
+ * `window.shopify` exists. Wait briefly instead of reporting a false failure.
+ */
+async function waitForAppBridge(timeoutMs = 6000): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (typeof window.shopify?.idToken === "function") return true;
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  return typeof window.shopify?.idToken === "function";
+}
+
 async function readShopifyIdToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
+  if (!(await waitForAppBridge())) return null;
   try {
     const token = await window.shopify?.idToken?.();
     return typeof token === "string" && token.trim() ? token.trim() : null;
