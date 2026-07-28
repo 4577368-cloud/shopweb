@@ -31,6 +31,7 @@ import { resolveShopApiName, shopApiNameFromDomain } from "@/lib/resolve-shop-ap
 import {
   SHOP_STORAGE_KEY,
   launchShopifyInstall,
+  launchShopifyLogin,
   normalizeShopDomain,
   resolveInstallError,
 } from "@/lib/shopify-install";
@@ -85,7 +86,7 @@ function AuthorizePageContent() {
   const searchParams = useSearchParams();
   const autoShopAttempted = useRef(false);
   const { isEmbedded } = useEmbeddedMode();
-  const { bootstrapping: userBootstrapping } = useAuth();
+  const { bootstrapping: userBootstrapping, status: userAuthStatus } = useAuth();
   const {
     authStatus,
     shopDomainInput,
@@ -181,7 +182,14 @@ function AuthorizePageContent() {
         return;
       }
       setRedirecting(true);
-      const result = launchShopifyInstall(raw);
+      // Unauthenticated standalone: Login with Shopify (sets cookies + binds).
+      // Authenticated: classic bind-shop OAuth via /install (JWT required).
+      const result =
+        userAuthStatus === "authenticated"
+          ? launchShopifyInstall(raw)
+          : launchShopifyLogin(raw, {
+              returnTo: localePath(locale, "/authorize"),
+            });
       if (!result.ok) {
         setRedirecting(false);
         const msg = resolveInstallError(t, result.errorCode, t("install.launchError"));
@@ -189,7 +197,7 @@ function AuthorizePageContent() {
         showToast(msg);
       }
     },
-    [showToast, t, isEmbedded, hydrateAuthorizedShop]
+    [showToast, t, isEmbedded, hydrateAuthorizedShop, userAuthStatus, locale]
   );
 
   useEffect(() => {

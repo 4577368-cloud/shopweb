@@ -3,7 +3,7 @@
 // localStorage key, and the full-page redirect stay identical. No OAuth logic changes here — it just
 // builds the backend install URL and navigates the top-level window (Shopify consent can't be framed).
 
-import { shopifyInstallUrl } from "@/lib/api";
+import { shopifyInstallUrl, shopifyLoginUrl } from "@/lib/api";
 import { openExternal } from "@/host/adapters/external-link";
 import { readEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 
@@ -112,6 +112,40 @@ export function launchShopifyInstall(
       } catch {
         // fall through
       }
+    }
+    return { ok: false, errorCode: "NAVIGATION_FAILED" };
+  }
+}
+
+/**
+ * Standalone Login with Shopify: OAuth → auto-provision → `tb_access` cookies → returnTo.
+ * In embedded Admin, falls back to {@link launchShopifyInstall} (session-token / install-embedded).
+ */
+export function launchShopifyLogin(
+  rawDomain: string,
+  opts?: { returnTo?: string }
+): LaunchInstallResult {
+  const mode = readEmbeddedMode();
+  if (mode.isEmbedded) {
+    return launchShopifyInstall(rawDomain, { preferNewTab: true });
+  }
+  const shopDomain = normalizeShopDomain(rawDomain);
+  if (!shopDomain) {
+    return { ok: false, errorCode: "EMPTY_DOMAIN" };
+  }
+  if (!SHOP_DOMAIN_PATTERN.test(shopDomain)) {
+    return { ok: false, errorCode: "INVALID_DOMAIN" };
+  }
+  try {
+    const url = shopifyLoginUrl(shopDomain, { returnTo: opts?.returnTo });
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);
+      window.location.assign(url);
+    }
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof Error && /NEXT_PUBLIC_API_BASE|not configured/i.test(e.message)) {
+      return { ok: false, errorCode: "API_BASE_MISSING" };
     }
     return { ok: false, errorCode: "NAVIGATION_FAILED" };
   }

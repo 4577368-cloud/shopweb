@@ -9,6 +9,7 @@ import { useUser } from "@/context/user-context";
 import {
   SHOP_STORAGE_KEY,
   launchShopifyInstall,
+  launchShopifyLogin,
   normalizeShopDomain,
   rememberShopDomain,
   resolveInstallError,
@@ -63,22 +64,30 @@ function InstallPageContent() {
       setHandle(shopHandleFromDomain(remembered));
     }
 
-    // Standalone: Tangbuy cookie login first. Embedded: silent session-token —
-    // do not bounce to /login; go straight to Shopify OAuth.
+    // Standalone unauthenticated: Login with Shopify (OAuth → cookies + bind).
+    // Embedded: silent session-token — do not bounce to /login; go straight to OAuth if needed.
     if (
       !isEmbedded &&
       !bootstrapping &&
       authStatus !== "authenticated"
     ) {
-      const shopQ = remembered
-        ? `?shop=${encodeURIComponent(remembered)}`
-        : "";
-      const from = `/install${shopQ}`;
-      router.push(
-        hrefInApp(
-          localePath(locale, `/login?from=${encodeURIComponent(from)}`)
-        )
+      setError(null);
+      setRedirecting(true);
+      const returnTo = localePath(
+        locale,
+        isAuthorized ? "/products" : "/authorize"
       );
+      const result = launchShopifyLogin(raw, { returnTo });
+      if (!result.ok) {
+        setRedirecting(false);
+        const msg = resolveInstallError(
+          t,
+          result.errorCode,
+          t("install.launchError")
+        );
+        setError(msg);
+        showToast(msg);
+      }
       return;
     }
     if (!isEmbedded && bootstrapping) {

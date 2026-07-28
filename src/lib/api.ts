@@ -539,6 +539,31 @@ export function shopifyInstallUrl(
   return `${API_BASE}${path}`;
 }
 
+/**
+ * Standalone "Login with Shopify": public OAuth that ends with `tb_access` cookies.
+ * Prefer this over {@link shopifyInstallUrl} when the user is not yet signed in.
+ * Embedded Admin should keep using session-token / install-embedded instead.
+ */
+export function shopifyLoginUrl(
+  shop: string,
+  opts?: { returnTo?: string }
+): string {
+  const q = new URLSearchParams();
+  q.set("shop", shop);
+  const returnTo = opts?.returnTo?.trim();
+  if (returnTo) {
+    q.set("return_to", returnTo);
+  }
+  const path = `/api/plugin/shopify/auth/login?${q.toString()}`;
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}${path}`;
+  }
+  if (!API_BASE) {
+    throw new ApiError("NEXT_PUBLIC_API_BASE is not configured", 0);
+  }
+  return `${API_BASE}${path}`;
+}
+
 /** Read-only Shopify auth status for a shop (non-sensitive fields only). */
 export interface ShopStatusResponse {
   authorized: boolean;

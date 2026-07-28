@@ -10,6 +10,12 @@ import { localePath } from "@/i18n/LocaleLink";
 import { ApiError } from "@/lib/api";
 import { authApi } from "@/lib/auth/api";
 import { markJustRegistered } from "@/lib/auth/just-registered";
+import {
+  launchShopifyLogin,
+  resolveInstallError,
+  SHOP_STORAGE_KEY,
+} from "@/lib/shopify-install";
+import { shopHandleFromDomain } from "@/components/shopify/shop-domain-connect-field";
 
 type AuthMode = "login" | "register";
 type AuthPhase = "form" | "submitting" | "success";
@@ -26,6 +32,7 @@ interface AuthPanelProps {
  * 右侧登录/注册面板。
  * 复用 useAuth().login / register，错误码复用 auth.* i18n。
  * 注册成功后保持登录态并立刻进入下一步（绑店 / from 回跳），不要求再点登录。
+ * Standalone also offers Login with Shopify (OAuth → cookies); embedded never mounts this form.
  */
 export function AuthPanel({
   mode,
@@ -40,12 +47,27 @@ export function AuthPanel({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [shopHandle, setShopHandle] = useState("");
   const [phase, setPhase] = useState<AuthPhase>("form");
   const [error, setError] = useState<string | null>(null);
+  const [shopifyError, setShopifyError] = useState<string | null>(null);
+  const [shopifyBusy, setShopifyBusy] = useState(false);
   const [successTarget, setSuccessTarget] = useState<string | null>(null);
   const [showManualContinue, setShowManualContinue] = useState(false);
 
-  const busy = phase !== "form";
+  const busy = phase !== "form" || shopifyBusy;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const remembered = window.localStorage.getItem(SHOP_STORAGE_KEY);
+      if (remembered) {
+        setShopHandle(shopHandleFromDomain(remembered));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     if (phase !== "success" || !successTarget) return;
@@ -91,6 +113,7 @@ export function AuthPanel({
     if (busy) return;
     setPhase("submitting");
     setError(null);
+    setShopifyError(null);
     const trimmedEmail = email.trim();
     const trimmedName = name.trim();
     try {
@@ -114,6 +137,22 @@ export function AuthPanel({
       setError(errorMessage(err));
       setPhase("form");
     }
+  }
+
+  function onShopifyLogin() {
+    if (busy) return;
+    setShopifyError(null);
+    setError(null);
+    setShopifyBusy(true);
+    const returnTo = redirectAfterSuccess ?? localePath(locale, "/products");
+    const result = launchShopifyLogin(shopHandle, { returnTo });
+    if (!result.ok) {
+      setShopifyBusy(false);
+      setShopifyError(
+        resolveInstallError(t, result.errorCode, t("auth.shopifyLoginError"))
+      );
+    }
+    // On success the browser navigates away; keep busy state if still mounted.
   }
 
   const tabs: { id: AuthMode; label: string }[] = [
@@ -145,6 +184,7 @@ export function AuthPanel({
                   if (busy) return;
                   onModeChange(tab.id);
                   setError(null);
+                  setShopifyError(null);
                 }}
                 disabled={busy}
                 className="relative pb-3 text-sm font-medium transition disabled:opacity-60"
@@ -201,92 +241,148 @@ export function AuthPanel({
               ) : null}
             </div>
           ) : (
-          <form onSubmit={onSubmit} className="space-y-4">
-            {mode === "register" ? (
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
-                  {t("auth.nameLabel")}
-                </label>
-                <input
-                  type="text"
-                  required
-                  autoComplete="name"
-                  autoFocus
-                  maxLength={128}
-                  placeholder={t("auth.namePlaceholder")}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+            <>
+              {/* Login with Shopify — standalone only (this panel is not shown embedded). */}
+              <div className="mb-5 space-y-3">
+                <div className="flex overflow-hidden rounded-[var(--radius-control)] border border-[--landing-border]">
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={t("auth.shopifyShopPlaceholder")}
+                    value={shopHandle}
+                    onChange={(e) => setShopHandle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        onShopifyLogin();
+                      }
+                    }}
+                    disabled={busy}
+                    aria-label={t("auth.shopifyShopAria")}
+                    className="landing-input min-w-0 flex-1 rounded-none border-0 px-3 py-2 text-sm"
+                  />
+                  <span className="flex shrink-0 items-center border-l border-[--landing-border] bg-white/5 px-2.5 text-[11px] font-medium text-[--landing-text-muted]">
+                    {t("install.domainSuffix")}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={onShopifyLogin}
                   disabled={busy}
-                  className="landing-input w-full px-3 py-2 text-sm"
-                />
-              </div>
-            ) : null}
-
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
-                {t("auth.emailLabel")}
-              </label>
-              <input
-                type="email"
-                required
-                autoComplete={mode === "login" ? "email" : "email"}
-                autoFocus={mode === "login"}
-                placeholder={t("auth.emailPlaceholder")}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={busy}
-                className="landing-input w-full px-3 py-2 text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
-                {t("auth.passwordLabel")}
-              </label>
-              <input
-                type="password"
-                required
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                minLength={8}
-                placeholder={t("auth.passwordPlaceholder")}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={busy}
-                className="landing-input w-full px-3 py-2 text-sm"
-              />
-            </div>
-
-            {mode === "login" ? (
-              <div className="flex justify-end">
-                <Link
-                  href={localePath(locale, "/forgot-password")}
-                  className="text-[11px] font-medium text-[--landing-cyan] hover:underline"
-                  tabIndex={busy ? -1 : undefined}
+                  className="landing-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] py-2.5 text-sm font-semibold"
                 >
-                  {t("auth.forgotPasswordLink")}
-                </Link>
+                  {shopifyBusy ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      {t("auth.shopifyLoginSubmitting")}
+                    </>
+                  ) : (
+                    t("auth.shopifyLoginSubmit")
+                  )}
+                </button>
+                {shopifyError ? (
+                  <p className="text-xs leading-4 text-red-400">{shopifyError}</p>
+                ) : (
+                  <p className="text-[11px] leading-4 text-[--landing-text-muted]">
+                    {t("auth.shopifyLoginHint")}
+                  </p>
+                )}
               </div>
-            ) : null}
 
-            {error ? (
-              <p className="text-xs leading-4 text-red-400">{error}</p>
-            ) : null}
+              <div className="mb-5 flex items-center gap-3">
+                <div className="h-px flex-1 bg-[--landing-border]" />
+                <span className="text-[11px] uppercase tracking-wide text-[--landing-text-muted]">
+                  {t("auth.orEmailPassword")}
+                </span>
+                <div className="h-px flex-1 bg-[--landing-border]" />
+              </div>
 
-            <button
-              type="submit"
-              disabled={busy}
-              className="landing-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] py-2.5 text-sm font-semibold"
-            >
-              {phase === "submitting" ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  {t(mode === "login" ? "auth.loginSubmitting" : "auth.registerSubmitting")}
-                </>
-              ) : (
-                t(mode === "login" ? "auth.loginSubmit" : "auth.registerSubmit")
-              )}
-            </button>
-          </form>
+              <form onSubmit={onSubmit} className="space-y-4">
+                {mode === "register" ? (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
+                      {t("auth.nameLabel")}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      autoComplete="name"
+                      maxLength={128}
+                      placeholder={t("auth.namePlaceholder")}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      disabled={busy}
+                      className="landing-input w-full px-3 py-2 text-sm"
+                    />
+                  </div>
+                ) : null}
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
+                    {t("auth.emailLabel")}
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    autoComplete="email"
+                    placeholder={t("auth.emailPlaceholder")}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={busy}
+                    className="landing-input w-full px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
+                    {t("auth.passwordLabel")}
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    autoComplete={mode === "login" ? "current-password" : "new-password"}
+                    minLength={8}
+                    placeholder={t("auth.passwordPlaceholder")}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={busy}
+                    className="landing-input w-full px-3 py-2 text-sm"
+                  />
+                </div>
+
+                {mode === "login" ? (
+                  <div className="flex justify-end">
+                    <Link
+                      href={localePath(locale, "/forgot-password")}
+                      className="text-[11px] font-medium text-[--landing-cyan] hover:underline"
+                      tabIndex={busy ? -1 : undefined}
+                    >
+                      {t("auth.forgotPasswordLink")}
+                    </Link>
+                  </div>
+                ) : null}
+
+                {error ? (
+                  <p className="text-xs leading-4 text-red-400">{error}</p>
+                ) : null}
+
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[--landing-border] bg-white/5 py-2.5 text-sm font-semibold text-[--landing-text] transition hover:bg-white/10 disabled:opacity-60"
+                >
+                  {phase === "submitting" ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      {t(mode === "login" ? "auth.loginSubmitting" : "auth.registerSubmitting")}
+                    </>
+                  ) : (
+                    t(mode === "login" ? "auth.loginSubmit" : "auth.registerSubmit")
+                  )}
+                </button>
+              </form>
+            </>
           )}
         </div>
       </div>
