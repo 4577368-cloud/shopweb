@@ -51,19 +51,18 @@ export function LandingHero({ onStart, compact = false }: LandingHeroProps) {
         {t("landing.heroTitle")}
       </motion.h1>
 
-      {/* 60 秒速度环 */}
+      {/* 60 秒速度环 — ring must be a true square or rotate looks elliptical */}
       {!compact ? (
         <motion.div variants={item} className="flex items-center gap-4">
-          <div className="relative">
-            <span className="landing-big-number text-[3.5rem] md:text-[4.5rem]">60</span>
-            {/* 速度环装饰 */}
+          <div className="relative flex h-[5.5rem] w-[5.5rem] shrink-0 items-center justify-center md:h-[7rem] md:w-[7rem]">
+            <span className="landing-big-number relative z-[1] leading-none">60</span>
             <motion.div
-              className="pointer-events-none absolute -inset-3 rounded-full border-2 border-dashed border-[--landing-accent]/20"
+              className="pointer-events-none absolute inset-0 rounded-full border-2 border-dashed border-[--landing-accent]/25"
               animate={{ rotate: 360 }}
               transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
             />
             <motion.div
-              className="pointer-events-none absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-[--landing-accent]"
+              className="pointer-events-none absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-[--landing-accent]"
               animate={{ scale: [1, 1.3, 1], opacity: [0.8, 0.4, 0.8] }}
               transition={{ duration: 2, repeat: Infinity }}
             />
