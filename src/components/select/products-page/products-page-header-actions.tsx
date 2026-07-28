@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/LocaleProvider";
 
 export interface ProductsPageHeaderActionsProps {
-  searchQuery: string;
-  onSearchQueryChange: (value: string) => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
+  /** When false, hide the search input (embedded: search lives in top chrome). Default true. */
+  showSearch?: boolean;
   hasNewProductsToLink: boolean;
   newLinkableCount: number;
   onEnqueueNewArrivalsBatchLink: () => void;
@@ -18,9 +20,11 @@ export interface ProductsPageHeaderActionsProps {
   onPrefetchSkuAlign?: () => void;
 }
 
+/** Conditional batch CTAs + SKU binding link (search optional). */
 export function ProductsPageHeaderActions({
-  searchQuery,
+  searchQuery = "",
   onSearchQueryChange,
+  showSearch = true,
   hasNewProductsToLink,
   newLinkableCount,
   onEnqueueNewArrivalsBatchLink,
@@ -34,26 +38,28 @@ export function ProductsPageHeaderActions({
   const skuCtaPrimary = !hasNewProductsToLink && pageLinkableCount === 0;
 
   return (
-    <div className="flex items-center gap-3">
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => onSearchQueryChange(e.target.value)}
-          placeholder={t("products.searchPlaceholder")}
-          className="h-7 w-48 rounded-[var(--radius-control)] border border-hairline bg-surface pl-7 pr-8 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft"
-        />
-        {searchQuery ? (
-          <button
-            type="button"
-            onClick={() => onSearchQueryChange("")}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        ) : null}
-      </div>
+    <div className="flex items-center gap-2">
+      {showSearch && onSearchQueryChange ? (
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchQueryChange(e.target.value)}
+            placeholder={t("products.searchPlaceholder")}
+            className="h-7 w-48 rounded-[var(--radius-control)] border border-hairline bg-surface pl-7 pr-8 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft"
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              onClick={() => onSearchQueryChange("")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {hasNewProductsToLink ? (
         <Button
           size="sm"
@@ -75,7 +81,9 @@ export function ProductsPageHeaderActions({
           className="shrink-0 whitespace-nowrap"
           onClick={onEnqueueUnboundMatch}
           disabled={batchLinkActive}
-          title={t("productsPage.batchLinkPageTitle", { count: pageLinkableCount })}
+          title={t("productsPage.batchLinkPageTitle", {
+            count: pageLinkableCount,
+          })}
         >
           {batchLinkActive ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {batchLinkActive
@@ -88,7 +96,11 @@ export function ProductsPageHeaderActions({
         onMouseEnter={onPrefetchSkuAlign}
         onFocus={onPrefetchSkuAlign}
       >
-        <Button size="sm" variant={skuCtaPrimary ? "primary" : "secondary"} className="shrink-0 whitespace-nowrap">
+        <Button
+          size="sm"
+          variant={skuCtaPrimary ? "primary" : "secondary"}
+          className="shrink-0 whitespace-nowrap"
+        >
           {t("productsPage.skuBindingCta")}
           <ArrowRight className="h-4 w-4" />
         </Button>

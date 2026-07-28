@@ -1,17 +1,11 @@
 "use client";
 
 import { Sparkles } from "@/lib/ui/icons";
-import { Select } from "@/components/ui/select";
-import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { cn } from "@/lib/utils";
 import {
-  buildLogisticsFilterTabs,
-  collectPostalLimitFilterOptions,
   computeLogisticsPlanMetrics,
   pendingWorkCount,
   needsAttentionCount,
-  type LogisticsFilterMode,
-  type PostalLimitFilter,
 } from "@/lib/logistics/display";
 import { countryFlagEmoji, localizedCountryMarketLabel } from "@/lib/logistics/markets";
 import { useLocale, useT } from "@/i18n/LocaleProvider";
@@ -168,10 +162,6 @@ function PlanStatusTip({
 export function LogisticsPlanStatusCard({
   analysis,
   activeTemplate,
-  filterMode,
-  onFilterModeChange,
-  postalLimitFilter,
-  onPostalLimitFilterChange,
   quoteMarketCode,
   onOpenStrategy,
   pipelineProgress,
@@ -180,10 +170,6 @@ export function LogisticsPlanStatusCard({
 }: {
   analysis: LogisticsAnalysis | null;
   activeTemplate: LogisticsTemplate | null;
-  filterMode: LogisticsFilterMode;
-  onFilterModeChange: (mode: LogisticsFilterMode) => void;
-  postalLimitFilter: PostalLimitFilter;
-  onPostalLimitFilterChange: (value: PostalLimitFilter) => void;
   quoteMarketCode: string | null;
   onOpenStrategy: () => void;
   pipelineProgress?: LogisticsPipelineProgress;
@@ -193,10 +179,8 @@ export function LogisticsPlanStatusCard({
   const t = useT();
   const locale = useLocale();
   const metrics = computeLogisticsPlanMetrics(analysis, quoteResults);
-  const postalOptions = collectPostalLimitFilterOptions(t, analysis);
   const marketCodes = listTemplateCountryCodes(activeTemplate);
   const marketCode = quoteMarketCode ?? marketCodes[0] ?? "US";
-  const filterTabs = buildLogisticsFilterTabs(t, metrics);
   const pipelineRunning = pipelineProgress?.phase === "running";
   const ringPercent =
     pipelineRunning && pipelineProgress.productTotal > 0
@@ -288,31 +272,6 @@ export function LogisticsPlanStatusCard({
             locale={locale}
           />
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <SegmentedTabs
-          variant="chip"
-          tabs={filterTabs}
-          value={filterMode}
-          onValueChange={(id) => onFilterModeChange(id as LogisticsFilterMode)}
-          className="min-w-0 flex-1"
-        />
-        {postalOptions.length > 0 ? (
-          <Select
-            value={postalLimitFilter}
-            onChange={(e) => onPostalLimitFilterChange(e.target.value)}
-            className="h-8 w-auto min-w-[8.5rem] shrink-0 text-[11px]"
-            aria-label={t("logisticsUi.postalFilterAria")}
-          >
-            <option value="all">{t("logisticsUi.allPostalLimits")}</option>
-            {postalOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label} ({opt.count})
-              </option>
-            ))}
-          </Select>
-        ) : null}
       </div>
     </section>
   );

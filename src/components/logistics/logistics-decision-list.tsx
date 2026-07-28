@@ -155,6 +155,7 @@ export function LogisticsDecisionList({
   shopName = "",
   filterMode,
   postalLimitFilter = "all",
+  searchQuery = "",
   quoteResults,
   activeTemplate,
   correctingId,
@@ -184,6 +185,8 @@ export function LogisticsDecisionList({
   shopName?: string;
   filterMode: LogisticsFilterMode;
   postalLimitFilter?: PostalLimitFilter;
+  /** Product title / item id filter (from embedded top chrome). */
+  searchQuery?: string;
   quoteResults: Map<string, LogisticsEstimateResult>;
   activeTemplate: LogisticsTemplate | null;
   correctingId?: string | null;
@@ -220,15 +223,22 @@ export function LogisticsDecisionList({
 
   useEffect(() => {
     setPage(1);
-  }, [filterMode, postalLimitFilter]);
+  }, [filterMode, postalLimitFilter, searchQuery]);
 
   const profiles = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     const filtered = filterProfiles(
       analysis.productProfiles ?? [],
       filterMode,
       quoteResults,
       postalLimitFilter
     )
+      .filter((p) => {
+        if (!q) return true;
+        const title = (p.title ?? "").toLowerCase();
+        const id = p.thirdPlatformItemId.toLowerCase();
+        return title.includes(q) || id.includes(q);
+      })
       .filter((p) =>
         profileMatchesFilter(p, filterMode, quoteResults, postalLimitFilter)
       )
@@ -247,14 +257,20 @@ export function LogisticsDecisionList({
       const worst = (variants: VariantLogisticsDecision[]) => {
         let worstTone: keyof typeof toneOrder = "auto";
         for (const v of variants) {
-          const t = variantCardTone(v);
-          if (toneOrder[t] > toneOrder[worstTone]) worstTone = t;
+          const tone = variantCardTone(v);
+          if (toneOrder[tone] > toneOrder[worstTone]) worstTone = tone;
         }
         return toneOrder[worstTone];
       };
       return worst(a.variants) - worst(b.variants);
     });
-  }, [analysis.productProfiles, filterMode, quoteResults, postalLimitFilter]);
+  }, [
+    analysis.productProfiles,
+    filterMode,
+    quoteResults,
+    postalLimitFilter,
+    searchQuery,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(profiles.length / LOGISTICS_PAGE_SIZE));
   const pagedProfiles = useMemo(() => {

@@ -55,6 +55,7 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { prefetchSkuAlignListCache } from "@/lib/sku-align/prefetch-list-cache";
 import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
+import { useRegisterEmbeddedPageChrome } from "@/host/embedded/embedded-page-chrome-context";
 
 const PricingTemplateDrawer = dynamic(() => import("@/components/select/pricing-template-drawer").then((m) => ({ default: m.PricingTemplateDrawer })), { ssr: false });
 const ProductsAgentPanel = dynamic(() => import("@/components/select/products-agent-panel").then((m) => ({ default: m.ProductsAgentPanel })), { ssr: false });
@@ -374,7 +375,7 @@ function SelectContent() {
     enqueueNewArrivalsBatchLink,
     batchLinkActive,
     listRefreshing,
-    onRefreshList: () => void handleRefreshList(),
+    onRefreshList: isEmbedded ? undefined : () => void handleRefreshList(),
     refreshProductsQuietly,
     shopFilter,
     commitAnalysisBaseline,
@@ -401,6 +402,25 @@ function SelectContent() {
     searchQuery,
     filtersHighlighted: highlightedArea === "filters",
     template,
+  });
+
+  useRegisterEmbeddedPageChrome({
+    enabled: isEmbedded && isAuthorized && !authBootstrapping && phase === "result",
+    search: {
+      value: searchQuery,
+      onChange: setSearchQuery,
+      placeholder: t("products.searchPlaceholder"),
+    },
+    refresh: {
+      onClick: () => void handleRefreshList(),
+      busy: listRefreshing || batchLinkActive,
+      title: t("sourcing.refreshTitle"),
+      ariaLabel: t("sourcing.refreshAria"),
+    },
+    assistant: {
+      open: wb.assistantOpen,
+      onToggle: wb.toggleAssistant,
+    },
   });
 
   const scanCopilot: AiPanelContent = {
@@ -530,17 +550,40 @@ function SelectContent() {
     />
   );
 
-  const embeddedToolbar = isEmbedded ? (
-    <div className="flex w-full min-w-0 flex-col gap-2">
+  const pageCtas = (
+    <ProductsPageHeaderActions
+      showSearch={!isEmbedded}
+      searchQuery={searchQuery}
+      onSearchQueryChange={setSearchQuery}
+      hasNewProductsToLink={hasNewProductsToLink}
+      newLinkableCount={newLinkableIds.length}
+      onEnqueueNewArrivalsBatchLink={() => void enqueueNewArrivalsBatchLink()}
+      pageLinkableCount={pageLinkableCount}
+      onEnqueueUnboundMatch={() => void enqueueUnboundMatch()}
+      batchLinkActive={batchLinkActive}
+      skuAlignHref={localePath(locale, "/sku-align")}
+      onPrefetchSkuAlign={
+        isAuthorized && shopName
+          ? () => prefetchSkuAlignListCache(shopName)
+          : undefined
+      }
+    />
+  );
+
+  /** One row: tabs | filters | CTAs (embedded sticky + standalone under title). */
+  const pageToolbar = (
+    <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
       {pageTabs}
+      <span className="hidden h-4 w-px shrink-0 bg-hairline sm:block" aria-hidden />
       {tab === "shop" ? (
-        <div ref={setShopFiltersMountEl} className="min-w-0" />
+        <div ref={setShopFiltersMountEl} className="min-w-0 flex-1" />
       ) : null}
       {tab === "catalog" ? (
-        <div ref={setCatalogFiltersMountEl} className="min-w-0" />
+        <div ref={setCatalogFiltersMountEl} className="min-w-0 flex-1" />
       ) : null}
+      <div className="ml-auto flex shrink-0 items-center gap-2">{pageCtas}</div>
     </div>
-  ) : null;
+  );
 
   return (
     <WorkbenchShell
@@ -551,41 +594,21 @@ function SelectContent() {
       <WorkbenchPanel
         title={t("products.title")}
         breadcrumbs={breadcrumbs}
-        {...wb.panelProps}
-        toolbar={embeddedToolbar}
-        actions={
-          <ProductsPageHeaderActions
-            searchQuery={searchQuery}
-            onSearchQueryChange={setSearchQuery}
-            hasNewProductsToLink={hasNewProductsToLink}
-            newLinkableCount={newLinkableIds.length}
-            onEnqueueNewArrivalsBatchLink={() => void enqueueNewArrivalsBatchLink()}
-            pageLinkableCount={pageLinkableCount}
-            onEnqueueUnboundMatch={() => void enqueueUnboundMatch()}
-            batchLinkActive={batchLinkActive}
-            skuAlignHref={localePath(locale, "/sku-align")}
-            onPrefetchSkuAlign={
-              isAuthorized && shopName
-                ? () => prefetchSkuAlignListCache(shopName)
-                : undefined
-            }
-          />
-        }
+        {...(isEmbedded ? {} : wb.panelProps)}
+        toolbar={pageToolbar}
       >
         <div className="space-y-3">
-          {!isEmbedded ? pageTabs : null}
-
           {tab === "shop" ? (
             <ProductsShopTab
               summary={shopTab.summary}
               panel={shopTab.panel}
-              filtersMountEl={isEmbedded ? shopFiltersMountEl : null}
+              filtersMountEl={shopFiltersMountEl}
             />
           ) : null}
 
           {tab === "catalog" ? (
             <ProductsCatalogTab
-              filtersMountEl={isEmbedded ? catalogFiltersMountEl : null}
+              filtersMountEl={catalogFiltersMountEl}
               onActivity={refreshMirrorFromServer}
               onBindingLinked={refreshMirrorFromServer}
               onPublished={refreshMirrorFromServer}

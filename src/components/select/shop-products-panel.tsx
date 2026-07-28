@@ -1097,6 +1097,16 @@ export function ShopProductsPanel({
       );
     }
 
+    // Newest-joined first: mirror id desc, then updatedAt desc.
+    result = [...result].sort((a, b) => {
+      const idDiff = (b.id ?? 0) - (a.id ?? 0);
+      if (idDiff !== 0) return idDiff;
+      const aAt = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+      const bAt = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+      if (bAt !== aAt) return bAt - aAt;
+      return b.thirdPlatformItemId.localeCompare(a.thirdPlatformItemId);
+    });
+
     return result;
   }, [
     products,

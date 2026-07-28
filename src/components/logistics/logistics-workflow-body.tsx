@@ -4,8 +4,6 @@ import dynamic from "next/dynamic";
 import type { ComponentProps, RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
-import type { LogisticsWorkflowStep } from "@/lib/logistics/page-constants";
-import type { LogisticsPlanMetrics } from "@/lib/logistics/display";
 import type { CompletionGateResult } from "@/lib/logistics/completion-gate";
 import type { LogisticsAnalysis } from "@/lib/types";
 import {
@@ -14,13 +12,6 @@ import {
 } from "@/components/logistics/logistics-decision-workspace";
 import { useT } from "@/i18n/LocaleProvider";
 
-const LogisticsWorkflowSteps = dynamic(
-  () =>
-    import("@/components/logistics/logistics-workflow-steps").then((m) => ({
-      default: m.LogisticsWorkflowSteps,
-    })),
-  { ssr: false }
-);
 const LogisticsPlanStatusCard = dynamic(
   () =>
     import("@/components/logistics/logistics-plan-status-card").then((m) => ({
@@ -50,12 +41,8 @@ export interface LogisticsWorkflowBodyProps {
   classifying: boolean;
   error: string | null;
   analysis: LogisticsAnalysis | null;
-  workflowStep: LogisticsWorkflowStep;
   hasSavedTemplate: boolean;
-  planMetrics: LogisticsPlanMetrics;
-  onWorkflowStepChange: (step: LogisticsWorkflowStep) => void;
   onOpenTemplateDrawer: () => void;
-  onStartEstimate: () => void;
   planStatus: PlanStatusProps | null;
   showSyncConfirm: boolean;
   completionGate: CompletionGateResult;
@@ -73,22 +60,16 @@ export interface LogisticsWorkflowBodyProps {
   skuUnlinkedCount: number;
   pipelineRunning: boolean;
   pipelineProgress: LogisticsDecisionWorkspaceProps["pipelineProgress"];
-  /** When false, workflow stepper is rendered by the parent sticky toolbar. */
-  showStepper?: boolean;
 }
 
-/** Main logistics panel: workflow chrome, setup, plan status, load/error, decision list. */
+/** Main logistics panel: plan status, load/error, decision list (no step tabs). */
 export function LogisticsWorkflowBody({
   loading,
   classifying,
   error,
   analysis,
-  workflowStep,
   hasSavedTemplate,
-  planMetrics,
-  onWorkflowStepChange,
   onOpenTemplateDrawer,
-  onStartEstimate,
   planStatus,
   showSyncConfirm,
   completionGate,
@@ -103,7 +84,6 @@ export function LogisticsWorkflowBody({
   skuUnlinkedCount,
   pipelineRunning,
   pipelineProgress,
-  showStepper = true,
 }: LogisticsWorkflowBodyProps) {
   const t = useT();
 
@@ -113,15 +93,6 @@ export function LogisticsWorkflowBody({
         <div className="rounded-[var(--radius-card)] border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
           {t("logistics.tokenMissing")}
         </div>
-      ) : null}
-
-      {showStepper && (!loading || analysis) ? (
-        <LogisticsWorkflowSteps
-          step={workflowStep}
-          onStepChange={onWorkflowStepChange}
-          hasSavedTemplate={hasSavedTemplate}
-          metrics={planMetrics}
-        />
       ) : null}
 
       {!hasSavedTemplate && !loading && analysis ? (

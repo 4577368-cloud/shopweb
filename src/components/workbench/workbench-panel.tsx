@@ -67,7 +67,8 @@ export function WorkbenchPanel({
   children,
 }: WorkbenchPanelProps) {
   const { isEmbedded } = useEmbeddedMode();
-  const showAssistantToggle = typeof onAssistantToggle === "function";
+  const showAssistantToggle =
+    !isEmbedded && typeof onAssistantToggle === "function";
   const showTitleBlock = !isEmbedded;
   const hasHeaderChrome =
     showTitleBlock || Boolean(toolbar) || Boolean(actions) || showAssistantToggle;

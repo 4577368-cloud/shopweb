@@ -47,8 +47,10 @@ import type {
   VariantLogisticsDecision,
 } from "@/lib/types";
 import { LogisticsWorkflowBody } from "@/components/logistics/logistics-workflow-body";
+import { LogisticsFilterBar } from "@/components/logistics/logistics-filter-bar";
 import type { LogisticsFocusTarget, MeasureOverride } from "@/components/logistics/logistics-decision-list";
 import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
+import { useRegisterEmbeddedPageChrome } from "@/host/embedded/embedded-page-chrome-context";
 
 const LogisticsAgentPanel = dynamic(() => import("@/components/logistics/logistics-agent-panel").then((m) => ({ default: m.LogisticsAgentPanel })), { ssr: false });
 const LogisticsTemplateDrawer = dynamic(() => import("@/components/logistics/logistics-template-drawer").then((m) => ({ default: m.LogisticsTemplateDrawer })), { ssr: false });
@@ -56,13 +58,6 @@ const LogisticsStrategyRailCard = dynamic(
   () =>
     import("@/components/logistics/logistics-strategy-rail-card").then((m) => ({
       default: m.LogisticsStrategyRailCard,
-    })),
-  { ssr: false }
-);
-const LogisticsWorkflowSteps = dynamic(
-  () =>
-    import("@/components/logistics/logistics-workflow-steps").then((m) => ({
-      default: m.LogisticsWorkflowSteps,
     })),
   { ssr: false }
 );
@@ -111,6 +106,7 @@ function LogisticsContent() {
   const [showDrawer, setShowDrawer] = useState(false);
   const [filterMode, setFilterMode] = useState<LogisticsFilterMode>("all");
   const [postalLimitFilter, setPostalLimitFilter] = useState<PostalLimitFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [focusTarget, setFocusTarget] = useState<LogisticsFocusTarget | null>(
     null
   );
@@ -303,10 +299,6 @@ function LogisticsContent() {
     return {
       analysis,
       activeTemplate: hasSavedTemplate ? activeTemplate : null,
-      filterMode,
-      onFilterModeChange: setFilterMode,
-      postalLimitFilter,
-      onPostalLimitFilterChange: setPostalLimitFilter,
       quoteMarketCode,
       onOpenStrategy: () => setShowDrawer(true),
       pipelineProgress: pipeline.progress,
@@ -316,8 +308,6 @@ function LogisticsContent() {
     analysis,
     hasSavedTemplate,
     activeTemplate,
-    filterMode,
-    postalLimitFilter,
     quoteMarketCode,
     pipeline.progress,
     quoteResults,
@@ -340,6 +330,7 @@ function LogisticsContent() {
     shopName,
     filterMode,
     postalLimitFilter,
+    searchQuery,
     quoteResults,
     activeTemplate,
     correctingId,
@@ -364,6 +355,75 @@ function LogisticsContent() {
     pipelineProgress: pipeline.progress,
     selectedLineByVariant,
     onSelectLine: handleSelectLine,
+  });
+
+  const handleRefreshWorkflow = useCallback(() => {
+    clearScanned("logistics", scanShopKey);
+    clearLogisticsMirrorCache(shopName);
+    clearLogisticsSession(shopName);
+    void load(true).then((stats) => {
+      if (!stats) return;
+      if (stats.mailLimitVariants > 0) {
+        showToast(
+          t("logistics.toastMailLimitUpdated", {
+            mail: stats.mailLimitVariants,
+            changed: stats.changedVariants,
+            total: stats.totalVariants,
+          })
+        );
+        return;
+      }
+      if (stats.reason === "listing_empty") {
+        showToast(
+          t("logistics.toastMailLimitListingEmpty", {
+            listingTotal: stats.listingTotal,
+            total: stats.totalVariants,
+          })
+        );
+        return;
+      }
+      if (stats.reason === "listing_error") {
+        showToast(
+          t("logistics.toastMailLimitListingError", {
+            error: stats.detail || "unknown",
+          })
+        );
+        return;
+      }
+      if (stats.reason === "no_match") {
+        showToast(
+          t("logistics.toastMailLimitNoMatch", {
+            mapped: stats.mappedProducts,
+            total: stats.totalVariants,
+          })
+        );
+        return;
+      }
+      showToast(
+        t("logistics.toastMailLimitNoData", {
+          total: stats.totalVariants,
+        })
+      );
+    });
+  }, [scanShopKey, shopName, load, showToast, t]);
+
+  useRegisterEmbeddedPageChrome({
+    enabled: isEmbedded && isAuthorized && !authBootstrapping,
+    search: {
+      value: searchQuery,
+      onChange: setSearchQuery,
+      placeholder: t("products.searchPlaceholder"),
+    },
+    refresh: {
+      onClick: handleRefreshWorkflow,
+      busy: loading || classifying,
+      title: t("logistics.refreshWorkflowTitle"),
+      ariaLabel: t("logistics.refreshWorkflowAria"),
+    },
+    assistant: {
+      open: wb.assistantOpen,
+      onToggle: wb.toggleAssistant,
+    },
   });
 
   if (authBootstrapping) {
@@ -421,6 +481,144 @@ function LogisticsContent() {
       </WorkbenchShell>
     );
   }
+
+  const logisticsActions = analysis ? (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {needsPreIngestCount > 0 || batchPreIngesting ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="h-7 w-7 px-0"
+          onClick={() => void handleBatchPreIngest()}
+          disabled={batchPreIngesting || pipeline.pipelineRunning}
+          title={t("logistics.batchPreIngestTitle", {
+            count: needsPreIngestCount,
+          })}
+          aria-label={t("logistics.batchPreIngestTitle", {
+            count: needsPreIngestCount,
+          })}
+        >
+          {batchPreIngesting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Package className="h-3.5 w-3.5" />
+          )}
+        </Button>
+      ) : null}
+      {batchFailedVariantIds.length > 0 ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="shrink-0 whitespace-nowrap"
+          onClick={() =>
+            void handleAcceptAllReady({ onlyVariantIds: batchFailedVariantIds })
+          }
+          disabled={accepting}
+          title={t("logistics.actionRetryAccept", {
+            count: batchFailedVariantIds.length,
+          })}
+          aria-label={t("logistics.actionRetryAccept", {
+            count: batchFailedVariantIds.length,
+          })}
+        >
+          {accepting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {t("logistics.actionRetryAcceptShort")}
+        </Button>
+      ) : null}
+      {planMetrics.pendingQuoteCount > 0 || pipeline.pipelineRunning ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="shrink-0 whitespace-nowrap"
+          onClick={startEstimateGuarded}
+          disabled={
+            loading ||
+            pipeline.pipelineRunning ||
+            !hasSavedTemplate ||
+            !workbench.actions.canEstimate
+          }
+          title={
+            !hasSavedTemplate
+              ? t("logistics.templateRequiredDesc")
+              : planMetrics.pendingQuoteCount > 0
+                ? t("logistics.estimateTitle", {
+                    count: planMetrics.pendingQuoteCount,
+                  })
+                : t("logistics.estimatePipelineHint")
+          }
+        >
+          {pipeline.pipelineRunning ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : null}
+          {pipeline.pipelineRunning
+            ? t("logistics.estimating")
+            : t("logistics.actionEstimate")}
+        </Button>
+      ) : null}
+      <Button
+        size="sm"
+        variant="primary"
+        onClick={() => void handleSaveAndSync()}
+        disabled={
+          saving ||
+          pipeline.pipelineRunning ||
+          !completionGate.canProceedToSync
+        }
+        title={completionGate.footerHint}
+      >
+        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        {t("logisticsUi.goSync")}
+        <ArrowRight className="h-3.5 w-3.5" />
+      </Button>
+      {!isEmbedded ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 w-7 px-0"
+          onClick={handleRefreshWorkflow}
+          disabled={loading || classifying}
+          title={t("logistics.refreshWorkflowTitle")}
+          aria-label={t("logistics.refreshWorkflowAria")}
+        >
+          {classifying ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+        </Button>
+      ) : null}
+    </div>
+  ) : null;
+
+  const logisticsToolbar =
+    !loading || analysis ? (
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
+        <LogisticsFilterBar
+          analysis={analysis}
+          filterMode={filterMode}
+          onFilterModeChange={setFilterMode}
+          postalLimitFilter={postalLimitFilter}
+          onPostalLimitFilterChange={setPostalLimitFilter}
+          quoteResults={quoteResults}
+          className="min-w-0 flex flex-wrap items-center gap-2"
+        />
+        {!isEmbedded ? (
+          <div className="relative min-w-[10rem] max-w-[16rem] flex-1 sm:w-52 sm:flex-none">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t("products.searchPlaceholder")}
+              className="h-7 w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-2.5 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand-soft"
+            />
+          </div>
+        ) : null}
+        {logisticsActions ? (
+          <div className="ml-auto shrink-0">{logisticsActions}</div>
+        ) : null}
+      </div>
+    ) : null;
 
   return (
     <WorkbenchShell
@@ -488,187 +686,16 @@ function LogisticsContent() {
         title={t("logistics.pageTitle")}
         breadcrumbs={breadcrumbs}
         titleSuffix={<img src="/brand/on-time-guarantee-tag.svg" alt="" className="h-[18px] w-auto" />}
-        {...wb.panelProps}
-        toolbar={
-          isEmbedded && (!loading || analysis) ? (
-            <LogisticsWorkflowSteps
-              step={workflowStep}
-              onStepChange={handleWorkflowStepChange}
-              hasSavedTemplate={hasSavedTemplate}
-              metrics={planMetrics}
-            />
-          ) : null
-        }
-        actions={
-          analysis ? (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {needsPreIngestCount > 0 || batchPreIngesting ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className="h-7 w-7 px-0"
-                  onClick={() => void handleBatchPreIngest()}
-                  disabled={batchPreIngesting || pipeline.pipelineRunning}
-                  title={t("logistics.batchPreIngestTitle", {
-                    count: needsPreIngestCount,
-                  })}
-                  aria-label={t("logistics.batchPreIngestTitle", {
-                    count: needsPreIngestCount,
-                  })}
-                >
-                  {batchPreIngesting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Package className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              ) : null}
-              {batchFailedVariantIds.length > 0 ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="shrink-0 whitespace-nowrap"
-                  onClick={() =>
-                    void handleAcceptAllReady({ onlyVariantIds: batchFailedVariantIds })
-                  }
-                  disabled={accepting}
-                  title={t("logistics.actionRetryAccept", {
-                    count: batchFailedVariantIds.length,
-                  })}
-                  aria-label={t("logistics.actionRetryAccept", {
-                    count: batchFailedVariantIds.length,
-                  })}
-                >
-                  {accepting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  {t("logistics.actionRetryAcceptShort")}
-                </Button>
-              ) : null}
-              {(planMetrics.pendingQuoteCount > 0 || pipeline.pipelineRunning) ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="shrink-0 whitespace-nowrap"
-                  onClick={startEstimateGuarded}
-                  disabled={
-                    loading ||
-                    pipeline.pipelineRunning ||
-                    !hasSavedTemplate ||
-                    !workbench.actions.canEstimate
-                  }
-                  title={
-                    !hasSavedTemplate
-                      ? t("logistics.templateRequiredDesc")
-                      : planMetrics.pendingQuoteCount > 0
-                        ? t("logistics.estimateTitle", {
-                            count: planMetrics.pendingQuoteCount,
-                          })
-                        : t("logistics.estimatePipelineHint")
-                  }
-                >
-                  {pipeline.pipelineRunning ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  {pipeline.pipelineRunning
-                    ? t("logistics.estimating")
-                    : t("logistics.actionEstimate")}
-                </Button>
-              ) : null}
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => void handleSaveAndSync()}
-                disabled={
-                  saving ||
-                  pipeline.pipelineRunning ||
-                  !completionGate.canProceedToSync
-                }
-                title={completionGate.footerHint}
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {t("logisticsUi.goSync")}
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-7 w-7 px-0"
-                onClick={() => {
-                  clearScanned("logistics", scanShopKey);
-                  clearLogisticsMirrorCache(shopName);
-                  clearLogisticsSession(shopName);
-                  void load(true).then((stats) => {
-                    if (!stats) return;
-                    if (stats.mailLimitVariants > 0) {
-                      showToast(
-                        t("logistics.toastMailLimitUpdated", {
-                          mail: stats.mailLimitVariants,
-                          changed: stats.changedVariants,
-                          total: stats.totalVariants,
-                        })
-                      );
-                      return;
-                    }
-                    if (stats.reason === "listing_empty") {
-                      showToast(
-                        t("logistics.toastMailLimitListingEmpty", {
-                          listingTotal: stats.listingTotal,
-                          total: stats.totalVariants,
-                        })
-                      );
-                      return;
-                    }
-                    if (stats.reason === "listing_error") {
-                      showToast(
-                        t("logistics.toastMailLimitListingError", {
-                          error: stats.detail || "unknown",
-                        })
-                      );
-                      return;
-                    }
-                    if (stats.reason === "no_match") {
-                      showToast(
-                        t("logistics.toastMailLimitNoMatch", {
-                          mapped: stats.mappedProducts,
-                          total: stats.totalVariants,
-                        })
-                      );
-                      return;
-                    }
-                    showToast(
-                      t("logistics.toastMailLimitNoData", {
-                        total: stats.totalVariants,
-                      })
-                    );
-                  });
-                }}
-                disabled={loading || classifying}
-                title={t("logistics.refreshWorkflowTitle")}
-                aria-label={t("logistics.refreshWorkflowAria")}
-              >
-                {classifying ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            </div>
-          ) : null
-        }
+        {...(isEmbedded ? {} : wb.panelProps)}
+        toolbar={logisticsToolbar}
       >
         <LogisticsWorkflowBody
           loading={loading}
           classifying={classifying}
           error={error}
           analysis={analysis}
-          workflowStep={workflowStep}
           hasSavedTemplate={hasSavedTemplate}
-          planMetrics={planMetrics}
-          onWorkflowStepChange={handleWorkflowStepChange}
           onOpenTemplateDrawer={openTemplateDrawer}
-          onStartEstimate={startEstimateGuarded}
           planStatus={logisticsPlanStatus}
           showSyncConfirm={showSyncConfirm}
           completionGate={completionGate}
@@ -686,7 +713,6 @@ function LogisticsContent() {
           skuUnlinkedCount={planMetrics.skuUnlinkedCount}
           pipelineRunning={pipeline.pipelineRunning}
           pipelineProgress={pipeline.progress}
-          showStepper={!isEmbedded}
         />
       </WorkbenchPanel>
 

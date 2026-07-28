@@ -19,6 +19,7 @@ export interface UseLogisticsDecisionWorkspacePropsParams {
   shopName: string;
   filterMode: LogisticsFilterMode;
   postalLimitFilter: PostalLimitFilter;
+  searchQuery?: string;
   quoteResults: Map<string, LogisticsEstimateResult>;
   activeTemplate: LogisticsTemplate | null;
   correctingId: string | null;
@@ -65,6 +66,7 @@ export function useLogisticsDecisionWorkspaceProps(
     shopName,
     filterMode,
     postalLimitFilter,
+    searchQuery = "",
     quoteResults,
     activeTemplate,
     correctingId,
@@ -98,6 +100,7 @@ export function useLogisticsDecisionWorkspaceProps(
       shopName,
       filterMode,
       postalLimitFilter,
+      searchQuery,
       quoteResults,
       activeTemplate,
       correctingId,
@@ -129,6 +132,7 @@ export function useLogisticsDecisionWorkspaceProps(
     shopName,
     filterMode,
     postalLimitFilter,
+    searchQuery,
     quoteResults,
     activeTemplate,
     correctingId,
