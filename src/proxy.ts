@@ -64,11 +64,16 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Auth gate: protected paths require the access cookie to be present.
-  // If missing, redirect to /login with the original path preserved in ?from=.
+  // Auth gate: standalone requires tb_access cookie.
+  // Embedded Admin loads with ?host= / ?embedded=1 and uses session-token Bearer
+  // (no cookie) — do not bounce those navigations to /login.
   if (isProtected(pathname)) {
     const hasAccess = Boolean(req.cookies.get("tb_access")?.value);
-    if (!hasAccess) {
+    const host = req.nextUrl.searchParams.get("host")?.trim();
+    const embeddedFlag = req.nextUrl.searchParams.get("embedded");
+    const isEmbedded =
+      Boolean(host) || embeddedFlag === "1" || embeddedFlag === "true";
+    if (!hasAccess && !isEmbedded) {
       const segments = pathname.split("/");
       const locale = isLocale(segments[1]) ? segments[1] : detectLocale(req);
       const loginUrl = req.nextUrl.clone();

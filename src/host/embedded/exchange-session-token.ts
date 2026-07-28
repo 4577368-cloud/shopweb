@@ -42,9 +42,12 @@ export async function exchangeSessionToken(force = false): Promise<SessionTokenE
     return { ok: false, code: "NOT_EMBEDDED", message: "Not in embedded mode" };
   }
   if (!force && !isEmbeddedAccessTokenExpiredOrMissing()) {
+    const { getEmbeddedShopDomain } = await import(
+      "@/host/embedded/session-token-store"
+    );
     return {
       ok: true,
-      shopDomain: mode.shop || "",
+      shopDomain: getEmbeddedShopDomain() || mode.shop || "",
       shopName: "",
     };
   }

@@ -62,6 +62,15 @@ export function UserProvider({ children }: { children: ReactNode }) {
     if (refreshPromiseRef.current) return refreshPromiseRef.current;
     const p = (async () => {
       try {
+        if (typeof window !== "undefined") {
+          const { resolveAuthStrategyFromLocation } = await import(
+            "@/host/adapters/auth-transport"
+          );
+          const strategy = resolveAuthStrategyFromLocation();
+          if (strategy.kind === "session-token") {
+            return strategy.refreshAfterUnauthorized();
+          }
+        }
         await authApi.refresh();
         return true;
       } catch {
@@ -128,10 +137,32 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, [refreshAccess]);
 
   // Bootstrap on mount. Effect only runs in the browser, so this is SSR-safe.
+  // Embedded: wait for App Bridge session-token exchange before /me (Bearer).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        if (typeof window !== "undefined") {
+          const { readEmbeddedMode } = await import(
+            "@/host/embedded/use-embedded-mode"
+          );
+          if (readEmbeddedMode().isEmbedded) {
+            const { getEmbeddedAccessToken } = await import(
+              "@/host/embedded/session-token-store"
+            );
+            const { exchangeSessionToken } = await import(
+              "@/host/embedded/exchange-session-token"
+            );
+            const deadline = Date.now() + 10_000;
+            while (!cancelled && Date.now() < deadline) {
+              if (getEmbeddedAccessToken()) break;
+              const result = await exchangeSessionToken(true);
+              if (result.ok || result.code === "NEED_OAUTH") break;
+              await new Promise((r) => setTimeout(r, 250));
+            }
+          }
+        }
+        if (cancelled) return;
         await refreshUser();
       } catch {
         // Network error during bootstrap — mark unauthenticated so the UI can

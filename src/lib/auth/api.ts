@@ -1,12 +1,10 @@
 /**
  * Auth API client for `/api/plugin/auth/**`.
  *
- * Uses the same-origin path (Next.js rewrites proxy to tangbuy-plugin) so cookies
- * flow automatically. `credentials: "include"` is set explicitly to remain correct
- * if the deployment ever goes cross-origin.
+ * Standalone: httpOnly cookies (`tb_access` / `tb_refresh`) via credentials:include.
+ * Embedded: same session-token Bearer strategy as business `api.ts` (no cookies).
  *
- * The backend sets httpOnly cookies `tb_access` and `tb_refresh`; the client never
- * reads them — it only reads the `{ user }` JSON body returned by register/login/me.
+ * Register/login remain cookie flows (standalone marketing/login pages).
  */
 
 import { ApiError } from "@/lib/api";
@@ -26,18 +24,43 @@ const AUTH_BASE = "/api/plugin/auth";
 
 async function authRequest<T>(
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  opts?: { forceCookie?: boolean }
 ): Promise<T> {
   const url = path.startsWith("/") ? path : `${AUTH_BASE}/${path}`;
+
+  let credentials: RequestCredentials = "include";
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+
+  if (!opts?.forceCookie && typeof window !== "undefined") {
+    const { resolveAuthStrategyFromLocation } = await import(
+      "@/host/adapters/auth-transport"
+    );
+    const strategy = resolveAuthStrategyFromLocation();
+    const auth = await strategy.prepareRequest();
+    credentials = auth.credentials;
+    Object.assign(headers, auth.headers);
+  }
+
+  const initHeaders = init?.headers;
+  if (initHeaders instanceof Headers) {
+    initHeaders.forEach((value, key) => {
+      headers[key] = value;
+    });
+  } else if (Array.isArray(initHeaders)) {
+    for (const [key, value] of initHeaders) headers[key] = value;
+  } else if (initHeaders) {
+    Object.assign(headers, initHeaders as Record<string, string>);
+  }
+
   let res: Response;
   try {
     res = await fetch(url, {
       ...init,
-      credentials: "include",
-      headers: {
-        Accept: "application/json",
-        ...(init?.headers ?? {}),
-      },
+      credentials: init?.credentials ?? credentials,
+      headers,
     });
   } catch (cause) {
     throw new ApiError(`Network request failed: ${url}`, 0, cause);
@@ -86,35 +109,77 @@ interface RefreshResponse {
 export const authApi = {
   /** POST /register — sets auth cookies, returns the new user. */
   register: (payload: RegisterPayload) =>
-    authRequest<AuthResponse>(`${AUTH_BASE}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
+    authRequest<AuthResponse>(
+      `${AUTH_BASE}/register`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+      { forceCookie: true }
+    ),
 
   /** POST /login — sets auth cookies, returns the user. */
   login: (payload: LoginPayload) =>
-    authRequest<AuthResponse>(`${AUTH_BASE}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
+    authRequest<AuthResponse>(
+      `${AUTH_BASE}/login`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+      { forceCookie: true }
+    ),
 
-  /** POST /logout — clears cookies server-side. Idempotent; safe to call when unauthenticated. */
-  logout: () =>
-    authRequest<null>(`${AUTH_BASE}/logout`, {
-      method: "POST",
-    }),
+  /** POST /logout — clears cookies (standalone) or drops Bearer (embedded). */
+  logout: async () => {
+    if (typeof window !== "undefined") {
+      const { resolveAuthStrategyFromLocation } = await import(
+        "@/host/adapters/auth-transport"
+      );
+      const strategy = resolveAuthStrategyFromLocation();
+      if (strategy.kind === "session-token") {
+        const { clearEmbeddedAccessToken } = await import(
+          "@/host/embedded/session-token-store"
+        );
+        clearEmbeddedAccessToken();
+        return null;
+      }
+    }
+    return authRequest<null>(
+      `${AUTH_BASE}/logout`,
+      { method: "POST" },
+      { forceCookie: true }
+    );
+  },
 
-  /** POST /refresh — rotates the access cookie. Returns the new access token (rarely needed client-side). */
-  refresh: () =>
-    authRequest<RefreshResponse>(`${AUTH_BASE}/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    }),
+  /** POST /refresh — cookie rotation (standalone only). Embedded re-exchanges session token. */
+  refresh: async () => {
+    if (typeof window !== "undefined") {
+      const { resolveAuthStrategyFromLocation } = await import(
+        "@/host/adapters/auth-transport"
+      );
+      const strategy = resolveAuthStrategyFromLocation();
+      if (strategy.kind === "session-token") {
+        const ok = await strategy.refreshAfterUnauthorized();
+        if (!ok) {
+          throw new ApiError("Embedded session refresh failed", 401);
+        }
+        return { accessToken: "" } satisfies RefreshResponse;
+      }
+    }
+    return authRequest<RefreshResponse>(
+      `${AUTH_BASE}/refresh`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+      { forceCookie: true }
+    );
+  },
 
-  /** GET /me — current user. 401 means the access cookie is missing/expired; try /refresh. */
+  /** GET /me — cookie or Bearer depending on Host. */
   me: () => authRequest<User>(`${AUTH_BASE}/me`),
 
   /** POST /change-password — revokes all sessions; cookies are cleared server-side. */
@@ -131,20 +196,28 @@ export const authApi = {
    * to /reset-password directly; in production `resetToken` is null (sent via email).
    */
   forgotPassword: (payload: ForgotPasswordPayload) =>
-    authRequest<ForgotPasswordResponse>(`${AUTH_BASE}/forgot-password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
+    authRequest<ForgotPasswordResponse>(
+      `${AUTH_BASE}/forgot-password`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+      { forceCookie: true }
+    ),
 
   /**
    * POST /reset-password — public endpoint. Validates the reset token, changes
    * the password, and revokes ALL sessions. User must re-login after success.
    */
   resetPassword: (payload: ResetPasswordPayload) =>
-    authRequest<ResetPasswordResponse>(`${AUTH_BASE}/reset-password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
+    authRequest<ResetPasswordResponse>(
+      `${AUTH_BASE}/reset-password`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+      { forceCookie: true }
+    ),
 };
