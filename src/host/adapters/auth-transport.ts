@@ -62,7 +62,7 @@ export const sessionTokenAuthStrategy: AuthStrategy = {
   },
   async refreshAfterUnauthorized() {
     clearEmbeddedAccessToken();
-    const result = await exchangeSessionToken(true);
+    const result = await exchangeSessionToken(true, { launchOauthOnNeed: false });
     return result.ok;
   },
 };

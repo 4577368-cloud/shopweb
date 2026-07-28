@@ -630,7 +630,7 @@ export const fr: Dictionary = {
     copilotStartAuthMethod: "Official Shopify",
     copilotStartAuthMethodLabel: "Auth method",
     copilotStartConnect: "Connect Shopify Boutique",
-    copilotStartConnectDesc: "Copilot Start Connect Desc",
+    copilotStartConnectDesc: "Vous confirmerez les permissions sur Shopify, puis reviendrez ici automatiquement.",
     copilotStartDisabledReason: "Enter your Boutique domain first.",
     copilotStartEnterDomain: "Enter Boutique domain",
     copilotStartPermission: "Products (read & write)",

@@ -6,6 +6,31 @@
 
 import { readEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 
+function navigateTop(url: string): void {
+  // App Bridge 4 recommends open(url, "_top"). Never read window.top.location
+  // (cross-origin SecurityError inside Admin).
+  try {
+    const opened = window.open(url, "_top");
+    if (opened != null) return;
+  } catch {
+    // sandboxed / unsafe navigation
+  }
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.target = "_top";
+    anchor.rel = "noopener noreferrer";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    return;
+  } catch {
+    // fall through
+  }
+  // Last resort: new tab (OAuth still completes; callback returns to Admin).
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 export function openExternal(url: string, opts?: { newTab?: boolean }): void {
   if (typeof window === "undefined") return;
   const mode = readEmbeddedMode();
@@ -18,24 +43,11 @@ export function openExternal(url: string, opts?: { newTab?: boolean }): void {
   }
 
   if (mode.isEmbedded) {
-    // Consent screens and App Store pages must not stay framed.
-    // Do NOT read/assign window.top.location — Admin is cross-origin and throws
-    // SecurityError (surfaced as NAVIGATION_FAILED / "leave the Admin frame").
     if (opts?.newTab) {
       window.open(target, "_blank", "noopener,noreferrer");
       return;
     }
-    // `_top` navigates the outermost frame without touching top.location.
-    const opened = window.open(target, "_top");
-    if (opened == null) {
-      const anchor = document.createElement("a");
-      anchor.href = target;
-      anchor.target = "_top";
-      anchor.rel = "noopener noreferrer";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-    }
+    navigateTop(target);
     return;
   }
 

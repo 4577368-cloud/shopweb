@@ -631,7 +631,7 @@ export const en = {
     copilotStartAuthMethod: "Official Shopify",
     copilotStartAuthMethodLabel: "Auth method",
     copilotStartConnect: "Connect Shopify store",
-    copilotStartConnectDesc: "Copilot Start Connect Desc",
+    copilotStartConnectDesc: "You'll confirm permissions on Shopify, then return here automatically.",
     copilotStartDisabledReason: "Enter your store domain first.",
     copilotStartEnterDomain: "Enter store domain",
     copilotStartPermission: "Products (read & write)",

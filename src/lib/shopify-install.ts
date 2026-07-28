@@ -86,7 +86,12 @@ export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
       window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);
       // Embedded: break out of Admin iframe for Shopify consent.
       if (mode.isEmbedded) {
-        openExternal(url, { newTab: false });
+        try {
+          openExternal(url, { newTab: false });
+        } catch {
+          // openExternal already falls back; never surface a false frame error.
+          window.open(url, "_blank", "noopener,noreferrer");
+        }
       } else {
         window.location.assign(url);
       }
@@ -95,6 +100,21 @@ export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
   } catch (e) {
     if (e instanceof Error && /NEXT_PUBLIC_API_BASE|not configured/i.test(e.message)) {
       return { ok: false, errorCode: "API_BASE_MISSING" };
+    }
+    // Embedded top-nav can throw in sandboxed iframes — open a tab instead of
+    // showing "Could not open Shopify authorization".
+    if (typeof window !== "undefined" && readEmbeddedMode().isEmbedded) {
+      try {
+        const mode = readEmbeddedMode();
+        const url = shopifyInstallUrl(shopDomain, {
+          embedded: true,
+          host: mode.host,
+        });
+        window.open(url, "_blank", "noopener,noreferrer");
+        return { ok: true };
+      } catch {
+        // fall through
+      }
     }
     return { ok: false, errorCode: "NAVIGATION_FAILED" };
   }

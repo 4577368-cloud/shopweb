@@ -26,7 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useOnboarding } from "@/context/onboarding-context";
 import { api } from "@/lib/api";
-import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
+import { resolveShopApiName, shopApiNameFromDomain } from "@/lib/resolve-shop-api-name";
 import {
   SHOP_STORAGE_KEY,
   launchShopifyInstall,
@@ -50,6 +50,10 @@ import { localeHtmlLang } from "@/i18n/config";
 import { cn } from "@/lib/utils";
 import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 import { useAuth } from "@/context/user-context";
+import {
+  fetchRestoredShopAuth,
+  restoreShopAuthFromAuthorizedList,
+} from "@/lib/restore-shop-auth";
 
 type Phase = "unbound" | "restoring" | "authorized";
 type ProductSyncState = "idle" | "syncing" | "done" | "error";
@@ -181,6 +185,70 @@ function AuthorizePageContent() {
     setHandle(shopHandleFromDomain(normalized));
     if (!shopDomainInput.trim()) setShopDomainInput(normalized);
   }, [isEmbedded, searchParams, shopDomainInput, setShopDomainInput]);
+
+  // Embedded post-OAuth: session-token exchange success means the shop is bound.
+  // Do not depend on /status alone (it can lag or 401 while Bearer is still warming),
+  // and never auto-relaunch Connect (that causes the red "leave Admin frame" error).
+  useEffect(() => {
+    if (!isEmbedded || isAuthorized) return;
+    let cancelled = false;
+    void (async () => {
+      const { exchangeSessionToken } = await import(
+        "@/host/embedded/exchange-session-token"
+      );
+      const deadline = Date.now() + 15_000;
+      while (!cancelled && Date.now() < deadline) {
+        const ex = await exchangeSessionToken(true, {
+          launchOauthOnNeed: false,
+        });
+        if (cancelled) return;
+        if (ex.ok) {
+          const shopDomain =
+            normalizeShopDomain(ex.shopDomain || searchParams.get("shop") || "") ||
+            ex.shopDomain ||
+            searchParams.get("shop") ||
+            "";
+          let restored =
+            shopDomain
+              ? await fetchRestoredShopAuth(shopDomain).catch(() => null)
+              : null;
+          if (!restored) {
+            restored = await restoreShopAuthFromAuthorizedList().catch(() => null);
+          }
+          if (cancelled) return;
+          if (restored) {
+            hydrateAuthorizedShop(restored);
+            setConnectError(null);
+            return;
+          }
+          if (shopDomain) {
+            // Exchange issued a Tangbuy JWT for this shop → treat as authorized.
+            hydrateAuthorizedShop({
+              name:
+                shopApiNameFromDomain(shopDomain) ||
+                shopDomain.replace(/\.myshopify\.com$/i, ""),
+              domain: shopDomain,
+              authorizedAt: new Date().toISOString(),
+              productCount: 0,
+            });
+            setConnectError(null);
+            return;
+          }
+        } else if (ex.code === "NEED_OAUTH") {
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isEmbedded,
+    isAuthorized,
+    searchParams,
+    hydrateAuthorizedShop,
+  ]);
 
   // Real post-auth stats: 已关联货源 (distinct bound products) + 已刊登 (catalog publishes still on Shopify).
   const loadStats = useCallback(

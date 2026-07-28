@@ -146,6 +146,6 @@ export async function exchangeSessionToken(
 export async function ensureEmbeddedAccessToken(): Promise<boolean> {
   if (!readEmbeddedMode().isEmbedded) return false;
   if (getEmbeddedAccessToken()) return true;
-  const result = await exchangeSessionToken(true);
+  const result = await exchangeSessionToken(true, { launchOauthOnNeed: false });
   return result.ok;
 }
