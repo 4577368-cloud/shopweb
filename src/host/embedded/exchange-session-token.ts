@@ -39,7 +39,20 @@ export function launchEmbeddedInstall(shopDomain: string, host?: string): void {
   openExternal(`${window.location.origin}${path}`, { newTab: false });
 }
 
-export async function exchangeSessionToken(force = false): Promise<SessionTokenExchangeResult> {
+export type ExchangeSessionTokenOptions = {
+  /**
+   * When session exchange returns NEED_OAUTH, top-level navigate to install-embedded.
+   * Default true (App Bridge bootstrap / App Store first open).
+   * Install-page gates should pass false so a failed probe does not re-fire OAuth.
+   */
+  launchOauthOnNeed?: boolean;
+};
+
+export async function exchangeSessionToken(
+  force = false,
+  opts?: ExchangeSessionTokenOptions
+): Promise<SessionTokenExchangeResult> {
+  const launchOauthOnNeed = opts?.launchOauthOnNeed !== false;
   const mode = readEmbeddedMode();
   if (!mode.isEmbedded) {
     return { ok: false, code: "NOT_EMBEDDED", message: "Not in embedded mode" };
@@ -88,7 +101,7 @@ export async function exchangeSessionToken(force = false): Promise<SessionTokenE
       if (code === "SHOP_NOT_BOUND" || code === "NEED_OAUTH") {
         clearEmbeddedAccessToken();
         const shop = data.shopDomain || mode.shop;
-        if (shop) {
+        if (shop && launchOauthOnNeed) {
           launchEmbeddedInstall(shop, mode.host);
           return {
             ok: false,
@@ -97,6 +110,12 @@ export async function exchangeSessionToken(force = false): Promise<SessionTokenE
             shopDomain: shop,
           };
         }
+        return {
+          ok: false,
+          code: "NEED_OAUTH",
+          message: data.message || "Shop needs Shopify OAuth authorization first",
+          shopDomain: shop,
+        };
       }
       return {
         ok: false,

@@ -160,8 +160,9 @@ function InstallPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resume once when auth ready
   }, [authStatus, bootstrapping, searchParams, isEmbedded]);
 
-  // Embedded App URL = /install. If the shop is already installed / session works,
-  // skip marketing and enter authorize (or products when already bound in-app).
+  // Embedded App URL = /install. After OAuth, Admin reloads this page before App Bridge
+  // is ready — one-shot exchange falsely fails and leaves merchants on marketing.
+  // Poll until session works, then enter authorize (or products when already bound).
   useEffect(() => {
     if (!isEmbedded) {
       setEmbeddedGate("ready");
@@ -173,16 +174,41 @@ function InstallPageContent() {
       const { exchangeSessionToken } = await import(
         "@/host/embedded/exchange-session-token"
       );
-      const result = await exchangeSessionToken(true);
-      if (cancelled) return;
-      if (result.ok) {
-        replaceInApp(
-          localePath(locale, isAuthorized ? "/products" : "/authorize"),
-          router
-        );
-        return;
+      const { getEmbeddedAccessToken } = await import(
+        "@/host/embedded/session-token-store"
+      );
+      const deadline = Date.now() + 12_000;
+      let needOauthStreak = 0;
+      while (!cancelled && Date.now() < deadline) {
+        if (getEmbeddedAccessToken()) {
+          replaceInApp(
+            localePath(locale, isAuthorized ? "/products" : "/authorize"),
+            router
+          );
+          return;
+        }
+        const result = await exchangeSessionToken(true, {
+          launchOauthOnNeed: false,
+        });
+        if (cancelled) return;
+        if (result.ok) {
+          replaceInApp(
+            localePath(locale, isAuthorized ? "/products" : "/authorize"),
+            router
+          );
+          return;
+        }
+        if (result.code === "NEED_OAUTH" || result.code === "SHOP_NOT_BOUND") {
+          needOauthStreak += 1;
+          // Brief grace for post-OAuth token persistence; then show Connect UI.
+          if (needOauthStreak >= 4) break;
+          await new Promise((r) => setTimeout(r, 400));
+          continue;
+        }
+        // App Bridge / network not ready yet — keep waiting.
+        await new Promise((r) => setTimeout(r, 300));
       }
-      setEmbeddedGate("ready");
+      if (!cancelled) setEmbeddedGate("ready");
     })();
     return () => {
       cancelled = true;

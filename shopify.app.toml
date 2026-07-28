@@ -4,8 +4,9 @@
 
 name = "Tangbuy AI Sourcing"
 client_id = "REPLACE_WITH_SHOPIFY_API_KEY"
-# Admin first open: install / connect marketing page (not workbench step 1).
-application_url = "https://ai.tangbuy.com/en/install"
+# App origin root. Embedded home `/` is proxied to `/en/install`; post-OAuth
+# deep-links use `/en/authorize` under admin.shopify.com/.../apps/{apiKey}/…
+application_url = "https://ai.tangbuy.com"
 embedded = true
 
 [access_scopes]

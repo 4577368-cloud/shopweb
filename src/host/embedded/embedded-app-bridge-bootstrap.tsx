@@ -23,7 +23,9 @@ export function EmbeddedAppBridgeBootstrap({ children }: { children: ReactNode }
       `script[src="${APP_BRIDGE_CDN}"]`
     );
     const runExchange = () => {
-      void exchangeSessionToken(true).then((result) => {
+      // Do not auto-launch OAuth here — /install Connect (or authorize) owns consent.
+      // Auto-launch raced the install gate and bounced merchants back to marketing.
+      void exchangeSessionToken(true, { launchOauthOnNeed: false }).then((result) => {
         if (!result.ok && process.env.NODE_ENV === "development") {
           console.warn("[embedded] session-token exchange:", result.code, result.message);
         }
