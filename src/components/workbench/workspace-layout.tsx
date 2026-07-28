@@ -67,7 +67,9 @@ export function WorkspaceLayout({
           : "var(--wb-sidebar-w) minmax(0, 1fr)",
       }}
     >
-      <div className="min-h-0 min-w-0 overflow-hidden">{leftSidebar}</div>
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+        {leftSidebar}
+      </div>
       <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
         {children}
       </main>

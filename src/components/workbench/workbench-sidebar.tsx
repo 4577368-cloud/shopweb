@@ -90,9 +90,10 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
   }));
 
   // Nested layout prop OR Shopify Admin embedded host — compact chrome.
+  // Always h-full so the rail fills the grid cell; mt-auto can pin the footer.
   const compact = Boolean(embedded || isEmbedded);
   const shellClass = compact
-    ? "flex min-h-0 flex-1 flex-col bg-surface"
+    ? "flex h-full min-h-0 flex-col bg-surface"
     : "flex h-full w-[15.5rem] shrink-0 flex-col border-r border-hairline bg-surface";
 
   return (
@@ -104,15 +105,11 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
             href={localePath(locale, isAuthorized ? "/" : "/authorize")}
           />
         </div>
-      ) : (
-        <div className="shrink-0 px-4 pb-2 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-          {t("sidebar.progress")}
-        </div>
-      )}
+      ) : null}
 
       {!isEmbedded ? <ShopSwitcher /> : null}
 
-      <div className="shrink-0 px-4 pb-3 pt-1">
+      <div className={cn("shrink-0 px-4 pb-3", isEmbedded ? "pt-3" : "pt-1")}>
         <div className="mb-1.5 flex items-center justify-between text-[11px] text-ink-muted">
           <span>{t("sidebar.progress")}</span>
           <span className="font-semibold tabular-nums text-ink">{progress}%</span>
@@ -125,7 +122,7 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
         </div>
       </div>
 
-      {/* Steps stay compact — do not flex-grow (avoids a tall empty void above the footer). */}
+      {/* Steps stay compact — do not flex-grow. */}
       <nav
         className="min-h-0 shrink-0 overflow-y-auto px-3 pb-2"
         aria-label={t("nav.workbench")}
@@ -173,14 +170,15 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
 
       <SidebarUpgradeCta />
 
-      {/* Soft product tips — shrink-0 only (min-h-0 was collapsing the slot to 0 height). */}
-      <div className="mt-auto shrink-0 px-4 pb-2 pt-1">
-        <SidebarAdCarousel />
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2 border-t border-hairline px-4 py-2.5">
-        <SidebarUserMenu className="min-w-0 flex-1" />
-        <LanguageSwitcher className="shrink-0" />
+      {/* Pin carousel + account to the bottom of the full-height rail. */}
+      <div className="mt-auto flex shrink-0 flex-col gap-2">
+        <div className="px-4 pt-1">
+          <SidebarAdCarousel />
+        </div>
+        <div className="flex items-center gap-2 border-t border-hairline px-4 py-2.5">
+          <SidebarUserMenu className="min-w-0 flex-1" />
+          <LanguageSwitcher className="shrink-0" />
+        </div>
       </div>
     </aside>
   );
