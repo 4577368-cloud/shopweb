@@ -150,7 +150,7 @@ export function SidebarUserMenu({ className }: { className?: string }) {
         className="inline-flex h-7 w-full min-w-0 items-center gap-1 rounded-[var(--radius-control)] border border-surface-border bg-surface px-2 text-left shadow-sm transition-colors hover:border-brand/40 disabled:opacity-60"
       >
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
-          {user.email}
+          {user.name?.trim() || user.email}
         </span>
         <ChevronUp
           className={cn(
