@@ -71,11 +71,19 @@ export default function RootLayout({
       <head>
         {shopifyApiKey ? (
           <>
+            {/*
+              App Bridge CDN rules (hard abort if violated):
+              - classic script from cdn.shopify.com
+              - no async / defer / type=module
+              Next/React often serialize <script src> as async=""; use document.write
+              so the CDN tag is parser-inserted without async.
+            */}
             <meta name="shopify-api-key" content={shopifyApiKey} />
-            {/* Shopify: meta + CDN script in document head so idToken is ready in Admin. */}
             <script
-              src="https://cdn.shopify.com/shopifycloud/app-bridge.js"
-              async
+              dangerouslySetInnerHTML={{
+                __html:
+                  'document.write(\'<script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"><\\/script>\');',
+              }}
             />
           </>
         ) : null}
