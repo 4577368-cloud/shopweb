@@ -464,13 +464,17 @@ export default function SyncPage() {
   if (phase === "complete" && summary) {
     return (
       <WorkbenchShell sidebar={<HubAwareSidebar />}>
-        <div className="relative flex min-h-[calc(100vh-48px)] items-center justify-center px-[var(--wb-gutter)] py-8">
-          <div className="absolute right-[var(--wb-gutter)] top-6 z-10">{replayAction}</div>
-          <CompletionScreen
-            shopDomain={summary.meta.shopDomain || summary.meta.shopName}
-            onExportReport={handleExportReport}
-            onViewSummary={handleViewSummary}
-          />
+        <div className="relative min-h-0 flex-1 overflow-y-auto">
+          <div className="sticky top-0 z-10 flex justify-end px-[var(--wb-gutter)] pt-4">
+            {replayAction}
+          </div>
+          <div className="mx-auto w-full max-w-3xl px-[var(--wb-gutter)] pb-16 pt-2">
+            <CompletionScreen
+              shopDomain={summary.meta.shopDomain || summary.meta.shopName}
+              onExportReport={handleExportReport}
+              onViewSummary={handleViewSummary}
+            />
+          </div>
         </div>
       </WorkbenchShell>
     );

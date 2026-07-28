@@ -7,7 +7,7 @@ import { useOnboarding } from "@/context/onboarding-context";
 
 /**
  * Shared handoff surface (also used after sync complete).
- * Sidebar Upgrade and deep links land here — App Store install is the primary CTA.
+ * Scrollable column — do not vertically center (clips tall content).
  */
 export default function UpgradeHandoffPage() {
   const { shop } = useOnboarding();
@@ -15,8 +15,10 @@ export default function UpgradeHandoffPage() {
 
   return (
     <WorkbenchShell sidebar={<HubAwareSidebar />}>
-      <div className="relative flex min-h-[calc(100vh-48px)] items-center justify-center px-[var(--wb-gutter)] py-8">
-        <TangbuyHandoffScreen shopDomain={shopDomain} mode="upgrade" />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl px-[var(--wb-gutter)] py-8 pb-16">
+          <TangbuyHandoffScreen shopDomain={shopDomain} mode="upgrade" />
+        </div>
       </div>
     </WorkbenchShell>
   );
