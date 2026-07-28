@@ -156,7 +156,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
             const deadline = Date.now() + 10_000;
             while (!cancelled && Date.now() < deadline) {
               if (getEmbeddedAccessToken()) break;
-              const result = await exchangeSessionToken(true);
+              // Never auto-launch OAuth from bootstrap — /install Connect owns consent.
+              const result = await exchangeSessionToken(true, {
+                launchOauthOnNeed: false,
+              });
               if (result.ok || result.code === "NEED_OAUTH") break;
               await new Promise((r) => setTimeout(r, 250));
             }

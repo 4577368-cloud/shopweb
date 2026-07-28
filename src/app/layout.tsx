@@ -70,7 +70,14 @@ export default function RootLayout({
     >
       <head>
         {shopifyApiKey ? (
-          <meta name="shopify-api-key" content={shopifyApiKey} />
+          <>
+            <meta name="shopify-api-key" content={shopifyApiKey} />
+            {/* Shopify: meta + CDN script in document head so idToken is ready in Admin. */}
+            <script
+              src="https://cdn.shopify.com/shopifycloud/app-bridge.js"
+              async
+            />
+          </>
         ) : null}
       </head>
       <body

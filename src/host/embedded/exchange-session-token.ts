@@ -20,12 +20,12 @@ export type SessionTokenExchangeResult =
  * App Bridge CDN is injected on mount, so the first exchange can run before
  * `window.shopify` exists. Wait briefly instead of reporting a false failure.
  */
-async function waitForAppBridge(timeoutMs = 6000): Promise<boolean> {
+async function waitForAppBridge(timeoutMs = 4000): Promise<boolean> {
   if (typeof window === "undefined") return false;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (typeof window.shopify?.idToken === "function") return true;
-    await new Promise((r) => setTimeout(r, 120));
+    await new Promise((r) => setTimeout(r, 100));
   }
   return typeof window.shopify?.idToken === "function";
 }
@@ -34,7 +34,14 @@ async function readShopifyIdToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
   if (!(await waitForAppBridge())) return null;
   try {
-    const token = await window.shopify?.idToken?.();
+    // shopify.idToken() can hang forever if App Bridge never finishes handshake —
+    // that used to freeze the install "读取中…" gate indefinitely.
+    const token = await Promise.race([
+      window.shopify!.idToken!(),
+      new Promise<null>((resolve) => {
+        window.setTimeout(() => resolve(null), 4000);
+      }),
+    ]);
     return typeof token === "string" && token.trim() ? token.trim() : null;
   } catch {
     return null;

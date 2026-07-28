@@ -214,8 +214,9 @@ function InstallPageContent() {
       const { getEmbeddedAccessToken } = await import(
         "@/host/embedded/session-token-store"
       );
-      const deadline = Date.now() + 12_000;
+      const deadline = Date.now() + 8_000;
       let needOauthStreak = 0;
+      let lastCode = "";
       while (!cancelled && Date.now() < deadline) {
         if (getEmbeddedAccessToken()) {
           replaceInApp(
@@ -228,6 +229,7 @@ function InstallPageContent() {
           launchOauthOnNeed: false,
         });
         if (cancelled) return;
+        lastCode = result.ok ? "OK" : result.code;
         if (result.ok) {
           replaceInApp(
             localePath(locale, isAuthorized ? "/products" : "/authorize"),
@@ -237,15 +239,20 @@ function InstallPageContent() {
         }
         if (result.code === "NEED_OAUTH" || result.code === "SHOP_NOT_BOUND") {
           needOauthStreak += 1;
-          // Brief grace for post-OAuth token persistence; then show Connect UI.
-          if (needOauthStreak >= 4) break;
-          await new Promise((r) => setTimeout(r, 400));
+          // Brief grace for post-OAUTH token persistence; then show Connect UI.
+          if (needOauthStreak >= 3) break;
+          await new Promise((r) => setTimeout(r, 350));
           continue;
         }
         // App Bridge / network not ready yet — keep waiting.
-        await new Promise((r) => setTimeout(r, 300));
+        await new Promise((r) => setTimeout(r, 250));
       }
-      if (!cancelled) setEmbeddedGate("ready");
+      if (!cancelled) {
+        if (lastCode && lastCode !== "OK") {
+          console.warn("[embedded] install gate ended without session:", lastCode);
+        }
+        setEmbeddedGate("ready");
+      }
     })();
     return () => {
       cancelled = true;
