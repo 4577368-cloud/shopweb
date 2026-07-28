@@ -22,6 +22,12 @@ export const TANGBUY_DROPSHIPPING_URL = "https://dropshipping.tangbuy.com";
 export const TANGBUY_DROPSHIPPING_APP_STORE_URL =
   "https://apps.shopify.com/tangbuy-dropshipping";
 
+/** Recommended Shopify OAuth scopes for this app (Partner dashboard). Orders stay on Dropshipping. */
+export const SHOPIFY_SOURCING_APP_SCOPES = [
+  "read_products",
+  "write_products",
+] as const;
+
 /** Official marketing site — copy reference / optional footer only. */
 export const TANGBUY_OFFICIAL_URL = "https://www.tangbuy.com";
 
