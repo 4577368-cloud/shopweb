@@ -35,6 +35,7 @@ export { showHostToast, type HostToastTone } from "@/host/adapters/toast";
 export { LinkInApp } from "@/host/link-in-app";
 export { useNavigateInApp } from "@/host/use-navigate-in-app";
 export { EmbeddedHostChrome } from "@/host/embedded/embedded-host-chrome";
+export { EmbeddedAdminChrome } from "@/host/embedded/embedded-admin-chrome";
 export { EmbeddedNavMenu } from "@/host/embedded/embedded-nav-menu";
 
 export {

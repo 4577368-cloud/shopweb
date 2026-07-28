@@ -18,7 +18,10 @@ const WORKBENCH_NAV: { href: string; labelKey: string; home?: boolean }[] = [
 
 /**
  * Syncs Shopify Admin left NavigationMenu with the sourcing workbench routes.
- * Renders nothing on standalone.
+ * Renders nothing on standalone. Must be under LocaleProvider.
+ *
+ * ui-nav-menu is visually hidden via CSS so raw link text never flashes in the
+ * iframe when App Bridge upgrades the custom element late (or fails).
  */
 export function EmbeddedNavMenu() {
   const { isEmbedded } = useEmbeddedMode();

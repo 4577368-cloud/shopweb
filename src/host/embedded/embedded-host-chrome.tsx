@@ -1,22 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { TitleBar } from "@shopify/app-bridge-react";
 import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
-import { EmbeddedNavMenu } from "@/host/embedded/embedded-nav-menu";
-import { APP_FULL_NAME } from "@/lib/brand";
 
 /**
- * Embedded Admin chrome: NavigationMenu + default TitleBar.
- * Standalone: passthrough children only.
+ * Embedded Admin shell wrapper around page content.
+ * NavMenu / TitleBar live in {@link EmbeddedAdminChrome} under LocaleProvider.
  */
-export function EmbeddedHostChrome({
-  children,
-  title = APP_FULL_NAME,
-}: {
-  children: ReactNode;
-  title?: string;
-}) {
+export function EmbeddedHostChrome({ children }: { children: ReactNode }) {
   const { isEmbedded } = useEmbeddedMode();
 
   if (!isEmbedded) {
@@ -24,10 +15,6 @@ export function EmbeddedHostChrome({
   }
 
   return (
-    <>
-      <EmbeddedNavMenu />
-      <TitleBar title={title} />
-      <div className="embedded-host-root min-h-0 flex-1">{children}</div>
-    </>
+    <div className="embedded-host-root min-h-0 flex-1">{children}</div>
   );
 }

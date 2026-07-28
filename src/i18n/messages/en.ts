@@ -951,7 +951,7 @@ export const en = {
     step3Desc: "Configure logistics templates, sync mappings to Shopify.",
     footerCopyright: "All rights reserved.",
     navLogin: "Log in",
-    navRegister: "Sign up free",
+    navRegister: "Sign up",
     navEnterWorkbench: "Enter workbench",
     authTabLogin: "Log in",
     authTabRegister: "Sign up",
@@ -1110,7 +1110,7 @@ export const en = {
     welcomeRegisterDesc:
       "Click Connect store below to finish Shopify authorization and continue.",
     navLogin: "Log in",
-    navRegister: "Free sign-up",
+    navRegister: "Sign up",
     waitAuth: "Confirming your login status — try connecting again in a moment…",
     coreCapabilities: "Core capabilities",
     coreCapabilitiesDesc: "All capabilities below are already implemented.",

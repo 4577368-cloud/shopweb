@@ -418,6 +418,23 @@ select {
   width: 100% !important;
 }
 
+/*
+ * App Bridge NavigationMenu: keep ui-nav-menu out of the iframe paint.
+ * App Bridge still reads the <a> children for Admin left nav; without this,
+ * un-upgraded custom elements dump link labels as a raw text strip.
+ */
+ui-nav-menu {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 /* On small screens keep the default compact size */
 @media (max-width: 480px) {
   .woot-widget-wrapper {
