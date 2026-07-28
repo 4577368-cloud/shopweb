@@ -475,10 +475,23 @@ export interface LogisticsReopenDecisionResult {
  *
  * Always return an absolute URL in the browser so embedded Admin can break out of the
  * iframe via `window.top.location` without resolving against admin.shopify.com.
+ *
+ * Embedded Admin must use {@code /install-embedded} so the plugin can remember {@code host}
+ * and bounce back into Admin after consent (regular /install requires Tangbuy JWT).
  */
-export function shopifyInstallUrl(shop: string): string {
-  const q = `shop=${encodeURIComponent(shop)}`;
-  const path = `/api/plugin/shopify/auth/install?${q}`;
+export function shopifyInstallUrl(
+  shop: string,
+  opts?: { embedded?: boolean; host?: string }
+): string {
+  const q = new URLSearchParams();
+  q.set("shop", shop);
+  const embedded = Boolean(opts?.embedded);
+  if (embedded && opts?.host?.trim()) {
+    q.set("host", opts.host.trim());
+  }
+  const path = embedded
+    ? `/api/plugin/shopify/auth/install-embedded?${q.toString()}`
+    : `/api/plugin/shopify/auth/install?${q.toString()}`;
   if (typeof window !== "undefined") {
     return `${window.location.origin}${path}`;
   }

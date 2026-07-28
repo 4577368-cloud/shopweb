@@ -32,7 +32,7 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { consumeJustRegistered } from "@/lib/auth/just-registered";
 import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
-import { hrefInApp } from "@/host/adapters/navigation";
+import { hrefInApp, replaceInApp } from "@/host/adapters/navigation";
 
 const CONNECT_ANCHOR = "install-connect";
 
@@ -140,9 +140,11 @@ function InstallPageContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    // Standalone: wait for Tangbuy cookie. Embedded: proceed without cookie login.
-    if (!isEmbedded && (bootstrapping || authStatus !== "authenticated")) return;
-    if (isEmbedded && bootstrapping) return;
+    // Standalone only: after Tangbuy login, resume Shopify OAuth once.
+    // Embedded must NOT auto-fire Connect — that re-opens OAuth after a successful
+    // callback and surfaces a false red error on the install App URL.
+    if (isEmbedded) return;
+    if (bootstrapping || authStatus !== "authenticated") return;
     const shop =
       searchParams.get("shop")?.trim() ||
       (typeof window !== "undefined"
@@ -154,6 +156,24 @@ function InstallPageContent() {
     connectWithDomain(shop);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resume once when auth ready
   }, [authStatus, bootstrapping, searchParams, isEmbedded]);
+
+  // Embedded App URL = /install. If session-token already works, skip marketing and
+  // enter the authorize / workbench step (post-OAuth happy path).
+  useEffect(() => {
+    if (!isEmbedded) return;
+    let cancelled = false;
+    void (async () => {
+      const { exchangeSessionToken } = await import(
+        "@/host/embedded/exchange-session-token"
+      );
+      const result = await exchangeSessionToken(true);
+      if (cancelled || !result.ok) return;
+      replaceInApp(localePath(locale, "/authorize"), router);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEmbedded, locale, router]);
 
   // Embedded uses session-token silent provision — never show Tangbuy login/signup chrome.
   const needsLogin =

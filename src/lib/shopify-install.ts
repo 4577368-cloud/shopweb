@@ -77,11 +77,15 @@ export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
     return { ok: false, errorCode: "INVALID_DOMAIN" };
   }
   try {
-    const url = shopifyInstallUrl(shopDomain);
+    const mode = readEmbeddedMode();
+    const url = shopifyInstallUrl(shopDomain, {
+      embedded: mode.isEmbedded,
+      host: mode.host,
+    });
     if (typeof window !== "undefined") {
       window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);
       // Embedded: break out of Admin iframe for Shopify consent.
-      if (readEmbeddedMode().isEmbedded) {
+      if (mode.isEmbedded) {
         openExternal(url, { newTab: false });
       } else {
         window.location.assign(url);

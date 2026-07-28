@@ -140,10 +140,10 @@ function AuthorizePageContent() {
 
   useEffect(() => {
     if (!authSessionReady || isAuthorized) return;
-    // P2: if the OAuth callback already told us the shop is bound to another account,
-    // don't re-trigger the install loop — the error card handles this case.
+    // OAuth callback lands here with ?status= — never re-launch install.
+    // SHOP_ALREADY_BOUND shows an error card; OK restores via /status / onboarding.
     const statusParam = searchParams.get("status")?.trim();
-    if (statusParam === "SHOP_ALREADY_BOUND") return;
+    if (statusParam) return;
     const shopParam = searchParams.get("shop")?.trim();
     if (!shopParam || autoShopAttempted.current) return;
     autoShopAttempted.current = true;
