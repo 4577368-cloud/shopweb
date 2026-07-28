@@ -37,7 +37,8 @@ export type InstallErrorCode =
   | "EMPTY_DOMAIN"
   | "INVALID_DOMAIN"
   | "API_BASE_UNCONFIGURED"
-  | "API_BASE_MISSING";
+  | "API_BASE_MISSING"
+  | "NAVIGATION_FAILED";
 
 export interface LaunchInstallResult {
   ok: boolean;
@@ -61,7 +62,11 @@ export function rememberShopDomain(rawDomain: string): string | null {
 /**
  * Validate a shop domain, remember it, and navigate to the backend install endpoint (which 302s to
  * Shopify's consent screen). Returns {ok:false,errorCode} without navigating when the domain is
- * missing/invalid or the API base is unconfigured, so callers can show an inline/toast message.
+ * missing/invalid, so callers can show an inline/toast message.
+ *
+ * Browser install uses same-origin `/api/plugin/...` (rewritten at build via NEXT_PUBLIC_API_BASE).
+ * Do not gate the click path on the client-inlined env — that produced false "not configured"
+ * errors when the var was present for rewrites but the embedded top-nav threw.
  */
 export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
   const shopDomain = normalizeShopDomain(rawDomain);
@@ -72,12 +77,6 @@ export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
     return { ok: false, errorCode: "INVALID_DOMAIN" };
   }
   try {
-    if (typeof window !== "undefined" && !(process.env.NEXT_PUBLIC_API_BASE ?? "").trim()) {
-      return {
-        ok: false,
-        errorCode: "API_BASE_UNCONFIGURED",
-      };
-    }
     const url = shopifyInstallUrl(shopDomain);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);
@@ -85,12 +84,15 @@ export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
       if (readEmbeddedMode().isEmbedded) {
         openExternal(url, { newTab: false });
       } else {
-        window.location.href = url;
+        window.location.assign(url);
       }
     }
     return { ok: true };
-  } catch {
-    return { ok: false, errorCode: "API_BASE_MISSING" };
+  } catch (e) {
+    if (e instanceof Error && /NEXT_PUBLIC_API_BASE|not configured/i.test(e.message)) {
+      return { ok: false, errorCode: "API_BASE_MISSING" };
+    }
+    return { ok: false, errorCode: "NAVIGATION_FAILED" };
   }
 }
 
@@ -114,6 +116,8 @@ export function resolveInstallError(
       return t("install.errApiBaseUnconfigured");
     case "API_BASE_MISSING":
       return t("install.errApiBaseMissing");
+    case "NAVIGATION_FAILED":
+      return t("install.errNavigationFailed");
     default:
       return fallback;
   }

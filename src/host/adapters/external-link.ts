@@ -9,8 +9,13 @@ import { readEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 export function openExternal(url: string, opts?: { newTab?: boolean }): void {
   if (typeof window === "undefined") return;
   const mode = readEmbeddedMode();
-  const target = url.trim();
+  let target = url.trim();
   if (!target) return;
+  // Relative paths must be absolutized against the app origin before touching
+  // window.top — otherwise Admin resolves them against admin.shopify.com.
+  if (target.startsWith("/")) {
+    target = `${window.location.origin}${target}`;
+  }
 
   if (mode.isEmbedded) {
     // Consent screens and App Store pages must not stay framed.
@@ -42,5 +47,5 @@ export function openShopifyAdminPath(adminPath: string): void {
     });
     return;
   }
-  openExternal(`https://admin.shopify.com${path}`, { newTab: true });
+  openExternal(path, { newTab: true });
 }

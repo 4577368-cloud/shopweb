@@ -10,6 +10,7 @@ import {
   setEmbeddedAccessToken,
 } from "@/host/embedded/session-token-store";
 import { readEmbeddedMode } from "@/host/embedded/use-embedded-mode";
+import { openExternal } from "@/host/adapters/external-link";
 
 export type SessionTokenExchangeResult =
   | { ok: true; shopDomain: string; shopName: string }
@@ -33,7 +34,9 @@ export function launchEmbeddedInstall(shopDomain: string, host?: string): void {
   const q = new URLSearchParams();
   q.set("shop", shop);
   if (host?.trim()) q.set("host", host.trim());
-  window.top!.location.href = `/api/plugin/shopify/auth/install-embedded?${q.toString()}`;
+  const path = `/api/plugin/shopify/auth/install-embedded?${q.toString()}`;
+  // Absolute URL required when assigning window.top from the Admin iframe.
+  openExternal(`${window.location.origin}${path}`, { newTab: false });
 }
 
 export async function exchangeSessionToken(force = false): Promise<SessionTokenExchangeResult> {

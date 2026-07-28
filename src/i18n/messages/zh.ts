@@ -1121,6 +1121,7 @@ export const zh: Dictionary = {
     errInvalidDomain: "请输入正确的店铺域名，例如 your-store.myshopify.com",
     errApiBaseUnconfigured: "服务配置异常，请联系管理员检查服务配置。",
     errApiBaseMissing: "服务地址未配置，请联系管理员。",
+    errNavigationFailed: "无法打开 Shopify 授权页。请允许应用跳出 Admin 框架后重试。",
     redirectingToShopify: "正在跳转到 Shopify…",
     shopFromAppHint: "请在 Shopify 完成授权，完成后会自动返回本页。",
     pagePreviews: "产品页面预览",

@@ -1127,6 +1127,7 @@ export const es: Dictionary = {
     errInvalidDomain: "Introduce un dominio válido, p. ej. your-store.myshopify.com",
     errApiBaseUnconfigured: "Error de configuración del servicio. Contacte a su administrador para verificar la dirección de la API.",
     errApiBaseMissing: "Dirección del servicio no configurada. Contacte a su administrador.",
+    errNavigationFailed: "No se pudo abrir la autorización de Shopify. Permita salir del marco de Admin e inténtelo de nuevo.",
     redirectingToShopify: "Redirecting to Shopify…",
     shopFromAppHint: "Complete authorization on Shopify, then you'll return here automatically.",
     pagePreviews: "Producto page previews",

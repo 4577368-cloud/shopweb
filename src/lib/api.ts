@@ -472,16 +472,20 @@ export interface LogisticsReopenDecisionResult {
  * Absolute URL of the backend Shopify OAuth install entrypoint for a given shop domain.
  * In the browser we use same-origin `/api/plugin/...` so Next rewrites proxy to tangbuy-plugin
  * (NEXT_PUBLIC_API_BASE is only required at build time for those rewrites).
+ *
+ * Always return an absolute URL in the browser so embedded Admin can break out of the
+ * iframe via `window.top.location` without resolving against admin.shopify.com.
  */
 export function shopifyInstallUrl(shop: string): string {
   const q = `shop=${encodeURIComponent(shop)}`;
+  const path = `/api/plugin/shopify/auth/install?${q}`;
   if (typeof window !== "undefined") {
-    return `/api/plugin/shopify/auth/install?${q}`;
+    return `${window.location.origin}${path}`;
   }
   if (!API_BASE) {
     throw new ApiError("NEXT_PUBLIC_API_BASE is not configured", 0);
   }
-  return `${API_BASE}/api/plugin/shopify/auth/install?${q}`;
+  return `${API_BASE}${path}`;
 }
 
 /** Read-only Shopify auth status for a shop (non-sensitive fields only). */
