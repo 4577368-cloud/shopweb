@@ -216,7 +216,7 @@ function InstallPageContent() {
       {/* Connect / authorize — install-specific; App URL lands here. */}
       <section
         id={CONNECT_ANCHOR}
-        className="mx-auto grid max-w-7xl scroll-mt-20 gap-8 px-5 py-10 sm:px-6 sm:py-14 lg:grid-cols-[1.05fr_1fr] lg:items-center"
+        className="mx-auto grid max-w-7xl scroll-mt-16 gap-8 px-5 pb-8 pt-5 sm:px-6 sm:pb-10 sm:pt-6 lg:grid-cols-[1.05fr_1fr] lg:items-center"
       >
         <div>
           <span className="landing-badge">
