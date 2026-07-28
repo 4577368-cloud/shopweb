@@ -13,7 +13,7 @@ import {
   RefreshCw,
 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
+import { WorkbenchSidebar } from "@/components/workbench/workbench-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import {
@@ -351,7 +351,7 @@ function SkuAlignContent() {
 
   if (authBootstrapping) {
     return (
-      <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
+      <WorkbenchShell sidebar={<WorkbenchSidebar />} {...wb.shellProps}>
         <WorkbenchPanel
           title={t("sku.title")}
           breadcrumbs={notAuthBreadcrumbs}
@@ -372,7 +372,7 @@ function SkuAlignContent() {
   if (!isAuthorized) {
     return (
       <WorkbenchShell
-        sidebar={<HubAwareSidebar />}
+        sidebar={<WorkbenchSidebar />}
         rail={
           <AssistantRail assistantContent={<CopilotCard content={copilot} />} />
         }
@@ -443,7 +443,7 @@ function SkuAlignContent() {
   );
 
   return (
-    <WorkbenchShell sidebar={<HubAwareSidebar />} rail={rail} {...wb.shellProps}>
+    <WorkbenchShell sidebar={<WorkbenchSidebar />} rail={rail} {...wb.shellProps}>
       <WorkbenchPanel
         title={t("sku.title")}
         breadcrumbs={breadcrumbs}
@@ -510,7 +510,7 @@ export default function SkuAlignPage() {
   return (
     <Suspense
       fallback={
-        <WorkbenchShell sidebar={<HubAwareSidebar />}>
+        <WorkbenchShell sidebar={<WorkbenchSidebar />}>
           <WorkbenchPanel title={t("sku.title")}>
             <TableSkeleton rows={5} />
           </WorkbenchPanel>

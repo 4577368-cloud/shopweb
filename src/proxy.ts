@@ -11,8 +11,6 @@ const PROTECTED_PREFIXES = [
   "/account",
   "/catalog",
   "/logistics",
-  "/operations-center",
-  "/order-center",
   "/products",
   "/sku-align",
   "/sync",

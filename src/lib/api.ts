@@ -24,7 +24,6 @@ import type {
   PublishResult,
   ShopMirrorProduct,
   ShopOrderHeader,
-  ShopOrderProcurementSnapshot,
   ShopProductDetail,
   ShopProductUpdatePayload,
   SkuAutoAlignResult,
@@ -32,10 +31,6 @@ import type {
   UploadedImage,
   MatchJobProgress,
 } from "@/lib/types";
-import type {
-  RankingRow,
-  RankingSnapshot,
-} from "@/lib/marketing/types";
 import type {
   SkuAlignAliasKnowledgeRequest,
   SkuAlignBlockVariantRequest,
@@ -49,7 +44,6 @@ import type {
   SkuAlignRunStatus,
   SkuAlignSupplementSourceRequest,
 } from "@/lib/sku-align-v1/types";
-import type { OrderBindingLine } from "@/lib/order/types";
 import { normalizeSkuOverviewForList } from "@/lib/api/sku-overview-normalize";
 import { logisticsTemplateFromVo } from "@/lib/logistics/default-template";
 import { normalizeShopApiName } from "@/lib/resolve-shop-api-name";
@@ -961,26 +955,6 @@ export const api = {
       `/api/plugin/order/header/list?shopName=${encodeURIComponent(shop)}`
     ),
 
-  /**
-   * 采购子单快照（可选）。未实现时前端忽略；见 docs/ORDER_CENTER_PROCUREMENT_LINE_CONTRACT.md
-   */
-  listOrderProcurementSnapshots: (shop: string) =>
-    request<ShopOrderProcurementSnapshot[]>(
-      `/api/plugin/order/procurement/snapshots?shopName=${encodeURIComponent(shop)}`
-    ),
-
-  /**
-   * 订单行的「Shopify 商品 → Tangbuy 关联货源」匹配结果（同步时已解析并落库）。
-   * 返回 ThirdPlatformOrderLine：含 Shopify 行信息 + tangbuy* 绑定快照 + bindingStatus。
-   * 订单中心据此展示 Tangbuy 侧货源信息，无需后端再投影 line_items。
-   */
-  listOrderBindingLines: (shop: string, outerOrderId: string) =>
-    request<OrderBindingLine[]>(
-      `/api/plugin/order/binding/lines?shopName=${encodeURIComponent(
-        shop
-      )}&outerOrderId=${encodeURIComponent(outerOrderId)}`
-    ),
-
   /** Phase 1 read-only product detail (SPU + variants + media) from the local mirror. */
   getShopProductDetail: (shop: string, itemId: string, signal?: AbortSignal) =>
     request<ShopProductDetail>(
@@ -1150,33 +1124,4 @@ export const api = {
       body: JSON.stringify({ text, targetLang, sourceLang, style }),
       ...(signal ? { signal } : {}),
     }),
-
-  // ---------------------------------------------------------------------------
-  // TikTok 商品榜单（/api/plugin/ranking/**，真实落库，不经过 pipispy 计费护栏）
-  // ---------------------------------------------------------------------------
-
-  /** 列出店铺的榜单快照（日期窗口），最新窗口在前。 */
-  fetchRankingSnapshots: (shop: string) =>
-    request<RankingSnapshot[]>(
-      `/api/plugin/ranking/snapshots?shopName=${encodeURIComponent(normalizeShopApiName(shop))}`
-    ),
-
-  /** 取某快照的商品列表，可选按 L1 类目过滤；后端按 GMV 降序返回。 */
-  listRankingProducts: (
-    shop: string,
-    opts?: { snapshotId?: number; categoryL1?: string }
-  ) => {
-    const params = new URLSearchParams({
-      shopName: normalizeShopApiName(shop),
-    });
-    if (opts?.snapshotId != null) {
-      params.set("snapshotId", String(opts.snapshotId));
-    }
-    if (opts?.categoryL1) {
-      params.set("categoryL1", opts.categoryL1);
-    }
-    return request<RankingRow[]>(
-      `/api/plugin/ranking/list?${params.toString()}`
-    );
-  },
 };

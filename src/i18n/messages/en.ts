@@ -4524,6 +4524,9 @@ export const en = {
   },
 
   accountCommon: {
+    pageOf: "Page {{page}} / {{total}}",
+    prev: "Previous",
+    next: "Next",
     ledgerCols: {
       time: "Time",
       type: "Type",

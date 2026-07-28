@@ -6,7 +6,7 @@ import { useCallback, useMemo, useRef, useState, Suspense } from "react";
 import dynamic from "next/dynamic";
 import { Loader2, RefreshCw, ArrowRight, Package } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
+import { WorkbenchSidebar } from "@/components/workbench/workbench-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { AssistantRail } from "@/components/workbench/assistant-rail";
@@ -359,7 +359,7 @@ function LogisticsContent() {
 
   if (authBootstrapping) {
     return (
-      <WorkbenchShell sidebar={<HubAwareSidebar />} {...wb.shellProps}>
+      <WorkbenchShell sidebar={<WorkbenchSidebar />} {...wb.shellProps}>
         <WorkbenchPanel
           title={t("logistics.pageTitle")}
           breadcrumbs={breadcrumbs}
@@ -381,7 +381,7 @@ function LogisticsContent() {
   if (!isAuthorized) {
     return (
       <WorkbenchShell
-        sidebar={<HubAwareSidebar />}
+        sidebar={<WorkbenchSidebar />}
         rail={
           <AssistantRail
             assistantContent={
@@ -415,7 +415,7 @@ function LogisticsContent() {
 
   return (
     <WorkbenchShell
-      sidebar={<HubAwareSidebar />}
+      sidebar={<WorkbenchSidebar />}
       rail={
         <AssistantRail
           assistantContent={

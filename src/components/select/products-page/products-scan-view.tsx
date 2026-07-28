@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
+import { WorkbenchSidebar } from "@/components/workbench/workbench-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail, CopilotCard } from "@/components/workbench/assistant-rail";
 import { AccountManagerRailFooter } from "@/components/account-manager/account-manager-contact-cta";
@@ -50,7 +50,7 @@ export function ProductsScanView({
 
   return (
     <WorkbenchShell
-      sidebar={<HubAwareSidebar />}
+      sidebar={<WorkbenchSidebar />}
       rail={
         <AssistantRail
           assistantContent={

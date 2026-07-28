@@ -26,9 +26,8 @@ const toneClass: Record<AccountStatTone, string> = {
 /**
  * Compact stat tile — label + value (+ optional icon).
  *
- * Used for the balance overview (recharged / consumed / refunded) and the
- * shops summary (total / active / needs attention). Keeps tone→color mapping
- * consistent across pages so "warn" always means amber, "ok" always brand.
+ * Used for shops summary (total / active / needs attention). Keeps tone→color
+ * mapping consistent across account pages.
  */
 export function AccountStatItem({
   label,
@@ -91,7 +90,7 @@ export function AccountPagination({
   return (
     <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
       <span>
-        {t("accountBills.pageOf", { page, total: totalPages })}
+        {t("accountCommon.pageOf", { page, total: totalPages })}
       </span>
       <div className="flex items-center gap-1">
         <Button
@@ -101,7 +100,7 @@ export function AccountPagination({
           onClick={() => onPage(Math.max(0, offset - pageSize))}
           disabled={!hasPrev}
         >
-          {t("accountBills.prev")}
+          {t("accountCommon.prev")}
         </Button>
         <Button
           type="button"
@@ -110,7 +109,7 @@ export function AccountPagination({
           onClick={() => onPage(offset + pageSize)}
           disabled={!hasNext}
         >
-          {t("accountBills.next")}
+          {t("accountCommon.next")}
         </Button>
       </div>
     </div>

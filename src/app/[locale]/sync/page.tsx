@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Loader2, RefreshCw } from "@/lib/ui/icons";
 import { motion } from "framer-motion";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
+import { WorkbenchSidebar } from "@/components/workbench/workbench-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { CompletionScreen } from "@/components/sync/tangbuy-handoff-screen";
 import { FollowUpList } from "@/components/sync/follow-up-list";
@@ -436,7 +436,7 @@ export default function SyncPage() {
 
   if (phase === "complete" && summary) {
     return (
-      <WorkbenchShell sidebar={<HubAwareSidebar />}>
+      <WorkbenchShell sidebar={<WorkbenchSidebar />}>
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div className="absolute right-[var(--wb-gutter)] top-4 z-10">
             {replayAction}
@@ -451,7 +451,7 @@ export default function SyncPage() {
 
   if (!summary && (phase === "loading" || loadError)) {
     return (
-      <WorkbenchShell sidebar={<HubAwareSidebar />}>
+      <WorkbenchShell sidebar={<WorkbenchSidebar />}>
         <WorkbenchPanel
           title={t("sync.title")}
           breadcrumbs={[
@@ -487,7 +487,7 @@ export default function SyncPage() {
   }
 
   return (
-    <WorkbenchShell sidebar={<HubAwareSidebar />}>
+    <WorkbenchShell sidebar={<WorkbenchSidebar />}>
       <WorkbenchPanel
         title={t("sync.title")}
         description={phase === "summary" ? undefined : t("sync.reviewing")}

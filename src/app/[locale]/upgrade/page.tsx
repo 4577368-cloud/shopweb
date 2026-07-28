@@ -1,7 +1,7 @@
 "use client";
 
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
+import { WorkbenchSidebar } from "@/components/workbench/workbench-sidebar";
 import { TangbuyHandoffScreen } from "@/components/sync/tangbuy-handoff-screen";
 import { useOnboarding } from "@/context/onboarding-context";
 
@@ -14,7 +14,7 @@ export default function UpgradeHandoffPage() {
   const shopDomain = shop.domain || shop.name || undefined;
 
   return (
-    <WorkbenchShell sidebar={<HubAwareSidebar />}>
+    <WorkbenchShell sidebar={<WorkbenchSidebar />}>
       <div className="flex min-h-0 flex-1 flex-col">
         <TangbuyHandoffScreen shopDomain={shopDomain} mode="upgrade" />
       </div>

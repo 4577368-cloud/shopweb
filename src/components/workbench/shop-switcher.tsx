@@ -13,7 +13,13 @@ import Link from "next/link";
 import { useOnboarding } from "@/context/onboarding-context";
 import { useUser } from "@/context/user-context";
 import { api, ApiError, type AuthorizedShopSummary } from "@/lib/api";
-import { SHOP_STORAGE_KEY } from "@/lib/shopify-install";
+import {
+  normalizeShopDomain,
+  SHOP_STORAGE_KEY,
+} from "@/lib/shopify-install";
+import {
+  shopSummaryMatchesDomain,
+} from "@/lib/restore-shop-auth";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { localeHtmlLang } from "@/i18n/config";
@@ -37,6 +43,8 @@ function fmtAuthorizedAt(locale: string, raw?: string): string {
  * - unauthenticated: keep the dropdown (so a remembered shop from localStorage still works
  *   during the transition period), but skip the user-scoped list call — show the current
  *   shop only, with a "sign in" hint at the bottom.
+ * - sole shop: if the account has exactly one bound shop but onboarding is not authorized yet,
+ *   auto-activate that shop so the sidebar does not stick on "未连接店铺".
  */
 export function ShopSwitcher() {
   const t = useT();
@@ -49,6 +57,102 @@ export function ShopSwitcher() {
   const [shops, setShops] = useState<AuthorizedShopSummary[]>([]);
   const [signInHint, setSignInHint] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const autoActivatedRef = useRef<string | null>(null);
+
+  const currentDomain = normalizeShopDomain(shop.domain || "");
+
+  const activateShop = useCallback(
+    async (
+      domain: string,
+      opts?: { silent?: boolean; fallback?: AuthorizedShopSummary }
+    ) => {
+      const normalized = normalizeShopDomain(domain) || domain.trim().toLowerCase();
+      if (!normalized) return false;
+
+      if (
+        isAuthorized &&
+        currentDomain &&
+        currentDomain === normalized
+      ) {
+        return true;
+      }
+
+      try {
+        window.localStorage.setItem(SHOP_STORAGE_KEY, normalized);
+        const status = await api.getShopStatus(normalized);
+        if (!status.authorized) {
+          // Sole-shop fallback: /shops already proved the binding is ACTIVE.
+          if (opts?.fallback) {
+            const fbDomain =
+              normalizeShopDomain(
+                opts.fallback.shopDomain || opts.fallback.shopName || ""
+              ) || normalized;
+            hydrateAuthorizedShop({
+              name: opts.fallback.shopName || fbDomain.split(".")[0] || fbDomain,
+              domain: fbDomain,
+              authorizedAt: fmtAuthorizedAt(locale, opts.fallback.authorizedAt),
+              productCount: opts.fallback.productCount ?? 0,
+            });
+            if (!opts.silent) {
+              showToast(
+                t("shopSwitcher.toastSwitched", {
+                  name: opts.fallback.shopName || fbDomain,
+                })
+              );
+            }
+            return true;
+          }
+          if (!opts?.silent) showToast(t("shopSwitcher.toastAuthExpired"));
+          return false;
+        }
+        hydrateAuthorizedShop({
+          name: status.shopName ?? normalized.split(".")[0] ?? normalized,
+          domain: status.shopDomain ?? normalized,
+          authorizedAt: fmtAuthorizedAt(locale, status.authorizedAt),
+          productCount: status.productCount ?? 0,
+        });
+        if (!opts?.silent) {
+          showToast(
+            t("shopSwitcher.toastSwitched", {
+              name: status.shopName ?? normalized,
+            })
+          );
+        }
+        return true;
+      } catch {
+        if (opts?.fallback) {
+          const fbDomain =
+            normalizeShopDomain(
+              opts.fallback.shopDomain || opts.fallback.shopName || ""
+            ) || normalized;
+          hydrateAuthorizedShop({
+            name: opts.fallback.shopName || fbDomain.split(".")[0] || fbDomain,
+            domain: fbDomain,
+            authorizedAt: fmtAuthorizedAt(locale, opts.fallback.authorizedAt),
+            productCount: opts.fallback.productCount ?? 0,
+          });
+          if (!opts?.silent) {
+            showToast(
+              t("shopSwitcher.toastSwitched", {
+                name: opts.fallback.shopName || fbDomain,
+              })
+            );
+          }
+          return true;
+        }
+        if (!opts?.silent) showToast(t("shopSwitcher.toastSwitchFailed"));
+        return false;
+      }
+    },
+    [
+      currentDomain,
+      hydrateAuthorizedShop,
+      isAuthorized,
+      locale,
+      showToast,
+      t,
+    ]
+  );
 
   const loadShops = useCallback(async () => {
     // Don't fire the user-scoped endpoint during bootstrap or when clearly unauthenticated —
@@ -73,7 +177,29 @@ export function ShopSwitcher() {
     setLoading(true);
     try {
       const list = await api.listAuthorizedShops();
-      setShops(Array.isArray(list) ? list : []);
+      const rows = Array.isArray(list) ? list : [];
+      setShops(rows);
+
+      // Sole bound shop + not yet authorized in this session → auto-activate.
+      if (rows.length === 1) {
+        const sole = rows[0];
+        const soleDomain =
+          normalizeShopDomain(sole.shopDomain || sole.shopName || "") ||
+          sole.shopDomain;
+        const needsActivate =
+          !!soleDomain &&
+          (!isAuthorized ||
+            !currentDomain ||
+            !shopSummaryMatchesDomain(sole, currentDomain));
+        if (
+          needsActivate &&
+          soleDomain &&
+          autoActivatedRef.current !== soleDomain
+        ) {
+          autoActivatedRef.current = soleDomain;
+          void activateShop(soleDomain, { silent: true, fallback: sole });
+        }
+      }
     } catch (err) {
       // 401 means the access cookie expired; the UserProvider's bootstrap or the next
       // user action will trigger /refresh. Until then, fall back to the current shop so
@@ -95,7 +221,25 @@ export function ShopSwitcher() {
     } finally {
       setLoading(false);
     }
-  }, [bootstrapping, authStatus, isAuthorized, shop.domain, shop.name, shop.productCount]);
+  }, [
+    activateShop,
+    authStatus,
+    bootstrapping,
+    currentDomain,
+    isAuthorized,
+    shop.domain,
+    shop.name,
+    shop.productCount,
+  ]);
+
+  // Also probe once after login even if the dropdown stays closed — fixes sole-shop
+  // "未连接店铺" without requiring the user to open the switcher.
+  useEffect(() => {
+    if (bootstrapping) return;
+    if (authStatus !== "authenticated") return;
+    if (isAuthorized && currentDomain) return;
+    void loadShops();
+  }, [authStatus, bootstrapping, currentDomain, isAuthorized, loadShops]);
 
   useEffect(() => {
     if (!open) return;
@@ -118,38 +262,28 @@ export function ShopSwitcher() {
     };
   }, [open]);
 
-  const selectShop = async (domain: string) => {
+  const selectShop = async (domain: string, row?: AuthorizedShopSummary) => {
     if (switching) return;
-    const normalized = domain.trim().toLowerCase();
+    const normalized = normalizeShopDomain(domain) || domain.trim().toLowerCase();
     if (!normalized) return;
-    if (isAuthorized && shop.domain.toLowerCase() === normalized) {
+    if (isAuthorized && currentDomain && currentDomain === normalized) {
       setOpen(false);
       return;
     }
     setSwitching(true);
     try {
-      window.localStorage.setItem(SHOP_STORAGE_KEY, normalized);
-      const status = await api.getShopStatus(normalized);
-      if (!status.authorized) {
-        showToast(t("shopSwitcher.toastAuthExpired"));
-        return;
-      }
-      hydrateAuthorizedShop({
-        name: status.shopName ?? normalized.split(".")[0] ?? normalized,
-        domain: status.shopDomain ?? normalized,
-        authorizedAt: fmtAuthorizedAt(locale, status.authorizedAt),
-        productCount: status.productCount ?? 0,
+      const ok = await activateShop(normalized, {
+        fallback: row ?? (shops.length === 1 ? shops[0] : undefined),
       });
-      showToast(t("shopSwitcher.toastSwitched", { name: status.shopName ?? normalized }));
-      setOpen(false);
-    } catch {
-      showToast(t("shopSwitcher.toastSwitchFailed"));
+      if (ok) setOpen(false);
     } finally {
       setSwitching(false);
     }
   };
 
-  const label = isAuthorized ? shop.name : t("shopSwitcher.notConnected");
+  const label = isAuthorized
+    ? shop.name || currentDomain || t("shopSwitcher.notConnected")
+    : t("shopSwitcher.notConnected");
 
   return (
     <div ref={rootRef} className="relative px-4">
@@ -184,20 +318,23 @@ export function ShopSwitcher() {
                 {t("shopSwitcher.loadingShops")}
               </div>
             ) : shops.length === 0 ? (
-              <p className="px-3 py-2.5 text-xs text-ink-muted">{t("shopSwitcher.noAuthorizedShops")}</p>
+              <p className="px-3 py-2.5 text-xs text-ink-muted">
+                {t("shopSwitcher.noAuthorizedShops")}
+              </p>
             ) : (
               shops.map((s) => {
                 const active =
                   isAuthorized &&
-                  s.shopDomain.toLowerCase() === shop.domain.toLowerCase();
+                  !!currentDomain &&
+                  shopSummaryMatchesDomain(s, currentDomain);
                 return (
                   <button
-                    key={s.shopDomain}
+                    key={s.shopDomain || s.shopName}
                     type="button"
                     role="option"
                     aria-selected={active}
                     disabled={switching}
-                    onClick={() => void selectShop(s.shopDomain)}
+                    onClick={() => void selectShop(s.shopDomain || s.shopName, s)}
                     className={cn(
                       "flex w-full items-start gap-2 px-3 py-2 text-left transition-colors",
                       active ? "bg-brand-soft" : "hover:bg-slate-50",

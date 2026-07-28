@@ -4506,6 +4506,9 @@ export const zh: Dictionary = {
   },
 
   accountCommon: {
+    pageOf: "第 {{page}} / {{total}} 页",
+    prev: "上一页",
+    next: "下一页",
     ledgerCols: {
       time: "时间",
       type: "类型",

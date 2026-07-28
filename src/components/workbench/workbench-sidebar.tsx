@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect } from "react";
 import { CheckCircle2 } from "@/lib/ui/icons";
 import { AppLogo } from "@/components/brand/app-logo";
 import { useOnboarding } from "@/context/onboarding-context";
@@ -41,14 +41,12 @@ function stepKeyFor(id: string): string {
 }
 
 export interface WorkbenchSidebarProps {
-  /** @deprecated Hub 已下线；保留 prop 以免调用方报错。 */
-  bottomPanel?: ReactNode;
   /** Hide outer aside chrome when nested (legacy layouts). */
   embedded?: boolean;
 }
 
 /**
- * Unified left rail: 开店流程（运营中枢入口已隐藏，待独立广告监控 APP）。
+ * Unified left rail: 开店流程步骤导航。
  */
 export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
   const pathname = usePathname();

@@ -4520,6 +4520,9 @@ export const fr: Dictionary = {
   },
 
   accountCommon: {
+    pageOf: "Page {{page}} / {{total}}",
+    prev: "Précédent",
+    next: "Suivant",
     ledgerCols: {
       time: "Heure",
       type: "Type",

@@ -50,7 +50,7 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
   const params = useSearchParams();
   const locale = useLocale();
   const { status: authStatus } = useAuth();
-  const { isAuthorized, operationsHubReady } = useOnboarding();
+  const { isAuthorized } = useOnboarding();
   const [mode, setMode] = useState<LandingAuthMode>(initialMode);
 
   useEffect(() => {
@@ -60,11 +60,9 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
   const from = params.get("from");
   const postLoginTarget = resolvePostLoginPath(locale, from, {
     isAuthorized,
-    operationsHubReady,
   });
 
-  // Only hard-redirect once when session becomes authenticated — avoid re-firing
-  // when hub readiness flips and would otherwise yank the user to a hub URL.
+  // Only hard-redirect once when session becomes authenticated.
   const redirectedRef = useRef(false);
   useEffect(() => {
     if (authStatus !== "authenticated") {
@@ -95,12 +93,12 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
     if (from && from.startsWith("/") && !from.startsWith("//")) {
       // Reuse post-login rules so closing the panel cannot bounce into a locked hub URL.
       router.push(
-        resolvePostLoginPath(locale, from, { isAuthorized, operationsHubReady })
+        resolvePostLoginPath(locale, from, { isAuthorized })
       );
       return;
     }
     router.push(localePath(locale, "/"));
-  }, [from, locale, router, isAuthorized, operationsHubReady]);
+  }, [from, locale, router, isAuthorized]);
 
   const showAuth = useCallback(
     (m: LandingAuthMode) => {

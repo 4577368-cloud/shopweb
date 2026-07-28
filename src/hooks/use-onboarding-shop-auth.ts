@@ -20,7 +20,9 @@ import {
   fetchRestoredShopAuth,
   markAuthVerified,
   resolveShopDomainToRestore,
+  restoreShopAuthFromAuthorizedList,
 } from "@/lib/restore-shop-auth";
+import { normalizeShopDomain } from "@/lib/shopify-install";
 import { normalizeShopApiName, shopApiNameFromDomain } from "@/lib/resolve-shop-api-name";
 import type { AuthStatus, OnboardingStep, OverviewMetrics, ShopInfo, StepId } from "@/lib/types";
 
@@ -120,15 +122,27 @@ export function useOnboardingShopAuth({
         if (cancelled) return;
 
         if (shopToRestore) {
-          setShopDomainInput(shopToRestore);
+          const normalized = normalizeShopDomain(shopToRestore) || shopToRestore;
+          setShopDomainInput(normalized);
           setShop((prev) => ({
             ...prev,
-            domain: shopToRestore,
-            name: shopApiNameFromDomain(shopToRestore),
+            domain: normalized,
+            name: shopApiNameFromDomain(normalized),
           }));
         }
 
         if (!shopToRestore) {
+          // No remembered domain — still try sole/first bound shop from account list.
+          try {
+            const fromList = await restoreShopAuthFromAuthorizedList();
+            if (cancelled) return;
+            if (fromList) {
+              hydrateAuthorizedShop(fromList);
+              return;
+            }
+          } catch {
+            // fall through to empty state
+          }
           setShopDomainInput("");
           setShop((prev) => ({
             ...prev,
@@ -141,13 +155,30 @@ export function useOnboardingShopAuth({
           return;
         }
 
-        const restored = await fetchRestoredShopAuth(shopToRestore);
+        let restored: Awaited<ReturnType<typeof fetchRestoredShopAuth>> = null;
+        try {
+          restored = await fetchRestoredShopAuth(shopToRestore);
+        } catch {
+          restored = null;
+        }
         if (cancelled) return;
 
         if (restored) {
           hydrateAuthorizedShop(restored);
-          markAuthVerified(restored.domain);
           return;
+        }
+
+        // /status failed or unauthorized, but account may still have a bound shop
+        // (especially sole-shop accounts after login remount).
+        try {
+          const fromList = await restoreShopAuthFromAuthorizedList();
+          if (cancelled) return;
+          if (fromList) {
+            hydrateAuthorizedShop(fromList);
+            return;
+          }
+        } catch {
+          // fall through
         }
 
         clearRememberedShopDomain();

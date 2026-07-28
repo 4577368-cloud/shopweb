@@ -16,7 +16,7 @@ import {
   Sparkles,
 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
+import { WorkbenchSidebar } from "@/components/workbench/workbench-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import {
   AssistantRail,
@@ -350,7 +350,7 @@ function AuthorizePageContent() {
   if (oauthStatus === "SHOP_ALREADY_BOUND") {
     const shopParam = searchParams.get("shop")?.trim() || "";
     return (
-      <WorkbenchShell sidebar={<HubAwareSidebar />}>
+      <WorkbenchShell sidebar={<WorkbenchSidebar />}>
         <WorkbenchPanel title={t("authorize.pageTitle")}>
           <div className="flex flex-col items-center justify-center gap-3 py-16">
             <AlertTriangle className="h-8 w-8 text-amber-500" />
@@ -385,7 +385,7 @@ function AuthorizePageContent() {
     authSessionReady
   ) {
     return (
-      <WorkbenchShell sidebar={<HubAwareSidebar />}>
+      <WorkbenchShell sidebar={<WorkbenchSidebar />}>
         <WorkbenchPanel title={t("authorize.pageTitle")}>
           <div className="flex flex-col items-center justify-center gap-3 py-16">
             <Loader2 className="h-8 w-8 animate-spin text-brand" />
@@ -401,7 +401,7 @@ function AuthorizePageContent() {
 
   return (
     <WorkbenchShell
-      sidebar={<HubAwareSidebar />}
+      sidebar={<WorkbenchSidebar />}
       rail={
         <AssistantRail
           assistantContent={
@@ -598,7 +598,7 @@ export default function AuthorizePage() {
   return (
     <Suspense
       fallback={
-        <WorkbenchShell sidebar={<HubAwareSidebar />}>
+        <WorkbenchShell sidebar={<WorkbenchSidebar />}>
           <WorkbenchPanel title={t("authorize.pageTitle")}>
             <div className="flex justify-center py-16">
               <Loader2

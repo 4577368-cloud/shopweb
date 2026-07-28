@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Loader2 } from "@/lib/ui/icons";
 import { WorkbenchShell } from "@/components/workbench/workbench-shell";
-import { HubAwareSidebar } from "@/components/workbench/hub-aware-sidebar";
+import { WorkbenchSidebar } from "@/components/workbench/workbench-sidebar";
 import { WorkbenchPanel } from "@/components/workbench/workbench-panel";
 import { AssistantRail } from "@/components/workbench/assistant-rail";
 import { AccountManagerRailFooter } from "@/components/account-manager/account-manager-contact-cta";
@@ -444,7 +444,7 @@ function SelectContent() {
 
   if (authBootstrapping) {
     return (
-      <WorkbenchShell sidebar={<HubAwareSidebar />} rail={rail} {...wb.shellProps}>
+      <WorkbenchShell sidebar={<WorkbenchSidebar />} rail={rail} {...wb.shellProps}>
         <WorkbenchPanel
           title={t("products.title")}
           breadcrumbs={[{ label: t("nav.authorize"), href: localePath(locale, "/authorize") }, { label: t("products.title") }]}
@@ -466,7 +466,7 @@ function SelectContent() {
   if (!isAuthorized) {
     return (
       <WorkbenchShell
-        sidebar={<HubAwareSidebar />}
+        sidebar={<WorkbenchSidebar />}
         rail={rail}
         {...wb.shellProps}
       >
@@ -517,7 +517,7 @@ function SelectContent() {
 
   return (
     <WorkbenchShell
-      sidebar={<HubAwareSidebar />}
+      sidebar={<WorkbenchSidebar />}
       rail={rail}
       {...wb.shellProps}
     >
@@ -583,7 +583,7 @@ function SelectContent() {
 function ProductsPageFallback() {
   const t = useT();
   return (
-    <WorkbenchShell sidebar={<HubAwareSidebar />}>
+    <WorkbenchShell sidebar={<WorkbenchSidebar />}>
       <WorkbenchPanel title={t("products.title")}>{null}</WorkbenchPanel>
     </WorkbenchShell>
   );

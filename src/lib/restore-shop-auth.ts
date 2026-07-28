@@ -1,6 +1,6 @@
 import { normalizeShopApiName, shopApiNameFromDomain } from "@/lib/resolve-shop-api-name";
-import { api } from "@/lib/api";
-import { SHOP_STORAGE_KEY } from "@/lib/shopify-install";
+import { api, type AuthorizedShopSummary } from "@/lib/api";
+import { normalizeShopDomain, SHOP_STORAGE_KEY } from "@/lib/shopify-install";
 
 const AUTH_SESSION_OK_KEY = "tangbuy.authSessionOk";
 const AUTH_LOCAL_OK_KEY = "tangbuy.authLocalOk";
@@ -168,6 +168,22 @@ function fmtAuthorizedAt(iso?: string | null): string {
     : d.toLocaleString("zh-CN", { hour12: false });
 }
 
+/** Match remembered value (handle or full domain) against an authorized-shop row. */
+export function shopSummaryMatchesDomain(
+  shop: AuthorizedShopSummary,
+  rawDomain: string
+): boolean {
+  const needle = normalizeShopDomain(rawDomain).toLowerCase();
+  if (!needle) return false;
+  const domain = normalizeShopDomain(shop.shopDomain || shop.shopName || "").toLowerCase();
+  const name = (shop.shopName || "").trim().toLowerCase();
+  return (
+    domain === needle ||
+    name === needle ||
+    (name !== "" && `${name}.myshopify.com` === needle)
+  );
+}
+
 /**
  * Resolve which shop domain to probe on cold load.
  * Priority: URL ?shop= → remembered localStorage (if still authorized) → first authorized shop.
@@ -178,8 +194,9 @@ export async function resolveShopDomainToRestore(): Promise<string | null> {
 
   const shopFromUrl = new URLSearchParams(window.location.search).get("shop")?.trim();
   if (shopFromUrl) {
-    window.localStorage.setItem(SHOP_STORAGE_KEY, shopFromUrl);
-    return shopFromUrl;
+    const normalizedUrl = normalizeShopDomain(shopFromUrl) || shopFromUrl;
+    window.localStorage.setItem(SHOP_STORAGE_KEY, normalizedUrl);
+    return normalizedUrl;
   }
 
   const stored = window.localStorage.getItem(SHOP_STORAGE_KEY)?.trim() || null;
@@ -193,17 +210,22 @@ export async function resolveShopDomainToRestore(): Promise<string | null> {
       return null;
     }
 
-    const storedNorm = stored?.toLowerCase() ?? "";
-    const match = storedNorm
-      ? shops.find((s) => s.shopDomain?.trim().toLowerCase() === storedNorm)
+    const match = stored
+      ? shops.find((s) => shopSummaryMatchesDomain(s, stored))
       : undefined;
-    const domain = (match?.shopDomain ?? shops[0]?.shopDomain)?.trim() || null;
+    // Sole shop: always prefer the only bound shop (even if localStorage was a stale handle).
+    const picked =
+      match ??
+      (shops.length === 1 ? shops[0] : undefined) ??
+      shops[0];
+    const domain =
+      normalizeShopDomain(picked?.shopDomain || picked?.shopName || "") || null;
     if (domain) {
       window.localStorage.setItem(SHOP_STORAGE_KEY, domain);
     }
     return domain;
   } catch {
-    return stored;
+    return stored ? normalizeShopDomain(stored) || stored : null;
   }
 }
 
@@ -211,10 +233,11 @@ export async function resolveShopDomainToRestore(): Promise<string | null> {
 export async function fetchRestoredShopAuth(
   shopDomain: string
 ): Promise<RestoredShopAuth | null> {
-  const status = await api.getShopStatus(shopDomain);
+  const normalized = normalizeShopDomain(shopDomain) || shopDomain;
+  const status = await api.getShopStatus(normalized);
   if (!status.authorized) return null;
 
-  const domain = status.shopDomain ?? shopDomain;
+  const domain = normalizeShopDomain(status.shopDomain ?? normalized) || normalized;
   if (typeof window !== "undefined") {
     window.localStorage.setItem(SHOP_STORAGE_KEY, domain);
   }
@@ -224,5 +247,44 @@ export async function fetchRestoredShopAuth(
     domain,
     authorizedAt: fmtAuthorizedAt(status.authorizedAt),
     productCount: status.productCount ?? 0,
+  };
+}
+
+/**
+ * Cold-load fallback when /status fails or returns unauthorized, but /shops already
+ * lists bound ACTIVE shops (common for a sole-shop account after login / remount).
+ * Tries status per candidate; if all status calls fail, hydrates from the sole list row.
+ */
+export async function restoreShopAuthFromAuthorizedList(): Promise<RestoredShopAuth | null> {
+  const list = await api.listAuthorizedShops();
+  const shops = Array.isArray(list) ? list : [];
+  if (shops.length === 0) return null;
+
+  for (const row of shops) {
+    const candidate =
+      normalizeShopDomain(row.shopDomain || row.shopName || "") || row.shopDomain;
+    if (!candidate) continue;
+    try {
+      const restored = await fetchRestoredShopAuth(candidate);
+      if (restored) return restored;
+    } catch {
+      // try next / fall through to sole-shop optimistic hydrate
+    }
+  }
+
+  if (shops.length !== 1) return null;
+  const sole = shops[0];
+  const domain =
+    normalizeShopDomain(sole.shopDomain || sole.shopName || "") || sole.shopDomain;
+  if (!domain) return null;
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(SHOP_STORAGE_KEY, domain);
+  }
+  return {
+    name:
+      normalizeShopApiName(sole.shopName ?? "") || shopApiNameFromDomain(domain),
+    domain,
+    authorizedAt: fmtAuthorizedAt(sole.authorizedAt),
+    productCount: sole.productCount ?? 0,
   };
 }

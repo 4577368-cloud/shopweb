@@ -41,7 +41,7 @@ export function LandingPage() {
   const [authMode, setAuthMode] = useState<AuthMode>("login");
 
   const { status: authStatus } = useAuth();
-  const { isAuthorized, operationsHubReady } = useOnboarding();
+  const { isAuthorized } = useOnboarding();
   const locale = useLocale();
   const router = useRouter();
 
@@ -69,9 +69,8 @@ export function LandingPage() {
     () =>
       resolvePostLoginPath(locale, null, {
         isAuthorized,
-        operationsHubReady,
       }),
-    [locale, isAuthorized, operationsHubReady]
+    [locale, isAuthorized]
   );
 
   useEffect(() => {
