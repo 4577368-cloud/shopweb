@@ -135,6 +135,50 @@ function AuthorizePageContent() {
   const connectWithDomain = useCallback(
     (raw: string) => {
       setConnectError(null);
+      // Embedded: try session→offline link first (app often already installed).
+      if (isEmbedded) {
+        setRedirecting(true);
+        void (async () => {
+          try {
+            const { exchangeSessionToken } = await import(
+              "@/host/embedded/exchange-session-token"
+            );
+            const ex = await exchangeSessionToken(true, {
+              launchOauthOnNeed: false,
+            });
+            if (ex.ok) {
+              const shopDomain =
+                normalizeShopDomain(ex.shopDomain || raw) ||
+                normalizeShopDomain(raw);
+              if (shopDomain) {
+                hydrateAuthorizedShop({
+                  name: shopApiNameFromDomain(shopDomain),
+                  domain: shopDomain,
+                  authorizedAt: new Date().toISOString(),
+                  productCount: 0,
+                });
+              }
+              setRedirecting(false);
+              setConnectError(null);
+              return;
+            }
+          } catch {
+            // fall through
+          }
+          const result = launchShopifyInstall(raw, { preferNewTab: true });
+          if (!result.ok) {
+            setRedirecting(false);
+            const msg = resolveInstallError(
+              t,
+              result.errorCode,
+              t("install.launchError")
+            );
+            setConnectError(msg);
+            showToast(msg);
+          }
+        })();
+        return;
+      }
       setRedirecting(true);
       const result = launchShopifyInstall(raw);
       if (!result.ok) {
@@ -144,20 +188,23 @@ function AuthorizePageContent() {
         showToast(msg);
       }
     },
-    [showToast, t]
+    [showToast, t, isEmbedded, hydrateAuthorizedShop]
   );
 
   useEffect(() => {
     if (!authSessionReady || isAuthorized) return;
-    // OAuth callback lands here with ?status= — never re-launch install.
-    // SHOP_ALREADY_BOUND shows an error card; OK restores via /status / onboarding.
     const statusParam = searchParams.get("status")?.trim();
     if (statusParam) return;
 
-    // Embedded Admin always passes ?shop= on app URLs. After a successful OAuth
-    // bounce we land on /authorize?shop=… — auto-Connect would re-fire consent,
-    // fail to leave the iframe, and wipe the success UI. Wait for session restore.
+    // Never auto-Connect inside Admin iframe (query host can lag one paint).
     if (isEmbedded) return;
+    if (typeof window !== "undefined") {
+      try {
+        if (window.self !== window.top) return;
+      } catch {
+        return;
+      }
+    }
 
     const shopParam = searchParams.get("shop")?.trim();
     if (!shopParam || autoShopAttempted.current) return;

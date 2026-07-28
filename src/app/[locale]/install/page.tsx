@@ -87,6 +87,43 @@ function InstallPageContent() {
     }
     setError(null);
     setRedirecting(true);
+
+    // Embedded + already installed on Shopify: link via session→offline token
+    // exchange (no iframe breakout). Only fall back to OAuth in a new tab.
+    if (isEmbedded) {
+      void (async () => {
+        try {
+          const { exchangeSessionToken } = await import(
+            "@/host/embedded/exchange-session-token"
+          );
+          const ex = await exchangeSessionToken(true, {
+            launchOauthOnNeed: false,
+          });
+          if (ex.ok) {
+            replaceInApp(
+              localePath(locale, isAuthorized ? "/products" : "/authorize"),
+              router
+            );
+            return;
+          }
+        } catch {
+          // fall through to OAuth tab
+        }
+        const result = launchShopifyInstall(raw, { preferNewTab: true });
+        if (!result.ok) {
+          setRedirecting(false);
+          const msg = resolveInstallError(
+            t,
+            result.errorCode,
+            t("install.launchError")
+          );
+          setError(msg);
+          showToast(msg);
+        }
+      })();
+      return;
+    }
+
     const result = launchShopifyInstall(raw);
     if (!result.ok) {
       setRedirecting(false);

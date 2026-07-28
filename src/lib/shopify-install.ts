@@ -68,7 +68,10 @@ export function rememberShopDomain(rawDomain: string): string | null {
  * Do not gate the click path on the client-inlined env — that produced false "not configured"
  * errors when the var was present for rewrites but the embedded top-nav threw.
  */
-export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
+export function launchShopifyInstall(
+  rawDomain: string,
+  opts?: { preferNewTab?: boolean }
+): LaunchInstallResult {
   const shopDomain = normalizeShopDomain(rawDomain);
   if (!shopDomain) {
     return { ok: false, errorCode: "EMPTY_DOMAIN" };
@@ -84,14 +87,10 @@ export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
     });
     if (typeof window !== "undefined") {
       window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);
-      // Embedded: break out of Admin iframe for Shopify consent.
       if (mode.isEmbedded) {
-        try {
-          openExternal(url, { newTab: false });
-        } catch {
-          // openExternal already falls back; never surface a false frame error.
-          window.open(url, "_blank", "noopener,noreferrer");
-        }
+        // Prefer a new tab: top-frame navigation is often blocked in Admin's
+        // sandboxed iframe (surfaces as NAVIGATION_FAILED / "leave Admin frame").
+        openExternal(url, { newTab: opts?.preferNewTab !== false });
       } else {
         window.location.assign(url);
       }
@@ -101,13 +100,11 @@ export function launchShopifyInstall(rawDomain: string): LaunchInstallResult {
     if (e instanceof Error && /NEXT_PUBLIC_API_BASE|not configured/i.test(e.message)) {
       return { ok: false, errorCode: "API_BASE_MISSING" };
     }
-    // Embedded top-nav can throw in sandboxed iframes — open a tab instead of
-    // showing "Could not open Shopify authorization".
-    if (typeof window !== "undefined" && readEmbeddedMode().isEmbedded) {
+    if (typeof window !== "undefined") {
       try {
         const mode = readEmbeddedMode();
         const url = shopifyInstallUrl(shopDomain, {
-          embedded: true,
+          embedded: mode.isEmbedded,
           host: mode.host,
         });
         window.open(url, "_blank", "noopener,noreferrer");

@@ -37,8 +37,17 @@ function snapshotFromSearch(search: URLSearchParams): EmbeddedModeSnapshot {
   const host = (search.get("host") ?? "").trim();
   const embeddedFlag = search.get("embedded");
   const shop = (search.get("shop") ?? "").trim().toLowerCase();
-  const isEmbedded =
+  let isEmbedded =
     Boolean(host) || embeddedFlag === "1" || embeddedFlag === "true";
+  // Admin iframe may briefly lack host on soft-nav; frame / App Bridge are truthy too.
+  if (!isEmbedded && typeof window !== "undefined") {
+    try {
+      if (window.self !== window.top) isEmbedded = true;
+    } catch {
+      isEmbedded = true; // cross-origin parent ⇒ embedded
+    }
+    if (window.shopify) isEmbedded = true;
+  }
   return { isEmbedded, host, shop };
 }
 
