@@ -4489,6 +4489,8 @@ export const en = {
     signOut: "Sign out",
     signOutFailed: "Sign out failed, please retry.",
     toastSignedOut: "Signed out",
+    toastEmbeddedSessionRestored: "Signed out of email login — shop session restored",
+    embeddedShopSession: "Shop session",
     hubMode: "Operations Hub mode",
     on: "On",
     off: "Off",

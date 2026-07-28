@@ -4471,6 +4471,8 @@ export const zh: Dictionary = {
     signOut: "登出",
     signOutFailed: "登出失败，请重试",
     toastSignedOut: "已登出",
+    toastEmbeddedSessionRestored: "已退出邮箱登录，已恢复店铺会话",
+    embeddedShopSession: "店铺会话",
     hubMode: "运营中枢模式",
     on: "开",
     off: "关",

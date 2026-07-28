@@ -31,11 +31,9 @@ const MENU_ITEMS: { id: Exclude<UserMenuAction, "signOut">; icon: typeof ArrowLe
  * Sidebar footer account control.
  *
  * - bootstrapping: shows a muted placeholder (avoid layout shift + email flash).
- * - unauthenticated: shows a "Sign in" link to /login.
- * - authenticated: shows the user email with an upward action menu.
- *
- * signOut calls the real `logout()` from UserProvider; if the network call
- * fails we still clear local state (the cookie will eventually expire on its own).
+ * - unauthenticated standalone: "Sign in" link to /login.
+ * - unauthenticated embedded: silently re-exchange Shopify session (no login CTA).
+ * - authenticated: user email + action menu.
  */
 export function SidebarUserMenu({ className }: { className?: string }) {
   const t = useT();
@@ -43,10 +41,12 @@ export function SidebarUserMenu({ className }: { className?: string }) {
   const { push } = useNavigateInApp();
   const { isEmbedded } = useEmbeddedMode();
   const { showToast } = useOnboarding();
-  const { user, status, bootstrapping, logout } = useUser();
+  const { user, status, bootstrapping, logout, refreshUser } = useUser();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [restoringEmbedded, setRestoringEmbedded] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const restoreAttempted = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -64,9 +64,36 @@ export function SidebarUserMenu({ className }: { className?: string }) {
     };
   }, [open]);
 
-  // Render variants by auth status. The trigger button must keep a stable
-  // height (h-7) across all variants to avoid layout shift during bootstrap.
-  if (bootstrapping) {
+  // Embedded + logged out: re-bind via Shopify session instead of sticking on 加载中.
+  useEffect(() => {
+    if (!isEmbedded || bootstrapping) return;
+    if (status === "authenticated" && user) {
+      restoreAttempted.current = false;
+      return;
+    }
+    if (restoreAttempted.current) return;
+    restoreAttempted.current = true;
+    let cancelled = false;
+    setRestoringEmbedded(true);
+    void (async () => {
+      try {
+        const { exchangeSessionToken } = await import(
+          "@/host/embedded/exchange-session-token"
+        );
+        await exchangeSessionToken(true, { launchOauthOnNeed: false });
+        if (!cancelled) await refreshUser();
+      } catch {
+        /* leave unauthenticated placeholder */
+      } finally {
+        if (!cancelled) setRestoringEmbedded(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEmbedded, bootstrapping, status, user, refreshUser]);
+
+  if (bootstrapping || restoringEmbedded) {
     return (
       <div
         className={cn(
@@ -85,7 +112,6 @@ export function SidebarUserMenu({ className }: { className?: string }) {
   }
 
   if (status !== "authenticated" || !user) {
-    // Embedded: session-token silent provision — no Tangbuy Sign-in CTA in the rail.
     if (isEmbedded) {
       return (
         <div
@@ -96,7 +122,7 @@ export function SidebarUserMenu({ className }: { className?: string }) {
           aria-label={t("userMenu.openMenu")}
         >
           <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-            {t("common.loading")}
+            {t("userMenu.embeddedShopSession")}
           </span>
         </div>
       );
@@ -121,21 +147,37 @@ export function SidebarUserMenu({ className }: { className?: string }) {
       if (signingOut) return;
       setSigningOut(true);
       try {
+        if (isEmbedded) {
+          // Email logout is meaningless in Admin — Shopify session remains.
+          // Clear Bearer then silently re-provision the shop-bound account.
+          clearEmbeddedAccessToken();
+          try {
+            await logout();
+          } catch {
+            /* cookie logout optional in iframe */
+          }
+          restoreAttempted.current = false;
+          setRestoringEmbedded(true);
+          const { exchangeSessionToken } = await import(
+            "@/host/embedded/exchange-session-token"
+          );
+          await exchangeSessionToken(true, { launchOauthOnNeed: false });
+          await refreshUser();
+          showToast(t("userMenu.toastEmbeddedSessionRestored"));
+          return;
+        }
         await logout();
-        // Clear persisted shop so the next login starts fresh.
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(SHOP_STORAGE_KEY);
         }
         clearEmbeddedAccessToken();
         showToast(t("userMenu.toastSignedOut"));
-        // Navigate to landing so the user sees a clear state change.
-        // Server components on the landing page do not require auth.
-        // Embedded: stay on install (App URL) rather than marketing landing.
-        push(localePath(locale, isEmbedded ? "/install" : "/"));
+        push(localePath(locale, "/"));
       } catch {
         showToast(t("userMenu.signOutFailed"));
       } finally {
         setSigningOut(false);
+        setRestoringEmbedded(false);
       }
       return;
     }
@@ -144,14 +186,10 @@ export function SidebarUserMenu({ className }: { className?: string }) {
       return;
     }
     if (action === "settings") {
-      // Settings surfaces as the security page (password + sessions) for now.
-      // Add a dedicated /account/settings route when notification prefs,
-      // API tokens, etc. warrant a separate page.
       push(localePath(locale, "/account/security"));
       return;
     }
     if (action === "shops") {
-      // Shop management: list bound shops, switch active shop, or unbind.
       push(localePath(locale, "/account/shops"));
       return;
     }

@@ -4485,6 +4485,8 @@ export const fr: Dictionary = {
     signOut: "Se déconnecter",
     signOutFailed: "Échec de la déconnexion, réessaie.",
     toastSignedOut: "Déconnecté",
+    toastEmbeddedSessionRestored: "Déconnexion e-mail — session boutique restaurée",
+    embeddedShopSession: "Session boutique",
     hubMode: "Mode hub opérationnel",
     on: "Activé",
     off: "Désactivé",

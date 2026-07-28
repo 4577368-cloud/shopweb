@@ -8,9 +8,11 @@ import { LandingHero } from "@/components/landing/landing-hero";
 import { AuthPanel } from "@/components/landing/auth-panel";
 import { useAuth } from "@/context/user-context";
 import { useOnboarding } from "@/context/onboarding-context";
-import { useLocale } from "@/i18n/LocaleProvider";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { resolvePostLoginPath } from "@/lib/auth/post-login-redirect";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
+import { Loader2 } from "@/lib/ui/icons";
 
 export type LandingAuthMode = "login" | "register";
 
@@ -49,8 +51,10 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
   const router = useRouter();
   const params = useSearchParams();
   const locale = useLocale();
-  const { status: authStatus } = useAuth();
+  const t = useT();
+  const { status: authStatus, refreshUser } = useAuth();
   const { isAuthorized } = useOnboarding();
+  const { isEmbedded } = useEmbeddedMode();
   const [mode, setMode] = useState<LandingAuthMode>(initialMode);
 
   useEffect(() => {
@@ -62,29 +66,55 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
     isAuthorized,
   });
 
-  // Only redirect once when session becomes authenticated.
+  // Embedded Admin never needs Tangbuy email/password — session-token silently
+  // provisions a shop-bound account. Bounce off /login instead of flashing the form.
+  useEffect(() => {
+    if (!isEmbedded) return;
+    let cancelled = false;
+    void (async () => {
+      const { exchangeSessionToken } = await import(
+        "@/host/embedded/exchange-session-token"
+      );
+      const { replaceInApp } = await import("@/host/adapters/navigation");
+      const deadline = Date.now() + 8_000;
+      while (!cancelled && Date.now() < deadline) {
+        const ex = await exchangeSessionToken(true, { launchOauthOnNeed: false });
+        if (ex.ok) {
+          await refreshUser();
+          if (!cancelled) replaceInApp(postLoginTarget, router);
+          return;
+        }
+        if (ex.code === "NEED_OAUTH") {
+          if (!cancelled) {
+            replaceInApp(localePath(locale, "/authorize"), router);
+          }
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      if (!cancelled) {
+        replaceInApp(localePath(locale, "/authorize"), router);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEmbedded, locale, postLoginTarget, refreshUser, router]);
+
+  // Only redirect once when session becomes authenticated (standalone).
   // Embedded: soft-nav with host/embedded preserved — hard assign drops query and
   // used to bounce Admin merchants through /login in a flash loop.
   const redirectedRef = useRef(false);
   useEffect(() => {
+    if (isEmbedded) return;
     if (authStatus !== "authenticated") {
       redirectedRef.current = false;
       return;
     }
     if (redirectedRef.current) return;
     redirectedRef.current = true;
-    void (async () => {
-      const { readEmbeddedMode } = await import(
-        "@/host/embedded/use-embedded-mode"
-      );
-      if (readEmbeddedMode().isEmbedded) {
-        const { replaceInApp } = await import("@/host/adapters/navigation");
-        replaceInApp(postLoginTarget, router);
-        return;
-      }
-      window.location.assign(postLoginTarget);
-    })();
-  }, [authStatus, postLoginTarget, router]);
+    window.location.assign(postLoginTarget);
+  }, [authStatus, postLoginTarget, isEmbedded]);
 
   const entryHref =
     authStatus === "authenticated"
@@ -118,6 +148,15 @@ function LandingAuthRouteShellInner({ initialMode }: { initialMode: LandingAuthM
     },
     [onModeChange]
   );
+
+  if (isEmbedded) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3">
+        <Loader2 className="h-7 w-7 animate-spin text-brand" aria-hidden />
+        <span className="text-sm text-ink-muted">{t("authorize.loading")}</span>
+      </div>
+    );
+  }
 
   return (
     <div className="landing-root min-h-screen">

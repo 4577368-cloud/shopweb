@@ -4484,6 +4484,8 @@ export const es: Dictionary = {
     signOut: "Cerrar sesión",
     signOutFailed: "No se pudo cerrar sesión, reintenta.",
     toastSignedOut: "Sesión cerrada",
+    toastEmbeddedSessionRestored: "Sesión de email cerrada — sesión de tienda restaurada",
+    embeddedShopSession: "Sesión de tienda",
     hubMode: "Modo hub operativo",
     on: "Activado",
     off: "Desactivado",
