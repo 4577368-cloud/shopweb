@@ -31,12 +31,15 @@ import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { consumeJustRegistered } from "@/lib/auth/just-registered";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
+import { replaceInApp } from "@/host/adapters/navigation";
 
 const CONNECT_ANCHOR = "install-connect";
 
 function InstallPageContent() {
   const { showToast } = useOnboarding();
   const { status: authStatus, bootstrapping } = useUser();
+  const { isEmbedded } = useEmbeddedMode();
   const router = useRouter();
   const t = useT();
   const locale = useLocale();
@@ -46,6 +49,18 @@ function InstallPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
   const [justRegistered, setJustRegistered] = useState(false);
+
+  // Admin App URL often points here, but /install is a marketing shell without the
+  // workbench step rail. Authorize IS step 1 — send embedded merchants there so
+  // they see the 5-step sidebar immediately (current = Authorize store).
+  useEffect(() => {
+    if (!isEmbedded) return;
+    const q = searchParams.toString();
+    replaceInApp(
+      localePath(locale, q ? `/authorize?${q}` : "/authorize"),
+      router
+    );
+  }, [isEmbedded, locale, router, searchParams]);
 
   useEffect(() => {
     setJustRegistered(consumeJustRegistered());
@@ -145,6 +160,15 @@ function InstallPageContent() {
     t("install.trustRevocable"),
     t("install.trustEncrypted"),
   ];
+
+  if (isEmbedded) {
+    return (
+      <main className="flex min-h-full flex-col items-center justify-center gap-3 bg-canvas px-5">
+        <Loader2 className="h-8 w-8 animate-spin text-brand" />
+        <p className="text-sm font-medium text-ink">{t("authorize.loading")}</p>
+      </main>
+    );
+  }
 
   if (redirecting && searchParams.get("shop")) {
     return (
