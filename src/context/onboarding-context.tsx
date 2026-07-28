@@ -78,6 +78,8 @@ interface OnboardingState {
   isAuthorized: boolean;
   authSessionReady: boolean;
   authBootstrapping: boolean;
+  /** Embedded/login: resolving shop /status after session is ready. */
+  shopAuthHydrating: boolean;
   productsReadyForNext: boolean;
   skuReadyForNext: boolean;
   workflowSku: WorkflowSkuProgress | null;
@@ -150,6 +152,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     isAuthorized,
     authSessionReady,
     authBootstrapping,
+    shopAuthHydrating,
   } = useOnboardingShopAuth({ updateStepStatus, setOverview });
 
   const {
@@ -355,6 +358,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       isAuthorized,
       authSessionReady,
       authBootstrapping,
+      shopAuthHydrating,
       productsReadyForNext,
       skuReadyForNext,
       workflowSku,
@@ -400,6 +404,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       isAuthorized,
       authSessionReady,
       authBootstrapping,
+      shopAuthHydrating,
       productsReadyForNext,
       skuReadyForNext,
       workflowSku,

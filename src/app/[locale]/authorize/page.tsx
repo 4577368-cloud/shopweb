@@ -48,6 +48,8 @@ import { consumeJustRegistered } from "@/lib/auth/just-registered";
 import { localePath } from "@/i18n/LocaleLink";
 import { localeHtmlLang } from "@/i18n/config";
 import { cn } from "@/lib/utils";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
+import { useAuth } from "@/context/user-context";
 
 type Phase = "unbound" | "restoring" | "authorized";
 type ProductSyncState = "idle" | "syncing" | "done" | "error";
@@ -77,6 +79,8 @@ function AuthorizePageContent() {
   const locale = useLocale();
   const searchParams = useSearchParams();
   const autoShopAttempted = useRef(false);
+  const { isEmbedded } = useEmbeddedMode();
+  const { bootstrapping: userBootstrapping } = useAuth();
   const {
     authStatus,
     shopDomainInput,
@@ -84,6 +88,7 @@ function AuthorizePageContent() {
     shop,
     isAuthorized,
     authSessionReady,
+    shopAuthHydrating,
     showToast,
     hydrateAuthorizedShop,
   } = useOnboarding();
@@ -144,6 +149,12 @@ function AuthorizePageContent() {
     // SHOP_ALREADY_BOUND shows an error card; OK restores via /status / onboarding.
     const statusParam = searchParams.get("status")?.trim();
     if (statusParam) return;
+
+    // Embedded Admin always passes ?shop= on app URLs. After a successful OAuth
+    // bounce we land on /authorize?shop=… — auto-Connect would re-fire consent,
+    // fail to leave the iframe, and wipe the success UI. Wait for session restore.
+    if (isEmbedded) return;
+
     const shopParam = searchParams.get("shop")?.trim();
     if (!shopParam || autoShopAttempted.current) return;
     autoShopAttempted.current = true;
@@ -154,10 +165,22 @@ function AuthorizePageContent() {
   }, [
     authSessionReady,
     isAuthorized,
+    isEmbedded,
     searchParams,
     connectWithDomain,
     setShopDomainInput,
   ]);
+
+  // Embedded: seed shop handle from Admin query while session restore runs.
+  useEffect(() => {
+    if (!isEmbedded) return;
+    const shopParam = searchParams.get("shop")?.trim();
+    if (!shopParam) return;
+    const normalized = normalizeShopDomain(shopParam);
+    if (!normalized) return;
+    setHandle(shopHandleFromDomain(normalized));
+    if (!shopDomainInput.trim()) setShopDomainInput(normalized);
+  }, [isEmbedded, searchParams, shopDomainInput, setShopDomainInput]);
 
   // Real post-auth stats: 已关联货源 (distinct bound products) + 已刊登 (catalog publishes still on Shopify).
   const loadStats = useCallback(
@@ -302,9 +325,11 @@ function AuthorizePageContent() {
 
   const authorizing =
     authStatus === "authorizing" || redirecting;
+  // Embedded: wait for session-token → /me → shop restore before showing Connect.
   const phase: Phase = isAuthorized
     ? "authorized"
-    : !authSessionReady
+    : !authSessionReady ||
+        (isEmbedded && (userBootstrapping || shopAuthHydrating))
       ? "restoring"
       : "unbound";
   const normalizedDomain = normalizeShopDomain(handle);

@@ -19,12 +19,23 @@ export function openExternal(url: string, opts?: { newTab?: boolean }): void {
 
   if (mode.isEmbedded) {
     // Consent screens and App Store pages must not stay framed.
-    const topWin = window.top ?? window;
+    // Do NOT read/assign window.top.location — Admin is cross-origin and throws
+    // SecurityError (surfaced as NAVIGATION_FAILED / "leave the Admin frame").
     if (opts?.newTab) {
-      topWin.open(target, "_blank", "noopener,noreferrer");
+      window.open(target, "_blank", "noopener,noreferrer");
       return;
     }
-    topWin.location.href = target;
+    // `_top` navigates the outermost frame without touching top.location.
+    const opened = window.open(target, "_top");
+    if (opened == null) {
+      const anchor = document.createElement("a");
+      anchor.href = target;
+      anchor.target = "_top";
+      anchor.rel = "noopener noreferrer";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    }
     return;
   }
 

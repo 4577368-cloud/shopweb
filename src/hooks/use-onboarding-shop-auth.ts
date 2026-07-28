@@ -45,6 +45,8 @@ export function useOnboardingShopAuth({
   }));
   const [authStatus, setAuthStatus] = useState<AuthStatus>("waiting_input");
   const [shopDomainInput, setShopDomainInput] = useState("");
+  /** True while resolving /status after login / embedded session exchange. */
+  const [shopAuthHydrating, setShopAuthHydrating] = useState(false);
 
   const authSessionReady = useSyncExternalStore(
     subscribeAuthSessionReady,
@@ -112,9 +114,13 @@ export function useOnboardingShopAuth({
     if (typeof window === "undefined") return;
     if (userBootstrapping) return;
     // P2：店铺绑定在用户账号下；未登录时不打 /shopify/auth/status（避免 JWT WARN）。
-    if (userStatus !== "authenticated") return;
+    if (userStatus !== "authenticated") {
+      setShopAuthHydrating(false);
+      return;
+    }
 
     let cancelled = false;
+    setShopAuthHydrating(true);
 
     void (async () => {
       try {
@@ -193,6 +199,8 @@ export function useOnboardingShopAuth({
         setAuthStatus("waiting_input");
       } catch {
         // Keep optimistic session from localStorage; user can retry authorize.
+      } finally {
+        if (!cancelled) setShopAuthHydrating(false);
       }
     })();
 
@@ -215,5 +223,6 @@ export function useOnboardingShopAuth({
     isAuthorized,
     authSessionReady,
     authBootstrapping,
+    shopAuthHydrating,
   };
 }
