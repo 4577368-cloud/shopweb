@@ -5,7 +5,6 @@ import { ChevronDown, ChevronUp, Loader2, RefreshCw, Search } from "@/lib/ui/ico
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { RecommendedCategoryChips } from "@/components/select/recommended-category-chips";
 import { SavedSearchChips } from "@/components/select/saved-search-chips";
 import {
   CATALOG_SORT_OPTIONS,
@@ -20,6 +19,7 @@ import { cn } from "@/lib/utils";
 export interface SmartSourcingFiltersProps {
   filters: CatalogFilterState;
   collapsed: boolean;
+  /** Kept for summarizing saved/agent category chips; not shown as a filter row. */
   recommendedCategories: RecommendedCategory[];
   savedSearches: SavedCatalogSearch[];
   activeSavedId?: string | null;
@@ -100,13 +100,6 @@ export function SmartSourcingFilters({
 
   const patch = (p: Partial<CatalogFilterState>) => onChange({ ...filters, ...p });
 
-  const toggleCategory = (id: string) => {
-    const next = filters.categoryIds.includes(id)
-      ? filters.categoryIds.filter((x) => x !== id)
-      : [...filters.categoryIds, id];
-    patch({ categoryIds: next });
-  };
-
   const handleSave = () => {
     onSaveSearch(
       saveName.trim() || chips.slice(0, 2).join(" · ") || t("sourcing.currentSearch")
@@ -179,13 +172,6 @@ export function SmartSourcingFilters({
           refreshLabel={t("sourcing.filterRefresh")}
         />
       </div>
-
-      <RecommendedCategoryChips
-        categories={recommendedCategories}
-        selectedIds={filters.categoryIds}
-        onToggle={toggleCategory}
-        onClear={() => patch({ categoryIds: [] })}
-      />
 
       <div className="mt-2 flex flex-wrap items-end gap-2">
         <div className="w-[200px] max-w-full">

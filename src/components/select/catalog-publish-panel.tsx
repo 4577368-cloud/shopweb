@@ -169,17 +169,14 @@ export function CatalogPublishPanel({
     [shopName, loadPage, t]
   );
 
-  // Hydrate saved searches; seed Top-1 recommended category on first enter.
+  // Hydrate saved searches; start with default filters (no auto category filter).
   useEffect(() => {
     const saved = loadSavedSearches(shopName);
     setSavedSearches(saved);
     const collapsed = loadFiltersCollapsed(shopName);
     setFiltersCollapsed(collapsed);
 
-    const top = recommendedCategories[0];
-    const initial: CatalogFilterState = top
-      ? { ...DEFAULT_CATALOG_FILTERS, categoryIds: [top.id] }
-      : { ...DEFAULT_CATALOG_FILTERS };
+    const initial: CatalogFilterState = { ...DEFAULT_CATALOG_FILTERS };
     setFilters(initial);
     setAppliedFilters(initial);
     appliedRef.current = initial;
@@ -208,24 +205,6 @@ export function CatalogPublishPanel({
     for (const c of recommendedCategories) names[c.id] = c.name;
     onAppliedFilterSummaryChange(summarizeFilters(appliedFilters, names));
   }, [appliedFilters, recommendedCategories, onAppliedFilterSummaryChange]);
-
-  // If categories arrive after first paint (shop products loaded late), seed Top-1 once.
-  useEffect(() => {
-    if (!bootstrapped) return;
-    const top = recommendedCategories[0];
-    if (!top) return;
-    setFilters((prev) => {
-      if (prev.categoryIds.length > 0 || prev.keywords.trim()) return prev;
-      return { ...prev, categoryIds: [top.id] };
-    });
-    setAppliedFilters((prev) => {
-      if (prev.categoryIds.length > 0 || prev.keywords.trim()) return prev;
-      const next = { ...prev, categoryIds: [top.id] };
-      appliedRef.current = next;
-      void loadPage(1, templateRef.current, next);
-      return next;
-    });
-  }, [recommendedCategories, bootstrapped, loadPage]);
 
   // Agent / rail filter preset → apply real category id (no fabricated results).
   useEffect(() => {
