@@ -346,8 +346,8 @@ export function CopilotCard({
 }
 
 /**
- * Phase A guided composer: suggestion chips + a revealed fixed answer. Not a free-text LLM — the
- * disabled input signals that open chat is coming later. Remounted (via key) to reset on state change.
+ * Phase A guided composer: suggestion chips + a revealed fixed answer.
+ * Remounted (via key) to reset on state change.
  */
 function GuidedComposer({
   suggestions,
@@ -396,17 +396,6 @@ function GuidedComposer({
           <p className="text-xs leading-5 text-ink-muted">{active.a}</p>
         </div>
       ) : null}
-
-      <div className="flex items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface-muted px-2.5 py-1.5">
-        <input
-          disabled
-          placeholder={t("assistant.guidedPlaceholder")}
-          className="min-w-0 flex-1 bg-transparent text-[11px] text-ink placeholder:text-ink-subtle focus:outline-none"
-        />
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand text-white">
-          <Send className="h-3 w-3" />
-        </span>
-      </div>
     </div>
   );
 }

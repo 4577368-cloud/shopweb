@@ -12,6 +12,7 @@ import {
   normalizeShopStatus,
   type ShopifyListingStatusTarget,
 } from "@/lib/shop-product-status";
+import { detectTranslateSourceLang } from "@/lib/translate/lang-codes";
 
 export interface CreateProductsPreviewGeneratorsOpts {
   t: ProductsTranslateFn;
@@ -30,29 +31,28 @@ export function createProductsPreviewGenerators({
         const productId = plan.draft.productId ?? plan.draft.params.productId;
         const copyField = plan.draft.params.copyField ?? "title";
         const copyAction = plan.draft.params.copyAction ?? "translate";
-        const targetLang = plan.draft.params.copyTargetLang ?? "en";
         const copyStyle = plan.draft.params.copyStyle;
 
         const detail = await api.getShopProductDetail(shopName, productId, signal);
         const originalTitle = detail.title ?? "";
-        let translatedText = "";
         const style = resolveTitleCopyStyle(copyAction, copyStyle);
+        const targetLang =
+          plan.draft.params.copyTargetLang ??
+          (copyAction === "translate"
+            ? "en"
+            : detectTranslateSourceLang(originalTitle));
 
-        if (copyAction === "translate") {
-          const result = await api.translateText(
-            originalTitle,
-            targetLang,
-            undefined,
-            style,
-            signal
-          );
-          if (!result.success || !result.translatedText) {
-            throw new Error(result.error ?? t("productsPreview.errTitleGenFailed"));
-          }
-          translatedText = result.translatedText;
-        } else {
-          throw new Error(t("productsPreview.errCopyNotImplemented"));
+        const result = await api.translateText(
+          originalTitle,
+          targetLang,
+          undefined,
+          style,
+          signal
+        );
+        if (!result.success || !result.translatedText) {
+          throw new Error(result.error ?? t("productsPreview.errTitleGenFailed"));
         }
+        const translatedText = result.translatedText;
 
         const fieldLabel = labels.previewFieldLabel(copyField);
         const modeNote = labels.previewModeNote(style);
@@ -90,7 +90,6 @@ export function createProductsPreviewGenerators({
         const productIds = plan.draft.params.batchProductIds ?? [];
         const copyField = plan.draft.params.copyField ?? "title";
         const copyAction = plan.draft.params.copyAction ?? "translate";
-        const targetLang = plan.draft.params.copyTargetLang ?? "en";
         const copyStyle = plan.draft.params.copyStyle;
         const style = resolveTitleCopyStyle(copyAction, copyStyle);
         const totalCount = productIds.length;
@@ -101,6 +100,9 @@ export function createProductsPreviewGenerators({
 
         const sampleCount = Math.min(3, totalCount);
         const sampleRows: any[] = [];
+        let resolvedTargetLang = plan.draft.params.copyTargetLang as
+          | string
+          | undefined;
 
         for (let i = 0; i < sampleCount; i++) {
           throwIfAborted(signal);
@@ -108,24 +110,26 @@ export function createProductsPreviewGenerators({
           try {
             const detail = await api.getShopProductDetail(shopName, productId, signal);
             const originalTitle = detail.title ?? "";
-            let translatedText = "";
-
-            if (copyAction === "translate") {
-              const result = await api.translateText(
-                originalTitle,
-                targetLang,
-                undefined,
-                style,
-                signal
-              );
-              if (result.success && result.translatedText) {
-                translatedText = result.translatedText;
-              } else {
-                translatedText = result.error ?? t("productsPreview.genFailed");
-              }
-            } else {
-              translatedText = t("productsPreview.opNotImplemented");
+            const targetLang =
+              resolvedTargetLang ??
+              (copyAction === "translate"
+                ? "en"
+                : detectTranslateSourceLang(originalTitle));
+            if (!resolvedTargetLang && copyAction !== "translate") {
+              resolvedTargetLang = targetLang;
             }
+
+            const result = await api.translateText(
+              originalTitle,
+              targetLang,
+              undefined,
+              style,
+              signal
+            );
+            const translatedText =
+              result.success && result.translatedText
+                ? result.translatedText
+                : result.error ?? t("productsPreview.genFailed");
 
             sampleRows.push({
               label: t("productsPreview.productN", { n: i + 1 }),
@@ -141,6 +145,7 @@ export function createProductsPreviewGenerators({
           }
         }
 
+        const targetLang = resolvedTargetLang ?? "en";
         const fieldLabel = labels.previewFieldLabel(copyField);
         const actionLabel =
           copyAction === "translate"

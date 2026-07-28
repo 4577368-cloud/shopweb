@@ -26,6 +26,7 @@ import {
   isAbortError,
   throwIfAborted,
 } from "@/lib/products/command-run-abort";
+import { detectTranslateSourceLang } from "@/lib/translate/lang-codes";
 
 export function applyLocalProductStatus(
   ctx: ProductsCommandRuntime,
@@ -118,12 +119,17 @@ export async function executeProductCopyUpdate(ctx: ProductsCommandRuntime, req:
           const detail = await api.getShopProductDetail(ctx.shopName, req.productId);
           const previousTitle = detail.title ?? "";
           const style = resolveTitleCopyStyle(req.copyAction, req.copyStyle);
+          const targetLang =
+            req.targetLang ??
+            (req.copyAction === "translate"
+              ? "en"
+              : detectTranslateSourceLang(previousTitle));
           const translated =
             req.previewText?.trim() ||
             (
               await api.translateText(
                 previousTitle,
-                req.targetLang,
+                targetLang,
                 undefined,
                 style
               )
@@ -159,7 +165,7 @@ export async function executeProductCopyUpdate(ctx: ProductsCommandRuntime, req:
           );
           ctx.bumpMirrorRefresh();
           await ctx.loadSummary();
-          const actionLabel = ctx.labels.copyActionLabel(req.copyAction, req.targetLang);
+          const actionLabel = ctx.labels.copyActionLabel(req.copyAction, targetLang);
           ctx.showToast(
             ctx.t("productsPage.toastTitleCopyUpdated", { action: actionLabel })
           );
@@ -198,29 +204,27 @@ export async function executeBatchProductCopyUpdate(ctx: ProductsCommandRuntime,
             signal
           );
           const originalTitle = detail.title ?? "";
-          let newText = "";
-
-          if (copyAction === "translate") {
-            const result = await api.translateText(
-              originalTitle,
-              targetLang,
-              undefined,
-              style,
-              signal
-            );
-            if (result.success && result.unchanged) {
-              success++;
-              onProgress?.(i + 1, total, success, failed);
-              continue;
-            }
-            if (result.success && result.translatedText) {
-              newText = result.translatedText;
-            } else {
-              throw new Error(result.error ?? ctx.t("productsPreview.errTitleLocalizeFailed"));
-            }
-          } else {
-            throw new Error(ctx.t("productsPreview.errCopyNotImplemented"));
+          const lang =
+            targetLang ??
+            (copyAction === "translate"
+              ? "en"
+              : detectTranslateSourceLang(originalTitle));
+          const result = await api.translateText(
+            originalTitle,
+            lang,
+            undefined,
+            style,
+            signal
+          );
+          if (result.success && result.unchanged) {
+            success++;
+            onProgress?.(i + 1, total, success, failed);
+            continue;
           }
+          if (!result.success || !result.translatedText) {
+            throw new Error(result.error ?? ctx.t("productsPreview.errTitleLocalizeFailed"));
+          }
+          const newText = result.translatedText;
 
           if (copyField === "title" || copyField === "all") {
             const updateResult = await api.updateShopProduct(

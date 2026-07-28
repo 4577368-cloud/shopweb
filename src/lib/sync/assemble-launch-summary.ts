@@ -557,7 +557,7 @@ function buildLaunchSummary(params: {
       pendingReview:
         (skuOverview?.unresolvedVariantsCount ?? 0) + logistics.reviewCount,
       footnote: FULFILLMENT_PREP_FOOTNOTE,
-      showLocalLogisticsGap: true,
+      showLocalLogisticsGap: logistics.confirmedCount > 0,
       ctaHref: "/sku-align",
       ctaLabel: "sync.ctaViewSku",
     },

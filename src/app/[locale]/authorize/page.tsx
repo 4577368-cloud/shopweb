@@ -574,26 +574,18 @@ function AuthorizePageContent() {
             </div>
           </section>
 
-          <section className="flex items-center justify-between gap-4 rounded-[var(--radius-card)] border border-hairline bg-surface px-3.5 py-3.5 shadow-card">
-            <div className="flex items-start gap-2.5">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
-                <ShieldCheck className="h-4 w-4" />
-              </span>
-              <div>
-                <p className="text-sm font-medium text-ink">
-                  {t("authorize.dataUsageTitle")}
-                </p>
-                <p className="mt-0.5 text-[11px] leading-4 text-ink-muted">
-                  {t("authorize.dataUsageDesc")}
-                </p>
-              </div>
+          <section className="flex items-start gap-2.5 rounded-[var(--radius-card)] border border-hairline bg-surface px-3.5 py-3.5 shadow-card">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
+              <ShieldCheck className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-sm font-medium text-ink">
+                {t("authorize.dataUsageTitle")}
+              </p>
+              <p className="mt-0.5 text-[11px] leading-4 text-ink-muted">
+                {t("authorize.dataUsageDesc")}
+              </p>
             </div>
-            <Link
-              href="#"
-              className="shrink-0 text-xs font-medium text-link hover:text-link-hover hover:underline"
-            >
-              {t("authorize.learnMore")}
-            </Link>
           </section>
         </div>
       </WorkbenchPanel>

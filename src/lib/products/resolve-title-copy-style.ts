@@ -1,7 +1,8 @@
 export function resolveTitleCopyStyle(
-  copyAction: "translate" | "rewrite" | "optimize",
+  _copyAction: "translate" | "rewrite" | "optimize",
   copyStyle?: "amazon" | "literal"
 ): "amazon" | "literal" {
   if (copyStyle === "amazon" || copyStyle === "literal") return copyStyle;
-  return copyAction === "translate" ? "amazon" : "literal";
+  // rewrite / optimize polish listing copy in marketplace style (same or target lang).
+  return "amazon";
 }

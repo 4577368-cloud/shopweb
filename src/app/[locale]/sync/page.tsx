@@ -60,7 +60,7 @@ function isFullSummary(summary: LaunchSummary): boolean {
 }
 
 export default function SyncPage() {
-  const { shop, isAuthorized, completeSyncCeremony } = useOnboarding();
+  const { shop, isAuthorized, completeSyncCeremony, showToast } = useOnboarding();
   const shopName = resolveShopApiName(shop);
   const shopMirrorKey = useMemo(
     () => productsMirrorShopKey(shop.name, shop.domain),
@@ -358,7 +358,23 @@ export default function SyncPage() {
   );
 
   const handleExportReport = () => {
-    window.alert(t("sync.exportSoon"));
+    const text = launchReportText.trim();
+    if (!text) {
+      showToast(t("sync.exportSoon"));
+      return;
+    }
+    const shop =
+      summary?.meta.shopDomain?.trim() ||
+      summary?.meta.shopName?.trim() ||
+      "shop";
+    const safe = shop.replace(/[^\w.-]+/g, "_").slice(0, 48);
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `launch-report-${safe}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   useEffect(() => {

@@ -70,7 +70,7 @@ export function CompletionScreen({
               <ArrowRight className="h-4 w-4" />
             </Button>
           </Link>
-          <Link href={localePath(locale, "/")} className="col-span-1 sm:col-span-2">
+          <Link href={localePath(locale, "/products")} className="col-span-1 sm:col-span-2">
             <Button variant="secondary" className="h-10 w-full">
               {t("syncCeremony.enterWorkbench")}
               <ArrowRight className="h-4 w-4" />
