@@ -1,18 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  ArrowRight,
-  Boxes,
-  CheckCircle2,
-  Database,
-  LayoutGrid,
-  Loader2,
-  Search,
-  Sparkles,
-} from "@/lib/ui/icons";
+import { CheckCircle2, Loader2, Sparkles } from "@/lib/ui/icons";
 import { useOnboarding } from "@/context/onboarding-context";
 import { useUser } from "@/context/user-context";
 import {
@@ -29,11 +20,19 @@ import {
 
 import { AppLogo } from "@/components/brand/app-logo";
 import { LandingHeroPreview } from "@/components/landing/landing-hero-preview";
-import { APP_FULL_NAME } from "@/lib/brand";
+import { LandingStats } from "@/components/landing/landing-stats";
+import { LandingFeatures } from "@/components/landing/landing-features";
+import { LandingValueProps } from "@/components/landing/landing-value-props";
+import { LandingHowItWorks } from "@/components/landing/landing-how-it-works";
+import { LandingUseCases } from "@/components/landing/landing-use-cases";
+import { LandingCtaBand } from "@/components/landing/landing-cta-band";
+import { LandingFooter } from "@/components/landing/landing-footer";
 import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { consumeJustRegistered } from "@/lib/auth/just-registered";
+
+const CONNECT_ANCHOR = "install-connect";
 
 function InstallPageContent() {
   const { showToast } = useOnboarding();
@@ -53,13 +52,11 @@ function InstallPageContent() {
   }, []);
 
   const connectWithDomain = (raw: string) => {
-    // Always remember the shop before any redirect so login / language switch can restore it.
     const remembered = rememberShopDomain(raw);
     if (remembered) {
       setHandle(shopHandleFromDomain(remembered));
     }
 
-    // Login-first: Shopify OAuth writes user_shop under the current Tangbuy JWT.
     if (!bootstrapping && authStatus !== "authenticated") {
       const shopQ = remembered
         ? `?shop=${encodeURIComponent(remembered)}`
@@ -70,8 +67,6 @@ function InstallPageContent() {
       );
       return;
     }
-    // During bootstrap we don't yet know the auth state — block the action briefly to avoid
-    // a race where an authenticated user clicks before /me resolves and gets bounced to /login.
     if (bootstrapping) {
       showToast(t("install.waitAuth"));
       return;
@@ -105,7 +100,13 @@ function InstallPageContent() {
     router.push(localePath(locale, `${base}?from=${encodeURIComponent(from)}`));
   };
 
-  // Prefill from localStorage (e.g. returned from login) or ?shop=.
+  const scrollToConnect = useCallback(() => {
+    document.getElementById(CONNECT_ANCHOR)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const fromQuery = searchParams.get("shop")?.trim();
@@ -123,7 +124,6 @@ function InstallPageContent() {
     }
   }, [searchParams]);
 
-  // After Tangbuy login (or when already signed in), auto-resume Shopify OAuth for ?shop=.
   useEffect(() => {
     if (bootstrapping || authStatus !== "authenticated") return;
     const shop =
@@ -146,25 +146,6 @@ function InstallPageContent() {
     t("install.trustEncrypted"),
   ];
 
-  const valuePoints: { icon: typeof Database; title: string; desc: string }[] = [
-    { icon: Database, title: t("install.valueAutoSync"), desc: t("install.valueAutoSyncDesc") },
-    { icon: Search, title: t("install.valueImageSearch"), desc: t("install.valueImageSearchDesc") },
-    { icon: LayoutGrid, title: t("install.valueSku"), desc: t("install.valueSkuDesc") },
-    { icon: Boxes, title: t("install.valuePricing"), desc: t("install.valuePricingDesc") },
-  ];
-
-  const previews: { title: string; desc: string }[] = [
-    { title: t("install.previewProducts"), desc: t("install.previewProductsDesc") },
-    { title: t("install.previewSku"), desc: t("install.previewSkuDesc") },
-    { title: t("install.previewScan"), desc: t("install.previewScanDesc") },
-  ];
-
-  const steps: { title: string; desc: string }[] = [
-    { title: t("install.step1Title"), desc: t("install.step1Desc") },
-    { title: t("install.step2Title"), desc: t("install.step2Desc") },
-    { title: t("install.step3Title"), desc: t("install.step3Desc") },
-  ];
-
   if (redirecting && searchParams.get("shop")) {
     return (
       <main className="flex min-h-full flex-col items-center justify-center gap-3 bg-canvas px-5">
@@ -176,9 +157,9 @@ function InstallPageContent() {
   }
 
   return (
-    <main className="min-h-full bg-canvas">
-      <header className="border-b border-hairline bg-surface">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3.5">
+    <main className="landing-root !min-h-0">
+      <header className="sticky top-0 z-20 border-b border-[--landing-border] bg-[--landing-surface]/95 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3.5 sm:px-6">
           <AppLogo variant="header" size="sm" />
           <div className="flex items-center gap-3">
             <LanguageSwitcher menuPlacement="down" />
@@ -187,7 +168,7 @@ function InstallPageContent() {
                 <button
                   type="button"
                   onClick={() => goLoginPreservingShop("login")}
-                  className="text-xs font-medium text-ink-muted hover:text-ink"
+                  className="text-xs font-medium text-[--landing-text-muted] hover:text-[--landing-text]"
                 >
                   {t("install.navLogin")}
                 </button>
@@ -202,7 +183,7 @@ function InstallPageContent() {
             ) : (
               <Link
                 href={localePath(locale, "/authorize")}
-                className="text-xs font-medium text-ink-muted hover:text-ink"
+                className="text-xs font-medium text-[--landing-text-muted] hover:text-[--landing-text]"
               >
                 {t("install.authorizedHint")}
               </Link>
@@ -211,174 +192,100 @@ function InstallPageContent() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl px-5 py-8 sm:py-12">
-        <section className="grid gap-8 lg:grid-cols-[1.1fr_1fr] lg:items-center">
-          <div>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-2.5 py-1 text-[11px] font-medium text-ink-muted">
-              <Sparkles className="h-3.5 w-3.5 text-brand" />
-              Shopify × Tangbuy Smart Match
-            </span>
-            <h1 className="mt-4 text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl">
-              {t("install.heroHeading")}
-            </h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-ink-muted">
-              {t("install.heroSubtitle")}
-            </p>
-
-            <div className="mt-6 max-w-lg space-y-2">
-              {justRegistered && !needsLogin ? (
-                <div
-                  className="rounded-[var(--radius-control)] border border-brand/25 bg-brand/5 px-3 py-2.5 text-[11px] leading-4 text-ink"
-                  role="status"
-                >
-                  <p className="font-medium">{t("install.welcomeRegisterTitle")}</p>
-                  <p className="mt-0.5 text-ink-muted">{t("install.welcomeRegisterDesc")}</p>
-                </div>
-              ) : null}
-              {needsLogin ? (
-                <div className="rounded-[var(--radius-control)] border border-brand-accent/25 bg-brand-soft px-3 py-2.5 text-[11px] leading-4 text-ink">
-                  <p className="font-medium">{t("install.loginFirstTitle")}</p>
-                  <p className="mt-0.5 text-ink-muted">{t("install.loginFirstDesc")}</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => goLoginPreservingShop("login")}
-                      className="rounded-[var(--radius-control)] bg-ink px-2.5 py-1 text-[11px] font-semibold text-white"
-                    >
-                      {t("install.navLogin")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => goLoginPreservingShop("register")}
-                      className="rounded-[var(--radius-control)] border border-hairline bg-surface px-2.5 py-1 text-[11px] font-medium text-ink"
-                    >
-                      {t("install.navRegister")}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-              <ShopDomainConnectField
-                value={handle}
-                onChange={setHandle}
-                onConnect={connect}
-                connecting={redirecting}
-              />
-              {error ? (
-                <p className="text-[11px] leading-4 text-red-600">{error}</p>
-              ) : (
-                <p className="text-[11px] leading-4 text-ink-subtle">
-                  {needsLogin
-                    ? t("install.connectNoteLoginFirst")
-                    : t("install.connectNote")}
-                </p>
-              )}
-            </div>
-
-            <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
-              {trustSignals.map((signal) => (
-                <span
-                  key={signal}
-                  className="inline-flex items-center gap-1.5 text-[11px] text-ink-muted"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5 text-brand" />
-                  {signal}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Same animated workbench mockup as the marketing home hero. */}
-          <div className="landing-root !min-h-0 !overflow-visible bg-transparent">
-            <LandingHeroPreview />
-          </div>
-        </section>
-
-        <section className="mt-12">
-          <h2 className="text-lg font-semibold tracking-tight text-ink">
-            {t("install.coreCapabilities")}
-          </h2>
-          <p className="mt-0.5 text-xs text-ink-muted">{t("install.coreCapabilitiesDesc")}</p>
-          <div className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-            {valuePoints.map(({ icon: Icon, title, desc }) => (
-              <div
-                key={title}
-                className="rounded-[var(--radius-card)] border border-hairline bg-surface px-4 py-4 shadow-card"
-              >
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
-                  <Icon className="h-4 w-4" />
-                </span>
-                <p className="mt-3 text-sm font-medium text-ink">{title}</p>
-                <p className="mt-1 text-[11px] leading-4 text-ink-muted">{desc}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-12">
-          <h2 className="text-lg font-semibold tracking-tight text-ink">
-            {t("install.pagePreviews")}
-          </h2>
-          <p className="mt-0.5 text-xs text-ink-muted">{t("install.pagePreviewsDesc")}</p>
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            {previews.map((p) => (
-              <BrowserFrame key={p.title} label={p.title}>
-                <div className="p-3">
-                  <p className="text-xs font-medium text-ink">{p.title}</p>
-                  <p className="mt-1 text-[11px] leading-4 text-ink-muted">{p.desc}</p>
-                </div>
-              </BrowserFrame>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-12">
-          <h2 className="text-lg font-semibold tracking-tight text-ink">
-            {t("install.howItWorks")}
-          </h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            {steps.map((s, idx) => (
-              <div
-                key={s.title}
-                className="rounded-[var(--radius-card)] border border-hairline bg-surface px-4 py-4 shadow-card"
-              >
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand text-[11px] font-semibold text-white">
-                  {idx + 1}
-                </span>
-                <p className="mt-2.5 text-sm font-medium text-ink">{s.title}</p>
-                <p className="mt-1 text-[11px] leading-4 text-ink-muted">{s.desc}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-10 flex flex-col items-center gap-3 rounded-[var(--radius-card)] border border-brand-accent/20 bg-brand-soft px-5 py-8 text-center">
-          <h3 className="text-lg font-semibold tracking-tight text-ink">
-            {t("install.readyCta")}
-          </h3>
-          <p className="max-w-md text-xs leading-5 text-ink-muted">
-            {t("install.readyCtaDesc")}
+      {/* Connect / authorize — install-specific; App URL lands here. */}
+      <section
+        id={CONNECT_ANCHOR}
+        className="mx-auto grid max-w-7xl scroll-mt-20 gap-8 px-5 py-10 sm:px-6 sm:py-14 lg:grid-cols-[1.05fr_1fr] lg:items-center"
+      >
+        <div>
+          <span className="landing-badge">
+            <Sparkles className="h-3 w-3" />
+            {t("landing.badge")}
+          </span>
+          <h1 className="mt-4 text-3xl font-extrabold leading-tight tracking-tight text-[--landing-text] sm:text-4xl">
+            {t("landing.heroTitle")}
+          </h1>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-[--landing-text-muted] sm:text-base">
+            {t("landing.heroSubtitle")}
           </p>
-          <div className="mt-1 w-full max-w-lg">
+
+          <div className="mt-6 max-w-lg space-y-2">
+            {justRegistered && !needsLogin ? (
+              <div
+                className="rounded-[var(--radius-control)] border border-[--landing-accent]/25 bg-[--landing-accent-soft] px-3 py-2.5 text-[11px] leading-4 text-[--landing-text]"
+                role="status"
+              >
+                <p className="font-medium">{t("install.welcomeRegisterTitle")}</p>
+                <p className="mt-0.5 text-[--landing-text-muted]">
+                  {t("install.welcomeRegisterDesc")}
+                </p>
+              </div>
+            ) : null}
+            {needsLogin ? (
+              <div className="rounded-[var(--radius-control)] border border-[--landing-accent]/25 bg-[--landing-accent-soft] px-3 py-2.5 text-[11px] leading-4 text-[--landing-text]">
+                <p className="font-medium">{t("install.loginFirstTitle")}</p>
+                <p className="mt-0.5 text-[--landing-text-muted]">
+                  {t("install.loginFirstDesc")}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => goLoginPreservingShop("login")}
+                    className="rounded-[var(--radius-control)] bg-ink px-2.5 py-1 text-[11px] font-semibold text-white"
+                  >
+                    {t("install.navLogin")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goLoginPreservingShop("register")}
+                    className="rounded-[var(--radius-control)] border border-[--landing-border] bg-[--landing-surface] px-2.5 py-1 text-[11px] font-medium text-[--landing-text]"
+                  >
+                    {t("install.navRegister")}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <ShopDomainConnectField
               value={handle}
               onChange={setHandle}
               onConnect={connect}
               connecting={redirecting}
-              inputClassName="bg-surface"
-              buttonLabel={
-                <>
-                  {t("install.connectButton")}
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              }
             />
+            {error ? (
+              <p className="text-[11px] leading-4 text-red-600">{error}</p>
+            ) : (
+              <p className="text-[11px] leading-4 text-[--landing-text-subtle]">
+                {needsLogin
+                  ? t("install.connectNoteLoginFirst")
+                  : t("install.connectNote")}
+              </p>
+            )}
           </div>
-        </section>
 
-        <footer className="mt-10 border-t border-hairline pt-5 text-center text-[11px] text-ink-subtle">
-          {t("install.footerNote", { name: APP_FULL_NAME })}
-        </footer>
-      </div>
+          <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
+            {trustSignals.map((signal) => (
+              <span
+                key={signal}
+                className="inline-flex items-center gap-1.5 text-[11px] text-[--landing-text-muted]"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 text-[--landing-accent]" />
+                {signal}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <LandingHeroPreview />
+      </section>
+
+      {/* Same product story as marketing home — App Store / Admin first impression. */}
+      <LandingStats />
+      <LandingFeatures />
+      <LandingValueProps />
+      <LandingHowItWorks />
+      <LandingUseCases />
+      <LandingCtaBand onStart={scrollToConnect} />
+      <LandingFooter />
     </main>
   );
 }
@@ -389,31 +296,14 @@ export default function InstallPage() {
     <Suspense
       fallback={
         <main className="flex min-h-full items-center justify-center bg-canvas">
-          <Loader2 className="h-7 w-7 animate-spin text-brand" aria-label={t("authorize.loading")} />
+          <Loader2
+            className="h-7 w-7 animate-spin text-brand"
+            aria-label={t("authorize.loading")}
+          />
         </main>
       }
     >
       <InstallPageContent />
     </Suspense>
-  );
-}
-
-function BrowserFrame({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-canvas">
-      <div className="flex items-center gap-1.5 border-b border-hairline bg-surface px-3 py-2">
-        <span className="h-2 w-2 rounded-full bg-slate-300" />
-        <span className="h-2 w-2 rounded-full bg-slate-300" />
-        <span className="h-2 w-2 rounded-full bg-slate-300" />
-        <span className="ml-2 truncate text-[10px] text-ink-subtle">{label}</span>
-      </div>
-      {children}
-    </div>
   );
 }
