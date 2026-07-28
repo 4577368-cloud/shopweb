@@ -16,6 +16,7 @@ import { useUser } from "@/context/user-context";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { localeHtmlLang } from "@/i18n/config";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 import {
   AccountCard,
   AccountErrorState,
@@ -35,6 +36,7 @@ export default function AccountProfilePage() {
   const t = useT();
   const locale = useLocale();
   const { status, bootstrapping, refreshUser } = useUser();
+  const { isEmbedded } = useEmbeddedMode();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,6 +106,7 @@ export default function AccountProfilePage() {
         message={t("accountProfile.signInRequired")}
         signInLabel={t("userMenu.signIn")}
         signInHref={localePath(locale, `/login?from=${encodeURIComponent("/account/profile")}`)}
+        hideSignIn={isEmbedded}
       />
     );
   }

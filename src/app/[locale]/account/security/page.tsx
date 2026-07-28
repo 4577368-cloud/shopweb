@@ -15,6 +15,7 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { useUser } from "@/context/user-context";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 import {
   AccountCard,
   AccountLoadingState,
@@ -35,6 +36,7 @@ export default function AccountSecurityPage() {
   const router = useRouter();
   const { showToast } = useOnboarding();
   const { status, bootstrapping, changePassword } = useUser();
+  const { isEmbedded } = useEmbeddedMode();
 
   // ===== Change password state =====
   const [currentPassword, setCurrentPassword] = useState("");
@@ -69,6 +71,10 @@ export default function AccountSecurityPage() {
       showToast(t("accountSecurity.toastPasswordChanged"));
       // Wait briefly so the toast is visible before the route changes.
       setTimeout(() => {
+        if (isEmbedded) {
+          router.replace(localePath(locale, "/authorize"));
+          return;
+        }
         const from = encodeURIComponent("/account/security");
         router.replace(localePath(locale, `/login?from=${from}`));
       }, 1200);
@@ -90,6 +96,7 @@ export default function AccountSecurityPage() {
         message={t("accountSecurity.signInRequired")}
         signInLabel={t("userMenu.signIn")}
         signInHref={localePath(locale, `/login?from=${encodeURIComponent("/account/security")}`)}
+        hideSignIn={isEmbedded}
       />
     );
   }

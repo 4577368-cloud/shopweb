@@ -115,6 +115,7 @@ export async function exchangeSessionToken(
       expiresIn?: number;
       shopDomain?: string;
       shopName?: string;
+      email?: string;
       code?: string;
       message?: string;
     };
@@ -148,6 +149,7 @@ export async function exchangeSessionToken(
     }
     setEmbeddedAccessToken(data.accessToken, {
       shopDomain: data.shopDomain,
+      shopEmail: data.email,
       expiresInSeconds: data.expiresIn,
     });
     return {

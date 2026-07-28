@@ -4491,6 +4491,7 @@ export const en = {
     toastSignedOut: "Signed out",
     toastEmbeddedSessionRestored: "Signed out of email login — shop session restored",
     embeddedShopSession: "Shop session",
+    embeddedShopifyHint: "Shopify shop account (silent sign-in)",
     hubMode: "Operations Hub mode",
     on: "On",
     off: "Off",

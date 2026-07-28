@@ -4473,6 +4473,7 @@ export const zh: Dictionary = {
     toastSignedOut: "已登出",
     toastEmbeddedSessionRestored: "已退出邮箱登录，已恢复店铺会话",
     embeddedShopSession: "店铺会话",
+    embeddedShopifyHint: "Shopify 店铺账号（静默登录）",
     hubMode: "运营中枢模式",
     on: "开",
     off: "关",

@@ -21,6 +21,7 @@ import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { localeHtmlLang } from "@/i18n/config";
 import { cn } from "@/lib/utils";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 import {
   AccountCard,
   AccountLoadingState,
@@ -45,6 +46,7 @@ export default function AccountShopsPage() {
   const locale = useLocale();
   const { user, status, bootstrapping } = useUser();
   const { shop, isAuthorized, hydrateAuthorizedShop, showToast } = useOnboarding();
+  const { isEmbedded } = useEmbeddedMode();
 
   const [shops, setShops] = useState<UserShopBinding[]>([]);
   const [loading, setLoading] = useState(true);
@@ -160,6 +162,7 @@ export default function AccountShopsPage() {
         message={t("accountShops.signInRequired")}
         signInLabel={t("userMenu.signIn")}
         signInHref={localePath(locale, `/login?from=${encodeURIComponent("/account/shops")}`)}
+        hideSignIn={isEmbedded}
       />
     );
   }

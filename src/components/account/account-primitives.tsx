@@ -196,11 +196,14 @@ export function AccountSignInState({
   message,
   signInLabel,
   signInHref,
+  hideSignIn,
 }: {
   icon?: ReactNode;
   message: string;
   signInLabel: string;
   signInHref: string;
+  /** Embedded Admin: no Tangbuy login CTA. */
+  hideSignIn?: boolean;
 }) {
   return (
     <AccountCard>
@@ -209,9 +212,11 @@ export function AccountSignInState({
           {icon}
           <span>{message}</span>
         </div>
-        <Button variant="primary" asChild>
-          <Link href={signInHref}>{signInLabel}</Link>
-        </Button>
+        {!hideSignIn ? (
+          <Button variant="primary" asChild>
+            <Link href={signInHref}>{signInLabel}</Link>
+          </Button>
+        ) : null}
       </div>
     </AccountCard>
   );

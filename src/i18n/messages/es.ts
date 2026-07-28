@@ -4486,6 +4486,7 @@ export const es: Dictionary = {
     toastSignedOut: "Sesión cerrada",
     toastEmbeddedSessionRestored: "Sesión de email cerrada — sesión de tienda restaurada",
     embeddedShopSession: "Sesión de tienda",
+    embeddedShopifyHint: "Cuenta de tienda Shopify (inicio silencioso)",
     hubMode: "Modo hub operativo",
     on: "Activado",
     off: "Desactivado",

@@ -112,10 +112,24 @@ export function proxy(req: NextRequest) {
 
   const segments = pathname.split("/");
   const maybeLocale = segments[1];
-
-  // Embedded Admin iframe: reinforce frame-ancestors (also set in next.config headers).
-  // App home for embedded: marketing install page (not bare landing or authorize).
   const isEmbedded = isEmbeddedRequest(req);
+
+  // Embedded must never see Tangbuy email/password forms — silent shop session only.
+  if (isEmbedded && isLocale(maybeLocale)) {
+    const stripped = "/" + segments.slice(2).join("/");
+    if (
+      stripped === "/login" ||
+      stripped === "/register" ||
+      stripped === "/forgot-password" ||
+      stripped === "/reset-password" ||
+      stripped.startsWith("/login/") ||
+      stripped.startsWith("/register/")
+    ) {
+      const workbench = req.nextUrl.clone();
+      workbench.pathname = `/${maybeLocale}/authorize`;
+      return NextResponse.redirect(workbench);
+    }
+  }
 
   if (isLocale(maybeLocale)) {
     const stripped = "/" + segments.slice(2).join("/");

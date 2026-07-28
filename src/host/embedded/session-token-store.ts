@@ -5,14 +5,22 @@
 
 let embeddedAccessToken: string | null = null;
 let embeddedShopDomain: string | null = null;
+let embeddedShopEmail: string | null = null;
 let embeddedExpiresAt = 0;
 
 export function setEmbeddedAccessToken(
   token: string | null,
-  opts?: { shopDomain?: string | null; expiresInSeconds?: number }
+  opts?: {
+    shopDomain?: string | null;
+    shopEmail?: string | null;
+    expiresInSeconds?: number;
+  }
 ): void {
   embeddedAccessToken = token;
   embeddedShopDomain = opts?.shopDomain?.trim() || null;
+  if (opts?.shopEmail !== undefined) {
+    embeddedShopEmail = opts.shopEmail?.trim() || null;
+  }
   if (token && opts?.expiresInSeconds && opts.expiresInSeconds > 0) {
     // Refresh 60s before expiry.
     embeddedExpiresAt = Date.now() + Math.max(30, opts.expiresInSeconds - 60) * 1000;
@@ -33,9 +41,15 @@ export function getEmbeddedShopDomain(): string | null {
   return embeddedShopDomain;
 }
 
+/** Shopify shop contact email from the last successful session-token exchange. */
+export function getEmbeddedShopEmail(): string | null {
+  return embeddedShopEmail;
+}
+
 export function clearEmbeddedAccessToken(): void {
   embeddedAccessToken = null;
   embeddedShopDomain = null;
+  embeddedShopEmail = null;
   embeddedExpiresAt = 0;
 }
 

@@ -15,7 +15,11 @@ import { localePath } from "@/i18n/LocaleLink";
 import { useNavigateInApp } from "@/host/use-navigate-in-app";
 import { LinkInApp } from "@/host/link-in-app";
 import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
-import { clearEmbeddedAccessToken } from "@/host/embedded/session-token-store";
+import {
+  clearEmbeddedAccessToken,
+  getEmbeddedShopDomain,
+  getEmbeddedShopEmail,
+} from "@/host/embedded/session-token-store";
 import { SHOP_STORAGE_KEY } from "@/lib/shopify-install";
 import { cn } from "@/lib/utils";
 
@@ -144,28 +148,11 @@ export function SidebarUserMenu({ className }: { className?: string }) {
   const runAction = async (action: UserMenuAction) => {
     setOpen(false);
     if (action === "signOut") {
+      // Embedded: no email logout — Shopify session is the identity.
+      if (isEmbedded) return;
       if (signingOut) return;
       setSigningOut(true);
       try {
-        if (isEmbedded) {
-          // Email logout is meaningless in Admin — Shopify session remains.
-          // Clear Bearer then silently re-provision the shop-bound account.
-          clearEmbeddedAccessToken();
-          try {
-            await logout();
-          } catch {
-            /* cookie logout optional in iframe */
-          }
-          restoreAttempted.current = false;
-          setRestoringEmbedded(true);
-          const { exchangeSessionToken } = await import(
-            "@/host/embedded/exchange-session-token"
-          );
-          await exchangeSessionToken(true, { launchOauthOnNeed: false });
-          await refreshUser();
-          showToast(t("userMenu.toastEmbeddedSessionRestored"));
-          return;
-        }
         await logout();
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(SHOP_STORAGE_KEY);
@@ -196,6 +183,16 @@ export function SidebarUserMenu({ className }: { className?: string }) {
     showToast(t("userMenu.comingSoon"));
   };
 
+  const shopDomain = isEmbedded ? getEmbeddedShopDomain() : null;
+  const shopEmail =
+    (isEmbedded ? getEmbeddedShopEmail() : null) || user.email;
+  const displayLabel = isEmbedded
+    ? shopEmail || user.name?.trim() || t("userMenu.embeddedShopSession")
+    : user.name?.trim() || user.email;
+  const displayTitle = isEmbedded
+    ? [shopEmail, shopDomain].filter(Boolean).join(" · ") || user.email
+    : user.email;
+
   return (
     <div ref={rootRef} className={cn("relative min-w-0", className)}>
       <button
@@ -203,13 +200,13 @@ export function SidebarUserMenu({ className }: { className?: string }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t("userMenu.openMenu")}
-        title={user.email}
+        title={displayTitle}
         onClick={() => setOpen((v) => !v)}
         disabled={signingOut}
         className="inline-flex h-7 w-full min-w-0 items-center gap-1 rounded-[var(--radius-control)] border border-surface-border bg-surface px-2 text-left shadow-sm transition-colors hover:border-brand/40 disabled:opacity-60"
       >
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
-          {user.name?.trim() || user.email}
+          {displayLabel}
         </span>
         <ChevronUp
           className={cn(
@@ -225,6 +222,16 @@ export function SidebarUserMenu({ className }: { className?: string }) {
           role="menu"
           className="absolute bottom-full left-0 right-0 z-40 mb-1 overflow-hidden rounded-[var(--radius-control)] border border-surface-border bg-surface py-1 shadow-card"
         >
+          {isEmbedded ? (
+            <div className="px-2.5 py-1.5 text-[10px] leading-4 text-muted-foreground">
+              <div className="truncate font-medium text-foreground">{shopEmail}</div>
+              {shopDomain ? (
+                <div className="truncate">{shopDomain}</div>
+              ) : null}
+              <div className="mt-0.5">{t("userMenu.embeddedShopifyHint")}</div>
+            </div>
+          ) : null}
+
           {MENU_ITEMS.map(({ id, icon: Icon }) => (
             <button
               key={id}
@@ -238,18 +245,21 @@ export function SidebarUserMenu({ className }: { className?: string }) {
             </button>
           ))}
 
-          <div className="my-1 border-t border-surface-border" />
-
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => runAction("signOut")}
-            disabled={signingOut}
-            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60"
-          >
-            <Exit className="h-3.5 w-3.5 shrink-0" />
-            {signingOut ? t("common.loading") : t("userMenu.signOut")}
-          </button>
+          {!isEmbedded ? (
+            <>
+              <div className="my-1 border-t border-surface-border" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => runAction("signOut")}
+                disabled={signingOut}
+                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60"
+              >
+                <Exit className="h-3.5 w-3.5 shrink-0" />
+                {signingOut ? t("common.loading") : t("userMenu.signOut")}
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>
