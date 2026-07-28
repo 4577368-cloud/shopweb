@@ -21,9 +21,21 @@ const displayFont = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: APP_FULL_NAME,
   description: APP_DESCRIPTION,
+  // Safari ignores SVG for favicon / apple-touch; keep PNG + ICO as primary.
   icons: {
-    icon: [{ url: BRAND_FAVICON, type: "image/svg+xml" }],
-    apple: [{ url: BRAND_FAVICON, type: "image/svg+xml" }],
+    icon: [
+      { url: "/brand/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/brand/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: BRAND_FAVICON, type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    apple: [
+      {
+        url: "/brand/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
   },
 };
 
