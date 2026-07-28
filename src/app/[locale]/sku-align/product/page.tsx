@@ -22,6 +22,8 @@ import { SkuLogisticsEntryGate } from "@/components/sku-align/sku-logistics-entr
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useOnboarding } from "@/context/onboarding-context";
+import { useAuth } from "@/context/user-context";
+import { TangbuyWaveLoader } from "@/components/brand/tangbuy-wave-loader";
 import { api, invalidateSkuOverviewCache, readableError } from "@/lib/api";
 import type { DrawerPhase } from "@/lib/sku-align/drawer-helpers";
 import {
@@ -65,7 +67,11 @@ function resolveCachedProduct(
 function SkuAlignProductContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, showToast, isAuthorized, authBootstrapping } = useOnboarding();
+  const { shop, showToast, isAuthorized, authBootstrapping, shopAuthHydrating } =
+    useOnboarding();
+  const { bootstrapping: userBootstrapping } = useAuth();
+  const sessionPending =
+    authBootstrapping || userBootstrapping || shopAuthHydrating;
   const shopName = resolveShopApiName(shop);
   const scanShopKey = workflowScanShopKey(shop);
   const wb = useWorkbenchPage("sku-align");
@@ -249,14 +255,11 @@ function SkuAlignProductContent() {
 
   const panelTitle = t("sku.breadcrumb");
 
-  if (authBootstrapping) {
+  if (sessionPending) {
     return (
       <WorkbenchShell sidebar={<WorkbenchSidebar />} {...wb.shellProps}>
         <WorkbenchPanel title={panelTitle} {...wb.panelProps}>
-          <div className="flex items-center gap-2 text-sm text-ink-muted">
-            <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
-            {t("sku.restoringAuth")}
-          </div>
+          <TangbuyWaveLoader label={t("sku.restoringAuth")} />
         </WorkbenchPanel>
       </WorkbenchShell>
     );

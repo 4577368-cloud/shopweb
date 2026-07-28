@@ -53,6 +53,8 @@ import {
 import { confirmPageNeedsReview } from "@/lib/sku-align/batch-confirm";
 import type { SkuPageContext } from "@/lib/agents/sku-align/plan-command";
 import { useOnboarding } from "@/context/onboarding-context";
+import { useAuth } from "@/context/user-context";
+import { TangbuyWaveLoader } from "@/components/brand/tangbuy-wave-loader";
 import { readableError } from "@/lib/api";
 import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import { productsMirrorShopKey } from "@/lib/products/mirror-cache";
@@ -82,7 +84,11 @@ type FilterId = SkuFilterMode;
 function SkuAlignContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, showToast, isAuthorized, authBootstrapping } = useOnboarding();
+  const { shop, showToast, isAuthorized, authBootstrapping, shopAuthHydrating } =
+    useOnboarding();
+  const { bootstrapping: userBootstrapping } = useAuth();
+  const sessionPending =
+    authBootstrapping || userBootstrapping || shopAuthHydrating;
   const shopName = resolveShopApiName(shop);
   const scanShopKey = workflowScanShopKey(shop);
   const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
@@ -357,7 +363,7 @@ function SkuAlignContent() {
     enabled:
       isEmbedded &&
       isAuthorized &&
-      !authBootstrapping &&
+      !sessionPending &&
       phase !== "scan",
     search: {
       value: searchQuery,
@@ -376,7 +382,7 @@ function SkuAlignContent() {
     },
   });
 
-  if (authBootstrapping) {
+  if (sessionPending) {
     return (
       <WorkbenchShell sidebar={<WorkbenchSidebar />} {...wb.shellProps}>
         <WorkbenchPanel
@@ -384,13 +390,7 @@ function SkuAlignContent() {
           breadcrumbs={notAuthBreadcrumbs}
           {...wb.panelProps}
         >
-          <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
-            <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
-            {t("sku.restoringAuth")}
-          </div>
-          <FadeSwap loading minHeightClass="min-h-[320px]" skeleton={<TableSkeleton rows={4} />}>
-            <div />
-          </FadeSwap>
+          <TangbuyWaveLoader label={t("sku.restoringAuth")} />
         </WorkbenchPanel>
       </WorkbenchShell>
     );

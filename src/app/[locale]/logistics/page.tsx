@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { FadeSwap } from "@/components/ui/fade-swap";
 import { useOnboarding } from "@/context/onboarding-context";
+import { useAuth } from "@/context/user-context";
+import { TangbuyWaveLoader } from "@/components/brand/tangbuy-wave-loader";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { useLogisticsWorkflowStep } from "@/hooks/use-logistics-workflow-step";
@@ -64,8 +66,11 @@ const LogisticsStrategyRailCard = dynamic(
 
 function LogisticsContent() {
   const router = useRouter();
-  const { shop, isAuthorized, authBootstrapping, saveLogistics, showToast, skuReadyForNext, workflowSku, logisticsCompleted, publishLogisticsStepSnapshot, publishLogisticsPipelineActive } =
+  const { shop, isAuthorized, authBootstrapping, shopAuthHydrating, saveLogistics, showToast, skuReadyForNext, workflowSku, logisticsCompleted, publishLogisticsStepSnapshot, publishLogisticsPipelineActive } =
     useOnboarding();
+  const { bootstrapping: userBootstrapping } = useAuth();
+  const sessionPending =
+    authBootstrapping || userBootstrapping || shopAuthHydrating;
   const shopName = shop.name?.trim() || shop.domain?.trim() || "";
   const scanShopKey = workflowScanShopKey(shop);
   const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
@@ -408,7 +413,7 @@ function LogisticsContent() {
   }, [scanShopKey, shopName, load, showToast, t]);
 
   useRegisterEmbeddedPageChrome({
-    enabled: isEmbedded && isAuthorized && !authBootstrapping,
+    enabled: isEmbedded && isAuthorized && !sessionPending,
     search: {
       value: searchQuery,
       onChange: setSearchQuery,
@@ -426,7 +431,7 @@ function LogisticsContent() {
     },
   });
 
-  if (authBootstrapping) {
+  if (sessionPending) {
     return (
       <WorkbenchShell sidebar={<WorkbenchSidebar />} {...wb.shellProps}>
         <WorkbenchPanel
@@ -435,13 +440,7 @@ function LogisticsContent() {
           titleSuffix={<img src="/brand/on-time-guarantee-tag.svg" alt="" className="h-[18px] w-auto" />}
           {...wb.panelProps}
         >
-          <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
-            <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
-            {t("logistics.restoringAuth")}
-          </div>
-          <FadeSwap loading minHeightClass="min-h-[320px]" skeleton={<TableSkeleton rows={4} />}>
-            <div />
-          </FadeSwap>
+          <TangbuyWaveLoader label={t("logistics.restoringAuth")} />
         </WorkbenchPanel>
       </WorkbenchShell>
     );

@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import { WorkspaceLayout } from "@/components/workbench/workspace-layout";
 import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
-import { EmbeddedPageChromeProvider } from "@/host/embedded/embedded-page-chrome-context";
 
 interface WorkbenchShellProps {
   /** Left rail — typically <StepSidebar />. Hidden automatically when embedded. */
@@ -30,6 +29,7 @@ interface WorkbenchShellProps {
  *
  * Embedded Admin: drops the in-app step rail (Shopify left nav already lists steps)
  * and hosts account + language + page search/refresh in the top chrome.
+ * Chrome slot provider lives in locale layout so page registrars are descendants.
  */
 export function WorkbenchShell({
   sidebar,
@@ -41,7 +41,7 @@ export function WorkbenchShell({
 }: WorkbenchShellProps) {
   const { isEmbedded } = useEmbeddedMode();
 
-  const layout = (
+  return (
     <WorkspaceLayout
       leftSidebar={isEmbedded ? null : sidebar}
       assistantPanel={rail}
@@ -51,11 +51,5 @@ export function WorkbenchShell({
     >
       {children}
     </WorkspaceLayout>
-  );
-
-  return isEmbedded ? (
-    <EmbeddedPageChromeProvider>{layout}</EmbeddedPageChromeProvider>
-  ) : (
-    layout
   );
 }

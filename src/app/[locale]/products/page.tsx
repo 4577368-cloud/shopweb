@@ -41,6 +41,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { FadeSwap } from "@/components/ui/fade-swap";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useOnboarding } from "@/context/onboarding-context";
+import { useAuth } from "@/context/user-context";
+import { TangbuyWaveLoader } from "@/components/brand/tangbuy-wave-loader";
 import { type ShopFilter } from "@/components/select/shop-products-panel";
 import {
   buildProductFocusSnapshot,
@@ -63,8 +65,11 @@ const ProductsAgentPanel = dynamic(() => import("@/components/select/products-ag
 function SelectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { shop, isAuthorized, authBootstrapping, showToast } =
+  const { shop, isAuthorized, authBootstrapping, shopAuthHydrating, showToast } =
     useOnboarding();
+  const { bootstrapping: userBootstrapping } = useAuth();
+  const sessionPending =
+    authBootstrapping || userBootstrapping || shopAuthHydrating;
   const shopName = resolveShopApiName(shop);
   const shopMirrorKey = productsMirrorShopKey(shop.name, shop.domain);
   const wb = useWorkbenchPage("products");
@@ -405,7 +410,7 @@ function SelectContent() {
   });
 
   useRegisterEmbeddedPageChrome({
-    enabled: isEmbedded && isAuthorized && !authBootstrapping && phase === "result",
+    enabled: isEmbedded && isAuthorized && !sessionPending && phase === "result",
     search: {
       value: searchQuery,
       onChange: setSearchQuery,
@@ -468,7 +473,7 @@ function SelectContent() {
     />
   );
 
-  if (authBootstrapping) {
+  if (sessionPending) {
     return (
       <WorkbenchShell sidebar={<WorkbenchSidebar />} rail={rail} {...wb.shellProps}>
         <WorkbenchPanel
@@ -476,13 +481,7 @@ function SelectContent() {
           breadcrumbs={[{ label: t("nav.authorize"), href: localePath(locale, "/authorize") }, { label: t("products.title") }]}
           {...wb.panelProps}
         >
-          <div className="mb-3 flex items-center gap-2 text-sm text-ink-muted">
-            <Loader2 className="h-4 w-4 animate-spin text-[#325BE6]" />
-            {t("products.restoringAuth")}
-          </div>
-          <FadeSwap loading minHeightClass="min-h-[320px]" skeleton={<TableSkeleton rows={4} />}>
-            <div />
-          </FadeSwap>
+          <TangbuyWaveLoader label={t("products.restoringAuth")} />
         </WorkbenchPanel>
         {pricingDrawer}
       </WorkbenchShell>
