@@ -173,8 +173,8 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
 
       <SidebarUpgradeCta />
 
-      {/* Soft product / companion promo — fills leftover height without orphaning the footer. */}
-      <div className="mt-auto min-h-0 shrink-0 overflow-hidden px-4 pb-2 pt-1">
+      {/* Soft product tips — shrink-0 only (min-h-0 was collapsing the slot to 0 height). */}
+      <div className="mt-auto shrink-0 px-4 pb-2 pt-1">
         <SidebarAdCarousel />
       </div>
 

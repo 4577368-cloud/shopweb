@@ -86,10 +86,34 @@ export function proxy(req: NextRequest) {
   const segments = pathname.split("/");
   const maybeLocale = segments[1];
 
+  // Embedded Admin iframe: reinforce frame-ancestors (also set in next.config headers).
+  // App home for embedded: marketing install page (not bare landing or authorize).
+  const host = req.nextUrl.searchParams.get("host")?.trim();
+  const embeddedFlag = req.nextUrl.searchParams.get("embedded");
+  const isEmbedded =
+    Boolean(host) || embeddedFlag === "1" || embeddedFlag === "true";
+
   if (isLocale(maybeLocale)) {
-    // Already localized — keep locale cookie in sync.
+    const stripped = "/" + segments.slice(2).join("/");
+    const homeLike = stripped === "/" || stripped === "";
+    if (isEmbedded && homeLike) {
+      const installUrl = req.nextUrl.clone();
+      installUrl.pathname = `/${maybeLocale}/install`;
+      const res = NextResponse.redirect(installUrl);
+      res.headers.set(
+        "Content-Security-Policy",
+        "frame-ancestors https://admin.shopify.com https://*.myshopify.com https://*.shopify.com;"
+      );
+      if (req.cookies.get("locale")?.value !== maybeLocale) {
+        res.cookies.set("locale", maybeLocale, {
+          path: "/",
+          maxAge: 60 * 60 * 24 * 365,
+        });
+      }
+      return res;
+    }
+
     const res = NextResponse.next();
-    // Embedded Admin iframe: reinforce frame-ancestors (also set in next.config headers).
     res.headers.set(
       "Content-Security-Policy",
       "frame-ancestors https://admin.shopify.com https://*.myshopify.com https://*.shopify.com;"
@@ -103,10 +127,14 @@ export function proxy(req: NextRequest) {
     return res;
   }
 
-  // No locale prefix → redirect to the detected/default locale.
+  // No locale prefix → redirect to the detected/default locale (install when embedded).
   const locale = detectLocale(req);
   const url = req.nextUrl.clone();
-  url.pathname = `/${locale}${pathname === "/" ? "" : pathname}`;
+  if (isEmbedded && (pathname === "/" || pathname === "")) {
+    url.pathname = `/${locale}/install`;
+  } else {
+    url.pathname = `/${locale}${pathname === "/" ? "" : pathname}`;
+  }
   url.search = search;
   const res = NextResponse.redirect(url);
   res.cookies.set("locale", locale, {

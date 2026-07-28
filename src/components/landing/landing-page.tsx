@@ -19,6 +19,10 @@ import { useOnboarding } from "@/context/onboarding-context";
 import { useLocale } from "@/i18n/LocaleProvider";
 import { localePath } from "@/i18n/LocaleLink";
 import { resolvePostLoginPath } from "@/lib/auth/post-login-redirect";
+import { useEmbeddedMode } from "@/host/embedded/use-embedded-mode";
+import { replaceInApp } from "@/host/adapters/navigation";
+import { Loader2 } from "@/lib/ui/icons";
+import { useT } from "@/i18n/LocaleProvider";
 
 type LandingMode = "hero" | "auth";
 type AuthMode = "login" | "register";
@@ -44,6 +48,14 @@ export function LandingPage() {
   const { isAuthorized } = useOnboarding();
   const locale = useLocale();
   const router = useRouter();
+  const { isEmbedded } = useEmbeddedMode();
+  const t = useT();
+
+  // Admin App URL often hits `/` — send embedded merchants to the install page.
+  useEffect(() => {
+    if (!isEmbedded) return;
+    replaceInApp(localePath(locale, "/install"), router);
+  }, [isEmbedded, locale, router]);
 
   const entryHref =
     authStatus === "authenticated"
@@ -78,6 +90,15 @@ export function LandingPage() {
     // Soft client nav can stall after login/register; hard-assign matches AuthPanel.
     window.location.assign(postLoginTarget);
   }, [authStatus, mode, postLoginTarget]);
+
+  if (isEmbedded) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center gap-3">
+        <Loader2 className="h-7 w-7 animate-spin text-brand" aria-hidden />
+        <span className="text-sm text-ink-muted">{t("authorize.loading")}</span>
+      </div>
+    );
+  }
 
   return (
     <div className="landing-root">

@@ -4,7 +4,8 @@
 
 name = "Tangbuy AI Sourcing"
 client_id = "REPLACE_WITH_SHOPIFY_API_KEY"
-application_url = "https://ai.tangbuy.com"
+# Admin first open: install / connect marketing page (not workbench step 1).
+application_url = "https://ai.tangbuy.com/en/install"
 embedded = true
 
 [access_scopes]

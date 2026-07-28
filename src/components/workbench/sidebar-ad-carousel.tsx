@@ -62,8 +62,11 @@ export function SidebarAdCarousel({ className }: { className?: string }) {
       aria-label="Product tips"
     >
       <div
-        className="relative overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted"
-        style={{ aspectRatio: SIDEBAR_AD_SLOT.aspectRatio }}
+        className="relative w-full overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface-muted"
+        style={{
+          aspectRatio: SIDEBAR_AD_SLOT.aspectRatio,
+          minHeight: SIDEBAR_AD_SLOT.height,
+        }}
       >
         {SLIDES.map((slide, index) => (
           <div
