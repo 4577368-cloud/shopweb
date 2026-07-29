@@ -161,7 +161,7 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
                         : "text-ink group-hover:text-brand-accent"
                     )}
                   >
-                    {step.order}. {step.title}
+                    {step.title}
                   </span>
                 </LinkInApp>
               </li>
