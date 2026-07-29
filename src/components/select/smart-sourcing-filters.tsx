@@ -179,25 +179,6 @@ export function SmartSourcingFilters({
         />
       </div>
 
-      <Input
-        className="h-7 w-[72px] shrink-0 text-xs"
-        type="number"
-        inputMode="decimal"
-        placeholder={t("sourcing.priceMin")}
-        value={filters.priceMinUsd}
-        onChange={(e) => patch({ priceMinUsd: e.target.value })}
-        aria-label={t("sourcing.priceMin")}
-      />
-      <Input
-        className="h-7 w-[72px] shrink-0 text-xs"
-        type="number"
-        inputMode="decimal"
-        placeholder={t("sourcing.priceMax")}
-        value={filters.priceMaxUsd}
-        onChange={(e) => patch({ priceMaxUsd: e.target.value })}
-        aria-label={t("sourcing.priceMax")}
-      />
-
       <Select
         className="h-7 w-[104px] shrink-0 text-xs"
         value={filters.sort}
