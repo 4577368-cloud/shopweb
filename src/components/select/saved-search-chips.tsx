@@ -23,7 +23,7 @@ export function SavedSearchChips({
   if (!searches.length) return null;
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+    <div className={cn("flex flex-nowrap items-center gap-1.5", className)}>
       <span className="text-[11px] text-ink-subtle">{t("sourcing.savedLabel")}</span>
       {searches.map((s) => {
         const active = s.id === activeId;
