@@ -1,5 +1,5 @@
 ---
-description: After completing deploy-worthy work, commit and push to main without asking
+description: After completing deploy-worthy work, commit and push main to GitHub + GitLab without asking
 alwaysApply: true
 ---
 
@@ -10,7 +10,11 @@ When the user has asked for a feature/fix and the work is ready to ship:
 - **Do not ask** whether to commit, push, or deploy — proceed directly.
 - Follow the repo git safety protocol (no force-push to main, no skipping hooks unless user explicitly requests).
 - **Production** (`ai.tangbuy.com`) tracks **`main`**: merge or commit on `main` and push when deployment is the natural completion of the task.
+- **Always push `main` to both remotes** after a ship commit:
+  - `origin` → GitHub (`4577368-cloud/shopweb`)
+  - `gitlab` → GitLab (`gitlab.tangbuy.cn/guifeng/60s-Sourcing`)
+  - Prefer `git push origin main && git push gitlab main` (or equivalent). If sandbox/proxy blocks GitLab, retry with full permissions — do not leave GitLab behind.
 - If the user only asked a question or review with **no code change**, do not deploy.
 - If push to `main` is blocked (protected branch), use the project's approval flow and retry — still without asking the user first unless authentication/approval truly requires them.
 
-Briefly tell the user what was committed and that production deploy was triggered (Vercel on `main`).
+Briefly tell the user what was committed and that both remotes were updated (Vercel deploys from GitHub `main`).
