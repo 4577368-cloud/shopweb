@@ -147,9 +147,7 @@ export function WorkbenchPanel({
                 )}
               >
                 {toolbar ? (
-                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                    {toolbar}
-                  </div>
+                  <div className="min-w-0 w-full flex-1">{toolbar}</div>
                 ) : null}
                 {!showTitleBlock && (actions || showAssistantToggle) ? (
                   <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">

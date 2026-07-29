@@ -569,18 +569,25 @@ function SelectContent() {
     />
   );
 
-  /** One row: tabs | filters | CTAs (embedded sticky + standalone under title). */
+  /**
+   * Sticky toolbar: left cluster (tabs + filters) wraps together;
+   * right CTAs stay a separate end group so「批量确认」cannot float over pills.
+   */
   const pageToolbar = (
-    <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
-      {pageTabs}
-      <span className="hidden h-4 w-px shrink-0 bg-hairline sm:block" aria-hidden />
-      {tab === "shop" ? (
-        <div ref={setShopFiltersMountEl} className="min-w-0 flex-1" />
-      ) : null}
-      {tab === "catalog" ? (
-        <div ref={setCatalogFiltersMountEl} className="min-w-0 flex-1" />
-      ) : null}
-      <div className="ml-auto flex shrink-0 items-center gap-2">{pageCtas}</div>
+    <div className="flex w-full min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:gap-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        {pageTabs}
+        <span className="hidden h-4 w-px shrink-0 bg-hairline sm:block" aria-hidden />
+        {tab === "shop" ? (
+          <div ref={setShopFiltersMountEl} className="min-w-0" />
+        ) : null}
+        {tab === "catalog" ? (
+          <div ref={setCatalogFiltersMountEl} className="min-w-0" />
+        ) : null}
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+        {pageCtas}
+      </div>
     </div>
   );
 

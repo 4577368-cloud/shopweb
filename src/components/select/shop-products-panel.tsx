@@ -1253,100 +1253,97 @@ export function ShopProductsPanel({
   }, [focusProductId, onProductFocusClear]);
 
   const filterBar = (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <SegmentedTabs
-          variant="chip"
-          tabs={[
-            { id: "all", label: t("shopProducts.filterAll"), count: counts.all },
-            { id: "pending", label: t("shopProducts.filterPending"), count: counts.pending },
-            { id: "confirmed", label: t("shopProducts.filterConfirmed"), count: counts.confirmed },
-            { id: "unbound", label: t("shopProducts.filterUnbound"), count: counts.unbound },
-          ]}
-          value={filter}
-          onValueChange={(id) => {
-            setFilter(id as ShopFilter);
-          }}
-          highlighted={highlighted}
-        />
-        {onCatalogScopeChange && scopeCounts ? (
-          <label
-            className="relative ml-1 inline-flex h-8 shrink-0 items-center gap-1 rounded-[var(--radius-control)] border border-hairline bg-surface pl-2 pr-6 text-xs text-ink"
-            title={t("sourcing.scopeFilterHint")}
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <SegmentedTabs
+        variant="chip"
+        tabs={[
+          { id: "all", label: t("shopProducts.filterAll"), count: counts.all },
+          { id: "pending", label: t("shopProducts.filterPending"), count: counts.pending },
+          { id: "confirmed", label: t("shopProducts.filterConfirmed"), count: counts.confirmed },
+          { id: "unbound", label: t("shopProducts.filterUnbound"), count: counts.unbound },
+        ]}
+        value={filter}
+        onValueChange={(id) => {
+          setFilter(id as ShopFilter);
+        }}
+        highlighted={highlighted}
+      />
+      {onCatalogScopeChange && scopeCounts ? (
+        <label
+          className="relative inline-flex h-7 shrink-0 items-center gap-1 rounded-[var(--radius-control)] border border-hairline bg-surface pl-2 pr-6 text-xs text-ink"
+          title={t("sourcing.scopeFilterHint")}
+        >
+          <span className="shrink-0 text-ink-subtle">
+            {t("sourcing.scopeFilterLabel")}
+          </span>
+          <select
+            value={catalogScope}
+            onChange={(e) =>
+              onCatalogScopeChange(e.target.value as CatalogScope)
+            }
+            style={{
+              width: `${
+                (
+                  catalogScope === "linked"
+                    ? `${t("sourcing.scopeLinked")} · ${scopeCounts.linked}`
+                    : catalogScope === "listed"
+                      ? `${t("sourcing.scopeListed")} · ${scopeCounts.listed}`
+                      : `${t("sourcing.scopeAll")} · ${scopeCounts.all}`
+                ).length + 1
+              }ch`,
+            }}
+            className="h-full appearance-none border-0 bg-transparent py-0 pl-0 pr-0 text-xs font-medium text-ink focus:outline-none focus:ring-0"
+            aria-label={t("sourcing.scopeFilterAria")}
           >
-            <span className="shrink-0 text-ink-subtle">
-              {t("sourcing.scopeFilterLabel")}
-            </span>
-            <select
-              value={catalogScope}
-              onChange={(e) =>
-                onCatalogScopeChange(e.target.value as CatalogScope)
-              }
-              style={{
-                width: `${
-                  (
-                    catalogScope === "linked"
-                      ? `${t("sourcing.scopeLinked")} · ${scopeCounts.linked}`
-                      : catalogScope === "listed"
-                        ? `${t("sourcing.scopeListed")} · ${scopeCounts.listed}`
-                        : `${t("sourcing.scopeAll")} · ${scopeCounts.all}`
-                  ).length + 1
-                }ch`,
-              }}
-              className="h-full appearance-none border-0 bg-transparent py-0 pl-0 pr-0 text-xs font-medium text-ink focus:outline-none focus:ring-0"
-              aria-label={t("sourcing.scopeFilterAria")}
-            >
-              <option value="all">
-                {t("sourcing.scopeAll")} · {scopeCounts.all}
-              </option>
-              <option value="linked">
-                {t("sourcing.scopeLinked")} · {scopeCounts.linked}
-              </option>
-              <option value="listed">
-                {t("sourcing.scopeListed")} · {scopeCounts.listed}
-              </option>
-            </select>
-            <ChevronDown
-              className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle"
-              aria-hidden
-            />
-          </label>
-        ) : null}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {manualAckPendingCount > 0 ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => void handleBatchAck()}
-            disabled={batchAcking || linkingLocked}
-          >
-            {batchAcking ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : null}
-            {batchAcking
-              ? t("shopProducts.batchAcking")
-              : t("shopProducts.batchAck", { count: manualAckPendingCount })}
-          </Button>
-        ) : null}
-        {onRefresh ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={onRefresh}
-            disabled={refreshBusy || linkingLocked}
-            className="h-7 w-7 px-0"
-            title={t("sourcing.refreshTitle")}
-            aria-label={t("sourcing.refreshAria")}
-          >
-            {refreshBusy ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-          </Button>
-        ) : null}
-      </div>
+            <option value="all">
+              {t("sourcing.scopeAll")} · {scopeCounts.all}
+            </option>
+            <option value="linked">
+              {t("sourcing.scopeLinked")} · {scopeCounts.linked}
+            </option>
+            <option value="listed">
+              {t("sourcing.scopeListed")} · {scopeCounts.listed}
+            </option>
+          </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle"
+            aria-hidden
+          />
+        </label>
+      ) : null}
+      {manualAckPendingCount > 0 ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="shrink-0 whitespace-nowrap"
+          onClick={() => void handleBatchAck()}
+          disabled={batchAcking || linkingLocked}
+        >
+          {batchAcking ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : null}
+          {batchAcking
+            ? t("shopProducts.batchAcking")
+            : t("shopProducts.batchAck", { count: manualAckPendingCount })}
+        </Button>
+      ) : null}
+      {onRefresh ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onRefresh}
+          disabled={refreshBusy || linkingLocked}
+          className="h-7 w-7 px-0"
+          title={t("sourcing.refreshTitle")}
+          aria-label={t("sourcing.refreshAria")}
+        >
+          {refreshBusy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
+        </Button>
+      ) : null}
     </div>
   );
 
