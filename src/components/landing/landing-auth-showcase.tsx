@@ -12,23 +12,23 @@ export function LandingAuthShowcase() {
   const t = useT();
 
   return (
-    <div className="landing-auth-showcase mx-auto flex w-full max-w-[560px] flex-col gap-7">
-      <header className="space-y-3">
+    <div className="landing-auth-showcase mx-auto flex w-full max-w-[620px] flex-col gap-4 lg:gap-5">
+      <header className="space-y-2">
         <span className="landing-badge">
           <Wand2 className="h-3 w-3" />
           {t("landing.badge")}
         </span>
-        <h1 className="text-[1.75rem] font-extrabold leading-snug tracking-tight text-[--landing-text] xl:text-[2rem]">
+        <h1 className="text-[1.55rem] font-extrabold leading-[1.2] tracking-tight text-[--landing-text] xl:text-[1.85rem]">
           {t("landing.heroTitle")}
         </h1>
-        <p className="max-w-md text-sm leading-relaxed text-[--landing-text-muted]">
+        <p className="max-w-lg text-sm leading-relaxed text-[--landing-text-muted]">
           {t("landing.heroSubtitle")}
         </p>
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 pt-0.5">
-          <span className="landing-text-gradient text-3xl font-extrabold tabular-nums leading-none">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="landing-text-gradient text-[1.75rem] font-extrabold tabular-nums leading-none">
             60
           </span>
-          <span className="text-base font-bold text-[--landing-text]">
+          <span className="text-sm font-bold text-[--landing-text]">
             {t("landing.heroSecondsUnit")}
             <span className="ml-1.5 font-semibold text-[--landing-text-muted]">
               {t("landing.heroSecondsLabel")}
@@ -37,12 +37,12 @@ export function LandingAuthShowcase() {
         </div>
       </header>
 
-      <div className="landing-auth-showcase-stage">
+      <div className="landing-auth-showcase-stage min-w-0">
         {/* Full scanning / match loop — same as homepage; instant only skips fade-in. */}
         <LandingHeroPreview instant />
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-[--landing-text-muted]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-[--landing-text-muted]">
         <span className="inline-flex items-center gap-1.5">
           <Clock className="h-3 w-3 text-[--landing-accent]" />
           {t("landing.trustMerchants")}

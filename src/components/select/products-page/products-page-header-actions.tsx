@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Loader2, Search, X } from "@/lib/ui/icons";
+import { ArrowRight, Loader2, Search, X } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/LocaleProvider";
 
@@ -99,9 +99,10 @@ export function ProductsPageHeaderActions({
         <Button
           size="sm"
           variant={skuCtaPrimary ? "primary" : "secondary"}
-          className="min-w-[5.75rem] shrink-0 justify-center whitespace-nowrap px-2.5"
+          className="shrink-0 whitespace-nowrap"
         >
           {t("productsPage.skuBindingCta")}
+          <ArrowRight className="h-4 w-4" />
         </Button>
       </Link>
     </div>

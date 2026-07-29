@@ -15,9 +15,7 @@ import {
   launchShopifyLogin,
   rememberShopDomain,
   resolveInstallError,
-  SHOP_STORAGE_KEY,
 } from "@/lib/shopify-install";
-import { shopHandleFromDomain } from "@/components/shopify/shop-domain-connect-field";
 
 type AuthMode = "login" | "register";
 type LoginMethod = "shopify" | "email";
@@ -60,18 +58,6 @@ export function AuthPanel({
   const [showManualContinue, setShowManualContinue] = useState(false);
 
   const busy = phase !== "form" || shopifyBusy;
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const remembered = window.localStorage.getItem(SHOP_STORAGE_KEY);
-      if (remembered) {
-        setShopHandle(shopHandleFromDomain(remembered));
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
 
   useEffect(() => {
     if (phase !== "success" || !successTarget) return;
@@ -187,9 +173,9 @@ export function AuthPanel({
         <X className="h-4 w-4" />
       </button>
 
-      <div className="flex min-h-0 flex-1 flex-col justify-center px-8 py-10 lg:py-14">
+      <div className="flex min-h-0 flex-1 flex-col justify-start px-8 pb-8 pt-8 lg:px-9 lg:pt-9">
         <div className="mx-auto w-full max-w-[340px]">
-          <div className="relative mb-6 flex gap-6 border-b border-[--landing-border]">
+          <div className="relative mb-5 flex gap-6 border-b border-[--landing-border]">
             {modeTabs.map((tab) => (
               <button
                 key={tab.id}
@@ -201,7 +187,7 @@ export function AuthPanel({
                   setShopifyError(null);
                 }}
                 disabled={busy}
-                className="relative pb-3 text-sm font-medium transition disabled:opacity-60"
+                className="relative pb-2.5 text-sm font-medium transition disabled:opacity-60"
                 style={{
                   color:
                     mode === tab.id
@@ -220,7 +206,7 @@ export function AuthPanel({
             ))}
           </div>
 
-          <div className="mb-5">
+          <div className="mb-4">
             <h2 className="text-xl font-semibold text-[--landing-text]">
               {mode === "login"
                 ? t("landing.authLoginTitle")
@@ -237,7 +223,7 @@ export function AuthPanel({
 
           {mode === "login" && phase !== "success" ? (
             <div
-              className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-slate-100/90 p-1"
+              className="mb-5 grid grid-cols-2 gap-0.5 rounded-lg bg-slate-100 p-0.5"
               role="tablist"
               aria-label={t("auth.methodTablistAria")}
             >
@@ -256,8 +242,8 @@ export function AuthPanel({
                     }}
                     className={
                       active
-                        ? "rounded-lg bg-[--landing-accent] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition"
-                        : "rounded-lg px-3 py-2.5 text-sm font-semibold text-[--landing-text-muted] transition hover:text-[--landing-text]"
+                        ? "h-8 rounded-md bg-[#0f172a] px-3 text-xs font-semibold text-white shadow-sm transition"
+                        : "h-8 rounded-md px-3 text-xs font-semibold text-[--landing-text-muted] transition hover:text-[--landing-text]"
                     }
                   >
                     {tab.label}

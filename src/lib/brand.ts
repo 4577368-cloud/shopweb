@@ -1,9 +1,10 @@
-/** Central app branding — Tangbuy AI Sourcing / 60s Sourcing */
+/** Central app branding — product face is 60s Sourcing; parent company Tangbuy. */
 
-export const APP_NAME = "Tangbuy";
+/** User-facing product name (chrome, auth, copy). */
+export const APP_NAME = "60s Sourcing";
 export const APP_TAGLINE = "AI Sourcing";
 /** Product / document title (standalone browser tab, docs). */
-export const APP_FULL_NAME = "Tangbuy AI Sourcing";
+export const APP_FULL_NAME = "60s Sourcing";
 /**
  * Name shown in Shopify Admin App Bridge TitleBar.
  * Must match Partner Dashboard / Admin left-nav listing ("60s Sourcing").
@@ -11,6 +12,9 @@ export const APP_FULL_NAME = "Tangbuy AI Sourcing";
 export const APP_ADMIN_TITLE = "60s Sourcing";
 export const APP_DESCRIPTION =
   "Shopify 商家智能货源匹配工作台 — 图搜关联、SKU 对齐、物流报价与上架";
+
+/** Parent company — shown as affiliation inlay, not primary chrome title. */
+export const PARENT_BRAND = "Tangbuy";
 
 /** Full horizontal brand logo (source: docs/logo60-svg.svg; spec max-height 48px in chrome). */
 export const BRAND_LOGO_FULL = "/brand/logo60-svg.svg";

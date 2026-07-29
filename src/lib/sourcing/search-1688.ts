@@ -33,7 +33,7 @@ function pickTitle(item: Offer1688SearchItem): string {
     item.subjectTrans?.trim() ||
     item.subject?.trim() ||
     item.offerId?.trim() ||
-    "1688 offer"
+    "Source offer"
   );
 }
 

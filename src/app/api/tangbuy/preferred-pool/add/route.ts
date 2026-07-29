@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   const providerItemId = body.providerItemId?.trim();
   if (!providerItemId) {
     return NextResponse.json(
-      { ok: false, error: "缺少 providerItemId（1688 offerId）" },
+      { ok: false, error: "缺少 providerItemId（货源 offerId）" },
       { status: 400 }
     );
   }

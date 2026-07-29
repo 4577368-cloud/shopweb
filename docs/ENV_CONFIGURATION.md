@@ -33,6 +33,22 @@
 
 ---
 
+## 公司 GitLab 部署（`env.test`）
+
+当前机器上的运行配置在 `.env.local`。同步到公司 GitLab（**永不进 GitHub**）：
+
+```bash
+npm run env:gitlab
+```
+
+- 生成本地 `env.test`（已在 `.gitignore`）
+- 仅推送到 remote `gitlab` 的独立分支 **`ops/env`**
+- 不会 `git push origin`，也不会把密钥写进 `main`
+
+部署侧从 GitLab 检出 `ops/env` 读取 `env.test` 即可。
+
+---
+
 ## Render（`shop-x2mw` / tangbuy-plugin）
 
 Dashboard → Environment（`render.yaml` 中 `sync: false` 的项必须手填）：

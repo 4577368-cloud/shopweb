@@ -12,7 +12,7 @@ export function buildImageSearchRecoveryHints(input: {
   if (input.errorMessage?.trim()) {
     return [
       "检查主图是否清晰、无大面积水印",
-      "可尝试「手动匹配」粘贴 1688 / 商城链接",
+      "可尝试「手动匹配」粘贴货源 / 商城链接",
     ];
   }
   if (input.result && input.result.items.length === 0) {

@@ -1,6 +1,6 @@
 import type { PoolIngestStatus, QuoteStatus } from "@/lib/types";
 
-/** User-facing label when 1688 source is not yet in Tangbuy catalog. */
+/** User-facing label when external source is not yet in Tangbuy catalog. */
 export const GOODS_INGESTING_MESSAGE = "商品入库中";
 
 /** Friendly copy — no offer IDs or admin tokens in the UI. */

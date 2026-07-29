@@ -168,7 +168,7 @@ export function WorkbenchPanel({
         </header>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-[var(--wb-gutter)] py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-[var(--wb-gutter)] py-4 [scrollbar-gutter:stable]">
         <div className={cn("mx-auto w-full")} style={{ maxWidth }}>
           {children}
         </div>

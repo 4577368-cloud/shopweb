@@ -32,10 +32,10 @@ export function LandingAuthSplit({
 }: LandingAuthSplitProps) {
   return (
     <main className="relative z-10 flex min-h-[calc(100vh-3.5rem)] flex-col pt-14 lg:flex-row">
-      <section className="relative hidden min-w-0 flex-1 flex-col justify-center overflow-hidden px-10 py-10 xl:px-16 lg:flex">
+      <section className="relative hidden min-w-0 flex-1 flex-col justify-start overflow-hidden px-8 pb-8 pt-8 xl:px-12 lg:flex lg:pt-10">
         <LandingAuthShowcase />
       </section>
-      <aside className="flex w-full shrink-0 flex-col border-t border-[--landing-border] bg-white/60 lg:min-h-[calc(100vh-3.5rem)] lg:w-[440px] lg:border-l lg:border-t-0 lg:bg-white/80">
+      <aside className="relative z-20 flex w-full shrink-0 flex-col border-t border-[--landing-border] bg-white/60 lg:min-h-[calc(100vh-3.5rem)] lg:w-[min(420px,40%)] lg:border-l lg:border-t-0 lg:bg-white/80">
         <AuthPanel
           mode={mode}
           onModeChange={onModeChange}

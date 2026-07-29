@@ -89,7 +89,7 @@ export async function submitPreferredPoolAddFromBrowser(
 ): Promise<BrowserPoolAddOutcome> {
   const offerId = offerId1688.trim();
   if (!offerId) {
-    return { ok: false, status: "failed", error: "缺少 1688 offerId" };
+    return { ok: false, status: "failed", error: "缺少货源 offerId" };
   }
 
   let upstream: Response;

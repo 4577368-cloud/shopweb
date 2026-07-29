@@ -95,7 +95,7 @@ export function summarizeFilters(
     chips.push(labels[filters.sort] ?? filters.sort);
   }
   if (filters.sourceFilter && filters.sourceFilter !== "all") {
-    chips.push(filters.sourceFilter === "1688" ? "1688" : "Tangbuy");
+    chips.push(filters.sourceFilter === "1688" ? "外部货源" : "Tangbuy");
   }
   return chips;
 }

@@ -34,6 +34,11 @@ yarn-error.log*
 .env*
 !.env.example
 env.keys.json
+# 公司 GitLab 部署密钥（仅 npm run env:gitlab → gitlab ops/env；永不同步 GitHub）
+env.test
+env.prod
+env.staging
+env.local
 
 # vercel
 .vercel

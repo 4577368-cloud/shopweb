@@ -168,7 +168,7 @@ export const SKU_COMMAND_DEFS: {
   {
     id: "bind_variant",
     label: "绑定变体到货源",
-    description: "将指定变体绑定到某个 1688 货源（在工作台完成货源选择）",
+    description: "将指定变体绑定到某个货源（在工作台完成货源选择）",
     defaultConfirmation: false,
     sensitivity: "high",
   },

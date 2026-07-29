@@ -69,30 +69,23 @@ export default function RootLayout({
       className={`${displayFont.variable} h-full antialiased`}
     >
       <head>
-        {/* Detect Admin iframe before React so left rail never flashes standalone. */}
+        {/*
+          Detect Shopify Admin embed before React (avoids standalone chrome flash).
+          App Bridge CDN must ONLY load when Admin signals exist (host / embedded=1
+          / sticky host). Loading it on standalone login throws
+          "missing required configuration fields: shop" and can leave the page as
+          inert SSR HTML (tabs/buttons stop working).
+          CDN rules: classic script, no async/defer; document.write during parse.
+        */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var q=new URLSearchParams(location.search);var emb=q.get("host")||q.get("embedded")==="1"||q.get("embedded")==="true";if(!emb){try{emb=window.self!==window.top}catch(e){emb=true}}if(emb){document.documentElement.dataset.embedded="1";try{sessionStorage.setItem("tb_embedded_mode_v1",JSON.stringify({isEmbedded:true,host:(q.get("host")||"").trim(),shop:(q.get("shop")||"").trim().toLowerCase()}))}catch(e){}}}catch(e){}})();`,
+            __html: `(function(){try{var q=new URLSearchParams(location.search);var host=(q.get("host")||"").trim();var embFlag=q.get("embedded")==="1"||q.get("embedded")==="true";var shop=(q.get("shop")||"").trim().toLowerCase();var stickyHost="";try{var raw=sessionStorage.getItem("tb_embedded_mode_v1");if(raw){var p=JSON.parse(raw);if(p&&p.isEmbedded&&p.host)stickyHost=String(p.host||"")}}catch(e){}var loadBridge=Boolean(host)||embFlag||Boolean(stickyHost);var inFrame=false;try{inFrame=window.self!==window.top}catch(e){inFrame=true}if(loadBridge||inFrame){document.documentElement.dataset.embedded="1"}if(loadBridge){try{sessionStorage.setItem("tb_embedded_mode_v1",JSON.stringify({isEmbedded:true,host:host||stickyHost,shop:shop}))}catch(e){}}${
+              shopifyApiKey
+                ? `if(loadBridge){document.write(${JSON.stringify(`<meta name="shopify-api-key" content="${shopifyApiKey}">`)});document.write('<script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"><\\/script>');}`
+                : ""
+            }}catch(e){}})();`,
           }}
         />
-        {shopifyApiKey ? (
-          <>
-            {/*
-              App Bridge CDN rules (hard abort if violated):
-              - classic script from cdn.shopify.com
-              - no async / defer / type=module
-              Next/React often serialize <script src> as async=""; use document.write
-              so the CDN tag is parser-inserted without async.
-            */}
-            <meta name="shopify-api-key" content={shopifyApiKey} />
-            <script
-              dangerouslySetInnerHTML={{
-                __html:
-                  'document.write(\'<script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"><\\/script>\');',
-              }}
-            />
-          </>
-        ) : null}
       </head>
       <body
         className="min-h-full bg-app-shell font-sans text-foreground"

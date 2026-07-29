@@ -87,17 +87,17 @@ async function submitPreferredPoolAdd(
 ): Promise<PreferredPoolAddResult> {
   const offerId = offerId1688.trim();
   if (!offerId) {
-    return { ok: false, status: "failed", error: "缺少 1688 offerId" };
+    return { ok: false, status: "failed", error: "缺少货源 offerId" };
   }
   if (!isOfferId1688(offerId)) {
     logPoolAddDiagnostic(offerId, {
       skipped: true,
-      error: "非 1688 offerId，跳过商品库登记",
+      error: "非外部货源 ID，跳过商品库登记",
     });
     return {
       ok: false,
       status: "skipped",
-      error: "非 1688 offerId，跳过商品库登记",
+      error: "非外部货源 ID，跳过商品库登记",
       skipped: true,
     };
   }

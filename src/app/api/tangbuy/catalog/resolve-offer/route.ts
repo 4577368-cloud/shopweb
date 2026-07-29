@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   const offerId = body.offerId1688?.trim() ?? "";
   if (!isOfferId1688(offerId)) {
     return NextResponse.json(
-      { ok: false, error: "缺少有效的 1688 offerId" },
+      { ok: false, error: "缺少有效的货源 offerId" },
       { status: 400 }
     );
   }

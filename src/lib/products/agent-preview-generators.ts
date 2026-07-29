@@ -493,7 +493,10 @@ export function createProductsPreviewGenerators({
                     source: hit.source,
                   }),
                   before: "",
-                  after: hit.source === "1688" ? "1688" : "Tangbuy",
+                  after:
+                    hit.source === "1688"
+                      ? t("catalogCard.source1688")
+                      : t("catalogCard.sourceTangbuy"),
                 },
                 {
                   label: t("catalogCard.purchaseCost", {
