@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
-import { CheckCircle2 } from "@/lib/ui/icons";
+import { CheckCircle2, ShoppingBag } from "@/lib/ui/icons";
 import { AppLogo } from "@/components/brand/app-logo";
 import { useOnboarding } from "@/context/onboarding-context";
 import { ShopSwitcher } from "@/components/workbench/shop-switcher";
@@ -47,7 +47,7 @@ export interface WorkbenchSidebarProps {
 }
 
 /**
- * Unified left rail: 开店流程步骤导航。
+ * Unified left rail: 开店流程步骤 + 订单中心等经营入口。
  */
 export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
   const pathname = usePathname();
@@ -166,6 +166,52 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
           })}
         </ul>
       </nav>
+
+      {isAuthorized ? (
+        <nav
+          className="min-h-0 shrink-0 overflow-y-auto border-t border-hairline px-3 py-2"
+          aria-label={t("nav.order")}
+        >
+          <ul className="space-y-0.5">
+            <li>
+              <LinkInApp
+                href={localePath(locale, "/order-center")}
+                aria-current={
+                  pathname.includes("/order-center") ? "page" : undefined
+                }
+                title={t("sidebar.goTo", { title: t("nav.order") })}
+                className={cn(
+                  "group flex cursor-pointer items-center gap-2.5 rounded-[var(--radius-control)] px-2 py-2 transition-colors",
+                  pathname.includes("/order-center")
+                    ? "bg-brand-soft/80 ring-1 ring-brand/10"
+                    : "hover:bg-surface-muted/80"
+                )}
+              >
+                <span
+                  className={cn(
+                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
+                    pathname.includes("/order-center")
+                      ? "bg-[#325BE6] text-white"
+                      : "bg-[#EEF2FF] text-[#325BE6]"
+                  )}
+                >
+                  <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
+                </span>
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 text-[13px] font-medium leading-5 transition-colors",
+                    pathname.includes("/order-center")
+                      ? "text-brand-accent"
+                      : "text-ink group-hover:text-brand-accent"
+                  )}
+                >
+                  {t("nav.order")}
+                </span>
+              </LinkInApp>
+            </li>
+          </ul>
+        </nav>
+      ) : null}
 
       {/* Pin carousel + account to the bottom of the full-height rail. */}
       <div className="mt-auto flex shrink-0 flex-col gap-2">

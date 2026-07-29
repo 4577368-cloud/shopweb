@@ -24,6 +24,7 @@ import type {
   PublishResult,
   ShopMirrorProduct,
   ShopOrderHeader,
+  ShopOrderProcurementSnapshot,
   ShopProductDetail,
   ShopProductUpdatePayload,
   SkuAutoAlignResult,
@@ -44,6 +45,7 @@ import type {
   SkuAlignRunStatus,
   SkuAlignSupplementSourceRequest,
 } from "@/lib/sku-align-v1/types";
+import type { OrderBindingLine } from "@/lib/order/types";
 import { normalizeSkuOverviewForList } from "@/lib/api/sku-overview-normalize";
 import { logisticsTemplateFromVo } from "@/lib/logistics/default-template";
 import { normalizeShopApiName } from "@/lib/resolve-shop-api-name";
@@ -1067,6 +1069,24 @@ export const api = {
   listShopOrders: (shop: string) =>
     request<ShopOrderHeader[]>(
       `/api/plugin/order/header/list?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  /**
+   * 采购子单快照（可选）。未实现时前端忽略。
+   */
+  listOrderProcurementSnapshots: (shop: string) =>
+    request<ShopOrderProcurementSnapshot[]>(
+      `/api/plugin/order/procurement/snapshots?shopName=${encodeURIComponent(shop)}`
+    ),
+
+  /**
+   * 订单行的 Shopify 商品 → Tangbuy 关联货源匹配结果。
+   */
+  listOrderBindingLines: (shop: string, outerOrderId: string) =>
+    request<OrderBindingLine[]>(
+      `/api/plugin/order/binding/lines?shopName=${encodeURIComponent(
+        shop
+      )}&outerOrderId=${encodeURIComponent(outerOrderId)}`
     ),
 
   /** Phase 1 read-only product detail (SPU + variants + media) from the local mirror. */
