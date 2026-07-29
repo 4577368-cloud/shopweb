@@ -53,8 +53,8 @@ export const initialSteps: OnboardingStep[] = [
   {
     id: "sync",
     order: 5,
-    title: "同步上架",
-    description: "汇总并发布到 Shopify",
+    title: "经营订单",
+    description: "开店准备汇总，并衔接订单履约",
     href: "/sync",
     status: "not_started",
   },

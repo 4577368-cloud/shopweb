@@ -7,7 +7,6 @@ import { AppLogo } from "@/components/brand/app-logo";
 import { useOnboarding } from "@/context/onboarding-context";
 import { ShopSwitcher } from "@/components/workbench/shop-switcher";
 import { LanguageSwitcher } from "@/components/i18n/LanguageSwitcher";
-import { SidebarUpgradeCta } from "@/components/workbench/sidebar-upgrade-cta";
 import { SidebarAdCarousel } from "@/components/workbench/sidebar-ad-carousel";
 import { SidebarUserMenu } from "@/components/workbench/sidebar-user-menu";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
@@ -167,8 +166,6 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
           })}
         </ul>
       </nav>
-
-      <SidebarUpgradeCta />
 
       {/* Pin carousel + account to the bottom of the full-height rail. */}
       <div className="mt-auto flex shrink-0 flex-col gap-2">

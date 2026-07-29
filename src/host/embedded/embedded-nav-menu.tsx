@@ -20,7 +20,6 @@ const VISIBLE_NAV: { href: string; labelKey: string }[] = [
   { href: "/sku-align", labelKey: "steps.sku.title" },
   { href: "/logistics", labelKey: "steps.logistics.title" },
   { href: "/sync", labelKey: "steps.sync.title" },
-  { href: "/upgrade", labelKey: "sidebar.upgradeLabel" },
 ];
 
 /**

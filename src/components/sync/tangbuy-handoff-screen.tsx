@@ -26,10 +26,13 @@ export function TangbuyHandoffScreen({
   shopDomain,
   mode = "complete",
   className,
+  onViewReport,
 }: {
   shopDomain?: string;
   mode?: "complete" | "upgrade";
   className?: string;
+  /** Secondary: open 开店准备报告 without leaving this step. */
+  onViewReport?: () => void;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -90,6 +93,17 @@ export function TangbuyHandoffScreen({
             <p className="relative mt-3 text-left text-xs text-ink-subtle">
               {t("handoff.sameAccount")}
             </p>
+            {onViewReport ? (
+              <p className="relative mt-4">
+                <button
+                  type="button"
+                  onClick={onViewReport}
+                  className="text-sm font-medium text-brand-accent hover:underline"
+                >
+                  {t("handoff.viewPrepReport")}
+                </button>
+              </p>
+            ) : null}
           </div>
 
           <div className="grid gap-3 p-5 sm:grid-cols-2 sm:gap-4 sm:p-7">
@@ -190,5 +204,6 @@ export function TangbuyHandoffScreen({
 export function CompletionScreen(
   props: Omit<Parameters<typeof TangbuyHandoffScreen>[0], "mode">
 ) {
-  return <TangbuyHandoffScreen {...props} mode="complete" />;
+  // Step-5 destination is the Dropshipping handoff (图2), not the old congrats screen.
+  return <TangbuyHandoffScreen {...props} mode="upgrade" />;
 }

@@ -188,6 +188,42 @@
   }
 }
 
+/* Login split — animated workbench as the hero visual */
+.landing-auth-showcase-stage {
+  position: relative;
+  isolation: isolate;
+}
+
+.landing-auth-showcase-stage::before {
+  content: "";
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 12%;
+  bottom: -4%;
+  z-index: -1;
+  border-radius: 28px;
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    rgba(50, 91, 230, 0.16) 0%,
+    rgba(14, 165, 233, 0.08) 45%,
+    transparent 72%
+  );
+  filter: blur(8px);
+  pointer-events: none;
+}
+
+.landing-auth-showcase-stage .landing-mockup {
+  transform: perspective(1200px) rotateY(-2deg) rotateX(1.5deg);
+  transform-origin: center center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-auth-showcase-stage .landing-mockup {
+    transform: none;
+  }
+}
+
 /* 产品 mockup —— 精致 SaaS 界面 */
 .landing-mockup {
   position: relative;

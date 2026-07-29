@@ -119,7 +119,7 @@ function resolveBatchProductIds(
   t: TranslateFn,
   draft: ProductCommandDraft,
   ctx: ProductsPageContext,
-  opts?: { activeOnly?: boolean }
+  opts?: { activeOnly?: boolean; /** Translate / title / price: never exceed current list page. */ capToVisiblePage?: boolean }
 ): { ids: string[]; label: string } {
   const filter = draft.params.batchFilter ?? "all";
   const all = ctx.productCatalog;
@@ -165,6 +165,19 @@ function resolveBatchProductIds(
     filtered = filtered.filter((p) => isActiveShopStatus(p.shopStatus));
   }
 
+  // Translate / title / price batches wait per product — hard-cap to the visible page.
+  let cappedToPage = false;
+  if (opts?.capToVisiblePage) {
+    const pageIds = new Set(ctx.visiblePageProductIds);
+    if (pageIds.size === 0) {
+      filtered = [];
+    } else {
+      const before = filtered.length;
+      filtered = filtered.filter((p) => pageIds.has(p.productId));
+      cappedToPage = before > filtered.length || filter !== "page";
+    }
+  }
+
   // 「最近新增」默认只取前 20；「前 N」由 batchLimit 控制
   const defaultLimit = filter === "recent" ? 20 : 0;
   const limit = draft.params.batchLimit ?? defaultLimit;
@@ -184,10 +197,12 @@ function resolveBatchProductIds(
     recent: t("agentProducts.filterRecentProducts"),
   };
   let label =
-    filterLabels[filter] ??
-    (opts?.activeOnly
-      ? t("agentProducts.filterAllActive")
-      : t("agentProducts.filterAll"));
+    cappedToPage || filter === "page"
+      ? t("agentProducts.filterPageProducts")
+      : filterLabels[filter] ??
+        (opts?.activeOnly
+          ? t("agentProducts.filterAllActive")
+          : t("agentProducts.filterAll"));
   if (draft.params.batchLimit && draft.params.batchLimit > 0) {
     label = t("agentProducts.filterLimited", {
       label,
@@ -631,7 +646,9 @@ export function planProductCommand(
         };
       }
 
-      const batchResult = resolveBatchProductIds(t, draft, ctx);
+      const batchResult = resolveBatchProductIds(t, draft, ctx, {
+        capToVisiblePage: true,
+      });
       const totalCount = batchResult.ids.length;
 
       if (totalCount === 0) {
@@ -681,6 +698,7 @@ export function planProductCommand(
             copyAction,
             copyTargetLang: targetLang,
             copyStyle,
+            batchFilter: "page",
             batchProductIds: batchResult.ids,
           },
         },
@@ -708,7 +726,9 @@ export function planProductCommand(
         };
       }
 
-      const batchResult = resolveBatchProductIds(t, draft, ctx);
+      const batchResult = resolveBatchProductIds(t, draft, ctx, {
+        capToVisiblePage: true,
+      });
       const totalCount = batchResult.ids.length;
 
       if (totalCount === 0) {
@@ -749,6 +769,7 @@ export function planProductCommand(
           confirmationRequired: true,
           params: {
             ...draft.params,
+            batchFilter: "page",
             batchProductIds: batchResult.ids,
           },
         },

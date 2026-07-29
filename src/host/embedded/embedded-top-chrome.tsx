@@ -19,7 +19,7 @@ export function EmbeddedTopChrome() {
   const assistant = chrome?.assistant ?? null;
 
   return (
-    <div className="flex shrink-0 border-b border-hairline bg-canvas/90 px-[var(--wb-gutter)] py-2 backdrop-blur">
+    <div className="relative z-50 flex shrink-0 border-b border-hairline bg-canvas/90 px-[var(--wb-gutter)] py-2 backdrop-blur">
       <div
         className="mx-auto flex w-full min-w-0 items-center gap-2"
         style={{ maxWidth }}

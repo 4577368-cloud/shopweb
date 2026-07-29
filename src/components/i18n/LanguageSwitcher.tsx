@@ -94,7 +94,7 @@ export function LanguageSwitcher({
           role="listbox"
           aria-label={localeLabels[locale]}
           className={cn(
-            "absolute right-0 z-40 min-w-[7.5rem] overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface py-1 shadow-card",
+            "absolute right-0 z-50 min-w-[7.5rem] overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-surface py-1 shadow-card",
             menuPlacement === "down" ? "top-full mt-1" : "bottom-full mb-1"
           )}
         >

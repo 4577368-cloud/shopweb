@@ -34,9 +34,25 @@ function coerceProductCommandDraft(
       targetScope: "all",
       params: {
         ...next.params,
-        batchFilter: next.params.batchFilter ?? "all",
+        batchFilter:
+          next.params.batchFilter && next.params.batchFilter !== "all"
+            ? next.params.batchFilter
+            : "page",
       },
     };
+  }
+
+  if (
+    next.intent === "batch_update_product_copy" ||
+    next.intent === "batch_update_listing_price"
+  ) {
+    const filter = next.params.batchFilter;
+    if (!filter || filter === "all") {
+      next = {
+        ...next,
+        params: { ...next.params, batchFilter: "page" },
+      };
+    }
   }
 
   if (

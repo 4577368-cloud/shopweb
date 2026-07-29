@@ -231,7 +231,7 @@ export function SidebarUserMenu({
         <div
           role="menu"
           className={cn(
-            "absolute left-0 right-0 z-40 overflow-hidden rounded-[var(--radius-control)] border border-surface-border bg-surface py-1 shadow-card",
+            "absolute left-0 right-0 z-50 overflow-hidden rounded-[var(--radius-control)] border border-surface-border bg-surface py-1 shadow-card",
             menuPlacement === "down" ? "top-full mt-1" : "bottom-full mb-1"
           )}
         >

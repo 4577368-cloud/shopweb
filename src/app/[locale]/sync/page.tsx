@@ -97,16 +97,12 @@ export default function SyncPage() {
   const showFull = phase === "holding" || phase === "summary";
   const summaryIsPartial = summary != null && summary.meta.loadTier === "fast";
 
-  // Coming back to a ceremony that already ran lands on the summary, never on a
-  // context-free congrats screen. The header replay button re-runs the ceremony.
+  // Every visit re-runs 图1 with fresh(er) data, then auto-advances to 图2.
+  // Prior completion only shortens the ceremony timing — it never skips to handoff.
   const applyPostFetchPhase = useCallback(() => {
-    if (revisitRef.current || readSummaryViewed() || readCeremonyCelebrated()) {
-      setCeremonyPercent(100);
-      setPhase("summary");
-    } else {
-      setCeremonyPercent(0);
-      setPhase("running");
-    }
+    setReportInstant(false);
+    setCeremonyPercent(0);
+    setPhase("running");
   }, []);
 
   const finishCeremonyToComplete = useCallback(() => {
@@ -209,9 +205,8 @@ export default function SyncPage() {
         setSummary(data);
         if (shopName) setLaunchSummaryCache(shopMirrorKey, data);
         setFullSummaryReady(true);
-
-        if (phaseRef.current === "running" && !readSummaryViewed() && !readCeremonyCelebrated()) {
-          finishCeremonyToComplete();
+        if (phaseRef.current === "loading") {
+          applyPostFetchPhase();
         }
       } catch {
         if (isCancelled()) return;
@@ -235,7 +230,6 @@ export default function SyncPage() {
     },
     [
       applyPostFetchPhase,
-      finishCeremonyToComplete,
       isAuthorized,
       shop.domain,
       shopMirrorKey,
@@ -279,15 +273,10 @@ export default function SyncPage() {
     pendingLogisticsSyncExceptionRef.current = null;
   }, [summary, t]);
 
+  // fullSummaryReady used to skip the ceremony on first visit — that blocked
+  // "re-run with updated data". Progress + hold timers own the handoff transition.
   const ceremonyRevisit =
     revisitRef.current || readSummaryViewed() || readCeremonyCelebrated();
-
-  useEffect(() => {
-    if (!fullSummaryReady) return;
-    if (phase !== "running") return;
-    if (ceremonyRevisit) return;
-    finishCeremonyToComplete();
-  }, [fullSummaryReady, phase, ceremonyRevisit, finishCeremonyToComplete]);
 
   useEffect(() => {
     if (phase !== "running" || !summary) return;
@@ -303,11 +292,7 @@ export default function SyncPage() {
         if (holdMs <= 0) {
           completeSyncCeremony();
           sessionStorage.setItem(SYNC_CEREMONY_DONE_KEY, "1");
-          setPhase(ceremonyRevisit ? "summary" : "complete");
-          if (ceremonyRevisit) {
-            sessionStorage.setItem(SYNC_CEREMONY_SUMMARY_VIEWED_KEY, "1");
-            setReportInstant(true);
-          }
+          setPhase("complete");
         } else {
           setPhase("holding");
         }
@@ -437,14 +422,26 @@ export default function SyncPage() {
   if (phase === "complete" && summary) {
     return (
       <WorkbenchShell sidebar={<WorkbenchSidebar />}>
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <motion.div
+          key="handoff"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="relative flex min-h-0 flex-1 flex-col"
+        >
           <div className="absolute right-[var(--wb-gutter)] top-4 z-10">
             {replayAction}
           </div>
           <CompletionScreen
             shopDomain={summary.meta.shopDomain || summary.meta.shopName}
+            onViewReport={() => {
+              sessionStorage.setItem(SYNC_CEREMONY_SUMMARY_VIEWED_KEY, "1");
+              setReportInstant(true);
+              setCeremonyPercent(100);
+              setPhase("summary");
+            }}
           />
-        </div>
+        </motion.div>
       </WorkbenchShell>
     );
   }
@@ -496,12 +493,27 @@ export default function SyncPage() {
           { label: t("sync.title") },
         ]}
         maxWidth={1080}
-        actions={replayAction}
+        actions={
+          <div className="flex items-center gap-2">
+            {phase === "summary" ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => setPhase("complete")}
+              >
+                {t("handoff.backToFulfillment")}
+              </Button>
+            ) : null}
+            {replayAction}
+          </div>
+        }
       >
         <motion.div
-          key={replayEpoch}
+          key={phase === "summary" ? `summary-${replayEpoch}` : replayEpoch}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
           className="space-y-4"
         >
           {phase === "running" ? (

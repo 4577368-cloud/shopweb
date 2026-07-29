@@ -118,6 +118,28 @@ export function launchShopifyInstall(
 }
 
 /**
+ * Optional secondary link: open the embedded 60s app inside Shopify Admin.
+ * Requires a public API key (`NEXT_PUBLIC_SHOPIFY_API_KEY`) and a shop handle/domain.
+ * Does not set standalone cookies — primary standalone login remains {@link launchShopifyLogin}.
+ */
+export function adminAppDeepLink(
+  rawDomain: string,
+  opts?: { localePath?: string }
+): string | null {
+  const apiKey = (
+    process.env.NEXT_PUBLIC_SHOPIFY_API_KEY ??
+    process.env.SHOPIFY_API_KEY ??
+    ""
+  ).trim();
+  if (!apiKey) return null;
+  const shopDomain = normalizeShopDomain(rawDomain);
+  if (!shopDomain || !SHOP_DOMAIN_PATTERN.test(shopDomain)) return null;
+  const handle = shopDomain.replace(/\.myshopify\.com$/i, "");
+  const path = (opts?.localePath ?? "/en/authorize").replace(/^\//, "");
+  return `https://admin.shopify.com/store/${handle}/apps/${apiKey}/${path}`;
+}
+
+/**
  * Standalone Login with Shopify: OAuth → auto-provision → `tb_access` cookies → returnTo.
  * In embedded Admin, falls back to {@link launchShopifyInstall} (session-token / install-embedded).
  */

@@ -891,16 +891,22 @@ export function ShopProductsPanel({
         return;
       }
 
+      // One control = at most the current list page — avoid long waiting queues.
+      const readyProducts =
+        preflight.readyProducts.length > SHOP_PRODUCTS_PAGE_SIZE
+          ? preflight.readyProducts.slice(0, SHOP_PRODUCTS_PAGE_SIZE)
+          : preflight.readyProducts;
+
       setFilter("all");
       if (source === "manual") {
         showToast(
           t("shopProducts.toastBatchLinkStart", {
-            count: preflight.readyProducts.length,
+            count: readyProducts.length,
           })
         );
       }
 
-      void startBatchLink(preflight.readyProducts, {
+      void startBatchLink(readyProducts, {
         source,
         deferredIds: preflight.deferredIds,
       });
@@ -1119,18 +1125,8 @@ export function ShopProductsPanel({
     shopName,
   ]);
 
-  // Rail「重搜候选」+ page「一键关联」: client-side per-card batch link.
+  // Rail「重搜候选」signal ref — effect runs after pageLinkableProducts (page-scoped).
   const rematchSignalSeen = useRef(0);
-  useEffect(() => {
-    if (linkingLocked) return;
-    if (!rematchUnboundSignal || rematchUnboundSignal === rematchSignalSeen.current) {
-      return;
-    }
-    rematchSignalSeen.current = rematchUnboundSignal;
-    const unboundProducts = products.filter((p) => stateOf(p) === null);
-    runBatchLinkForUnbound(unboundProducts);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- signal edge only
-  }, [rematchUnboundSignal]);
 
   const batchLinkSessionActive =
     batchLinkProgress.sessionOrder.length > 0 &&
@@ -1180,6 +1176,17 @@ export function ShopProductsPanel({
     () => filterLinkableProducts(paginatedProducts, bindings, shopName),
     [paginatedProducts, bindings, shopName]
   );
+
+  // Rail「重搜候选」: only current page — full-catalog queues wait too long.
+  useEffect(() => {
+    if (linkingLocked) return;
+    if (!rematchUnboundSignal || rematchUnboundSignal === rematchSignalSeen.current) {
+      return;
+    }
+    rematchSignalSeen.current = rematchUnboundSignal;
+    runBatchLinkForUnbound(pageLinkableProducts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- signal edge only
+  }, [rematchUnboundSignal]);
 
   useEffect(() => {
     onPageLinkableScopeChange?.({

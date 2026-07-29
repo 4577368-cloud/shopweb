@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { CyberBackground } from "@/components/landing/cyber-background";
 import { LandingNav } from "@/components/landing/landing-nav";
-import { LandingHero } from "@/components/landing/landing-hero";
+import { LandingAuthShowcase } from "@/components/landing/landing-auth-showcase";
 import { AuthPanel } from "@/components/landing/auth-panel";
 import { useAuth } from "@/context/user-context";
 import { useOnboarding } from "@/context/onboarding-context";
@@ -23,7 +23,7 @@ interface LandingAuthSplitProps {
   redirectAfterSuccess: string;
 }
 
-/** 左侧营销 Hero + 右侧登录/注册面板（与首页 auth 模式一致）。 */
+/** 左侧营销展示（动效工作台）+ 右侧登录/注册面板。 */
 export function LandingAuthSplit({
   mode,
   onModeChange,
@@ -31,11 +31,11 @@ export function LandingAuthSplit({
   redirectAfterSuccess,
 }: LandingAuthSplitProps) {
   return (
-    <main className="relative z-10 flex min-h-screen flex-col pt-14 lg:flex-row">
-      <div className="flex flex-1 flex-col justify-center px-6 py-12 lg:px-12 lg:py-20">
-        <LandingHero onStart={() => onModeChange("register")} compact />
-      </div>
-      <aside className="w-full shrink-0 border-t border-[--landing-border] lg:max-w-[420px] lg:border-l lg:border-t-0">
+    <main className="relative z-10 flex min-h-[calc(100vh-3.5rem)] flex-col pt-14 lg:flex-row">
+      <section className="relative hidden min-w-0 flex-1 flex-col justify-center overflow-hidden px-10 py-10 xl:px-16 lg:flex">
+        <LandingAuthShowcase />
+      </section>
+      <aside className="flex w-full shrink-0 flex-col border-t border-[--landing-border] bg-white/60 lg:min-h-[calc(100vh-3.5rem)] lg:w-[440px] lg:border-l lg:border-t-0 lg:bg-white/80">
         <AuthPanel
           mode={mode}
           onModeChange={onModeChange}

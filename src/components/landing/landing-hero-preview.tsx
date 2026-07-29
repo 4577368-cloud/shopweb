@@ -249,7 +249,7 @@ const MATCH_START_MS = 1900;
 const MATCH_STEP_MS = 180;
 const DONE_MS = 2900;
 
-export function LandingHeroPreview() {
+export function LandingHeroPreview({ instant = false }: { instant?: boolean } = {}) {
   const t = useT();
   const [phase, setPhase] = useState<"idle" | "scanning" | "done">("idle");
   const [matchedRows, setMatchedRows] = useState<boolean[]>([false, false, false, false]);
@@ -291,9 +291,13 @@ export function LandingHeroPreview() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.96, y: 20 }}
+      initial={instant ? false : { opacity: 0, scale: 0.96, y: 20 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
+      transition={
+        instant
+          ? { duration: 0 }
+          : { duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }
+      }
       className="relative"
     >
       <div className="landing-mockup">

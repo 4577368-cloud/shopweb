@@ -60,7 +60,7 @@ export function SmartSourcingSummaryBar({
             <button
               type="button"
               onClick={onViewNewArrivals}
-              className="rounded-[var(--radius-control)] border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-surface-hover"
+              className="inline-flex h-7 min-w-[5.75rem] items-center justify-center rounded-[var(--radius-control)] border px-2.5 text-xs font-medium transition-colors hover:bg-surface-hover"
               style={{ borderColor: "#333333", color: "#333333" }}
             >
               {t("sourcing.viewNewArrivals")}

@@ -79,6 +79,13 @@ function draft(
   };
 }
 
+function pageScopedBatchFilter(
+  filter: ReturnType<typeof detectBatchFilter>
+): ReturnType<typeof detectBatchFilter> {
+  // Translate / title / price: default to current page so a single run stays short.
+  return filter === "all" ? "page" : filter;
+}
+
 function tryListingPriceCommand(text: string): ProductCommandDraft | null {
   if (!/(售价|卖价|上架价|listing|shopify.*价|改成|改为|设为|价格)/i.test(text)) {
     return null;
@@ -92,7 +99,7 @@ function tryListingPriceCommand(text: string): ProductCommandDraft | null {
     const multiplierMatch = text.match(/采购价(?:的)?\s*(\d+(?:\.\d+)?)\s*倍/i);
     const fixedMatch = parseListingPrice(text);
     if (!multiplierMatch && !fixedMatch) return null;
-    const batchFilter = detectBatchFilter(text);
+    const batchFilter = pageScopedBatchFilter(detectBatchFilter(text));
     const batchLimit = detectBatchLimit(text);
     return draft(
       "batch_update_listing_price",
@@ -295,7 +302,7 @@ function tryProductCopyCommand(text: string): ProductCommandDraft | null {
   const isBatch = refersToBatch(text);
 
   if (isBatch) {
-    const batchFilter = detectBatchFilter(text);
+    const batchFilter = pageScopedBatchFilter(detectBatchFilter(text));
     const batchLimit = detectBatchLimit(text);
     return draft(
       "batch_update_product_copy",
@@ -813,6 +820,7 @@ ${langBlock}
    - Default copyStyle=amazon unless user asks for literal translation
 4. Batch ops — keywords like all/every/batch/each/本页/关联商品/上架商品/最近新增/前N → batch_* intents with targetScope=all
    - params.batchFilter = all|pending|confirmed|unbound|linked|listed|page|recent
+   - For translate / title rewrite / batch price: prefer batchFilter=page (current list page only). Never plan a whole-catalog translate/price run.
    - params.batchLimit = number when user says 前10 / top 15
 5. "Show pending only" / "show unlinked" → open_filter
 6. "Re-search candidates" → rerun_candidate_search

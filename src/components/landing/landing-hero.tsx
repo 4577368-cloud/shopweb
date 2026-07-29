@@ -7,10 +7,14 @@ import { LandingHeroPreview } from "@/components/landing/landing-hero-preview";
 
 interface LandingHeroProps {
   onStart: () => void;
+  /** @deprecated Auth split uses LandingAuthShowcase; ignored. */
+  variant?: "full" | "auth";
+  /** @deprecated Ignored. */
   compact?: boolean;
 }
 
-export function LandingHero({ onStart, compact = false }: LandingHeroProps) {
+/** Homepage hero only. Login/register left column → {@link LandingAuthShowcase}. */
+export function LandingHero({ onStart }: LandingHeroProps) {
   const t = useT();
 
   const container = {
@@ -25,34 +29,28 @@ export function LandingHero({ onStart, compact = false }: LandingHeroProps) {
     show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" as const } },
   };
 
-  const Text = (
-    <motion.div
-      variants={container}
-      initial="hidden"
-      animate="show"
-      className={compact ? "space-y-4" : "space-y-5"}
-    >
-      <motion.div variants={item}>
-        <span className="landing-badge">
-          <Wand2 className="h-3 w-3" />
-          {t("landing.badge")}
-        </span>
-      </motion.div>
-
-      {/* 大标题 */}
-      <motion.h1
-        variants={item}
-        className={
-          compact
-            ? "text-3xl font-extrabold leading-tight tracking-tight text-[--landing-text]"
-            : "text-[2.75rem] font-extrabold leading-[1.1] tracking-tight text-[--landing-text] md:text-[3.25rem] lg:text-[3.75rem]"
-        }
+  return (
+    <div className="landing-hero-grid">
+      <motion.div
+        variants={container}
+        initial="hidden"
+        animate="show"
+        className="space-y-5"
       >
-        {t("landing.heroTitle")}
-      </motion.h1>
+        <motion.div variants={item}>
+          <span className="landing-badge">
+            <Wand2 className="h-3 w-3" />
+            {t("landing.badge")}
+          </span>
+        </motion.div>
 
-      {/* 60 秒速度环 — ring must be a true square or rotate looks elliptical */}
-      {!compact ? (
+        <motion.h1
+          variants={item}
+          className="text-[2.75rem] font-extrabold leading-[1.1] tracking-tight text-[--landing-text] md:text-[3.25rem] lg:text-[3.75rem]"
+        >
+          {t("landing.heroTitle")}
+        </motion.h1>
+
         <motion.div variants={item} className="flex items-center gap-4">
           <div className="relative flex h-[7rem] w-[7rem] shrink-0 items-center justify-center md:h-[8.5rem] md:w-[8.5rem]">
             <span className="landing-big-number relative z-[1] leading-none">60</span>
@@ -81,20 +79,14 @@ export function LandingHero({ onStart, compact = false }: LandingHeroProps) {
             </span>
           </div>
         </motion.div>
-      ) : null}
 
-      <motion.p
-        variants={item}
-        className={
-          compact
-            ? "text-sm leading-relaxed text-[--landing-text-muted]"
-            : "max-w-xl text-base leading-relaxed text-[--landing-text-muted] md:text-lg"
-        }
-      >
-        {t("landing.heroSubtitle")}
-      </motion.p>
+        <motion.p
+          variants={item}
+          className="max-w-xl text-base leading-relaxed text-[--landing-text-muted] md:text-lg"
+        >
+          {t("landing.heroSubtitle")}
+        </motion.p>
 
-      {!compact ? (
         <motion.div variants={item} className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -111,12 +103,10 @@ export function LandingHero({ onStart, compact = false }: LandingHeroProps) {
             {t("landing.ctaDemo")}
           </a>
         </motion.div>
-      ) : null}
 
-      {!compact ? (
         <motion.div
           variants={item}
-          className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-3 text-xs text-[--landing-text-muted]"
+          className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-1 text-xs text-[--landing-text-muted]"
         >
           <span className="inline-flex items-center gap-1.5">
             <Clock className="h-3 w-3 text-[--landing-accent]" />
@@ -127,17 +117,7 @@ export function LandingHero({ onStart, compact = false }: LandingHeroProps) {
           <span className="text-[--landing-border-hover]">·</span>
           <span>{t("landing.trustSpeed")}</span>
         </motion.div>
-      ) : null}
-    </motion.div>
-  );
-
-  if (compact) {
-    return Text;
-  }
-
-  return (
-    <div className="landing-hero-grid">
-      {Text}
+      </motion.div>
       <LandingHeroPreview />
     </div>
   );
