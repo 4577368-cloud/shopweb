@@ -3,6 +3,7 @@ import type {
   AgentCopySource,
   IntentClassifyResult,
 } from "@/lib/agents/runtime/types";
+import { sameOriginAuthedFetch } from "@/lib/auth/same-origin-authed-fetch";
 
 export interface ClientAgentResponse extends AgentResponse {
   copySource?: AgentCopySource;
@@ -20,7 +21,7 @@ export async function fetchPageAgentCopy<TIntent extends string, TContext>(opts:
   locale?: string | null;
 }): Promise<ClientAgentResponse> {
   try {
-    const res = await fetch(opts.endpoint, {
+    const res = await sameOriginAuthedFetch(opts.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -63,7 +64,7 @@ export async function classifyPageShortInput<TIntent extends string>(opts: {
   if (local.confidence === "high") return local;
 
   try {
-    const res = await fetch(opts.classifyEndpoint, {
+    const res = await sameOriginAuthedFetch(opts.classifyEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: clipped, locale: opts.locale ?? null }),

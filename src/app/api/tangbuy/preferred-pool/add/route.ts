@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import { fetchTangbuyAdmin } from "@/lib/tangbuy/admin-http";
 import {
   getPreferredPoolServerConfig,
@@ -17,6 +18,9 @@ interface PoolAddBody {
 }
 
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   if (!isPreferredPoolConfigured()) {
     return NextResponse.json(
       {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import {
   loadLogisticsAnalysis,
   upstreamAuthFromRequest,
@@ -13,6 +14,9 @@ function errorMessage(error: unknown): string {
 }
 
 export async function GET(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const shopName = searchParams.get("shopName");
 

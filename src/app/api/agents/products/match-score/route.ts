@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import { chatCompletionJson } from "@/lib/agents/llm/openai-compatible";
 
 export const runtime = "nodejs";
@@ -16,6 +17,9 @@ interface CandidateIn {
  * Does not invent catalog data — only scores given candidates.
  */
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   let body: unknown;
   try {
     body = await request.json();

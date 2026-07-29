@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import {
   hammingDistanceHex,
   hashImageUrl,
@@ -15,6 +16,9 @@ const MAX_IN = 24;
  * Collapse visually identical images (dHash) and return representative URLs in input order.
  */
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   let body: unknown;
   try {
     body = await request.json();

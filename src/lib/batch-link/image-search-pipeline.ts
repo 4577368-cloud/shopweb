@@ -1,4 +1,5 @@
 import { api, ApiError } from "@/lib/api";
+import { sameOriginAuthedFetch } from "@/lib/auth/same-origin-authed-fetch";
 import {
   OFFER_TITLE_ENGLISH_COUNTRY,
   imageSearchCountryForLocale,
@@ -119,7 +120,7 @@ function publishSourcedSkipResult(): ImageSearchPipelineResult {
 async function dedupeImageUrlsByPerceptualHash(urls: string[]): Promise<string[]> {
   if (urls.length <= 1) return urls;
   try {
-    const res = await fetch("/api/batch-link/dedupe-image-urls", {
+    const res = await sameOriginAuthedFetch("/api/batch-link/dedupe-image-urls", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ urls }),
@@ -246,7 +247,7 @@ async function scoreTitleCandidates(
   if (needLlm.length === 0) return scores;
 
   try {
-    const scoreRes = await fetch("/api/agents/products/match-score", {
+    const scoreRes = await sameOriginAuthedFetch("/api/agents/products/match-score", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -291,7 +292,7 @@ async function scoreImageCandidates(
   if (needRemote.length === 0 || !shopImageUrl?.trim()) return scores;
 
   try {
-    const res = await fetch("/api/batch-link/image-match-score", {
+    const res = await sameOriginAuthedFetch("/api/batch-link/image-match-score", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

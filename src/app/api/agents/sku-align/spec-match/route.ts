@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import { chatCompletionJson } from "@/lib/agents/llm/openai-compatible";
 
 export const runtime = "nodejs";
@@ -17,6 +18,9 @@ interface PairIn {
  * 失败一律优雅降级为空，调用方回落结构化分。
  */
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   let body: unknown;
   try {
     body = await request.json();

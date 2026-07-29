@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import {
   buildLogisticsClassifyPrompt,
   parseLogisticsCommandDraft,
@@ -16,6 +17,9 @@ import { LlmUnavailableError } from "@/lib/agents/llm/openai-compatible";
 import { createTranslator } from "@/i18n/server";
 
 export async function POST(req: Request) {
+  const denied = rejectUnlessAppSession(req);
+  if (denied) return denied;
+
   const t = createTranslator(null);
   try {
     const body = await req.json();

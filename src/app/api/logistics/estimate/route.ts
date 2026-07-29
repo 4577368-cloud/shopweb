@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import type { LogisticsEstimateRequest } from "@/lib/api";
 import { normalizeTangbuyEstimateResponse } from "@/lib/logistics/estimate-normalize";
 import {
@@ -20,6 +21,9 @@ export const dynamic = "force-dynamic";
  * Production UI calls tangbuy.cc from the browser — Render cannot reach .cc domains.
  */
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   let body: LogisticsEstimateRequest;
   try {
     body = await request.json();

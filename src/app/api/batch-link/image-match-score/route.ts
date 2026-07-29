@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import { chatCompletionVisionJson } from "@/lib/agents/llm/vision-completion";
 import {
   applyImageUrlMatchFloor,
@@ -27,6 +28,9 @@ interface CandidateIn {
  * Visual similarity 0–100: API → URL floor → perceptual hash → vision LLM.
  */
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   let body: unknown;
   try {
     body = await request.json();

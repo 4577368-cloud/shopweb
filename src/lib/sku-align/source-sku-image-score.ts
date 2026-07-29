@@ -1,4 +1,5 @@
 import { candidateStorageKey } from "@/lib/batch-link/image-match";
+import { sameOriginAuthedFetch } from "@/lib/auth/same-origin-authed-fetch";
 import type { SourceSkuRow } from "@/lib/source-sku-matrix";
 
 /**
@@ -17,7 +18,7 @@ export async function fetchSkuRowVisualScores(
   for (let i = 0; i < candidates.length; i += CHUNK) {
     const slice = candidates.slice(i, i + CHUNK);
     try {
-      const res = await fetch("/api/batch-link/image-match-score", {
+      const res = await sameOriginAuthedFetch("/api/batch-link/image-match-score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import {
   readAcceptances,
   upsertAcceptances,
@@ -26,6 +27,9 @@ type PatchQuotesBody = {
 };
 
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   let body: PatchQuotesBody;
   try {
     body = await request.json();

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import { isPreferredPoolConfigured } from "@/lib/tangbuy/preferred-pool-config";
 import { resolveOfferViaAdminCatalog } from "@/lib/tangbuy/admin-offer-resolve";
 import { isOfferId1688 } from "@/lib/catalog-product-resolve";
@@ -11,6 +12,9 @@ interface Body {
 }
 
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   if (!isPreferredPoolConfigured()) {
     return NextResponse.json(
       { ok: false, error: "未配置 TANGBUY_ADMIN_TOKEN", skipped: true },

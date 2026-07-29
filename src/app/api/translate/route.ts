@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import {
   detectTranslateSourceLang,
   normalizeTranslateLang,
@@ -28,6 +29,9 @@ interface TranslateResponse {
 }
 
 export async function POST(req: Request) {
+  const denied = rejectUnlessAppSession(req);
+  if (denied) return denied;
+
   try {
     const body: TranslateRequest = await req.json();
     const { text } = body;

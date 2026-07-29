@@ -47,6 +47,7 @@ import type {
 import { normalizeSkuOverviewForList } from "@/lib/api/sku-overview-normalize";
 import { logisticsTemplateFromVo } from "@/lib/logistics/default-template";
 import { normalizeShopApiName } from "@/lib/resolve-shop-api-name";
+import { sameOriginAuthedFetch } from "@/lib/auth/same-origin-authed-fetch";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
 
@@ -1216,7 +1217,7 @@ export const api = {
     fd.append("file", file);
     let res: Response;
     try {
-      res = await fetch("/api/oss/upload", { method: "POST", body: fd });
+      res = await sameOriginAuthedFetch("/api/oss/upload", { method: "POST", body: fd });
     } catch (cause) {
       throw new ApiError("图片上传网络失败", 0, cause);
     }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 
 // Same-origin proxy for the Tangbuy OSS upload gateway. Keeps the upstream detail server-side,
 // avoids browser CORS, validates the file, and normalizes the response to { url }.
@@ -15,6 +16,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   let form: FormData;
   try {
     form = await request.formData();

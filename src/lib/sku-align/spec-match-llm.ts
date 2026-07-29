@@ -9,6 +9,7 @@
  * 纯函数（选择/混合/重排）与网络/缓存分离，便于测试。
  */
 import type { SourceSkuRowRanked } from "@/lib/source-sku-matrix";
+import { sameOriginAuthedFetch } from "@/lib/auth/same-origin-authed-fetch";
 
 /** 结构规格分落在 [GRAY_LOW, GRAY_HIGH) 视为灰区。 */
 export const GRAY_LOW = 0.5;
@@ -146,7 +147,7 @@ export async function fetchSpecMatchLlm(
   if (!uncached.length) return out;
 
   try {
-    const res = await fetch("/api/agents/sku-align/spec-match", {
+    const res = await sameOriginAuthedFetch("/api/agents/sku-align/spec-match", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pairs: uncached.slice(0, 12) }),

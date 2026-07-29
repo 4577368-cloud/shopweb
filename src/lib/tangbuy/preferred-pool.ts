@@ -1,3 +1,4 @@
+import { sameOriginAuthedFetch } from "@/lib/auth/same-origin-authed-fetch";
 import {
   extractOfferIdFromUrl,
   invalidateCatalogOfferMapCache,
@@ -102,49 +103,11 @@ async function submitPreferredPoolAdd(
     };
   }
 
-  if (isAdminBrowserIngestConfigured()) {
-    const browser = await submitPreferredPoolAddFromBrowser(offerId);
-    if (browser.ok) {
-      return {
-        ok: true,
-        status:
-          browser.status === "already_exists" ? "already_exists" : "submitted",
-        msg: browser.msg,
-      };
-    }
-    const browserErr = browser.error?.trim() ?? "";
-    const browserAuthFailed =
-      browser.httpStatus === 401 ||
-      browser.code === 401 ||
-      /认证失败|unauthorized|无法访问系统资源|token|login required/i.test(
-        browserErr
-      );
-
-    // 浏览器 JWT 过期/无效 → 回退服务端 TANGBUY_ADMIN_TOKEN
-    if (browserAuthFailed) {
-      if (typeof console !== "undefined") {
-        console.warn(
-          `[tangbuy/preferred-pool/add] browser token auth failed, falling back to server route: ${browserErr}`
-        );
-      }
-    } else if (browser.status === "upstream_rejected") {
-      // 业务拒绝（如获取不到商品信息）无需再打服务端
-      logPoolAddDiagnostic(offerId, {
-        error: browser.error,
-        httpStatus: browser.httpStatus,
-      });
-      return { ok: false, status: "failed", error: browser.error };
-    } else if (browserErr && !/未配置/i.test(browserErr)) {
-      logPoolAddDiagnostic(offerId, {
-        error: browserErr,
-        httpStatus: browser.httpStatus,
-      });
-      return { ok: false, status: "failed", error: browserErr };
-    }
-  }
-
+  // Prefer authenticated same-origin BFF (server TANGBUY_ADMIN_TOKEN).
+  // Browser JWT is only a fallback when admin.tangbuy.cc is unreachable from Next.
+  let serverSkippedOrUnreachable = false;
   try {
-    const res = await fetch("/api/tangbuy/preferred-pool/add", {
+    const res = await sameOriginAuthedFetch("/api/tangbuy/preferred-pool/add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -161,7 +124,11 @@ async function submitPreferredPoolAdd(
           ? (parsed as PreferredPoolAddResult)
           : { ok: false, status: "failed", error: `HTTP ${res.status}` };
     } catch {
-      body = { ok: false, status: "failed", error: `HTTP ${res.status}（非 JSON 响应）` };
+      body = {
+        ok: false,
+        status: "failed",
+        error: `HTTP ${res.status}（非 JSON 响应）`,
+      };
     }
 
     if (body.ok) {
@@ -172,26 +139,74 @@ async function submitPreferredPoolAdd(
         msg: body.msg,
       };
     }
-    if (body.skipped) {
+    if (res.status === 401 || res.status === 403) {
       logPoolAddDiagnostic(offerId, {
-        skipped: true,
-        error: body.error,
+        error: body.error || `HTTP ${res.status}`,
         httpStatus: res.status,
       });
-      return { ok: false, status: "skipped", error: body.error, skipped: true };
+      return {
+        ok: false,
+        status: "failed",
+        error: body.error || "未登录，无法登记商品库",
+      };
     }
-    const error = body.error?.trim() || `登记失败（HTTP ${res.status}）`;
-    logPoolAddDiagnostic(offerId, { error, httpStatus: res.status });
-    return { ok: false, status: "failed", error };
+    if (body.skipped) {
+      serverSkippedOrUnreachable = true;
+    } else {
+      const unreachable =
+        res.status >= 500 ||
+        /I\/O error|不可达|ECONNREFUSED|ETIMEDOUT|fetch failed/i.test(
+          body.error ?? ""
+        );
+      if (!unreachable) {
+        const error = body.error?.trim() || `登记失败（HTTP ${res.status}）`;
+        logPoolAddDiagnostic(offerId, { error, httpStatus: res.status });
+        return { ok: false, status: "failed", error };
+      }
+      serverSkippedOrUnreachable = true;
+    }
   } catch (e) {
-    const error = e instanceof Error ? e.message : "登记请求失败";
-    logPoolAddDiagnostic(offerId, { error });
+    serverSkippedOrUnreachable = true;
+    if (typeof console !== "undefined") {
+      console.warn(
+        "[tangbuy/preferred-pool/add] server route failed, trying browser ingest:",
+        e
+      );
+    }
+  }
+
+  if (serverSkippedOrUnreachable && isAdminBrowserIngestConfigured()) {
+    const browser = await submitPreferredPoolAddFromBrowser(offerId);
+    if (browser.ok) {
+      return {
+        ok: true,
+        status:
+          browser.status === "already_exists" ? "already_exists" : "submitted",
+        msg: browser.msg,
+      };
+    }
+    logPoolAddDiagnostic(offerId, {
+      error: browser.error,
+      httpStatus: browser.httpStatus,
+    });
     return {
       ok: false,
       status: "failed",
-      error,
+      error: browser.error?.trim() || "登记失败",
     };
   }
+
+  logPoolAddDiagnostic(offerId, {
+    skipped: true,
+    error:
+      "未配置 TANGBUY_ADMIN_TOKEN / NEXT_PUBLIC_TANGBUY_ADMIN_BROWSER_TOKEN",
+  });
+  return {
+    ok: false,
+    status: "skipped",
+    error: "未配置商品库登记凭证",
+    skipped: true,
+  };
 }
 
 /** Poll catalog until offerId+sku resolves to internal goodsId after pool ingest. */

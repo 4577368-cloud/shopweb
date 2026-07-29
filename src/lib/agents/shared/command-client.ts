@@ -1,4 +1,5 @@
 import type { CommandClassifyResult } from "./command-plan";
+import { sameOriginAuthedFetch } from "@/lib/auth/same-origin-authed-fetch";
 
 /**
  * Command classify with a pluggable priority.
@@ -27,7 +28,7 @@ export async function classifyCommandInput<
 
   const callApi = async (): Promise<TResult | null> => {
     try {
-      const res = await fetch(opts.apiPath, {
+      const res = await sameOriginAuthedFetch(opts.apiPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import { PRODUCTS_SHORT_INPUT_MAX } from "@/lib/agents/products/classify-intent";
 import { classifyProductsIntent } from "@/lib/agents/products/classify-service";
 import { createTranslator } from "@/i18n/server";
@@ -12,6 +13,9 @@ export const dynamic = "force-dynamic";
  * Returns IntentClassifyResult — intent is always from the fixed enum.
  */
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   const t = createTranslator(null);
   let body: unknown;
   try {

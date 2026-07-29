@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import { upsertAcceptances } from "@/lib/logistics/accept-decisions-store";
 import {
   collectAcceptableVariants,
@@ -16,6 +17,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   let body: LogisticsAcceptDecisionRequest;
   try {
     body = await request.json();

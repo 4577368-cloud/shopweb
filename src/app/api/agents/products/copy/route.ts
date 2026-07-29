@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import { PRODUCTS_INTENTS, type ProductsIntentId } from "@/lib/agents/products/intents";
 import type { ProductsPageContext } from "@/lib/agents/products/page-context";
 import { resolveProductsAgentResponse } from "@/lib/agents/products/enrich-copy";
@@ -15,6 +16,9 @@ const INTENT_IDS = new Set(PRODUCTS_INTENTS.map((i) => i.id));
  * Deterministic action fields always come from routeProductsIntent.
  */
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   let body: unknown;
   try {
     body = await request.json();

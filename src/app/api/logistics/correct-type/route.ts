@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import {
   aggregateDecisionCounts,
   computeVariantDecisionStatus,
@@ -17,6 +18,9 @@ export const dynamic = "force-dynamic";
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
 
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   let body: {
     shopName?: string;
     thirdPlatformItemId?: string;

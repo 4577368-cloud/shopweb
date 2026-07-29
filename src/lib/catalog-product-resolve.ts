@@ -1,3 +1,4 @@
+import { sameOriginAuthedFetch } from "@/lib/auth/same-origin-authed-fetch";
 import {
   buildTangbuyProductUrl,
   fetchItemDetail,
@@ -170,7 +171,7 @@ export async function resolveCatalogMatchViaAdminApi(input: {
   }
 
   try {
-    const res = await fetch("/api/tangbuy/catalog/resolve-offer", {
+    const res = await sameOriginAuthedFetch("/api/tangbuy/catalog/resolve-offer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ offerId1688: offerId }),

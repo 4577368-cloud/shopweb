@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectUnlessAppSession } from "@/lib/auth/require-app-session";
 import { PRODUCTS_SHORT_INPUT_MAX } from "@/lib/agents/products/classify-intent";
 import { classifyProductCommand } from "@/lib/agents/products/classify-command-service";
 import type { CommandClassifyContext } from "@/lib/agents/products/classify-command";
@@ -13,6 +14,9 @@ export const dynamic = "force-dynamic";
  * Returns structured command draft — never executes side effects.
  */
 export async function POST(request: Request) {
+  const denied = rejectUnlessAppSession(request);
+  if (denied) return denied;
+
   const t = createTranslator(null);
   let body: unknown;
   try {
