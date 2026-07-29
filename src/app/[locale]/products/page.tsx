@@ -574,40 +574,32 @@ function SelectContent() {
   );
 
   /**
-   * Sticky toolbar:
-   * - Shop: tabs + filters inline; CTAs (search / batch / SKU) on the right.
-   * - Catalog: tabs + SKU CTA on row 1; sourcing filters on a full-width row 2
-   *   so the expanded panel never squeezes/overlaps the CTA column when both
-   *   side rails are open.
+   * Single toolbar row for both tabs: tabs | filters … | CTAs.
+   * No wrap / no second “card” row — narrow rails scroll filters horizontally.
    */
   const pageToolbar = (
-    <div className="flex w-full min-w-0 flex-col gap-2">
-      <div className="flex w-full min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:gap-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          {pageTabs}
-          {isShopTab ? (
-            <>
-              <span
-                className="hidden h-4 w-px shrink-0 bg-hairline sm:block"
-                aria-hidden
-              />
-              <div ref={setShopFiltersMountEl} className="min-w-0" />
-            </>
-          ) : null}
-        </div>
-        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
-          {isShopTab ? (
-            <div
-              ref={setShopActionsMountEl}
-              className="flex shrink-0 flex-wrap items-center gap-2"
-            />
-          ) : null}
-          {pageCtas}
-        </div>
+    <div className="flex w-full min-w-0 items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:thin]">
+        <div className="shrink-0">{pageTabs}</div>
+        <span
+          className="hidden h-4 w-px shrink-0 bg-hairline sm:block"
+          aria-hidden
+        />
+        {isShopTab ? (
+          <div ref={setShopFiltersMountEl} className="min-w-0 shrink-0" />
+        ) : (
+          <div ref={setCatalogFiltersMountEl} className="min-w-0 flex-1" />
+        )}
       </div>
-      {tab === "catalog" ? (
-        <div ref={setCatalogFiltersMountEl} className="w-full min-w-0" />
-      ) : null}
+      <div className="flex shrink-0 items-center gap-2">
+        {isShopTab ? (
+          <div
+            ref={setShopActionsMountEl}
+            className="flex shrink-0 items-center gap-2"
+          />
+        ) : null}
+        {pageCtas}
+      </div>
     </div>
   );
 

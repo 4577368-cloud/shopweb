@@ -38,9 +38,9 @@ export function ProductsPageHeaderActions({
   const skuCtaPrimary = !hasNewProductsToLink && pageLinkableCount === 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-nowrap items-center gap-2">
       {showSearch && onSearchQueryChange ? (
-        <div className="relative">
+        <div className="relative shrink-0">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
           <input
             type="text"

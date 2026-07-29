@@ -67,6 +67,10 @@ function FilterRefreshButton({
   );
 }
 
+/**
+ * Inline discover filters — same toolbar density as Shopify tab chips.
+ * No bordered card; one horizontal row (scroll when the rail is narrow).
+ */
 export function SmartSourcingFilters({
   filters,
   collapsed,
@@ -108,6 +112,16 @@ export function SmartSourcingFilters({
     setShowSave(false);
   };
 
+  const savedRow =
+    savedSearches.length > 0 ? (
+      <SavedSearchChips
+        searches={savedSearches}
+        activeId={activeSavedId}
+        onSelect={onSelectSaved}
+        onRemove={onRemoveSaved}
+      />
+    ) : null;
+
   if (collapsed) {
     const summaryParts = [...(activeSaved ? [activeSaved.name] : []), ...chips];
     const summaryText = summaryParts.length
@@ -119,51 +133,152 @@ export function SmartSourcingFilters({
         : "";
 
     return (
-      <section
-        className={cn(
-          "flex w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface/80 px-3 py-1.5",
-          className
-        )}
-      >
-        <p
-          className="min-w-0 flex-1 truncate text-xs text-ink-muted"
-          title={summaryText + savedHint}
-        >
-          <span className="text-ink">{summaryText}</span>
-          {savedHint ? <span className="text-ink-subtle">{savedHint}</span> : null}
-        </p>
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-link hover:text-link-hover hover:underline"
-        >
-          {t("sourcing.expandFilters")}
-          <ChevronDown className="h-3.5 w-3.5" />
-        </button>
-        <FilterRefreshButton
-          onRefresh={onRefresh}
-          disabled={refreshDisabled}
-          refreshing={refreshing}
-          refreshLabel={t("sourcing.filterRefresh")}
-        />
-      </section>
+      <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p
+            className="min-w-0 truncate text-xs text-ink-muted"
+            title={summaryText + savedHint}
+          >
+            <span className="text-ink">{summaryText}</span>
+            {savedHint ? (
+              <span className="text-ink-subtle">{savedHint}</span>
+            ) : null}
+          </p>
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            className="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-link hover:text-link-hover hover:underline"
+          >
+            {t("sourcing.expandFilters")}
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+          <FilterRefreshButton
+            onRefresh={onRefresh}
+            disabled={refreshDisabled}
+            refreshing={refreshing}
+            refreshLabel={t("sourcing.filterRefresh")}
+          />
+        </div>
+        {savedRow}
+      </div>
     );
   }
 
   return (
-    <section
-      className={cn(
-        "w-full min-w-0 rounded-[var(--radius-control)] border border-hairline bg-surface/80 px-3 py-2",
-        className
-      )}
-    >
-      <div className="mb-1.5 flex items-center justify-end gap-2">
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <div className="relative w-[148px] shrink-0">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
+          <Input
+            className="h-7 pl-7 text-xs"
+            placeholder={t("sourcing.keywordPlaceholder")}
+            value={filters.keywords}
+            onChange={(e) => patch({ keywords: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onApply();
+            }}
+            aria-label={t("sourcing.keyword")}
+          />
+        </div>
+
+        <Select
+          className="h-7 w-[100px] shrink-0 text-xs"
+          value={filters.sourceFilter ?? "all"}
+          onChange={(e) =>
+            patch({
+              sourceFilter: e.target.value as CatalogFilterState["sourceFilter"],
+            })
+          }
+          aria-label={t("sourcing.sourceFilter")}
+        >
+          <option value="all">{t("sourcing.sourceAll")}</option>
+          <option value="tangbuy">{t("sourcing.sourceTangbuy")}</option>
+          <option value="1688">{t("sourcing.source1688")}</option>
+        </Select>
+
+        <Input
+          className="h-7 w-[72px] shrink-0 text-xs"
+          type="number"
+          inputMode="decimal"
+          placeholder={t("sourcing.priceMin")}
+          value={filters.priceMinUsd}
+          onChange={(e) => patch({ priceMinUsd: e.target.value })}
+          aria-label={t("sourcing.priceMin")}
+        />
+        <Input
+          className="h-7 w-[72px] shrink-0 text-xs"
+          type="number"
+          inputMode="decimal"
+          placeholder={t("sourcing.priceMax")}
+          value={filters.priceMaxUsd}
+          onChange={(e) => patch({ priceMaxUsd: e.target.value })}
+          aria-label={t("sourcing.priceMax")}
+        />
+
+        <Select
+          className="h-7 w-[104px] shrink-0 text-xs"
+          value={filters.sort}
+          onChange={(e) =>
+            patch({ sort: e.target.value as CatalogFilterState["sort"] })
+          }
+          aria-label={t("sourcing.sort")}
+        >
+          {CATALOG_SORT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+
+        {showSave ? (
+          <>
+            <Input
+              className="h-7 w-28 shrink-0 text-xs"
+              placeholder={t("sourcing.saveSearchPlaceholder")}
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSave();
+              }}
+            />
+            <Button size="sm" variant="secondary" className="h-7 shrink-0" onClick={handleSave}>
+              {t("common.confirm")}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 shrink-0"
+              onClick={() => setShowSave(false)}
+            >
+              {t("common.cancel")}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button size="sm" variant="primary" className="h-7 shrink-0" onClick={onApply}>
+              {t("sourcing.apply")}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 shrink-0"
+              onClick={() => setShowSave(true)}
+            >
+              {t("sourcing.save")}
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 shrink-0" onClick={onClear}>
+              {t("sourcing.clear")}
+            </Button>
+          </>
+        )}
+
         <button
           type="button"
           onClick={onToggleCollapsed}
-          className="inline-flex items-center gap-1 text-[11px] font-medium text-ink-muted hover:text-ink"
+          className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-ink-muted hover:text-ink"
         >
-          {t("sourcing.collapseFilters")} <ChevronUp className="h-3.5 w-3.5" />
+          {t("sourcing.collapseFilters")}
+          <ChevronUp className="h-3.5 w-3.5" />
         </button>
         <FilterRefreshButton
           onRefresh={onRefresh}
@@ -172,135 +287,7 @@ export function SmartSourcingFilters({
           refreshLabel={t("sourcing.filterRefresh")}
         />
       </div>
-
-      <div className="mt-2 flex flex-wrap items-end gap-2">
-        <div className="w-[200px] max-w-full">
-          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">
-            {t("sourcing.keyword")}
-          </label>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
-            <Input
-              className="h-8 pl-7 text-xs"
-              placeholder={t("sourcing.keywordPlaceholder")}
-              value={filters.keywords}
-              onChange={(e) => patch({ keywords: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onApply();
-              }}
-            />
-          </div>
-        </div>
-
-        <div className="w-[108px]">
-          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">
-            {t("sourcing.sourceFilter")}
-          </label>
-          <Select
-            className="h-8 text-xs"
-            value={filters.sourceFilter ?? "all"}
-            onChange={(e) =>
-              patch({
-                sourceFilter: e.target.value as CatalogFilterState["sourceFilter"],
-              })
-            }
-          >
-            <option value="all">{t("sourcing.sourceAll")}</option>
-            <option value="tangbuy">{t("sourcing.sourceTangbuy")}</option>
-            <option value="1688">{t("sourcing.source1688")}</option>
-          </Select>
-        </div>
-
-        <div className="w-[84px]">
-          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">
-            {t("sourcing.priceMin")}
-          </label>
-          <Input
-            className="h-8 text-xs"
-            type="number"
-            inputMode="decimal"
-            placeholder="USD"
-            value={filters.priceMinUsd}
-            onChange={(e) => patch({ priceMinUsd: e.target.value })}
-          />
-        </div>
-        <div className="w-[84px]">
-          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">
-            {t("sourcing.priceMax")}
-          </label>
-          <Input
-            className="h-8 text-xs"
-            type="number"
-            inputMode="decimal"
-            placeholder="USD"
-            value={filters.priceMaxUsd}
-            onChange={(e) => patch({ priceMaxUsd: e.target.value })}
-          />
-        </div>
-
-        <div className="w-[112px]">
-          <label className="mb-1 block text-[10px] font-medium text-ink-subtle">
-            {t("sourcing.sort")}
-          </label>
-          <Select
-            className="h-8 text-xs"
-            value={filters.sort}
-            onChange={(e) =>
-              patch({ sort: e.target.value as CatalogFilterState["sort"] })
-            }
-          >
-            {CATALOG_SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5 pb-0.5">
-          {showSave ? (
-            <>
-              <Input
-                className="h-8 w-32 text-xs"
-                placeholder={t("sourcing.saveSearchPlaceholder")}
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSave();
-                }}
-              />
-              <Button size="sm" variant="secondary" onClick={handleSave}>
-                {t("common.confirm")}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setShowSave(false)}>
-                {t("common.cancel")}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button size="sm" variant="primary" onClick={onApply}>
-                {t("sourcing.apply")}
-              </Button>
-              <Button size="sm" variant="secondary" onClick={() => setShowSave(true)}>
-                {t("sourcing.save")}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={onClear}>
-                {t("sourcing.clear")}
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {savedSearches.length > 0 ? (
-        <SavedSearchChips
-          className="mt-1.5"
-          searches={savedSearches}
-          activeId={activeSavedId}
-          onSelect={onSelectSaved}
-          onRemove={onRemoveSaved}
-        />
-      ) : null}
-    </section>
+      {savedRow}
+    </div>
   );
 }

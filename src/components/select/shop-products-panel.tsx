@@ -1256,7 +1256,7 @@ export function ShopProductsPanel({
   }, [focusProductId, onProductFocusClear]);
 
   const filterBar = (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+    <div className="flex min-w-0 flex-nowrap items-center gap-1.5">
       <SegmentedTabs
         variant="chip"
         tabs={[
@@ -1319,7 +1319,7 @@ export function ShopProductsPanel({
 
   /** Right-aligned with page CTAs / embedded top chrome (search · refresh · assistant). */
   const toolbarActions = (
-    <div className="flex shrink-0 flex-wrap items-center gap-2">
+    <div className="flex shrink-0 flex-nowrap items-center gap-2">
       {manualAckPendingCount > 0 ? (
         <Button
           size="sm"
@@ -1368,8 +1368,8 @@ export function ShopProductsPanel({
         ? createPortal(toolbarActions, actionsMountEl!)
         : null}
       {!filtersPortaled || !actionsPortaled ? (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          {!filtersPortaled ? filterBar : <span />}
+        <div className="mb-3 flex flex-nowrap items-center justify-between gap-2 overflow-x-auto [scrollbar-width:thin]">
+          {!filtersPortaled ? filterBar : null}
           {!actionsPortaled ? toolbarActions : null}
         </div>
       ) : null}
