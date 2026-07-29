@@ -73,8 +73,9 @@ export function WorkspaceLayout({
     <div
       className={cn(
         "grid min-h-0 overflow-hidden bg-canvas text-ink",
-        // iframe: fill parent (Admin sizes the frame). 100vh overflows and clips.
-        isEmbedded ? "h-full max-h-full" : "h-screen",
+        // iframe: fill parent. Standalone: dvh avoids mobile/browser chrome clipping
+        // the sidebar footer (h-screen often taller than the visible viewport).
+        isEmbedded ? "h-full max-h-full" : "h-dvh max-h-dvh",
         className
       )}
       data-workspace-mode={mode}

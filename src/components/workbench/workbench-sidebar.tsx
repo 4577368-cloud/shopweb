@@ -121,9 +121,12 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
         </div>
       </div>
 
-      {/* Steps stay compact — do not flex-grow. */}
+      {/*
+        Middle scrolls; footer stays pinned. If steps+order were shrink-0, tall rails
+        pushed the account row below the overflow-hidden parent and clipped it.
+      */}
       <nav
-        className="min-h-0 shrink-0 overflow-y-auto px-3 pb-2"
+        className="min-h-0 flex-1 overflow-y-auto px-3 pb-2"
         aria-label={t("nav.workbench")}
       >
         <ul className="space-y-0.5">
@@ -164,15 +167,8 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
               </li>
             );
           })}
-        </ul>
-      </nav>
 
-      {isAuthorized ? (
-        <nav
-          className="min-h-0 shrink-0 overflow-y-auto border-t border-hairline px-3 py-2"
-          aria-label={t("nav.order")}
-        >
-          <ul className="space-y-0.5">
+          {isAuthorized ? (
             <li>
               <LinkInApp
                 href={localePath(locale, "/order-center")}
@@ -189,13 +185,14 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
               >
                 <span
                   className={cn(
-                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
+                    "relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
                     pathname.includes("/order-center")
                       ? "bg-[#325BE6] text-white"
                       : "bg-[#EEF2FF] text-[#325BE6]"
                   )}
+                  aria-hidden
                 >
-                  <ShoppingBag className="h-3.5 w-3.5" aria-hidden />
+                  <ShoppingBag className="h-3.5 w-3.5" />
                 </span>
                 <span
                   className={cn(
@@ -209,16 +206,16 @@ export function WorkbenchSidebar({ embedded }: WorkbenchSidebarProps) {
                 </span>
               </LinkInApp>
             </li>
-          </ul>
-        </nav>
-      ) : null}
+          ) : null}
+        </ul>
+      </nav>
 
-      {/* Pin carousel + account to the bottom of the full-height rail. */}
-      <div className="mt-auto flex shrink-0 flex-col gap-2">
+      {/* Pin carousel + account — always fully visible above the clip edge. */}
+      <div className="mt-auto flex shrink-0 flex-col gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <div className="px-4 pt-1">
           <SidebarAdCarousel />
         </div>
-        <div className="flex items-center gap-2 border-t border-hairline px-4 py-2.5">
+        <div className="flex items-center gap-2 border-t border-hairline px-4 py-3">
           <SidebarUserMenu className="min-w-0 flex-1" />
           <LanguageSwitcher className="shrink-0" />
         </div>
