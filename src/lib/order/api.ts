@@ -6,7 +6,7 @@
 // 本地无后端 / 接口异常 / 返回空 时，自动回退 makeMockOrders()，保证本地测试不中断、不干扰开店流程。
 
 import { api } from "@/lib/api";
-import type { ShopOrderHeader } from "@/lib/types";
+import type { ShopOrderHeader, ShopOrderLineItem } from "@/lib/types";
 import { makeMockOrders } from "./mock";
 import type {
   LineItem,
@@ -17,6 +17,12 @@ import type {
   PaymentStatus,
 } from "./types";
 import { applyProcurementSnapshot } from "./tangbuy";
+export {
+  placeDropshipOrder,
+  previewDropshipAmount,
+  type DropshipPurchaseRequest,
+  type DropshipPurchaseResult,
+} from "./dropship-purchase";
 
 export type OrderSource = "real" | "mock";
 
@@ -45,9 +51,9 @@ export function deriveStatus(
   // Shopify fulfillment_status=partial 表示「部分商品已发货」，剩余可能还在备货。
   // 不宜全单标 inTransit，保留 pendingShipment 让人工判断部分发货状态。
   if (ful === "partial") return "pendingShipment";
-  // 店铺顾客已付款 → 下一步为向 Tangbuy 支付采购款（待支付 Tab）
-  if (fin === "paid") return "pendingPayment";
-  // 顾客尚未支付 → 待下单（最初状态）
+  // 店铺顾客已付款 → 商家待向 Tangbuy 下采购单（待下单 Tab）
+  if (fin === "paid") return "pendingOrder";
+  // 顾客尚未支付 → 也归入待下单（最初状态）
   if (fin === "authorized" || fin === "partially_paid" || fin === "pending" || fin === "unpaid") {
     return "pendingOrder";
   }
@@ -80,8 +86,29 @@ export function formatMoney(
   }
 }
 
-// 真实订单头 → 订单摘要。富字段留缺（真实接口尚未提供）。
+/** Nested header lineItems → OrderBindingLine (compat with mapBindingLineToLineItem). */
+export function mapHeaderLineItem(line: ShopOrderLineItem): OrderBindingLine {
+  return {
+    outerVariantId: line.variantId ?? undefined,
+    previewImageUrl: line.image ?? undefined,
+    sku: line.sku ?? undefined,
+    title: line.title ?? undefined,
+    quantity: line.quantity ?? undefined,
+    price: line.price ?? undefined,
+    tangbuyProductId: line.tangbuyProductId ?? undefined,
+    tangbuySkuId: line.tangbuySkuId ?? undefined,
+    bindingStatus:
+      line.bindingStatus === "BOUND" || line.bindingStatus === "UNBOUND"
+        ? line.bindingStatus
+        : null,
+  };
+}
+
+// 真实订单头 → 订单摘要。优先使用嵌套 lineItems（B1）；富字段仍可缺。
 export function mapShopOrderHeader(h: ShopOrderHeader): OrderSummary {
+  const nestedLines = (h.lineItems ?? []).map((l) =>
+    mapBindingLineToLineItem(mapHeaderLineItem(l), h.currency)
+  );
   const base: OrderSummary = {
     id: h.outerOrderId,
     shopOrderNo: h.orderName ?? h.outerOrderId,
@@ -92,6 +119,7 @@ export function mapShopOrderHeader(h: ShopOrderHeader): OrderSummary {
     status: deriveStatus(h.financialStatus, h.fulfillmentStatus),
     paymentStatus: derivePayment(h.financialStatus),
     productCost: formatMoney(h.totalPrice, h.currency),
+    lineItems: nestedLines.length > 0 ? nestedLines : undefined,
   };
   if (h.procurementLine && Object.keys(h.procurementLine).length > 0) {
     return applyProcurementSnapshot(base, h.procurementLine, {
@@ -236,6 +264,10 @@ export async function fetchOrders(shop: string): Promise<FetchOrdersResult> {
       const orders = await mapWithConcurrencyLimit(headers, 6, async (h) => {
         const header = mergeProcurementIntoHeader(h, procurementByOuter);
         const base = mapShopOrderHeader(header);
+        // B1: header 已嵌套 lineItems 时跳过 N+1 binding/lines
+        if (base.lineItems && base.lineItems.length > 0) {
+          return base;
+        }
         try {
           const lines = await api.listOrderBindingLines(shopName, h.outerOrderId);
           if (lines && lines.length > 0) {

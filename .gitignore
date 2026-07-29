@@ -52,3 +52,6 @@ next-env.d.ts
 
 # Java backend lives in separate repo (shop.git); local clone only
 /tangbuy-plugin/
+
+# Reference clones (tang-plugin etc.) — read-only, do not commit
+.reference/

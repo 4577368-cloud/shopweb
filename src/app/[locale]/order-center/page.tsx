@@ -14,7 +14,13 @@ import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import type { OrderStatus, OrderSummary } from "@/lib/order/types";
 import { STATUS_ORDER, countByStatus } from "@/lib/order/state-machine";
 import { makeMockOrders } from "@/lib/order/mock";
-import { fetchOrders, parseCreatedAt, type OrderSource } from "@/lib/order/api";
+import {
+  fetchOrders,
+  invalidateOrderHeadersCache,
+  parseCreatedAt,
+  placeDropshipOrder,
+  type OrderSource,
+} from "@/lib/order/api";
 import { MetricSummaryCards, type MetricSummaryItem, type MetricTone } from "@/components/workbench/metric-summary-cards";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Button } from "@/components/ui/button";
@@ -140,12 +146,74 @@ function OrderCenterContent() {
     [rawOrders, internalVersion]
   );
 
-  // A+ 批：下单 → pendingOrder 转 pendingPayment
+  // 行末「补充货源」➕：未关联的 line 触发。跳到 SKU 对齐页面。
+  const handleNeedBindSource = useCallback(
+    (line: { outerVariantId?: string; title?: string; sku?: string }) => {
+      const params = new URLSearchParams();
+      if (line.outerVariantId) params.set("variant", line.outerVariantId);
+      if (line.sku) params.set("sku", line.sku);
+      const qs = params.toString();
+      router.push(localePath(locale, `/sku-align${qs ? `?${qs}` : ""}`));
+    },
+    [locale, router]
+  );
+
+  // 代发下单：优先调 plugin purchaseOrder；失败时回退 mock（本地无后端联调）
   const handlePlace = useCallback(
-    (order: OrderSummary) => {
+    async (order: OrderSummary) => {
       if (order.status !== "pendingOrder") return;
+      const unbound = (order.lineItems ?? []).some((it) => !it.linkedOffer);
+      if ((order.lineItems?.length ?? 0) > 0 && unbound) {
+        const first = order.lineItems!.find((it) => !it.linkedOffer);
+        if (first) handleNeedBindSource(first);
+        return;
+      }
+
       setPlacingId(order.id);
       const amountUsd = deriveAmountUsd(order);
+      try {
+        if (shopName) {
+          const res = await placeDropshipOrder({
+            shopName,
+            outerOrderId: order.shopifyOrderId || order.id,
+            orderType: 1,
+          });
+          const tangbuyNo = res.tangbuyOrderNo || res.tradeNo || generateTangbuyOrderNo(order.id);
+          const supplierNo = res.lineNos?.[0] || generateSupplierOrderNo(order.id);
+          setOrderInternal(order.id, {
+            tangbuyOrderNo: tangbuyNo,
+            supplierOrderNo: supplierNo,
+            placedAt: new Date().toISOString(),
+            amountUsd:
+              res.payableAmountCny != null ? Number(res.payableAmountCny) : amountUsd,
+            paymentStatus: "unpaid",
+          });
+          setRawOrders((prev) =>
+            prev.map((o) =>
+              o.id === order.id
+                ? {
+                    ...o,
+                    status: "pendingPayment",
+                    tangbuyOrderNo: tangbuyNo,
+                    supplierOrderNo: supplierNo,
+                    payableAmount:
+                      res.payableAmountCny != null
+                        ? `CNY ${Number(res.payableAmountCny).toFixed(2)}`
+                        : `USD ${amountUsd.toFixed(2)}`,
+                    payMethod: "—",
+                  }
+                : o
+            )
+          );
+          invalidateOrderHeadersCache(shopName);
+          refreshInternal();
+          return;
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[order] placeDropshipOrder failed, fallback mock:", err);
+      }
+
       setOrderInternal(order.id, {
         tangbuyOrderNo: generateTangbuyOrderNo(order.id),
         supplierOrderNo: generateSupplierOrderNo(order.id),
@@ -153,7 +221,6 @@ function OrderCenterContent() {
         amountUsd,
         paymentStatus: "unpaid",
       });
-      // 同步推进 rawOrders 状态
       setRawOrders((prev) =>
         prev.map((o) =>
           o.id === order.id
@@ -169,30 +236,22 @@ function OrderCenterContent() {
         )
       );
       refreshInternal();
-      setTimeout(() => setPlacingId(undefined), 200);
     },
-    []
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shopName, handleNeedBindSource]
   );
+
+  useEffect(() => {
+    if (!placingId) return;
+    const t = setTimeout(() => setPlacingId(undefined), 500);
+    return () => clearTimeout(t);
+  }, [placingId]);
 
   // A+ 批：打开支付弹窗
   const handleOpenPayment = useCallback((order: OrderSummary) => {
     if (order.status !== "pendingPayment") return;
     setPaymentOrderId(order.id);
   }, []);
-
-  // 行末「补充货源」➕：未关联的 line 触发。跳到 SKU 对齐页面，
-  // 复用 sku-align 已有的 product+variant 锚点（types.ts:74）。当 line 没有 productId 时
-  // 仅带 variantId —— sku-align 看到未识别参数会忽略，落到默认列表页。
-  const handleNeedBindSource = useCallback(
-    (line: { outerVariantId?: string; title?: string; sku?: string }) => {
-      const params = new URLSearchParams();
-      if (line.outerVariantId) params.set("variant", line.outerVariantId);
-      if (line.sku) params.set("sku", line.sku);
-      const qs = params.toString();
-      router.push(localePath(locale, `/sku-align${qs ? `?${qs}` : ""}`));
-    },
-    [locale, router]
-  );
 
   // A+ 批：支付成功 → pendingPayment 转 preparing
   // 余额通道：modal 已调用后端 /billing/consume/balance 扣减，并传回 newBalanceCny（元）；

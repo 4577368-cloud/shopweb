@@ -692,6 +692,20 @@ export interface ImageBindingView {
   sourceIdentity?: ProductSourceIdentity | null;
 }
 
+/** Nested line from GET /api/plugin/order/header/list (B1). */
+export interface ShopOrderLineItem {
+  lineId?: string | null;
+  title?: string | null;
+  sku?: string | null;
+  quantity?: number | null;
+  image?: string | null;
+  variantId?: string | null;
+  price?: number | null;
+  bindingStatus?: "BOUND" | "UNBOUND" | string | null;
+  tangbuySkuId?: string | null;
+  tangbuyProductId?: string | null;
+}
+
 /** Persisted Shopify order header (GET /api/plugin/order/header/list). Used by scan context. */
 export interface ShopOrderHeader {
   outerOrderId: string;
@@ -701,6 +715,10 @@ export interface ShopOrderHeader {
   currency?: string | null;
   totalPrice?: number | null;
   platformCreatedAt?: string | null;
+  /** Linked t_draft_order.id when draft domain is populated. */
+  draftOrderId?: number | null;
+  /** Nested line items (B1); preferred over N+1 binding/lines. */
+  lineItems?: ShopOrderLineItem[] | null;
   /**
    * 采购子单快照（plugin 经 listOrderDetail 映射）。
    * 与采购系统 mapper 对齐；缺省时订单中心走 mock / 可选 snapshots 接口。
