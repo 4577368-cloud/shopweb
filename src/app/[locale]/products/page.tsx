@@ -551,15 +551,17 @@ function SelectContent() {
     />
   );
 
+  const isShopTab = tab === "shop";
   const pageCtas = (
     <ProductsPageHeaderActions
-      showSearch={!isEmbedded}
+      // Discover has its own SmartSourcingFilters; shop search here does nothing on catalog.
+      showSearch={isShopTab && !isEmbedded}
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
-      hasNewProductsToLink={hasNewProductsToLink}
-      newLinkableCount={newLinkableIds.length}
+      hasNewProductsToLink={isShopTab && hasNewProductsToLink}
+      newLinkableCount={isShopTab ? newLinkableIds.length : 0}
       onEnqueueNewArrivalsBatchLink={() => void enqueueNewArrivalsBatchLink()}
-      pageLinkableCount={pageLinkableCount}
+      pageLinkableCount={isShopTab ? pageLinkableCount : 0}
       onEnqueueUnboundMatch={() => void enqueueUnboundMatch()}
       batchLinkActive={batchLinkActive}
       skuAlignHref={localePath(locale, "/sku-align")}
@@ -572,31 +574,40 @@ function SelectContent() {
   );
 
   /**
-   * Sticky toolbar: left = tabs + filter chips; right = batch-ack + page CTAs
-   * (`ml-auto`) so「SKU 绑定」shares the same right edge as embedded top chrome
-   * whether the assistant rail is open or closed.
+   * Sticky toolbar:
+   * - Shop: tabs + filters inline; CTAs (search / batch / SKU) on the right.
+   * - Catalog: tabs + SKU CTA on row 1; sourcing filters on a full-width row 2
+   *   so the expanded panel never squeezes/overlaps the CTA column when both
+   *   side rails are open.
    */
   const pageToolbar = (
-    <div className="flex w-full min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:gap-2">
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-        {pageTabs}
-        <span className="hidden h-4 w-px shrink-0 bg-hairline sm:block" aria-hidden />
-        {tab === "shop" ? (
-          <div ref={setShopFiltersMountEl} className="min-w-0" />
-        ) : null}
-        {tab === "catalog" ? (
-          <div ref={setCatalogFiltersMountEl} className="min-w-0" />
-        ) : null}
+    <div className="flex w-full min-w-0 flex-col gap-2">
+      <div className="flex w-full min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          {pageTabs}
+          {isShopTab ? (
+            <>
+              <span
+                className="hidden h-4 w-px shrink-0 bg-hairline sm:block"
+                aria-hidden
+              />
+              <div ref={setShopFiltersMountEl} className="min-w-0" />
+            </>
+          ) : null}
+        </div>
+        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {isShopTab ? (
+            <div
+              ref={setShopActionsMountEl}
+              className="flex shrink-0 flex-wrap items-center gap-2"
+            />
+          ) : null}
+          {pageCtas}
+        </div>
       </div>
-      <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
-        {tab === "shop" ? (
-          <div
-            ref={setShopActionsMountEl}
-            className="flex shrink-0 flex-wrap items-center gap-2"
-          />
-        ) : null}
-        {pageCtas}
-      </div>
+      {tab === "catalog" ? (
+        <div ref={setCatalogFiltersMountEl} className="w-full min-w-0" />
+      ) : null}
     </div>
   );
 

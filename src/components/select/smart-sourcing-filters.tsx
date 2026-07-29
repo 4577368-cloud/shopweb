@@ -121,7 +121,7 @@ export function SmartSourcingFilters({
     return (
       <section
         className={cn(
-          "flex items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface/80 px-3 py-1.5",
+          "flex w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-hairline bg-surface/80 px-3 py-1.5",
           className
         )}
       >
@@ -153,7 +153,7 @@ export function SmartSourcingFilters({
   return (
     <section
       className={cn(
-        "rounded-[var(--radius-control)] border border-hairline bg-surface/80 px-3 py-2",
+        "w-full min-w-0 rounded-[var(--radius-control)] border border-hairline bg-surface/80 px-3 py-2",
         className
       )}
     >
