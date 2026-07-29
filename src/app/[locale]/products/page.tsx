@@ -574,31 +574,29 @@ function SelectContent() {
   );
 
   /**
-   * Single toolbar row for both tabs: tabs | filters … | CTAs.
-   * No wrap / no second “card” row — narrow rails scroll filters horizontally.
+   * Row 1: Shopify / 选品发现 tabs only.
+   * Row 2: tab-specific filters + CTAs (single nowrap row, scroll if narrow).
    */
   const pageToolbar = (
-    <div className="flex w-full min-w-0 items-center gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:thin]">
-        <div className="shrink-0">{pageTabs}</div>
-        <span
-          className="hidden h-4 w-px shrink-0 bg-hairline sm:block"
-          aria-hidden
-        />
-        {isShopTab ? (
-          <div ref={setShopFiltersMountEl} className="min-w-0 shrink-0" />
-        ) : (
-          <div ref={setCatalogFiltersMountEl} className="min-w-0 flex-1" />
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {isShopTab ? (
-          <div
-            ref={setShopActionsMountEl}
-            className="flex shrink-0 items-center gap-2"
-          />
-        ) : null}
-        {pageCtas}
+    <div className="flex w-full min-w-0 flex-col gap-2">
+      <div className="shrink-0">{pageTabs}</div>
+      <div className="flex w-full min-w-0 items-center gap-2">
+        <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:thin]">
+          {isShopTab ? (
+            <div ref={setShopFiltersMountEl} className="min-w-0" />
+          ) : (
+            <div ref={setCatalogFiltersMountEl} className="min-w-0" />
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {isShopTab ? (
+            <div
+              ref={setShopActionsMountEl}
+              className="flex shrink-0 items-center gap-2"
+            />
+          ) : null}
+          {pageCtas}
+        </div>
       </div>
     </div>
   );
