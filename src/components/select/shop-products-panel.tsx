@@ -482,6 +482,7 @@ export function ShopProductsPanel({
   onRefresh,
   refreshBusy = false,
   filtersMountEl = null,
+  actionsMountEl = null,
   focusProductId = null,
   scrollToProductId = null,
   onScrollToConsumed,
@@ -518,8 +519,10 @@ export function ShopProductsPanel({
   scopeCounts?: { all: number; linked: number; listed: number };
   onRefresh?: () => void;
   refreshBusy?: boolean;
-  /** When set, filter chips / refresh portal into this host (embedded sticky toolbar). */
+  /** When set, filter chips portal into this host (sticky toolbar left). */
   filtersMountEl?: HTMLElement | null;
+  /** When set, batch-ack / refresh portal into this host (sticky toolbar right, with page CTAs). */
+  actionsMountEl?: HTMLElement | null;
   focusProductId?: string | null;
   scrollToProductId?: string | null;
   onScrollToConsumed?: () => void;
@@ -1311,6 +1314,12 @@ export function ShopProductsPanel({
           />
         </label>
       ) : null}
+    </div>
+  );
+
+  /** Right-aligned with page CTAs / embedded top chrome (search · refresh · assistant). */
+  const toolbarActions = (
+    <div className="flex shrink-0 flex-wrap items-center gap-2">
       {manualAckPendingCount > 0 ? (
         <Button
           size="sm"
@@ -1347,13 +1356,23 @@ export function ShopProductsPanel({
     </div>
   );
 
+  const filtersPortaled = Boolean(filtersMountEl?.isConnected);
+  const actionsPortaled = Boolean(actionsMountEl?.isConnected);
+
   return (
     <>
-      {filtersMountEl?.isConnected
-        ? createPortal(filterBar, filtersMountEl)
-        : (
-          <div className="mb-3">{filterBar}</div>
-        )}
+      {filtersPortaled
+        ? createPortal(filterBar, filtersMountEl!)
+        : null}
+      {actionsPortaled
+        ? createPortal(toolbarActions, actionsMountEl!)
+        : null}
+      {!filtersPortaled || !actionsPortaled ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          {!filtersPortaled ? filterBar : <span />}
+          {!actionsPortaled ? toolbarActions : null}
+        </div>
+      ) : null}
 
       {error ? (
         <Card className="mb-3 border-red-200">

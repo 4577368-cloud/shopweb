@@ -85,6 +85,8 @@ function SelectContent() {
   const [shopFilter, setShopFilter] = useState<ShopFilter>("all");
   const [shopFiltersMountEl, setShopFiltersMountEl] =
     useState<HTMLDivElement | null>(null);
+  const [shopActionsMountEl, setShopActionsMountEl] =
+    useState<HTMLDivElement | null>(null);
   const [catalogFiltersMountEl, setCatalogFiltersMountEl] =
     useState<HTMLDivElement | null>(null);
   const { newArrivalStats, refreshNewArrivalAwareness, commitAnalysisBaseline } =
@@ -570,8 +572,9 @@ function SelectContent() {
   );
 
   /**
-   * Sticky toolbar: left cluster (tabs + filters) wraps together;
-   * right CTAs stay a separate end group so「批量确认」cannot float over pills.
+   * Sticky toolbar: left = tabs + filter chips; right = batch-ack + page CTAs
+   * (`ml-auto`) so「SKU 绑定」shares the same right edge as embedded top chrome
+   * whether the assistant rail is open or closed.
    */
   const pageToolbar = (
     <div className="flex w-full min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:gap-2">
@@ -585,7 +588,13 @@ function SelectContent() {
           <div ref={setCatalogFiltersMountEl} className="min-w-0" />
         ) : null}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+      <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+        {tab === "shop" ? (
+          <div
+            ref={setShopActionsMountEl}
+            className="flex shrink-0 flex-wrap items-center gap-2"
+          />
+        ) : null}
         {pageCtas}
       </div>
     </div>
@@ -609,6 +618,7 @@ function SelectContent() {
               summary={shopTab.summary}
               panel={shopTab.panel}
               filtersMountEl={shopFiltersMountEl}
+              actionsMountEl={shopActionsMountEl}
             />
           ) : null}
 

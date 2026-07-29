@@ -14,8 +14,10 @@ export interface ProductsShopTabSummaryProps {
 export interface ProductsShopTabProps {
   summary: ProductsShopTabSummaryProps;
   panel: ComponentProps<typeof ShopProductsPanel>;
-  /** Optional sticky-toolbar host for filter chips (embedded). */
+  /** Sticky-toolbar host for filter chips. */
   filtersMountEl?: HTMLElement | null;
+  /** Sticky-toolbar host for batch-ack / refresh (right cluster). */
+  actionsMountEl?: HTMLElement | null;
 }
 
 /** Shop tab: optional new-arrivals banner + mirror product pool. */
@@ -23,6 +25,7 @@ export function ProductsShopTab({
   summary,
   panel,
   filtersMountEl = null,
+  actionsMountEl = null,
 }: ProductsShopTabProps) {
   return (
     <>
@@ -32,7 +35,11 @@ export function ProductsShopTab({
         onBatchLinkNewArrivals={summary.onBatchLinkNewArrivals}
         batchLinkBusy={summary.batchLinkBusy}
       />
-      <ShopProductsPanel {...panel} filtersMountEl={filtersMountEl} />
+      <ShopProductsPanel
+        {...panel}
+        filtersMountEl={filtersMountEl}
+        actionsMountEl={actionsMountEl}
+      />
     </>
   );
 }
