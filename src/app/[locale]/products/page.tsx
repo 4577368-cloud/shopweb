@@ -413,11 +413,15 @@ function SelectContent() {
 
   useRegisterEmbeddedPageChrome({
     enabled: isEmbedded && isAuthorized && !sessionPending && phase === "result",
-    search: {
-      value: searchQuery,
-      onChange: setSearchQuery,
-      placeholder: t("products.searchPlaceholder"),
-    },
+    // Shop search only — discover tab has its own keyword filter in the toolbar.
+    search:
+      tab === "shop"
+        ? {
+            value: searchQuery,
+            onChange: setSearchQuery,
+            placeholder: t("products.searchPlaceholder"),
+          }
+        : null,
     refresh: {
       onClick: () => void handleRefreshList(),
       busy: listRefreshing || batchLinkActive,
