@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { locales, defaultLocale, isLocale } from "@/i18n/config";
+import { defaultLocale, isLocale } from "@/i18n/config";
 
 const PUBLIC_FILE = /\.[^/]+$/; // static assets like /favicon.ico
 
@@ -11,7 +11,6 @@ const PROTECTED_PREFIXES = [
   "/account",
   "/catalog",
   "/logistics",
-  "/order-center",
   "/products",
   "/sku-align",
   "/sync",
