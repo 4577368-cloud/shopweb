@@ -20,7 +20,6 @@ import {
 import { shopHandleFromDomain } from "@/components/shopify/shop-domain-connect-field";
 
 type AuthMode = "login" | "register";
-type LoginMethod = "shopify" | "email";
 type AuthPhase = "form" | "submitting" | "success";
 type EmailStep = "account" | "password" | "register";
 
@@ -46,36 +45,33 @@ export function AuthPanel({
 }: AuthPanelProps) {
   const t = useT();
   const locale = useLocale();
-  const { login, register } = useAuth();
+  const { login, register, googleLogin, appleLogin } = useAuth();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  const [shopHandle, setShopHandle] = useState("");
-  const [loginMethod, setLoginMethod] = useState<LoginMethod>("shopify");
+  const [shopHandle, setShopHandle] = useState(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      const remembered = window.localStorage.getItem(SHOP_STORAGE_KEY);
+      return remembered ? shopHandleFromDomain(remembered) : "";
+    } catch {
+      return "";
+    }
+  });
   const [emailStep, setEmailStep] = useState<EmailStep>("account");
   const [phase, setPhase] = useState<AuthPhase>("form");
   const [error, setError] = useState<string | null>(null);
   const [shopifyError, setShopifyError] = useState<string | null>(null);
   const [shopifyBusy, setShopifyBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [appleBusy, setAppleBusy] = useState(false);
   const [successTarget, setSuccessTarget] = useState<string | null>(null);
   const [showManualContinue, setShowManualContinue] = useState(false);
   const [codeCooldown, setCodeCooldown] = useState(0);
 
-  const busy = phase !== "form" || shopifyBusy;
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const remembered = window.localStorage.getItem(SHOP_STORAGE_KEY);
-      if (remembered) {
-        setShopHandle(shopHandleFromDomain(remembered));
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
+  const busy = phase !== "form" || shopifyBusy || googleBusy || appleBusy;
 
   useEffect(() => {
     if (phase !== "success" || !successTarget) return;
@@ -203,19 +199,50 @@ export function AuthPanel({
     }
   }
 
+  async function onGoogleLogin() {
+    if (busy) return;
+    setGoogleBusy(true);
+    setError(null);
+    setShopifyError(null);
+    try {
+      await googleLogin();
+      setPhase("success");
+      const target = redirectAfterSuccess ?? localePath(locale, "/authorize");
+      setSuccessTarget(target);
+      window.location.assign(target);
+    } catch (err) {
+      setError(errorMessage(err));
+      setPhase("form");
+    } finally {
+      setGoogleBusy(false);
+    }
+  }
+
+  async function onAppleLogin() {
+    if (busy) return;
+    setAppleBusy(true);
+    setError(null);
+    setShopifyError(null);
+    try {
+      await appleLogin(locale);
+      setPhase("success");
+      const target = redirectAfterSuccess ?? localePath(locale, "/authorize");
+      setSuccessTarget(target);
+      window.location.assign(target);
+    } catch (err) {
+      setError(errorMessage(err));
+      setPhase("form");
+    } finally {
+      setAppleBusy(false);
+    }
+  }
+
   const modeTabs: { id: AuthMode; label: string }[] = [
     { id: "login", label: t("landing.authTabLogin") },
     { id: "register", label: t("landing.authTabRegister") },
   ];
 
-  const methodTabs: { id: LoginMethod; label: string }[] = [
-    { id: "shopify", label: t("auth.methodTabShopify") },
-    { id: "email", label: t("auth.methodTabEmail") },
-  ];
-
-  const showShopifyPane = mode === "login" ? loginMethod === "shopify" : false;
-  const showEmailPane =
-    mode === "register" || (mode === "login" && loginMethod === "email");
+  const showEmailPane = true;
 
   return (
     <div className="landing-auth-panel relative flex h-full w-full flex-col">
@@ -267,45 +294,10 @@ export function AuthPanel({
             </h2>
             <p className="mt-1 text-xs text-[--landing-text-muted]">
               {mode === "login"
-                ? loginMethod === "shopify"
-                  ? t("auth.shopifyLoginHint")
-                  : t("landing.authLoginSubtitle")
+                ? t("landing.authLoginSubtitle")
                 : t("landing.authRegisterSubtitle")}
             </p>
           </div>
-
-          {mode === "login" && phase !== "success" ? (
-            <div
-              className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-slate-100/90 p-1"
-              role="tablist"
-              aria-label={t("auth.methodTablistAria")}
-            >
-              {methodTabs.map((tab) => {
-                const active = loginMethod === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => {
-                      setLoginMethod(tab.id);
-                      setError(null);
-                      setShopifyError(null);
-                      setEmailStep("account");
-                    }}
-                    className={
-                      active
-                        ? "rounded-lg bg-[--landing-accent] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition"
-                        : "rounded-lg px-3 py-2.5 text-sm font-semibold text-[--landing-text-muted] transition hover:text-[--landing-text]"
-                    }
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
 
           {phase === "success" ? (
             <div
@@ -336,64 +328,6 @@ export function AuthPanel({
             </div>
           ) : (
             <>
-              {showShopifyPane ? (
-                <div className="space-y-3">
-                  <div className="flex overflow-hidden rounded-[var(--radius-control)] border border-[--landing-border]">
-                    <input
-                      type="text"
-                      autoComplete="off"
-                      spellCheck={false}
-                      placeholder={t("auth.shopifyShopPlaceholder")}
-                      value={shopHandle}
-                      onChange={(e) => setShopHandle(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          onShopifyLogin();
-                        }
-                      }}
-                      disabled={busy}
-                      aria-label={t("auth.shopifyShopAria")}
-                      className="landing-input min-w-0 flex-1 rounded-none border-0 px-3 py-2 text-sm"
-                    />
-                    <span className="flex shrink-0 items-center border-l border-[--landing-border] bg-white/5 px-2.5 text-[11px] font-medium text-[--landing-text-muted]">
-                      {t("install.domainSuffix")}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onShopifyLogin}
-                    disabled={busy}
-                    className="landing-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] py-2.5 text-sm font-semibold"
-                  >
-                    {shopifyBusy ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                        {t("auth.shopifyLoginSubmitting")}
-                      </>
-                    ) : (
-                      t("auth.shopifyLoginSubmit")
-                    )}
-                  </button>
-                  {shopifyError ? (
-                    <p className="text-xs leading-4 text-red-400">{shopifyError}</p>
-                  ) : null}
-                  {adminHref ? (
-                    <p className="text-center text-[11px] leading-4 text-[--landing-text-muted]">
-                      <a
-                        href={adminHref}
-                        className="font-medium text-[--landing-cyan] hover:underline"
-                        onClick={() => {
-                          rememberShopDomain(shopHandle);
-                        }}
-                      >
-                        {t("auth.openInShopifyAdmin")}
-                      </a>
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-
               {showEmailPane ? (
                 <form onSubmit={onSubmit} className="space-y-4">
                   {mode === "register" ? (
@@ -531,6 +465,93 @@ export function AuthPanel({
                     )}
                   </button>
                 </form>
+              ) : null}
+
+              {mode === "login" ? (
+                <div className="mt-6 space-y-3">
+                  <div className="flex items-center gap-3 text-[11px] text-[--landing-text-muted]">
+                    <span className="h-px flex-1 bg-[--landing-border]" />
+                    <span>Third-party authorization</span>
+                    <span className="h-px flex-1 bg-[--landing-border]" />
+                  </div>
+                  <div className="flex overflow-hidden rounded-[var(--radius-control)] border border-[--landing-border]">
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder={t("auth.shopifyShopPlaceholder")}
+                      value={shopHandle}
+                      onChange={(e) => setShopHandle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          onShopifyLogin();
+                        }
+                      }}
+                      disabled={busy}
+                      aria-label={t("auth.shopifyShopAria")}
+                      className="landing-input min-w-0 flex-1 rounded-none border-0 px-3 py-2 text-sm"
+                    />
+                    <span className="flex shrink-0 items-center border-l border-[--landing-border] bg-slate-50 px-2.5 text-[11px] font-medium text-[--landing-text-muted]">
+                      {t("install.domainSuffix")}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onShopifyLogin}
+                    disabled={busy}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[--landing-border] bg-white px-3 py-2.5 text-sm font-semibold text-[--landing-text] transition hover:border-[--landing-accent] hover:bg-[--landing-accent-soft] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {shopifyBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : (
+                      <span aria-hidden>Shopify</span>
+                    )}
+                    Continue with Shopify
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onGoogleLogin}
+                    disabled={busy}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[--landing-border] bg-white px-3 py-2.5 text-sm font-semibold text-[--landing-text] transition hover:border-[--landing-accent] hover:bg-[--landing-accent-soft] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {googleBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : (
+                      <span aria-hidden className="font-bold text-[#4285f4]">G</span>
+                    )}
+                    Continue with Google
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onAppleLogin}
+                    disabled={busy}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[--landing-border] bg-white px-3 py-2.5 text-sm font-semibold text-[--landing-text] transition hover:border-[--landing-accent] hover:bg-[--landing-accent-soft] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {appleBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : (
+                      <span aria-hidden className="font-bold">Apple</span>
+                    )}
+                    Continue with Apple
+                  </button>
+                  {shopifyError ? (
+                    <p className="text-xs leading-4 text-red-500">{shopifyError}</p>
+                  ) : null}
+                  {adminHref ? (
+                    <p className="text-center text-[11px] leading-4 text-[--landing-text-muted]">
+                      <a
+                        href={adminHref}
+                        className="font-medium text-[--landing-cyan] hover:underline"
+                        onClick={() => {
+                          rememberShopDomain(shopHandle);
+                        }}
+                      >
+                        {t("auth.openInShopifyAdmin")}
+                      </a>
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </>
           )}

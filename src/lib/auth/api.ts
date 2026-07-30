@@ -126,6 +126,12 @@ interface TangbuyTokenInfo {
   account?: string;
 }
 
+interface TangbuyPlatformLoginData {
+  bind?: boolean;
+  mailRegistered?: boolean;
+  tokenInfo?: TangbuyTokenInfo;
+}
+
 interface TangbuyUserInfo {
   userId: number;
   email?: string;
@@ -245,6 +251,40 @@ async function afterPlatformLogin(tokenInfo: TangbuyTokenInfo): Promise<AuthResp
   return { user: await currentPlatformUser(tokenInfo.token) };
 }
 
+async function googleLoginWithPlatform(): Promise<AuthResponse> {
+  const { signInWithGoogle } = await import("@/lib/auth/google-login");
+  return loginWithThirdParty(await signInWithGoogle(), "Google");
+}
+
+async function appleLoginWithPlatform(locale?: string): Promise<AuthResponse> {
+  const { signInWithApple } = await import("@/lib/auth/google-login");
+  return loginWithThirdParty(await signInWithApple(locale), "Apple");
+}
+
+async function loginWithThirdParty(
+  third: Record<string, unknown>,
+  label: string
+): Promise<AuthResponse> {
+  const data = await tangbuyRequest<TangbuyPlatformLoginData>(
+    "/user/platform/login",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(third),
+    }
+  );
+  if (!data?.bind || !data.tokenInfo) {
+    throw new ApiError(
+      data?.mailRegistered
+        ? `${label} account needs binding. Please sign in with email first.`
+        : `${label} account is not registered yet. Please register with email first.`,
+      409,
+      data
+    );
+  }
+  return afterPlatformLogin(data.tokenInfo);
+}
+
 async function currentPlatformUser(token = getCookie(TOKEN_COOKIE)): Promise<User> {
   if (!token) throw new ApiError("Unauthorized: login required", 401, { code: "UNAUTHENTICATED" });
   const info = await tangbuyRequest<TangbuyUserInfo>("/user/getUserInfo", { method: "GET" }, token);
@@ -286,6 +326,10 @@ export const authApi = {
 
   /** POST /login — sets auth cookies, returns the user. */
   login: loginWithPlatform,
+
+  googleLogin: googleLoginWithPlatform,
+
+  appleLogin: appleLoginWithPlatform,
 
   /** POST /logout — clears cookies (standalone) or drops Bearer (embedded). */
   logout: async () => {
