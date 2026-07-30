@@ -22,6 +22,7 @@ import { shopHandleFromDomain } from "@/components/shopify/shop-domain-connect-f
 type AuthMode = "login" | "register";
 type LoginMethod = "shopify" | "email";
 type AuthPhase = "form" | "submitting" | "success";
+type EmailStep = "account" | "password" | "register";
 
 interface AuthPanelProps {
   mode: AuthMode;
@@ -50,14 +51,17 @@ export function AuthPanel({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [shopHandle, setShopHandle] = useState("");
   const [loginMethod, setLoginMethod] = useState<LoginMethod>("shopify");
+  const [emailStep, setEmailStep] = useState<EmailStep>("account");
   const [phase, setPhase] = useState<AuthPhase>("form");
   const [error, setError] = useState<string | null>(null);
   const [shopifyError, setShopifyError] = useState<string | null>(null);
   const [shopifyBusy, setShopifyBusy] = useState(false);
   const [successTarget, setSuccessTarget] = useState<string | null>(null);
   const [showManualContinue, setShowManualContinue] = useState(false);
+  const [codeCooldown, setCodeCooldown] = useState(0);
 
   const busy = phase !== "form" || shopifyBusy;
 
@@ -78,6 +82,15 @@ export function AuthPanel({
     const timer = window.setTimeout(() => setShowManualContinue(true), 2500);
     return () => window.clearTimeout(timer);
   }, [phase, successTarget]);
+
+  useEffect(() => {
+    if (codeCooldown <= 0) return;
+    const timer = window.setTimeout(
+      () => setCodeCooldown((current) => Math.max(0, current - 1)),
+      1000
+    );
+    return () => window.clearTimeout(timer);
+  }, [codeCooldown]);
 
   const adminHref = useMemo(
     () =>
@@ -100,22 +113,29 @@ export function AuthPanel({
         if (code === "INVALID_EMAIL") return t("auth.errorInvalidEmail");
       }
       if (err.status === 0) return t("auth.errorNetwork");
+      if (err.message && !err.message.startsWith("Request failed")) {
+        return err.message;
+      }
       return t("auth.errorUnknown");
     }
     return t("auth.errorUnknown");
   }
 
-  async function ensureSessionAfterRegister(payload: {
-    email: string;
-    password: string;
-    name: string;
-  }) {
-    await register(payload);
-    try {
-      await authApi.me();
-    } catch {
-      await login({ email: payload.email, password: payload.password });
+  function switchMode(nextMode: AuthMode) {
+    onModeChange(nextMode);
+    setError(null);
+    setShopifyError(null);
+    setEmailStep(nextMode === "register" ? "register" : "account");
+  }
+
+  async function continueWithEmail(trimmedEmail: string) {
+    const exists = await authApi.exists(trimmedEmail);
+    if (exists) {
+      setEmailStep("password");
+      return;
     }
+    onModeChange("register");
+    setEmailStep("register");
   }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -127,13 +147,19 @@ export function AuthPanel({
     const trimmedEmail = email.trim();
     const trimmedName = name.trim();
     try {
+      if (mode === "login" && emailStep === "account") {
+        await continueWithEmail(trimmedEmail);
+        setPhase("form");
+        return;
+      }
+
       if (mode === "login") {
         await login({ email: trimmedEmail, password });
       } else {
-        await ensureSessionAfterRegister({
-          name: trimmedName,
+        await register({
+          name: trimmedName || trimmedEmail,
           email: trimmedEmail,
-          password,
+          code: code.trim(),
         });
         markJustRegistered();
       }
@@ -143,6 +169,21 @@ export function AuthPanel({
       window.location.assign(target);
     } catch (err) {
       setError(errorMessage(err));
+      setPhase("form");
+    }
+  }
+
+  async function onSendCode() {
+    if (busy || codeCooldown > 0) return;
+    setPhase("submitting");
+    setError(null);
+    setShopifyError(null);
+    try {
+      await authApi.sendRegisterCode(email.trim());
+      setCodeCooldown(60);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
       setPhase("form");
     }
   }
@@ -196,9 +237,7 @@ export function AuthPanel({
                 type="button"
                 onClick={() => {
                   if (busy) return;
-                  onModeChange(tab.id);
-                  setError(null);
-                  setShopifyError(null);
+                  switchMode(tab.id);
                 }}
                 disabled={busy}
                 className="relative pb-3 text-sm font-medium transition disabled:opacity-60"
@@ -253,6 +292,7 @@ export function AuthPanel({
                       setLoginMethod(tab.id);
                       setError(null);
                       setShopifyError(null);
+                      setEmailStep("account");
                     }}
                     className={
                       active
@@ -387,13 +427,50 @@ export function AuthPanel({
                       autoFocus={mode === "login"}
                       placeholder={t("auth.emailPlaceholder")}
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (mode === "login" && emailStep !== "account") {
+                          setEmailStep("account");
+                          setPassword("");
+                          setCode("");
+                        }
+                      }}
                       disabled={busy}
                       className="landing-input w-full px-3 py-2 text-sm"
                     />
                   </div>
 
-                  <div>
+                  {mode === "register" ? (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
+                        Verification code
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          required
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          placeholder="Email code"
+                          value={code}
+                          onChange={(e) => setCode(e.target.value)}
+                          disabled={busy}
+                          className="landing-input min-w-0 flex-1 px-3 py-2 text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={onSendCode}
+                          disabled={busy || !email.trim() || codeCooldown > 0}
+                          className="inline-flex shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[--landing-border] px-3 py-2 text-xs font-semibold text-[--landing-text] transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {codeCooldown > 0 ? `${codeCooldown}s` : "Send code"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {mode === "login" && emailStep === "password" ? (
+                    <div>
                     <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
                       {t("auth.passwordLabel")}
                     </label>
@@ -410,9 +487,10 @@ export function AuthPanel({
                       disabled={busy}
                       className="landing-input w-full px-3 py-2 text-sm"
                     />
-                  </div>
+                    </div>
+                  ) : null}
 
-                  {mode === "login" ? (
+                  {mode === "login" && emailStep === "password" ? (
                     <div className="flex justify-end">
                       <Link
                         href={localePath(locale, "/forgot-password")}
@@ -443,11 +521,13 @@ export function AuthPanel({
                         )}
                       </>
                     ) : (
-                      t(
-                        mode === "login"
-                          ? "auth.loginSubmit"
-                          : "auth.registerSubmit"
-                      )
+                      mode === "login" && emailStep === "account"
+                        ? "Continue"
+                        : t(
+                            mode === "login"
+                              ? "auth.loginSubmit"
+                              : "auth.registerSubmit"
+                          )
                     )}
                   </button>
                 </form>

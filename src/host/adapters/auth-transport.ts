@@ -1,7 +1,7 @@
 /**
  * Dual-track auth transport contract.
  *
- * - Standalone: Tangbuy httpOnly cookies (`tb_access` / `tb_refresh`) via credentials:include
+ * - Standalone: Tangbuy platform token (`TANGBUY_TOKEN`) via Authorization
  * - Embedded: Shopify session token → backend exchange → short-lived API JWT (Bearer)
  *
  * Feature packages must not choose a strategy; {@link resolveAuthStrategy} / api client does.
@@ -38,13 +38,31 @@ export interface AuthStrategy {
 export const cookieAuthStrategy: AuthStrategy = {
   kind: "cookie",
   async prepareRequest() {
-    return { headers: {}, credentials: "include" };
+    const token = readCookie("TANGBUY_TOKEN");
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return {
+      headers,
+      credentials: "include",
+    };
   },
   async refreshAfterUnauthorized() {
     // UserProvider owns /auth/refresh via registerRefreshHandler in api.ts.
     return false;
   },
 };
+
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const prefix = `${name}=`;
+  return (
+    document.cookie
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(prefix))
+      ?.slice(prefix.length) ?? null
+  );
+}
 
 /** Session-token strategy for Admin iframe. */
 export const sessionTokenAuthStrategy: AuthStrategy = {

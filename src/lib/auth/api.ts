@@ -8,6 +8,7 @@
  */
 
 import { ApiError } from "@/lib/api";
+import JSEncrypt from "jsencrypt";
 import type {
   ChangePasswordPayload,
   ForgotPasswordPayload,
@@ -21,6 +22,11 @@ import type {
 
 /** Auth endpoints live under /api/plugin/auth, so they use the same-origin path. */
 const AUTH_BASE = "/api/plugin/auth";
+const TANGBUY_GATEWAY_BASE = (
+  process.env.NEXT_PUBLIC_TANGBUY_GATEWAY_BASE_URL ?? "https://tangbuy.cc/gateway"
+).replace(/\/+$/, "");
+const TOKEN_COOKIE = "TANGBUY_TOKEN";
+const REFRESH_COOKIE = "TANGBUY_REFRESHTOKEN";
 
 async function authRequest<T>(
   path: string,
@@ -106,30 +112,180 @@ interface RefreshResponse {
   accessToken: string;
 }
 
+interface TangbuyResponse<T> {
+  code?: number;
+  msg?: string;
+  message?: string;
+  data?: T;
+}
+
+interface TangbuyTokenInfo {
+  token: string;
+  refreshToken?: string;
+  authFlag?: boolean;
+  account?: string;
+}
+
+interface TangbuyUserInfo {
+  userId: number;
+  email?: string;
+  userName?: string;
+  nickName?: string | null;
+  avatar?: string | null;
+  language?: string;
+}
+
+async function tangbuyRequest<T>(
+  path: string,
+  init?: RequestInit,
+  token?: string | null
+): Promise<T> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const initHeaders = init?.headers;
+  if (initHeaders instanceof Headers) {
+    initHeaders.forEach((value, key) => {
+      headers[key] = value;
+    });
+  } else if (Array.isArray(initHeaders)) {
+    for (const [key, value] of initHeaders) headers[key] = value;
+  } else if (initHeaders) {
+    Object.assign(headers, initHeaders as Record<string, string>);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${TANGBUY_GATEWAY_BASE}${path}`, {
+      ...init,
+      headers,
+    });
+  } catch (cause) {
+    throw new ApiError(`Network request failed: ${path}`, 0, cause);
+  }
+  const text = await res.text();
+  const body = text ? safeJsonParse(text) : undefined;
+  const data = body as TangbuyResponse<T> | undefined;
+  if (!res.ok || (data?.code != null && data.code !== 0 && data.code !== 200)) {
+    throw new ApiError(data?.msg || data?.message || `Request failed (${res.status})`, res.status || 400, body);
+  }
+  return data?.data as T;
+}
+
+function toUser(info: TangbuyUserInfo): User {
+  const email = info.email ?? "";
+  const name = info.nickName || info.userName || email || String(info.userId);
+  return {
+    id: info.userId,
+    email,
+    name,
+    avatarUrl: info.avatar ?? null,
+    locale: info.language ?? "en",
+    timezone: "",
+    currency: "USD",
+    aiResponseLanguage: info.language ?? "en",
+    status: "active",
+  };
+}
+
+function setCookie(name: string, value: string, maxAge = 60 * 60 * 24 * 365) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+}
+
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const prefix = `${name}=`;
+  const raw = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+    ?.slice(prefix.length);
+  return raw ? decodeURIComponent(raw) : null;
+}
+
+function clearCookie(name: string) {
+  document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax`;
+}
+
+async function loginWithPlatform(payload: LoginPayload): Promise<AuthResponse> {
+  const password = await encryptPlatformPassword(payload.password);
+  const tokenInfo = await tangbuyRequest<TangbuyTokenInfo>(
+    "/user/newLogin",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        account: payload.email,
+        password,
+      }),
+    }
+  );
+  if (!tokenInfo?.token || tokenInfo.authFlag) {
+    throw new ApiError("Login requires additional verification", 401, tokenInfo);
+  }
+  setCookie(TOKEN_COOKIE, tokenInfo.token);
+  if (tokenInfo.refreshToken) setCookie(REFRESH_COOKIE, tokenInfo.refreshToken);
+  return { user: await currentPlatformUser(tokenInfo.token) };
+}
+
+async function encryptPlatformPassword(password: string): Promise<string> {
+  const publicKey = await tangbuyRequest<string>("/user/pubkey", { method: "GET" });
+  const jse = new JSEncrypt();
+  jse.setPublicKey(publicKey);
+  const encrypted = jse.encrypt(password);
+  if (!encrypted) throw new ApiError("Password encryption failed", 400);
+  return encrypted;
+}
+
+async function afterPlatformLogin(tokenInfo: TangbuyTokenInfo): Promise<AuthResponse> {
+  if (!tokenInfo?.token || tokenInfo.authFlag) {
+    throw new ApiError("Login requires additional verification", 401, tokenInfo);
+  }
+  setCookie(TOKEN_COOKIE, tokenInfo.token);
+  if (tokenInfo.refreshToken) setCookie(REFRESH_COOKIE, tokenInfo.refreshToken);
+  return { user: await currentPlatformUser(tokenInfo.token) };
+}
+
+async function currentPlatformUser(token = getCookie(TOKEN_COOKIE)): Promise<User> {
+  if (!token) throw new ApiError("Unauthorized: login required", 401, { code: "UNAUTHENTICATED" });
+  const info = await tangbuyRequest<TangbuyUserInfo>("/user/getUserInfo", { method: "GET" }, token);
+  return toUser(info);
+}
+
 export const authApi = {
+  exists: (email: string) =>
+    tangbuyRequest<boolean>("/user/existUser", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account: email }),
+    }),
+
+  sendRegisterCode: (email: string) =>
+    tangbuyRequest<unknown>("/user/mail/smartCode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account: email, mailEnum: "REGISTER_CODE" }),
+    }),
+
   /** POST /register — sets auth cookies, returns the new user. */
-  register: (payload: RegisterPayload) =>
-    authRequest<AuthResponse>(
-      `${AUTH_BASE}/register`,
+  register: async (payload: RegisterPayload) => {
+    const tokenInfo = await tangbuyRequest<TangbuyTokenInfo>(
+      "/user/h5Register",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-      { forceCookie: true }
-    ),
+        body: JSON.stringify({
+          account: payload.email,
+          code: payload.code,
+          userName: payload.name,
+          language: "en",
+        }),
+      }
+    );
+    return afterPlatformLogin(tokenInfo);
+  },
 
   /** POST /login — sets auth cookies, returns the user. */
-  login: (payload: LoginPayload) =>
-    authRequest<AuthResponse>(
-      `${AUTH_BASE}/login`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-      { forceCookie: true }
-    ),
+  login: loginWithPlatform,
 
   /** POST /logout — clears cookies (standalone) or drops Bearer (embedded). */
   logout: async () => {
@@ -146,11 +302,9 @@ export const authApi = {
         return null;
       }
     }
-    return authRequest<null>(
-      `${AUTH_BASE}/logout`,
-      { method: "POST" },
-      { forceCookie: true }
-    );
+    clearCookie(TOKEN_COOKIE);
+    clearCookie(REFRESH_COOKIE);
+    return null;
   },
 
   /** POST /refresh — cookie rotation (standalone only). Embedded re-exchanges session token. */
@@ -180,7 +334,7 @@ export const authApi = {
   },
 
   /** GET /me — cookie or Bearer depending on Host. */
-  me: () => authRequest<User>(`${AUTH_BASE}/me`),
+  me: currentPlatformUser,
 
   /** POST /change-password — revokes all sessions; cookies are cleared server-side. */
   changePassword: (payload: ChangePasswordPayload) =>

@@ -50,8 +50,9 @@ export interface AuthError extends Error {
 
 export interface RegisterPayload {
   email: string;
-  password: string;
+  password?: string;
   name: string;
+  code?: string;
 }
 
 export interface LoginPayload {
