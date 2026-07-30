@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { CheckCircle2, Loader2, X } from "@/lib/ui/icons";
 import { useAuth } from "@/context/user-context";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
@@ -51,15 +50,7 @@ export function AuthPanel({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  const [shopHandle, setShopHandle] = useState(() => {
-    if (typeof window === "undefined") return "";
-    try {
-      const remembered = window.localStorage.getItem(SHOP_STORAGE_KEY);
-      return remembered ? shopHandleFromDomain(remembered) : "";
-    } catch {
-      return "";
-    }
-  });
+  const [shopHandle, setShopHandle] = useState("");
   const [emailStep, setEmailStep] = useState<EmailStep>("account");
   const [phase, setPhase] = useState<AuthPhase>("form");
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +63,15 @@ export function AuthPanel({
   const [codeCooldown, setCodeCooldown] = useState(0);
 
   const busy = phase !== "form" || shopifyBusy || googleBusy || appleBusy;
+
+  useEffect(() => {
+    try {
+      const remembered = window.localStorage.getItem(SHOP_STORAGE_KEY);
+      if (remembered) setShopHandle(shopHandleFromDomain(remembered));
+    } catch {
+      // ignore localStorage failures
+    }
+  }, []);
 
   useEffect(() => {
     if (phase !== "success" || !successTarget) return;
@@ -237,90 +237,54 @@ export function AuthPanel({
     }
   }
 
-  const modeTabs: { id: AuthMode; label: string }[] = [
-    { id: "login", label: t("landing.authTabLogin") },
-    { id: "register", label: t("landing.authTabRegister") },
-  ];
-
-  const showEmailPane = true;
-
   return (
     <div className="landing-auth-panel relative flex h-full w-full flex-col">
       <button
         type="button"
         onClick={onClose}
-        className="absolute right-4 top-4 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full text-[--landing-text-muted] transition hover:bg-white/5 hover:text-[--landing-text]"
+        className="absolute right-4 top-4 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
         aria-label={t("landing.authClose")}
       >
         <X className="h-4 w-4" />
       </button>
 
-      <div className="flex min-h-0 flex-1 flex-col justify-center px-8 py-10 lg:py-14">
-        <div className="mx-auto w-full max-w-[340px]">
-          <div className="relative mb-6 flex gap-6 border-b border-[--landing-border]">
-            {modeTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  if (busy) return;
-                  switchMode(tab.id);
-                }}
-                disabled={busy}
-                className="relative pb-3 text-sm font-medium transition disabled:opacity-60"
-                style={{
-                  color:
-                    mode === tab.id
-                      ? "var(--landing-cyan)"
-                      : "var(--landing-text-muted)",
-                }}
-              >
-                {tab.label}
-                {mode === tab.id ? (
-                  <motion.span
-                    layoutId="landing-auth-tab"
-                    className="landing-tab-indicator absolute inset-x-0 -bottom-px h-0.5"
-                  />
-                ) : null}
-              </button>
-            ))}
-          </div>
-
-          <div className="mb-5">
-            <h2 className="text-xl font-semibold text-[--landing-text]">
+      <div className="flex min-h-0 flex-1 flex-col justify-center px-5 py-8 sm:px-8 lg:py-14">
+        <div className="mx-auto w-full max-w-[390px] rounded-[30px] border border-slate-200 bg-white px-7 py-9 shadow-[0_24px_80px_rgba(15,23,42,0.12)] sm:px-9 sm:py-10">
+          <div className="mb-8">
+            <h2 className="text-[2rem] font-bold leading-tight tracking-normal text-slate-900">
               {mode === "login"
-                ? t("landing.authLoginTitle")
-                : t("landing.authRegisterTitle")}
+                ? t("landing.authTabLogin")
+                : t("landing.authTabRegister")}
             </h2>
-            <p className="mt-1 text-xs text-[--landing-text-muted]">
+            <p className="mt-2 text-base font-semibold leading-6 text-slate-500">
               {mode === "login"
-                ? t("landing.authLoginSubtitle")
-                : t("landing.authRegisterSubtitle")}
+                ? "Continue to 60s Sourcing"
+                : "Start using 60s Sourcing"}
             </p>
           </div>
 
           {phase === "success" ? (
             <div
-              className="flex flex-col items-center gap-3 rounded-[var(--radius-control)] border border-[--landing-border] bg-white/5 px-4 py-8 text-center"
+              className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center"
               role="status"
               aria-live="polite"
             >
-              <CheckCircle2 className="h-8 w-8 text-[--landing-cyan]" aria-hidden />
-              <p className="text-sm font-medium text-[--landing-text]">
+              <CheckCircle2 className="h-8 w-8 text-blue-600" aria-hidden />
+              <p className="text-sm font-semibold text-slate-900">
                 {mode === "register"
                   ? t("auth.registerSuccessTitle")
                   : t("auth.loginSuccessTitle")}
               </p>
-              <p className="text-xs leading-5 text-[--landing-text-muted]">
+              <p className="text-xs leading-5 text-slate-500">
                 {mode === "register"
                   ? t("auth.registerSuccessRedirecting")
                   : t("auth.loginSuccessRedirecting")}
               </p>
-              <Loader2 className="mt-1 h-4 w-4 animate-spin text-[--landing-cyan]" aria-hidden />
+              <Loader2 className="mt-1 h-4 w-4 animate-spin text-blue-600" aria-hidden />
               {showManualContinue && successTarget ? (
                 <a
                   href={successTarget}
-                  className="mt-2 text-xs font-medium text-[--landing-cyan] hover:underline"
+                  className="mt-2 text-xs font-medium text-blue-600 hover:underline"
                 >
                   {t("auth.continueManually")}
                 </a>
@@ -328,11 +292,10 @@ export function AuthPanel({
             </div>
           ) : (
             <>
-              {showEmailPane ? (
-                <form onSubmit={onSubmit} className="space-y-4">
+              <form onSubmit={onSubmit} className="space-y-4">
                   {mode === "register" ? (
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
+                      <label className="mb-2 block text-sm font-medium text-slate-800">
                         {t("auth.nameLabel")}
                       </label>
                       <input
@@ -345,13 +308,13 @@ export function AuthPanel({
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         disabled={busy}
-                        className="landing-input w-full px-3 py-2 text-sm"
+                        className="landing-input w-full rounded-xl border-slate-900 bg-[#eaf2ff] px-4 py-3 text-lg text-slate-950"
                       />
                     </div>
                   ) : null}
 
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
+                    <label className="mb-2 block text-sm font-medium text-slate-800">
                       {t("auth.emailLabel")}
                     </label>
                     <input
@@ -370,13 +333,13 @@ export function AuthPanel({
                         }
                       }}
                       disabled={busy}
-                      className="landing-input w-full px-3 py-2 text-sm"
+                      className="landing-input w-full rounded-xl border-slate-900 bg-[#eaf2ff] px-4 py-3 text-lg text-slate-950"
                     />
                   </div>
 
                   {mode === "register" ? (
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
+                      <label className="mb-2 block text-sm font-medium text-slate-800">
                         Verification code
                       </label>
                       <div className="flex gap-2">
@@ -389,13 +352,13 @@ export function AuthPanel({
                           value={code}
                           onChange={(e) => setCode(e.target.value)}
                           disabled={busy}
-                          className="landing-input min-w-0 flex-1 px-3 py-2 text-sm"
+                          className="landing-input min-w-0 flex-1 rounded-xl border-slate-900 bg-[#eaf2ff] px-4 py-3 text-lg text-slate-950"
                         />
                         <button
                           type="button"
                           onClick={onSendCode}
                           disabled={busy || !email.trim() || codeCooldown > 0}
-                          className="inline-flex shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[--landing-border] px-3 py-2 text-xs font-semibold text-[--landing-text] transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {codeCooldown > 0 ? `${codeCooldown}s` : "Send code"}
                         </button>
@@ -405,7 +368,7 @@ export function AuthPanel({
 
                   {mode === "login" && emailStep === "password" ? (
                     <div>
-                    <label className="mb-1.5 block text-xs font-medium text-[--landing-text-muted]">
+                    <label className="mb-2 block text-sm font-medium text-slate-800">
                       {t("auth.passwordLabel")}
                     </label>
                     <input
@@ -419,7 +382,7 @@ export function AuthPanel({
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       disabled={busy}
-                      className="landing-input w-full px-3 py-2 text-sm"
+                      className="landing-input w-full rounded-xl border-slate-900 bg-[#eaf2ff] px-4 py-3 text-lg text-slate-950"
                     />
                     </div>
                   ) : null}
@@ -428,7 +391,7 @@ export function AuthPanel({
                     <div className="flex justify-end">
                       <Link
                         href={localePath(locale, "/forgot-password")}
-                        className="text-[11px] font-medium text-[--landing-cyan] hover:underline"
+                        className="text-xs font-medium text-blue-600 hover:underline"
                         tabIndex={busy ? -1 : undefined}
                       >
                         {t("auth.forgotPasswordLink")}
@@ -437,13 +400,13 @@ export function AuthPanel({
                   ) : null}
 
                   {error ? (
-                    <p className="text-xs leading-4 text-red-400">{error}</p>
+                    <p className="text-xs leading-4 text-red-600">{error}</p>
                   ) : null}
 
                   <button
                     type="submit"
                     disabled={busy}
-                    className="landing-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] py-2.5 text-sm font-semibold"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                   >
                     {phase === "submitting" ? (
                       <>
@@ -465,16 +428,28 @@ export function AuthPanel({
                     )}
                   </button>
                 </form>
-              ) : null}
 
               {mode === "login" ? (
-                <div className="mt-6 space-y-3">
-                  <div className="flex items-center gap-3 text-[11px] text-[--landing-text-muted]">
-                    <span className="h-px flex-1 bg-[--landing-border]" />
-                    <span>Third-party authorization</span>
-                    <span className="h-px flex-1 bg-[--landing-border]" />
+                <div className="mt-7 space-y-4">
+                  <div className="flex items-center gap-4 text-sm font-semibold text-slate-600">
+                    <span className="h-px flex-1 bg-slate-200" />
+                    <span>or</span>
+                    <span className="h-px flex-1 bg-slate-200" />
                   </div>
-                  <div className="flex overflow-hidden rounded-[var(--radius-control)] border border-[--landing-border]">
+                  <button
+                    type="button"
+                    onClick={onShopifyLogin}
+                    disabled={busy}
+                    className="inline-flex w-full items-center justify-center gap-3 rounded-xl bg-slate-100 px-4 py-3 text-base font-semibold text-slate-900 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {shopifyBusy ? (
+                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+                    ) : (
+                      <span aria-hidden className="text-lg">S</span>
+                    )}
+                    Continue with Shopify
+                  </button>
+                  <div className="flex overflow-hidden rounded-xl border border-slate-300">
                     <input
                       type="text"
                       autoComplete="off"
@@ -490,59 +465,48 @@ export function AuthPanel({
                       }}
                       disabled={busy}
                       aria-label={t("auth.shopifyShopAria")}
-                      className="landing-input min-w-0 flex-1 rounded-none border-0 px-3 py-2 text-sm"
+                      className="min-w-0 flex-1 border-0 bg-white px-4 py-3 text-base text-slate-950 outline-none placeholder:text-slate-400"
                     />
-                    <span className="flex shrink-0 items-center border-l border-[--landing-border] bg-slate-50 px-2.5 text-[11px] font-medium text-[--landing-text-muted]">
+                    <span className="flex shrink-0 items-center border-l border-slate-300 bg-slate-50 px-3 text-sm font-semibold text-slate-700">
                       {t("install.domainSuffix")}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={onShopifyLogin}
-                    disabled={busy}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[--landing-border] bg-white px-3 py-2.5 text-sm font-semibold text-[--landing-text] transition hover:border-[--landing-accent] hover:bg-[--landing-accent-soft] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {shopifyBusy ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    ) : (
-                      <span aria-hidden>Shopify</span>
-                    )}
-                    Continue with Shopify
-                  </button>
+                  <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
                     onClick={onGoogleLogin}
                     disabled={busy}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[--landing-border] bg-white px-3 py-2.5 text-sm font-semibold text-[--landing-text] transition hover:border-[--landing-accent] hover:bg-[--landing-accent-soft] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-14 items-center justify-center rounded-xl bg-slate-100 text-lg font-bold text-[#4285f4] transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="Continue with Google"
                   >
                     {googleBusy ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
                     ) : (
                       <span aria-hidden className="font-bold text-[#4285f4]">G</span>
                     )}
-                    Continue with Google
                   </button>
                   <button
                     type="button"
                     onClick={onAppleLogin}
                     disabled={busy}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] border border-[--landing-border] bg-white px-3 py-2.5 text-sm font-semibold text-[--landing-text] transition hover:border-[--landing-accent] hover:bg-[--landing-accent-soft] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-14 items-center justify-center rounded-xl bg-slate-100 text-lg font-bold text-slate-900 transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="Continue with Apple"
                   >
                     {appleBusy ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
                     ) : (
                       <span aria-hidden className="font-bold">Apple</span>
                     )}
-                    Continue with Apple
                   </button>
+                  </div>
                   {shopifyError ? (
-                    <p className="text-xs leading-4 text-red-500">{shopifyError}</p>
+                    <p className="text-xs leading-4 text-red-600">{shopifyError}</p>
                   ) : null}
                   {adminHref ? (
-                    <p className="text-center text-[11px] leading-4 text-[--landing-text-muted]">
+                    <p className="text-center text-xs leading-4 text-slate-500">
                       <a
                         href={adminHref}
-                        className="font-medium text-[--landing-cyan] hover:underline"
+                        className="font-medium text-blue-600 hover:underline"
                         onClick={() => {
                           rememberShopDomain(shopHandle);
                         }}
@@ -553,6 +517,20 @@ export function AuthPanel({
                   ) : null}
                 </div>
               ) : null}
+
+              <div className="mt-8 text-sm text-slate-700">
+                {mode === "login" ? "New to 60s Sourcing?" : "Already have an account?"}{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!busy) switchMode(mode === "login" ? "register" : "login");
+                  }}
+                  disabled={busy}
+                  className="font-semibold text-blue-600 hover:underline disabled:opacity-60"
+                >
+                  {mode === "login" ? "Start using" : "Log in"} →
+                </button>
+              </div>
             </>
           )}
         </div>

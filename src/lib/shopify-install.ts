@@ -10,6 +10,7 @@ import { readEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 /** Remembers the shop the user launched OAuth for, so /authorize can restore state after the redirect. */
 export const SHOP_STORAGE_KEY = "tangbuy.shopDomain";
 
+const SHOP_HANDLE_PATTERN = /^[a-z0-9][a-z0-9-]*$/i;
 export const SHOP_DOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i;
 
 /** Strip scheme/trailing slash/whitespace; allow store handle without `.myshopify.com`. */
@@ -23,7 +24,7 @@ export function normalizeShopDomain(input: string): string {
   if (!domain) return "";
 
   const host = domain.split("/")[0] ?? domain;
-  if (/^[a-z0-9][a-z0-9-]*$/.test(host)) {
+  if (SHOP_HANDLE_PATTERN.test(host)) {
     return `${host}.myshopify.com`;
   }
   return host;

@@ -14,6 +14,7 @@ scopes = "write_orders,read_orders,write_fulfillments,read_fulfillments,write_sh
 
 [auth]
 redirect_urls = [
+  "https://heather-buys-lucas-colleague.trycloudflare.com/api/plugin/shopify/auth/callback",
   "https://ai.tangbuy.com/api/plugin/shopify/auth/callback",
   "https://shop-x2mw.onrender.com/api/plugin/shopify/auth/callback"
 ]
