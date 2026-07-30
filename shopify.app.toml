@@ -2,16 +2,15 @@
 # Docs: https://shopify.dev/docs/apps/tools/cli/configuration
 # Partner dashboard scopes must stay aligned with client_id scopes below and docs/SHOPIFY_APP_LISTING_SCOPES.md
 
-name = "Tangbuy AI Sourcing"
-client_id = "REPLACE_WITH_SHOPIFY_API_KEY"
+name = "60s Sourcing"
+client_id = "a4485f90e92cacc253c7636e12b59abb"
 # App origin root. Embedded home `/` is proxied to `/en/install`; post-OAuth
 # deep-links use `/en/authorize` under admin.shopify.com/.../apps/{apiKey}/…
 application_url = "https://ai.tangbuy.com"
 embedded = true
 
 [access_scopes]
-# Free product tool — products only. Orders/fulfillment live on Tangbuy Dropshipping companion.
-scopes = "read_products,write_products"
+scopes = "write_orders,read_orders,write_fulfillments,read_fulfillments,write_shipping,read_shipping,write_products,read_products,write_merchant_managed_fulfillment_orders,read_merchant_managed_fulfillment_orders,read_customer_events,write_marketing_events,read_marketing_events,write_customers,read_customers,read_inventory,write_inventory,read_assigned_fulfillment_orders,write_locations,read_locations,write_assigned_fulfillment_orders"
 
 [auth]
 redirect_urls = [
@@ -20,7 +19,7 @@ redirect_urls = [
 ]
 
 [webhooks]
-api_version = "2025-01"
+api_version = "2026-07"
 
   [[webhooks.subscriptions]]
   topics = ["app/uninstalled"]

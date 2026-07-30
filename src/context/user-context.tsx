@@ -30,6 +30,8 @@ interface UserContextValue {
   bootstrapping: boolean;
   register: (payload: RegisterPayload) => Promise<User>;
   login: (payload: LoginPayload) => Promise<User>;
+  googleLogin: () => Promise<User>;
+  appleLogin: (locale?: string) => Promise<User>;
   logout: () => Promise<void>;
   changePassword: (payload: ChangePasswordPayload) => Promise<void>;
   /** Force-refresh the current user from /me (auto-refreshes access cookie on 401). */
@@ -198,6 +200,24 @@ export function UserProvider({ children }: { children: ReactNode }) {
     return u;
   }, []);
 
+  const googleLogin = useCallback(async () => {
+    const { user: u } = await authApi.googleLogin();
+    syncRememberedShopForUser(u.id);
+    setUser(u);
+    setStatus("authenticated");
+    setError(null);
+    return u;
+  }, []);
+
+  const appleLogin = useCallback(async (locale?: string) => {
+    const { user: u } = await authApi.appleLogin(locale);
+    syncRememberedShopForUser(u.id);
+    setUser(u);
+    setStatus("authenticated");
+    setError(null);
+    return u;
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
@@ -238,6 +258,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
       bootstrapping,
       register,
       login,
+      googleLogin,
+      appleLogin,
       logout,
       changePassword,
       refreshUser,
@@ -249,6 +271,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
       bootstrapping,
       register,
       login,
+      googleLogin,
+      appleLogin,
       logout,
       changePassword,
       refreshUser,
