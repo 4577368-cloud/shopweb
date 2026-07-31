@@ -3791,6 +3791,12 @@ export const es: Dictionary = {
     badgeFailed: "Bundle falló",
     badgeStale: "Bundle desactualizado",
     toastCreated: "Bundle creado en Shopify",
+    openInShopify: "Abrir en Shopify Admin",
+    clearSearch: "Borrar búsqueda",
+    occupiedElsewhere: "Ya está en otro bundle",
+    staleHint:
+      "El padre o un componente cambió en Shopify. Revisa y vuelve a sincronizar.",
+    noSearchMatches: "Ningún producto coincide con la búsqueda",
   },
   shopProducts: {
     aiImageSearching: "Searching by image…",

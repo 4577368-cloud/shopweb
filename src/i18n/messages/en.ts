@@ -3796,6 +3796,12 @@ export const en = {
     badgeFailed: "Bundle failed",
     badgeStale: "Bundle outdated",
     toastCreated: "Bundle created on Shopify",
+    openInShopify: "Open in Shopify Admin",
+    clearSearch: "Clear search",
+    occupiedElsewhere: "Already in another bundle",
+    staleHint:
+      "Parent or a component changed on Shopify. Review components and sync again.",
+    noSearchMatches: "No products match this search",
   },
   shopProducts: {
     aiImageSearching: "Searching by image…",

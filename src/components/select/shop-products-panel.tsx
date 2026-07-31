@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
+  ExternalLink,
   Loader2,
   MoveRight,
   RefreshCw,
@@ -23,6 +24,8 @@ import {
 } from "@/lib/ui/icons";
 import { AccountManagerContactCta } from "@/components/account-manager/account-manager-contact-cta";
 import { BundleComposerDrawer } from "@/components/select/bundle-composer-drawer";
+import { openExternal } from "@/host/adapters/external-link";
+import { shopifyProductAdminUrl } from "@/lib/shop-product-external-link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -794,6 +797,22 @@ export function ShopProductsPanel({
     void refreshBundleStatus();
   }, [refreshBundleStatus, products.length]);
 
+  // Webhook may mark STALE/DISSOLVED server-side — refresh on focus and lightly poll.
+  useEffect(() => {
+    if (!shopName) return;
+    const onFocus = () => {
+      void refreshBundleStatus();
+    };
+    window.addEventListener("focus", onFocus);
+    const timer = window.setInterval(() => {
+      void refreshBundleStatus();
+    }, 60_000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.clearInterval(timer);
+    };
+  }, [refreshBundleStatus, shopName]);
+
   const scrollToBatchLinkProduct = useCallback(
     (productId: string) => {
       onProductFocus?.(productId);
@@ -1458,6 +1477,7 @@ export function ShopProductsPanel({
                 key={p.id}
                 item={p}
                 shopName={shopName}
+                shopDomain={shop.domain}
                 binding={bindings[p.thirdPlatformItemId] ?? null}
                 bundleStatus={
                   bundleStatusMap?.byProductId?.[p.thirdPlatformItemId] ?? null
@@ -1556,12 +1576,14 @@ export function ShopProductsPanel({
           <BundleComposerDrawer
             open
             shopName={shopName}
+            shopDomain={shop.domain}
             contextProduct={ctx}
             catalog={products}
             feature={bundleStatusMap?.feature ?? null}
             existing={
               bundleStatusMap?.byProductId?.[bundleDrawerItemId] ?? null
             }
+            statusMap={bundleStatusMap}
             onClose={() => setBundleDrawerItemId(null)}
             onCreated={() => {
               showToast(t("bundle.toastCreated"));
@@ -1578,6 +1600,7 @@ export function ShopProductsPanel({
 function ShopProductCard({
   item,
   shopName,
+  shopDomain = null,
   binding,
   bundleStatus = null,
   onOpenBundle,
@@ -1601,6 +1624,7 @@ function ShopProductCard({
 }: {
   item: ShopMirrorProduct;
   shopName: string;
+  shopDomain?: string | null;
   binding: ImageBindingView | null;
   bundleStatus?: BundleCardStatus | null;
   onOpenBundle?: () => void;
@@ -2977,6 +3001,37 @@ function ShopProductCard({
                 ? t("bundle.actionEdit")
                 : t("bundle.actionCreate")}
             </button>
+            {(() => {
+              const parentId = bundleStatus?.parentProductId;
+              if (
+                !parentId ||
+                (bundleStatus?.status !== "ACTIVE" &&
+                  bundleStatus?.status !== "STALE")
+              ) {
+                return null;
+              }
+              const url = shopifyProductAdminUrl(parentId, shopDomain);
+              if (!url) return null;
+              return (
+                <>
+                  <span className="text-surface-border">|</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-7 w-7 px-0"
+                    title={t("bundle.openInShopify")}
+                    aria-label={t("bundle.openInShopify")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openExternal(url, { newTab: true });
+                    }}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              );
+            })()}
             {!fromPublish ? (
               <>
                 <span className="text-surface-border">|</span>

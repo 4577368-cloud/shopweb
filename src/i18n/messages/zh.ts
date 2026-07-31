@@ -3777,6 +3777,11 @@ export const zh: Dictionary = {
     badgeFailed: "组套失败",
     badgeStale: "套装待更新",
     toastCreated: "套装已同步到 Shopify",
+    openInShopify: "在 Shopify 打开",
+    clearSearch: "清空搜索",
+    occupiedElsewhere: "已在其他套装中",
+    staleHint: "组件或父商品已在 Shopify 变更，请复核后重新同步。",
+    noSearchMatches: "没有匹配的商品",
   },
   shopProducts: {
     aiImageSearching: "AI 图搜中",

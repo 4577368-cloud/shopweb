@@ -3792,6 +3792,12 @@ export const fr: Dictionary = {
     badgeFailed: "Échec du pack",
     badgeStale: "Pack obsolète",
     toastCreated: "Pack créé sur Shopify",
+    openInShopify: "Ouvrir dans l’admin Shopify",
+    clearSearch: "Effacer la recherche",
+    occupiedElsewhere: "Déjà dans un autre pack",
+    staleHint:
+      "Le parent ou un composant a changé sur Shopify. Vérifiez puis resynchronisez.",
+    noSearchMatches: "Aucun produit ne correspond à cette recherche",
   },
   shopProducts: {
     aiImageSearching: "Searching by image…",

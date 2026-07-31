@@ -1,16 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Search, X } from "@/lib/ui/icons";
+import { Check, ExternalLink, Loader2, Search, X } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThumbImage } from "@/components/ui/thumb-image";
 import {
   createShopBundle,
   type BundleCardStatus,
+  type BundleStatusMap,
   type BundlesFeature,
 } from "@/lib/bundle/api";
 import { readableError } from "@/lib/api";
+import { openExternal } from "@/host/adapters/external-link";
+import { shopifyProductAdminUrl } from "@/lib/shop-product-external-link";
 import type { ShopMirrorProduct } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useT } from "@/i18n/LocaleProvider";
@@ -18,19 +21,23 @@ import { useT } from "@/i18n/LocaleProvider";
 export function BundleComposerDrawer({
   open,
   shopName,
+  shopDomain,
   contextProduct,
   catalog,
   feature,
   existing,
+  statusMap,
   onClose,
   onCreated,
 }: {
   open: boolean;
   shopName: string;
+  shopDomain?: string | null;
   contextProduct: ShopMirrorProduct;
   catalog: ShopMirrorProduct[];
   feature: BundlesFeature | null;
   existing?: BundleCardStatus | null;
+  statusMap?: BundleStatusMap | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -66,6 +73,8 @@ export function BundleComposerDrawer({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose, reset, saving]);
 
+  const contextBundleId = existing?.bundleId ?? null;
+
   const candidates = useMemo(() => {
     const q = query.trim().toLowerCase();
     return catalog.filter((p) => {
@@ -79,12 +88,39 @@ export function BundleComposerDrawer({
     });
   }, [catalog, contextProduct.thirdPlatformItemId, query]);
 
+  const isOccupiedElsewhere = useCallback(
+    (productId: string) => {
+      const card = statusMap?.byProductId?.[productId];
+      if (!card) return false;
+      if (!card.asParent && !card.asComponent) return false;
+      if (contextBundleId != null && card.bundleId === contextBundleId) {
+        return false;
+      }
+      return true;
+    },
+    [contextBundleId, statusMap]
+  );
+
   const selectedCount = Object.keys(selected).length;
   const eligible = feature?.eligibleForBundles !== false;
   const canSubmit =
     eligible && selectedCount >= 1 && title.trim().length > 0 && !saving;
 
+  const adminUrl = useMemo(() => {
+    const parentId = existing?.parentProductId;
+    if (!parentId) return null;
+    if (
+      existing?.status !== "ACTIVE" &&
+      existing?.status !== "STALE" &&
+      existing?.status !== "FAILED"
+    ) {
+      return null;
+    }
+    return shopifyProductAdminUrl(parentId, shopDomain);
+  }, [existing?.parentProductId, existing?.status, shopDomain]);
+
   const toggle = (id: string) => {
+    if (isOccupiedElsewhere(id)) return;
     setSelected((prev) => {
       const next = { ...prev };
       if (next[id]) delete next[id];
@@ -141,15 +177,30 @@ export function BundleComposerDrawer({
       />
       <aside className="relative z-10 flex h-full w-full max-w-lg flex-col border-l border-hairline bg-surface shadow-card">
         <header className="flex items-start justify-between gap-3 border-b border-hairline px-4 py-3">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[11px] font-medium uppercase tracking-wide text-ink-subtle">
               {t("bundle.eyebrow")}
             </p>
-            <h2 className="mt-0.5 truncate text-base font-semibold text-ink">
-              {existing?.status === "ACTIVE"
-                ? t("bundle.editTitle")
-                : t("bundle.createTitle")}
-            </h2>
+            <div className="mt-0.5 flex items-center gap-1.5">
+              <h2 className="truncate text-base font-semibold text-ink">
+                {existing?.status === "ACTIVE" || existing?.status === "STALE"
+                  ? t("bundle.editTitle")
+                  : t("bundle.createTitle")}
+              </h2>
+              {adminUrl ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 w-7 shrink-0 px-0"
+                  title={t("bundle.openInShopify")}
+                  aria-label={t("bundle.openInShopify")}
+                  disabled={saving}
+                  onClick={() => openExternal(adminUrl, { newTab: true })}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </Button>
+              ) : null}
+            </div>
             <p className="mt-1 text-[11px] leading-4 text-ink-muted">
               {t("bundle.subtitle")}
             </p>
@@ -173,6 +224,12 @@ export function BundleComposerDrawer({
               <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
                 {feature?.ineligibilityReason?.trim() ||
                   t("bundle.ineligibleDefault")}
+              </div>
+            ) : null}
+
+            {existing?.status === "STALE" ? (
+              <div className="rounded-[var(--radius-control)] border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+                {t("bundle.staleHint")}
               </div>
             ) : null}
 
@@ -233,44 +290,67 @@ export function BundleComposerDrawer({
                   {t("bundle.selectedCount", { count: selectedCount })}
                 </p>
               </div>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
-                <Input
-                  className="h-8 pl-8 text-xs"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  disabled={saving}
-                  placeholder={t("bundle.searchPlaceholder")}
-                />
+              <div className="relative flex items-center gap-1.5">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
+                  <Input
+                    className="h-8 pl-8 pr-8 text-xs"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    disabled={saving}
+                    placeholder={t("bundle.searchPlaceholder")}
+                  />
+                  {query ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 px-0"
+                      title={t("bundle.clearSearch")}
+                      aria-label={t("bundle.clearSearch")}
+                      disabled={saving}
+                      onClick={() => setQuery("")}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  ) : null}
+                </div>
               </div>
               <ul className="max-h-[18rem] space-y-1 overflow-y-auto rounded-[var(--radius-control)] border border-hairline p-1">
                 {candidates.length === 0 ? (
                   <li className="px-2 py-6 text-center text-xs text-ink-muted">
-                    {t("bundle.noCandidates")}
+                    {query.trim()
+                      ? t("bundle.noSearchMatches")
+                      : t("bundle.noCandidates")}
                   </li>
                 ) : (
                   candidates.map((p) => {
                     const id = p.thirdPlatformItemId;
                     const on = Boolean(selected[id]);
+                    const occupied = isOccupiedElsewhere(id);
                     return (
                       <li key={id}>
                         <button
                           type="button"
-                          disabled={saving}
+                          disabled={saving || occupied}
                           onClick={() => toggle(id)}
                           className={cn(
                             "flex w-full items-center gap-2.5 rounded-[var(--radius-control)] px-2 py-1.5 text-left transition-colors",
-                            on
-                              ? "bg-brand-soft/70 ring-1 ring-brand/15"
-                              : "hover:bg-surface-muted/80"
+                            occupied
+                              ? "cursor-not-allowed opacity-55"
+                              : on
+                                ? "bg-brand-soft/70 ring-1 ring-brand/15"
+                                : "hover:bg-surface-muted/80"
                           )}
                         >
                           <span
                             className={cn(
                               "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
-                              on
-                                ? "border-[#325BE6] bg-[#325BE6] text-white"
-                                : "border-hairline bg-surface text-transparent"
+                              occupied
+                                ? "border-hairline bg-surface-muted text-transparent"
+                                : on
+                                  ? "border-[#325BE6] bg-[#325BE6] text-white"
+                                  : "border-hairline bg-surface text-transparent"
                             )}
                             aria-hidden
                           >
@@ -290,12 +370,14 @@ export function BundleComposerDrawer({
                               {p.title || id}
                             </span>
                             <span className="block text-[10px] text-ink-subtle">
-                              {p.minPrice != null
-                                ? `${p.currency || "USD"} ${p.minPrice}`
-                                : "—"}
+                              {occupied
+                                ? t("bundle.occupiedElsewhere")
+                                : p.minPrice != null
+                                  ? `${p.currency || "USD"} ${p.minPrice}`
+                                  : "—"}
                             </span>
                           </span>
-                          {on ? (
+                          {on && !occupied ? (
                             <input
                               type="number"
                               min={1}
