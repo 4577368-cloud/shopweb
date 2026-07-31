@@ -81,7 +81,12 @@ export function BundleComposerDrawer({
 
   const currency = contextProduct.currency || "USD";
 
-  const reset = useCallback(() => {
+  const contextId = contextProduct.thirdPlatformItemId;
+
+  // Only reset when the drawer opens or the context product changes —
+  // not on every parent re-render (status-map poll / inline onClose).
+  useEffect(() => {
+    if (!open) return;
     const seed = contextProduct.title?.trim() || t("bundle.untitled");
     setTitle(t("bundle.defaultTitle", { title: seed }));
     setPrice(
@@ -95,17 +100,17 @@ export function BundleComposerDrawer({
     setSelected({});
     setSaving(false);
     setError(null);
-  }, [contextProduct.minPrice, contextProduct.title, t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional open/context gate
+  }, [open, contextId]);
 
   useEffect(() => {
     if (!open) return;
-    reset();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !saving) onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose, reset, saving]);
+  }, [open, onClose, saving]);
 
   const contextBundleId = existing?.bundleId ?? null;
 
