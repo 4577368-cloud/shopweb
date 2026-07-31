@@ -22,6 +22,7 @@ import {
   Search,
 } from "@/lib/ui/icons";
 import { AccountManagerContactCta } from "@/components/account-manager/account-manager-contact-cta";
+import { BundleComposerDrawer } from "@/components/select/bundle-composer-drawer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -74,6 +75,11 @@ import type {
   PricingTemplate,
   ShopMirrorProduct,
 } from "@/lib/types";
+import {
+  fetchBundleStatusMap,
+  type BundleCardStatus,
+  type BundleStatusMap,
+} from "@/lib/bundle/api";
 import { cn } from "@/lib/utils";
 import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
@@ -615,6 +621,11 @@ export function ShopProductsPanel({
       {}
   );
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
+  const [bundleDrawerItemId, setBundleDrawerItemId] = useState<string | null>(
+    null
+  );
+  const [bundleStatusMap, setBundleStatusMap] =
+    useState<BundleStatusMap | null>(null);
   const [page, setPage] = useState(1);
   /** Bindings read still in flight — cards must not claim "unlinked" yet. */
   const [bindingsPending, setBindingsPending] = useState(false);
@@ -768,6 +779,20 @@ export function ShopProductsPanel({
     },
     [onActivity]
   );
+
+  const refreshBundleStatus = useCallback(async () => {
+    if (!shopName) return;
+    try {
+      const map = await fetchBundleStatusMap(shopName);
+      setBundleStatusMap(map);
+    } catch {
+      /* Bundle is additive — don't block the product list on status fetch. */
+    }
+  }, [shopName]);
+
+  useEffect(() => {
+    void refreshBundleStatus();
+  }, [refreshBundleStatus, products.length]);
 
   const scrollToBatchLinkProduct = useCallback(
     (productId: string) => {
@@ -1434,6 +1459,10 @@ export function ShopProductsPanel({
                 item={p}
                 shopName={shopName}
                 binding={bindings[p.thirdPlatformItemId] ?? null}
+                bundleStatus={
+                  bundleStatusMap?.byProductId?.[p.thirdPlatformItemId] ?? null
+                }
+                onOpenBundle={() => setBundleDrawerItemId(p.thirdPlatformItemId)}
                 pricingTemplate={pricingTemplate}
                 isNewArrival={pendingNewAnalysisIds?.has(p.thirdPlatformItemId) ?? false}
                 listingPriceEdit={
@@ -1517,6 +1546,31 @@ export function ShopProductsPanel({
           onActivity?.();
         }}
       />
+
+      {(() => {
+        const ctx = products.find(
+          (p) => p.thirdPlatformItemId === bundleDrawerItemId
+        );
+        if (!bundleDrawerItemId || !ctx) return null;
+        return (
+          <BundleComposerDrawer
+            open
+            shopName={shopName}
+            contextProduct={ctx}
+            catalog={products}
+            feature={bundleStatusMap?.feature ?? null}
+            existing={
+              bundleStatusMap?.byProductId?.[bundleDrawerItemId] ?? null
+            }
+            onClose={() => setBundleDrawerItemId(null)}
+            onCreated={() => {
+              showToast(t("bundle.toastCreated"));
+              void refreshBundleStatus();
+              onActivity?.();
+            }}
+          />
+        );
+      })()}
     </>
   );
 }
@@ -1525,6 +1579,8 @@ function ShopProductCard({
   item,
   shopName,
   binding,
+  bundleStatus = null,
+  onOpenBundle,
   onBound,
   onOpenDetail,
   focused = false,
@@ -1546,6 +1602,8 @@ function ShopProductCard({
   item: ShopMirrorProduct;
   shopName: string;
   binding: ImageBindingView | null;
+  bundleStatus?: BundleCardStatus | null;
+  onOpenBundle?: () => void;
   onBound: (itemId: string, view: ImageBindingView) => void;
   onOpenDetail: () => void;
   focused?: boolean;
@@ -2842,6 +2900,28 @@ function ShopProductCard({
               {t("shopProducts.newArrival")}
             </span>
           ) : null}
+          {bundleStatus?.status === "ACTIVE" ? (
+            <span className="inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+              {t("bundle.badgeActive", {
+                count: bundleStatus.componentCount || 0,
+              })}
+            </span>
+          ) : null}
+          {bundleStatus?.status === "CREATING" ? (
+            <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+              {t("bundle.badgeCreating")}
+            </span>
+          ) : null}
+          {bundleStatus?.status === "FAILED" ? (
+            <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+              {t("bundle.badgeFailed")}
+            </span>
+          ) : null}
+          {bundleStatus?.status === "STALE" ? (
+            <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+              {t("bundle.badgeStale")}
+            </span>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
           <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[12px]">
@@ -2879,6 +2959,23 @@ function ShopProductCard({
               }}
             >
               {t("shopProducts.manualMatch")}
+            </button>
+            <span className="text-surface-border">|</span>
+            <button
+              type="button"
+              className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+              disabled={cardActionsLocked || !onOpenBundle}
+              title={t("bundle.subtitle")}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenBundle?.();
+              }}
+            >
+              {bundleStatus?.status === "ACTIVE" ||
+              bundleStatus?.status === "STALE" ||
+              bundleStatus?.status === "FAILED"
+                ? t("bundle.actionEdit")
+                : t("bundle.actionCreate")}
             </button>
             {!fromPublish ? (
               <>
