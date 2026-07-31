@@ -17,6 +17,7 @@
     "test:sourcing": "npx tsx src/lib/sourcing/test-classify-rules.ts && npx tsx src/lib/sourcing/test-display-pricing.ts"
   },
   "dependencies": {
+    "@paypal/react-paypal-js": "^8.9.2",
     "@shopify/app-bridge-react": "^4.2.12",
     "@shopify/polaris-icons": "^9.3.1",
     "class-variance-authority": "^0.7.1",
