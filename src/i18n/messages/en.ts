@@ -3774,6 +3774,10 @@ export const en = {
       "A new fixed-bundle parent appears in your catalog. Customers buy that parent; inventory is deducted from the component products below.",
     outcomeNotSku:
       "It does not add a new SKU to the current product, and it does not replace this listing.",
+    outcomeShort:
+      "Creates a new Shopify parent product (not a new SKU on this listing).",
+    stepName: "Name & price",
+    stepComponents: "Choose components",
     previewSection: "Bundle preview",
     previewParentLabel: "New parent product",
     previewParts: "{{count}} components",

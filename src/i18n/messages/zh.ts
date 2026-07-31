@@ -3754,6 +3754,10 @@ export const zh: Dictionary = {
     outcomeBody:
       "店里会出现一个新的「套装主商品」。顾客下单买的是这个新商品；库存由下面各组件商品自动扣减。",
     outcomeNotSku: "不是给现有商品加一个新 SKU，也不会改掉当前这件商品本身。",
+    outcomeShort:
+      "将新建一个 Shopify 套装商品（不是新 SKU）；顾客买的是新主商品。",
+    stepName: "套装名称与售价",
+    stepComponents: "选择组件",
     previewSection: "组成预览",
     previewParentLabel: "新套装商品",
     previewParts: "共 {{count}} 件组件",

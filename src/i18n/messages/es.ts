@@ -3769,6 +3769,10 @@ export const es: Dictionary = {
       "Aparece un producto padre de bundle fijo. El cliente compra ese padre; el inventario se descuenta de los componentes.",
     outcomeNotSku:
       "No añade un SKU nuevo al producto actual ni lo reemplaza.",
+    outcomeShort:
+      "Crea un producto padre en Shopify (no un SKU nuevo en este listado).",
+    stepName: "Nombre y precio",
+    stepComponents: "Elegir componentes",
     previewSection: "Vista previa",
     previewParentLabel: "Nuevo producto padre",
     previewParts: "{{count}} componentes",

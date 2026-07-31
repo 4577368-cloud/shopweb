@@ -3770,6 +3770,10 @@ export const fr: Dictionary = {
       "Un produit parent de pack fixe apparaît. Le client achète ce parent ; le stock est déduit des composants.",
     outcomeNotSku:
       "Cela n’ajoute pas de nouveau SKU au produit actuel et ne le remplace pas.",
+    outcomeShort:
+      "Crée un produit parent Shopify (pas un nouveau SKU sur cette fiche).",
+    stepName: "Nom et prix",
+    stepComponents: "Choisir les composants",
     previewSection: "Aperçu du pack",
     previewParentLabel: "Nouveau produit parent",
     previewParts: "{{count}} composants",
