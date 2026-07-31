@@ -26,7 +26,7 @@ import {
 } from "@/components/workbench/assistant-rail";
 import { Button } from "@/components/ui/button";
 import { useOnboarding } from "@/context/onboarding-context";
-import { api } from "@/lib/api";
+import { api, woocommerceInstallUrl } from "@/lib/api";
 import { resolveShopApiName, shopApiNameFromDomain } from "@/lib/resolve-shop-api-name";
 import {
   SHOP_STORAGE_KEY,
@@ -103,6 +103,8 @@ function AuthorizePageContent() {
     shopDomainInput ? shopHandleFromDomain(shopDomainInput) : ""
   );
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [wooDomain, setWooDomain] = useState("");
+  const [wooError, setWooError] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [boundCount, setBoundCount] = useState<number | null>(null);
@@ -447,6 +449,17 @@ function AuthorizePageContent() {
     connectWithDomain(explicitDomain ?? handle);
   };
 
+  const startWooCommerceInstall = () => {
+    const domain = normalizeWooDomain(wooDomain);
+    if (!domain) {
+      setWooError("Please enter a valid WooCommerce store URL.");
+      return;
+    }
+    setWooError(null);
+    setRedirecting(true);
+    window.location.assign(woocommerceInstallUrl(domain));
+  };
+
   const authorizing =
     authStatus === "authorizing" || redirecting;
   // Embedded: wait for session-token → /me → shop restore before showing Connect.
@@ -684,6 +697,34 @@ function AuthorizePageContent() {
                       {t("install.connectNote")}
                     </p>
                   )}
+                  <div className="mt-4 border-t border-hairline pt-4">
+                    <p className="text-xs font-semibold text-ink">WooCommerce</p>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        type="text"
+                        value={wooDomain}
+                        onChange={(e) => setWooDomain(e.target.value)}
+                        placeholder="example.com"
+                        disabled={authorizing}
+                        className="min-w-0 flex-1 rounded-[var(--radius-control)] border border-hairline bg-surface px-3 py-2 text-sm text-ink outline-none transition focus:border-brand"
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={startWooCommerceInstall}
+                        disabled={authorizing}
+                      >
+                        {authorizing ? t("authorize.authorizing") : t("authorize.connectShop")}
+                      </Button>
+                    </div>
+                    {wooError ? (
+                      <p className="mt-1.5 text-[11px] leading-4 text-red-600">{wooError}</p>
+                    ) : (
+                      <p className="mt-1.5 text-[11px] leading-4 text-ink-subtle">
+                        Enter the WooCommerce site domain, then approve TangBuy in WordPress.
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -740,6 +781,17 @@ function AuthorizePageContent() {
       </WorkbenchPanel>
     </WorkbenchShell>
   );
+}
+
+function normalizeWooDomain(input: string): string {
+  const domain = input
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/[:/?#].*$/, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) return "";
+  return domain;
 }
 
 export default function AuthorizePage() {

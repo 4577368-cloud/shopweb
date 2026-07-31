@@ -34,8 +34,10 @@ export function resolvePostLoginPath(
     const rawPath = qIndex >= 0 ? from.slice(0, qIndex) : from;
     const query = qIndex >= 0 ? from.slice(qIndex) : "";
     const pathOnly = stripLocalePrefix(rawPath);
-    // Ignore retired operations-center deep links if bookmarked.
+    // Ignore retired hub deep links if bookmarked.
     if (
+      pathOnly === "/order-center" ||
+      pathOnly.startsWith("/order-center/") ||
       pathOnly === "/operations-center" ||
       pathOnly.startsWith("/operations-center/")
     ) {

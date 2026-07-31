@@ -567,6 +567,19 @@ export function shopifyLoginUrl(
   return `${API_BASE}${path}`;
 }
 
+export function woocommerceInstallUrl(domain: string): string {
+  const q = new URLSearchParams();
+  q.set("domain", domain);
+  const path = `/api/plugin/woocommerce/auth/start?${q.toString()}`;
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}${path}`;
+  }
+  if (!API_BASE) {
+    throw new ApiError("NEXT_PUBLIC_API_BASE is not configured", 0);
+  }
+  return `${API_BASE}${path}`;
+}
+
 /** Read-only Shopify auth status for a shop (non-sensitive fields only). */
 export interface ShopStatusResponse {
   authorized: boolean;

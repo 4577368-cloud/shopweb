@@ -1,17 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { locales, defaultLocale, isLocale } from "@/i18n/config";
+import { defaultLocale, isLocale } from "@/i18n/config";
 
 const PUBLIC_FILE = /\.[^/]+$/; // static assets like /favicon.ico
 
 /**
- * Path prefixes that require an authenticated user (presence of `tb_access` cookie).
+ * Path prefixes that require an authenticated user (presence of Tangbuy platform token).
  * Root locale home (`/`, `/zh`, …) is the public marketing landing — not listed here.
  */
 const PROTECTED_PREFIXES = [
   "/account",
   "/catalog",
   "/logistics",
-  "/order-center",
   "/products",
   "/sku-align",
   "/sync",
@@ -97,10 +96,12 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Auth gate: standalone requires tb_access cookie.
+  // Auth gate: standalone requires Tangbuy platform token.
   // Embedded Admin uses session-token Bearer (no cookie) — never bounce to /login.
   if (isProtected(pathname)) {
-    const hasAccess = Boolean(req.cookies.get("tb_access")?.value);
+    const hasAccess = Boolean(
+      req.cookies.get("TANGBUY_TOKEN")?.value || req.cookies.get("tb_access")?.value
+    );
     if (!hasAccess && !isEmbeddedRequest(req)) {
       const segments = pathname.split("/");
       const locale = isLocale(segments[1]) ? segments[1] : detectLocale(req);
