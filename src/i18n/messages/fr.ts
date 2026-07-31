@@ -3817,6 +3817,21 @@ export const fr: Dictionary = {
     staleHint:
       "Le parent ou un composant a changé sur Shopify. Vérifiez puis resynchronisez.",
     noSearchMatches: "Aucun produit ne correspond à cette recherche",
+    needBinding: "Liez une source avant de créer le pack",
+    dissolve: "Dissoudre le pack",
+    dissolveConfirm:
+      "Dissoudre ce pack ? Le parent Shopify sera détaché des composants.",
+    dissolving: "Dissolution…",
+    discountLabel: "Remise du pack (%)",
+    discountHint:
+      "Stockée dans le metafield parent ; appliquée au checkout par la Discount Function.",
+    marginSection: "Estimation de marge",
+    marginCost: "Coût estimé",
+    marginPrice: "Prix du pack",
+    marginEstimate: "Marge suggérée",
+    updateCta: "Mettre à jour le pack sur Shopify",
+    unboundBadge: "Non lié",
+    variantLabel: "Variante",
   },
   shopProducts: {
     aiImageSearching: "Searching by image…",

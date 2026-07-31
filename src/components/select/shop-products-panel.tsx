@@ -1584,11 +1584,33 @@ export function ShopProductsPanel({
               bundleStatusMap?.byProductId?.[bundleDrawerItemId] ?? null
             }
             statusMap={bundleStatusMap}
+            bindings={bindings}
+            pricingTemplate={pricingTemplate}
             onClose={() => setBundleDrawerItemId(null)}
             onCreated={() => {
               showToast(t("bundle.toastCreated"));
-              void refreshBundleStatus();
-              onActivity?.();
+              void (async () => {
+                try {
+                  await api.syncShopProducts(shopName);
+                } catch {
+                  /* sync is best-effort after bundle write */
+                }
+                await load({ silent: true, force: true });
+                await refreshBundleStatus();
+                onActivity?.();
+              })();
+            }}
+            onDissolved={() => {
+              void (async () => {
+                try {
+                  await api.syncShopProducts(shopName);
+                } catch {
+                  /* sync is best-effort after dissolve */
+                }
+                await load({ silent: true, force: true });
+                await refreshBundleStatus();
+                onActivity?.();
+              })();
             }}
           />
         );

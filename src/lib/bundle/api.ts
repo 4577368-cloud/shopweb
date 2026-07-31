@@ -18,6 +18,7 @@ export interface BundleComponent {
   productId: string;
   quantity: number;
   title?: string | null;
+  variantId?: string | null;
 }
 
 export interface ShopBundle {
@@ -28,6 +29,7 @@ export interface ShopBundle {
   parentVariantId?: string | null;
   parentTitle?: string | null;
   parentPrice?: number | null;
+  discountPercent?: number | null;
   status: BundleStatus;
   managedByApp: boolean;
   errorMessage?: string | null;
@@ -51,12 +53,28 @@ export interface BundleStatusMap {
   byProductId: Record<string, BundleCardStatus>;
 }
 
+export interface BundleComponentInput {
+  productId: string;
+  quantity: number;
+  variantId?: string | null;
+}
+
 export interface CreateShopBundleInput {
   shopName: string;
   contextProductId: string;
   title: string;
   parentPrice?: number | null;
-  components: { productId: string; quantity: number }[];
+  discountPercent?: number | null;
+  components: BundleComponentInput[];
+}
+
+export interface UpdateShopBundleInput {
+  shopName: string;
+  bundleId: number;
+  title: string;
+  parentPrice?: number | null;
+  discountPercent?: number | null;
+  components: BundleComponentInput[];
 }
 
 async function bundleRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -106,6 +124,25 @@ export function createShopBundle(
   return bundleRequest("/api/plugin/bundle/create", {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+export function updateShopBundle(
+  body: UpdateShopBundleInput
+): Promise<ShopBundle> {
+  return bundleRequest("/api/plugin/bundle/update", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function dissolveShopBundle(
+  shopName: string,
+  id: number
+): Promise<ShopBundle> {
+  const q = new URLSearchParams({ shopName });
+  return bundleRequest(`/api/plugin/bundle/${id}/dissolve?${q}`, {
+    method: "POST",
   });
 }
 

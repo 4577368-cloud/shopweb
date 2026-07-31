@@ -1,0 +1,16 @@
+api_version = "2024-04"
+
+[[extensions]]
+name = "Tangbuy Bundle Discount"
+handle = "bundle-discount"
+type = "function"
+description = "Applies percentage discount from product metafield tangbuy_bundle.discount_percent"
+
+  [[extensions.targeting]]
+  target = "purchase.product-discount.run"
+  input_query = "src/run.graphql"
+  export = "run"
+
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"

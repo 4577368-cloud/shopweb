@@ -3821,6 +3821,21 @@ export const en = {
     staleHint:
       "Parent or a component changed on Shopify. Review components and sync again.",
     noSearchMatches: "No products match this search",
+    needBinding: "Link a source product before bundling",
+    dissolve: "Dissolve bundle",
+    dissolveConfirm:
+      "Dissolve this bundle? The Shopify parent will be unlinked from components.",
+    dissolving: "Dissolving…",
+    discountLabel: "Bundle discount (%)",
+    discountHint:
+      "Stored on the parent metafield; applied at checkout by the Discount Function.",
+    marginSection: "Margin estimate",
+    marginCost: "Estimated cost",
+    marginPrice: "Bundle price",
+    marginEstimate: "Suggested margin",
+    updateCta: "Update bundle on Shopify",
+    unboundBadge: "Unlinked",
+    variantLabel: "Variant",
   },
   shopProducts: {
     aiImageSearching: "Searching by image…",

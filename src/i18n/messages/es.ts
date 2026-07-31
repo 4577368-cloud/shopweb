@@ -3816,6 +3816,21 @@ export const es: Dictionary = {
     staleHint:
       "El padre o un componente cambió en Shopify. Revisa y vuelve a sincronizar.",
     noSearchMatches: "Ningún producto coincide con la búsqueda",
+    needBinding: "Vincula un producto fuente antes de crear el bundle",
+    dissolve: "Disolver bundle",
+    dissolveConfirm:
+      "¿Disolver este bundle? El padre de Shopify se desvinculará de los componentes.",
+    dissolving: "Disolviendo…",
+    discountLabel: "Descuento del bundle (%)",
+    discountHint:
+      "Se guarda en el metafield del padre; la Discount Function lo aplica en el checkout.",
+    marginSection: "Estimación de margen",
+    marginCost: "Coste estimado",
+    marginPrice: "Precio del bundle",
+    marginEstimate: "Margen sugerido",
+    updateCta: "Actualizar bundle en Shopify",
+    unboundBadge: "Sin vincular",
+    variantLabel: "Variante",
   },
   shopProducts: {
     aiImageSearching: "Searching by image…",
