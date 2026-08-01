@@ -661,10 +661,6 @@ export function BundleComposerDrawer({
     marginInfo.estimatedCost != null
       ? formatPurchaseCostMoney(marginInfo.estimatedCost, costCtx.currency)
       : "—";
-  const listPriceLabel =
-    marginInfo.parentPriceNum != null
-      ? `${marginInfo.parentPriceNum.toFixed(2)} ${currency}`
-      : t("bundle.priceUnset");
   const dealPriceLabel =
     marginInfo.dealPrice != null
       ? `${marginInfo.dealPrice.toFixed(2)} ${currency}`
@@ -788,111 +784,103 @@ export function BundleComposerDrawer({
                 />
               </label>
 
-              {/* Pricing logic strip: cost → list → deal → profit */}
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div className="rounded-md border border-hairline bg-canvas/60 px-2.5 py-2">
-                  <p className="text-[10px] font-medium text-ink-subtle">
-                    {t("bundle.costTotalLabel")}
-                  </p>
-                  <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-ink">
-                    {marginCostLabel}
-                  </p>
-                  <p className="mt-0.5 text-[10px] leading-3 text-ink-subtle">
-                    {t("bundle.costTotalHint")}
-                  </p>
-                </div>
-                <label className="rounded-md border border-hairline bg-surface px-2.5 py-2">
-                  <span className="text-[10px] font-medium text-ink-subtle">
-                    {t("bundle.listPriceLabel")}
-                  </span>
-                  <div className="mt-1 flex h-7 items-center overflow-hidden rounded border border-input">
-                    <span className="border-r border-hairline px-1.5 text-[10px] text-ink-subtle">
-                      {currency}
-                    </span>
-                    <input
-                      className="h-full min-w-0 flex-1 bg-transparent px-1.5 text-[12px] tabular-nums text-ink outline-none"
-                      type="number"
-                      inputMode="decimal"
-                      min={0}
-                      step="0.01"
-                      value={price}
-                      onChange={(e) => setPrice(e.target.value)}
-                      disabled={busy}
-                      placeholder={t("bundle.pricePlaceholder")}
-                      aria-label={t("bundle.listPriceLabel")}
-                    />
-                  </div>
-                  <span className="mt-0.5 block text-[10px] leading-3 text-ink-subtle">
-                    {t("bundle.listPriceHint")}
-                  </span>
-                </label>
-                <label className="rounded-md border border-hairline bg-surface px-2.5 py-2">
-                  <span className="text-[10px] font-medium text-ink-subtle">
-                    {t("bundle.discountLabelShort")}
-                  </span>
-                  <div className="mt-1 flex h-7 items-center overflow-hidden rounded border border-input">
-                    <input
-                      className="h-full min-w-0 flex-1 bg-transparent px-1.5 text-[12px] tabular-nums text-ink outline-none"
-                      type="number"
-                      inputMode="decimal"
-                      min={0}
-                      max={100}
-                      step="1"
-                      value={discountPercent}
-                      onChange={(e) => setDiscountPercent(e.target.value)}
-                      disabled={busy}
-                      placeholder="0"
-                      aria-label={t("bundle.discountLabelShort")}
-                    />
-                    <span className="border-l border-hairline px-1.5 text-[10px] text-ink-subtle">
-                      %
-                    </span>
-                  </div>
-                  <span className="mt-0.5 block text-[10px] leading-3 text-ink-subtle">
-                    {t("bundle.discountLogicHint")}
-                  </span>
-                </label>
-                <div className="rounded-md border border-brand-accent/30 bg-brand-soft/60 px-2.5 py-2">
-                  <p className="text-[10px] font-medium text-ink-subtle">
-                    {t("bundle.dealPriceLabel")}
-                  </p>
-                  <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-ink">
-                    {dealPriceLabel}
-                  </p>
-                  <p className="mt-0.5 text-[10px] leading-3 text-ink-subtle">
-                    {t("bundle.dealPriceHint")}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-hairline bg-surface px-2.5 py-2">
-                <div>
-                  <p className="text-[10px] font-medium text-ink-subtle">
-                    {t("bundle.profitLabel")}
-                  </p>
-                  <p className="text-[10px] text-ink-subtle">
-                    {t("bundle.profitHint")}
-                  </p>
-                </div>
-                <p
-                  className={cn(
-                    "text-[14px] font-semibold tabular-nums",
-                    marginInfo.marginAbs != null && marginInfo.marginAbs < 0
-                      ? "text-red-600"
-                      : "text-ink"
-                  )}
-                >
-                  {marginEstimateLabel}
+              {/* Pricing: edit row + result rows — no competing mini-cards */}
+              <div className="mt-3 space-y-0 border-t border-hairline pt-3">
+                <p className="mb-2 text-[12px] font-semibold text-ink">
+                  {t("bundle.pricingSection")}
                 </p>
-              </div>
 
-              <p className="mt-2 text-[10px] leading-4 text-ink-subtle">
-                {t("bundle.pricingFlowHint", {
-                  cost: marginCostLabel,
-                  list: listPriceLabel,
-                  deal: dealPriceLabel,
-                })}
-              </p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_7.5rem]">
+                  <label className="block space-y-1">
+                    <span className="text-[11px] text-ink-muted">
+                      {t("bundle.listPriceLabel")}
+                      <span className="ml-1 font-normal text-ink-subtle">
+                        · {t("bundle.listPriceHintShort")}
+                      </span>
+                    </span>
+                    <div className="flex h-9 items-center overflow-hidden rounded-md border border-input bg-surface">
+                      <span className="border-r border-hairline px-2.5 text-[11px] font-medium text-ink-subtle">
+                        {currency}
+                      </span>
+                      <input
+                        className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] tabular-nums text-ink outline-none"
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        step="0.01"
+                        value={price}
+                        onChange={(e) => setPrice(e.target.value)}
+                        disabled={busy}
+                        placeholder={t("bundle.pricePlaceholder")}
+                        aria-label={t("bundle.listPriceLabel")}
+                      />
+                    </div>
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] text-ink-muted">
+                      {t("bundle.discountLabelShort")}
+                    </span>
+                    <div className="flex h-9 items-center overflow-hidden rounded-md border border-input bg-surface">
+                      <input
+                        className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] tabular-nums text-ink outline-none"
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        max={100}
+                        step="1"
+                        value={discountPercent}
+                        onChange={(e) => setDiscountPercent(e.target.value)}
+                        disabled={busy}
+                        placeholder="0"
+                        aria-label={t("bundle.discountLabelShort")}
+                      />
+                      <span className="border-l border-hairline px-2.5 text-[11px] font-medium text-ink-subtle">
+                        %
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                <dl className="mt-3 divide-y divide-hairline rounded-md border border-hairline bg-canvas/40">
+                  <div className="flex items-center justify-between gap-3 px-3 py-2">
+                    <dt className="text-[11px] text-ink-muted">
+                      {t("bundle.costTotalLabel")}
+                    </dt>
+                    <dd className="text-[12px] font-medium tabular-nums text-ink">
+                      {marginCostLabel}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 px-3 py-2">
+                    <dt className="text-[11px] text-ink-muted">
+                      {t("bundle.dealPriceLabel")}
+                      <span className="ml-1 text-ink-subtle">
+                        ({t("bundle.dealPriceHintShort")})
+                      </span>
+                    </dt>
+                    <dd className="text-[13px] font-semibold tabular-nums text-ink">
+                      {dealPriceLabel}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 bg-surface px-3 py-2.5">
+                    <dt className="text-[11px] font-medium text-ink">
+                      {t("bundle.profitLabel")}
+                      <span className="ml-1 font-normal text-ink-subtle">
+                        ({t("bundle.profitHintShort")})
+                      </span>
+                    </dt>
+                    <dd
+                      className={cn(
+                        "text-[14px] font-semibold tabular-nums",
+                        marginInfo.marginAbs != null && marginInfo.marginAbs < 0
+                          ? "text-red-600"
+                          : "text-ink"
+                      )}
+                    >
+                      {marginEstimateLabel}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
             </CardShell>
 
             <CardShell className="flex shrink-0 flex-col overflow-hidden">
