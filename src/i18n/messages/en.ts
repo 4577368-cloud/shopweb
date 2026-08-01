@@ -3845,6 +3845,34 @@ export const en = {
     actionCreate: "Create bundle",
     actionEdit: "Edit bundle",
     actionRetry: "Retry bundle",
+    pickTrackTitle: "Choose combo type",
+    pickTrackHint:
+      "Cross-product creates a sellable parent; same-product stays on this PDP.",
+    trackCrossTitle: "Cross-product kit",
+    trackCrossBody:
+      "Shampoo + mask → new parent product. Buyers purchase the parent; stock comes from components.",
+    trackSameTitle: "Same-product combo",
+    trackSameBody:
+      "Buy 2 cheaper, or pair two variants (top + pants) on this product — no new product.",
+    backToTracks: "Change type",
+    comboTitle: "Same-product combo",
+    comboEyebrow: "On this product",
+    comboTrackHint:
+      "Does not create a Shopify product. Config is saved as a metafield; checkout discount waits for the Function.",
+    comboKindQty: "Quantity discount",
+    comboKindVariants: "Variant pair",
+    comboLabel: "Label (optional)",
+    comboLabelPlaceholder: "e.g. Buy 2 & save",
+    comboQty: "Min quantity",
+    comboDiscount: "Discount",
+    comboVariantA: "Variant A",
+    comboVariantB: "Variant B",
+    comboNeedTwoVariants: "This product needs at least 2 variants for a pair.",
+    comboCheckoutPending:
+      "Saved to Shopify. Auto checkout discount needs the Discount Function ({{currency}} list price can still be set).",
+    comboSaveCta: "Save same-product combo",
+    comboSavedPending: "Combo saved; checkout discount pending Function deploy.",
+    comboSaveFailed: "Save failed",
     retryTitle: "Retry bundle create",
     failedRetryHint:
       "Last create failed. Defaults are loaded; submit creates a new bundle (does not update the failed row).",

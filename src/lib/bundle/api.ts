@@ -189,3 +189,32 @@ export function getShopBundle(
   const q = new URLSearchParams({ shopName });
   return bundleRequest(`/api/plugin/bundle/${id}?${q}`);
 }
+
+export type SameProductComboKind = "qty_discount" | "variant_pair";
+
+export interface SaveSameProductComboInput {
+  shopName: string;
+  productId: string;
+  kind: SameProductComboKind;
+  qty?: number | null;
+  discountPercent?: number | null;
+  variantIds?: string[] | null;
+  label?: string | null;
+}
+
+export interface SaveSameProductComboResult {
+  productId: string;
+  kind: string;
+  saved: boolean;
+  checkoutPending: boolean;
+  message?: string | null;
+}
+
+export function saveSameProductCombo(
+  body: SaveSameProductComboInput
+): Promise<SaveSameProductComboResult> {
+  return bundleRequest("/api/plugin/bundle/combo/save", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

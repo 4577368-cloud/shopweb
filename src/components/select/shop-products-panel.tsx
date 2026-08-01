@@ -1618,6 +1618,10 @@ export function ShopProductsPanel({
                 onActivity?.();
               })();
             }}
+            onComboSaved={(message) => {
+              showToast(message || t("bundle.comboSavedPending"));
+              onActivity?.();
+            }}
             onDissolved={() => {
               void (async () => {
                 try {

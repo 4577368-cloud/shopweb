@@ -3824,6 +3824,33 @@ export const zh: Dictionary = {
     actionCreate: "组套装",
     actionEdit: "编辑套装",
     actionRetry: "重新组套",
+    pickTrackTitle: "选择组合方式",
+    pickTrackHint: "跨商品会新建可售父商品；同商品组合仍留在当前详情页。",
+    trackCrossTitle: "跨商品套装",
+    trackCrossBody:
+      "洗发水 + 面膜等不同商品 → 新建一个套装父商品，顾客购买父商品，库存从组件扣减。",
+    trackSameTitle: "同商品组合",
+    trackSameBody:
+      "买 2 件更便宜，或上衣+裤子两个规格组合 → 配置写在当前商品上，不新建商品。",
+    backToTracks: "重选方式",
+    comboTitle: "同商品组合",
+    comboEyebrow: "原商品配置",
+    comboTrackHint:
+      "不会新建 Shopify 商品。规则写在当前商品 metafield；结账折扣待 Function 开通后生效。",
+    comboKindQty: "件数优惠",
+    comboKindVariants: "多规格组合",
+    comboLabel: "展示名称（可选）",
+    comboLabelPlaceholder: "例如：买2件更优惠",
+    comboQty: "件数门槛",
+    comboDiscount: "折扣",
+    comboVariantA: "规格 A",
+    comboVariantB: "规格 B",
+    comboNeedTwoVariants: "当前商品少于 2 个规格，无法配置多规格组合。",
+    comboCheckoutPending:
+      "配置会保存到 Shopify。结账自动打折需部署 Discount Function 后生效（{{currency}} 标价仍可先改）。",
+    comboSaveCta: "保存同商品组合",
+    comboSavedPending: "同商品组合已保存；结账折扣待开通。",
+    comboSaveFailed: "保存失败",
     retryTitle: "重新创建套装",
     failedRetryHint:
       "上次组套失败。已回填上次配置，提交将新建一套装（不会更新失败记录）。",

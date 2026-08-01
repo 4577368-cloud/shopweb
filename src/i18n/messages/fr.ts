@@ -3841,6 +3841,34 @@ export const fr: Dictionary = {
     actionCreate: "Créer un pack",
     actionEdit: "Modifier le pack",
     actionRetry: "Réessayer le pack",
+    pickTrackTitle: "Choisir le type de combo",
+    pickTrackHint:
+      "Multi-produits crée un parent vendable ; même produit reste sur cette fiche.",
+    trackCrossTitle: "Pack multi-produits",
+    trackCrossBody:
+      "Shampoing + masque → nouveau produit parent. Le stock vient des composants.",
+    trackSameTitle: "Combo même produit",
+    trackSameBody:
+      "Achetez 2 moins cher, ou couplez deux variantes sur ce produit — sans nouveau produit.",
+    backToTracks: "Changer de type",
+    comboTitle: "Combo même produit",
+    comboEyebrow: "Sur ce produit",
+    comboTrackHint:
+      "Ne crée pas de produit Shopify. Config en metafield ; la remise checkout attend la Function.",
+    comboKindQty: "Remise quantité",
+    comboKindVariants: "Paire de variantes",
+    comboLabel: "Libellé (optionnel)",
+    comboLabelPlaceholder: "ex. Achetez 2 et économisez",
+    comboQty: "Quantité min.",
+    comboDiscount: "Remise",
+    comboVariantA: "Variante A",
+    comboVariantB: "Variante B",
+    comboNeedTwoVariants: "Il faut au moins 2 variantes.",
+    comboCheckoutPending:
+      "Enregistré sur Shopify. La remise checkout nécessite la Discount Function ({{currency}}).",
+    comboSaveCta: "Enregistrer le combo",
+    comboSavedPending: "Combo enregistré ; remise en attente de Function.",
+    comboSaveFailed: "Échec de l’enregistrement",
     retryTitle: "Réessayer la création",
     failedRetryHint:
       "La dernière création a échoué. Les valeurs sont rechargées ; l’envoi crée un nouveau pack (ne met pas à jour l’échec).",

@@ -33,6 +33,7 @@ import {
   type BundleStatusMap,
   type BundlesFeature,
 } from "@/lib/bundle/api";
+import { SameProductComboPanel } from "@/components/select/same-product-combo-panel";
 import { api, readableError } from "@/lib/api";
 import { openExternal } from "@/host/adapters/external-link";
 import { shopifyProductAdminUrl } from "@/lib/shop-product-external-link";
@@ -53,6 +54,8 @@ import { useT } from "@/i18n/LocaleProvider";
 
 const CATALOG_PAGE_SIZE = 8;
 const TITLE_MAX = 100;
+
+type BundleTrack = "pick" | "cross" | "same";
 
 type SelectedComponent = {
   quantity: number;
@@ -237,6 +240,7 @@ export function BundleComposerDrawer({
   pricingTemplate = null,
   onClose,
   onCreated,
+  onComboSaved,
   onDissolved,
 }: {
   open: boolean;
@@ -251,6 +255,8 @@ export function BundleComposerDrawer({
   pricingTemplate?: PricingTemplate | null;
   onClose: () => void;
   onCreated: () => void;
+  /** Track B same-product combo saved (no new parent). */
+  onComboSaved?: (message: string) => void;
   onDissolved?: () => void;
 }) {
   const t = useT();
@@ -270,6 +276,7 @@ export function BundleComposerDrawer({
   const [variantOptions, setVariantOptions] = useState<
     Record<string, ShopMirrorSku[]>
   >({});
+  const [track, setTrack] = useState<BundleTrack>("pick");
 
   const currency = contextProduct.currency || "USD";
   const contextId = contextProduct.thirdPlatformItemId;
@@ -279,6 +286,9 @@ export function BundleComposerDrawer({
     existing?.status === "ACTIVE" || existing?.status === "STALE";
   const retryFromFailed = existing?.status === "FAILED";
   const busy = saving || dissolving || loadingBundle;
+  const showTrackPicker = !editing && !retryFromFailed && track === "pick";
+  const showSameProduct = !editing && !retryFromFailed && track === "same";
+  const showCrossProduct = editing || retryFromFailed || track === "cross";
 
   useEffect(() => {
     if (!open) return;
@@ -300,6 +310,7 @@ export function BundleComposerDrawer({
     setLoadingBundle(false);
     setError(null);
     setVariantOptions({});
+    setTrack(editing || retryFromFailed ? "cross" : "pick");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional open/context gate
   }, [open, contextId]);
 
@@ -736,16 +747,22 @@ export function BundleComposerDrawer({
                 id="bundle-composer-title"
                 className="truncate text-[14px] font-semibold tracking-tight text-ink"
               >
-                {editing
-                  ? t("bundle.editTitle")
-                  : retryFromFailed
-                    ? t("bundle.retryTitle")
-                    : t("bundle.createComboTitle")}
+                {showSameProduct
+                  ? t("bundle.comboTitle")
+                  : showTrackPicker
+                    ? t("bundle.pickTrackTitle")
+                    : editing
+                      ? t("bundle.editTitle")
+                      : retryFromFailed
+                        ? t("bundle.retryTitle")
+                        : t("bundle.createComboTitle")}
               </h2>
               <span className="rounded bg-canvas px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
-                {t("bundle.eyebrow")}
+                {showSameProduct
+                  ? t("bundle.comboEyebrow")
+                  : t("bundle.eyebrow")}
               </span>
-              {adminUrl ? (
+              {adminUrl && showCrossProduct ? (
                 <Button
                   size="sm"
                   variant="secondary"
@@ -760,9 +777,24 @@ export function BundleComposerDrawer({
               ) : null}
             </div>
             <p className="mt-0.5 truncate text-[11px] text-ink-muted">
-              {t("bundle.outcomeShort")}
+              {showSameProduct
+                ? t("bundle.comboTrackHint")
+                : showTrackPicker
+                  ? t("bundle.pickTrackHint")
+                  : t("bundle.outcomeShort")}
             </p>
           </div>
+          {showCrossProduct && track === "cross" && !editing && !retryFromFailed ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 shrink-0 px-2 text-[11px]"
+              disabled={busy}
+              onClick={() => setTrack("pick")}
+            >
+              {t("bundle.backToTracks")}
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="secondary"
@@ -776,6 +808,51 @@ export function BundleComposerDrawer({
           </Button>
         </header>
 
+        {showTrackPicker ? (
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-4 sm:grid-cols-2">
+            <button
+              type="button"
+              className="flex flex-col rounded-lg border border-hairline bg-surface p-4 text-left transition-colors hover:border-brand-accent/40 hover:bg-brand-soft/30"
+              onClick={() => setTrack("cross")}
+            >
+              <span className="text-[13px] font-semibold text-ink">
+                {t("bundle.trackCrossTitle")}
+              </span>
+              <span className="mt-1.5 text-[11px] leading-4 text-ink-muted">
+                {t("bundle.trackCrossBody")}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="flex flex-col rounded-lg border border-hairline bg-surface p-4 text-left transition-colors hover:border-brand-accent/40 hover:bg-brand-soft/30"
+              onClick={() => setTrack("same")}
+            >
+              <span className="text-[13px] font-semibold text-ink">
+                {t("bundle.trackSameTitle")}
+              </span>
+              <span className="mt-1.5 text-[11px] leading-4 text-ink-muted">
+                {t("bundle.trackSameBody")}
+              </span>
+            </button>
+          </div>
+        ) : null}
+
+        {showSameProduct ? (
+          <SameProductComboPanel
+            shopName={shopName}
+            productId={contextId}
+            currency={currency}
+            busy={busy}
+            onCancel={() => setTrack("pick")}
+            onSaved={(message) => {
+              onComboSaved?.(message);
+              onClose();
+            }}
+          />
+        ) : null}
+
+        {showCrossProduct ? (
+        <>
         {alertMessage || loadingBundle ? (
           <div className="shrink-0 border-b border-hairline bg-surface px-3.5 py-1.5 sm:px-4">
             {loadingBundle ? (
@@ -1228,6 +1305,8 @@ export function BundleComposerDrawer({
             </Button>
           </div>
         </footer>
+        </>
+        ) : null}
       </div>
     </div>
   );

@@ -3840,6 +3840,34 @@ export const es: Dictionary = {
     actionCreate: "Crear bundle",
     actionEdit: "Editar bundle",
     actionRetry: "Reintentar bundle",
+    pickTrackTitle: "Elegir tipo de combo",
+    pickTrackHint:
+      "Multi-producto crea un padre vendible; mismo producto se queda en esta ficha.",
+    trackCrossTitle: "Kit multi-producto",
+    trackCrossBody:
+      "Champú + mascarilla → nuevo producto padre. El stock sale de los componentes.",
+    trackSameTitle: "Combo mismo producto",
+    trackSameBody:
+      "Compra 2 más barato, o empareja dos variantes en este producto — sin producto nuevo.",
+    backToTracks: "Cambiar tipo",
+    comboTitle: "Combo mismo producto",
+    comboEyebrow: "En este producto",
+    comboTrackHint:
+      "No crea un producto Shopify. Se guarda como metafield; el descuento en checkout espera la Function.",
+    comboKindQty: "Descuento por cantidad",
+    comboKindVariants: "Par de variantes",
+    comboLabel: "Etiqueta (opcional)",
+    comboLabelPlaceholder: "p. ej. Compra 2 y ahorra",
+    comboQty: "Cantidad mínima",
+    comboDiscount: "Descuento",
+    comboVariantA: "Variante A",
+    comboVariantB: "Variante B",
+    comboNeedTwoVariants: "Hacen falta al menos 2 variantes.",
+    comboCheckoutPending:
+      "Guardado en Shopify. El descuento en checkout necesita la Discount Function ({{currency}}).",
+    comboSaveCta: "Guardar combo",
+    comboSavedPending: "Combo guardado; descuento pendiente de Function.",
+    comboSaveFailed: "Error al guardar",
     retryTitle: "Reintentar creación",
     failedRetryHint:
       "La última creación falló. Se cargan los datos previos; al enviar se crea un bundle nuevo (no actualiza el fallido).",

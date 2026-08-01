@@ -1,7 +1,8 @@
 # Bundle 子功能（Fixed Product Bundle）
 
+> 详见双轨说明：[`BUNDLE_DUAL_TRACK.md`](./BUNDLE_DUAL_TRACK.md)。  
 > 隶属于 Tangbuy AI Sourcing / 60s，**不是**独立 Shopify App。  
-> 折扣 Function 脚手架见 `extensions/bundle-discount/`（**未部署**，UI 暂隐藏折扣输入）；批量组套见分期计划。本目录代码与匹配/上架主路径解耦，便于合并主仓。
+> 折扣 Function 脚手架见 `extensions/bundle-discount/`（**未部署**，跨商品折扣 UI 暂隐藏；同商品组合可先存 metafield）。
 
 ## 入口
 
