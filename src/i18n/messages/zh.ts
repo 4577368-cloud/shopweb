@@ -3881,6 +3881,11 @@ export const zh: Dictionary = {
     openInShopify: "在 Shopify 打开",
     clearSearch: "清空搜索",
     occupiedElsewhere: "已在其他套装中",
+    occupiedKitParent: "已是套装父商品，不能再当组件",
+    errorComponentized:
+      "所选商品里包含已是套装父商品的商品，Shopify 不允许套装嵌套。请换成普通单品，或先解散那个套装。",
+    errorComponentizedWithIds:
+      "商品 {{ids}} 已是套装父商品，不能再当组件。请换成普通单品，或先解散该套装。",
     staleHint: "组件或父商品已在 Shopify 变更，请复核后重新同步。",
     noSearchMatches: "没有匹配的商品",
     needBinding: "请先完成货源关联后再组套",

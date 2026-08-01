@@ -3903,6 +3903,11 @@ export const en = {
     openInShopify: "Open in Shopify Admin",
     clearSearch: "Clear search",
     occupiedElsewhere: "Already in another bundle",
+    occupiedKitParent: "Already a kit parent — can't be a component",
+    errorComponentized:
+      "One selected product is already a Fixed Kit parent. Shopify forbids nested kits — pick a regular product or dissolve that kit first.",
+    errorComponentizedWithIds:
+      "Product {{ids}} is already a kit parent and can't be a component. Pick a regular product or dissolve that kit first.",
     staleHint:
       "Parent or a component changed on Shopify. Review components and sync again.",
     noSearchMatches: "No products match this search",

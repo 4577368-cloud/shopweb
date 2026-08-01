@@ -3898,6 +3898,11 @@ export const es: Dictionary = {
     openInShopify: "Abrir en Shopify Admin",
     clearSearch: "Borrar búsqueda",
     occupiedElsewhere: "Ya está en otro bundle",
+    occupiedKitParent: "Ya es padre de kit — no puede ser componente",
+    errorComponentized:
+      "Un producto seleccionado ya es un kit Fixed. Shopify no permite kits anidados: elija un producto normal o disuelva ese kit.",
+    errorComponentizedWithIds:
+      "El producto {{ids}} ya es padre de kit y no puede ser componente. Elija un producto normal o disuelva ese kit.",
     staleHint:
       "El padre o un componente cambió en Shopify. Revisa y vuelve a sincronizar.",
     noSearchMatches: "Ningún producto coincide con la búsqueda",

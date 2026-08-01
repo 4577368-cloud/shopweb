@@ -80,6 +80,25 @@ function isBindingReady(
   return b.bindStatus == null || b.bindStatus === "ACTIVE";
 }
 
+/** Map Shopify Fixed Bundle nesting errors to operator-facing copy. */
+function mapBundleCreateError(
+  message: string,
+  t: (key: string, params?: Record<string, string | number>) => string
+): string {
+  const m = message || "";
+  if (
+    /componentized products|invalid as components|can't be componentized/i.test(
+      m
+    )
+  ) {
+    const ids = m.match(/\[([^\]]+)\]/)?.[1]?.trim();
+    return ids
+      ? t("bundle.errorComponentizedWithIds", { ids })
+      : t("bundle.errorComponentized");
+  }
+  return m;
+}
+
 function ProductThumb({
   url,
   className,
@@ -447,6 +466,23 @@ export function BundleComposerDrawer({
     [contextBundleId, statusMap]
   );
 
+  /** Shopify Fixed Kit parents cannot be nested as components. */
+  const isKitParentBlocked = useCallback(
+    (productId: string) => {
+      const card = statusMap?.byProductId?.[productId];
+      if (!card?.asParent) return false;
+      if (contextBundleId != null && card.bundleId === contextBundleId) {
+        return false;
+      }
+      return (
+        card.status === "ACTIVE" ||
+        card.status === "STALE" ||
+        card.status === "CREATING"
+      );
+    },
+    [contextBundleId, statusMap]
+  );
+
   const contextBound = isBindingReady(bindings, contextId);
 
   const candidates = useMemo(() => {
@@ -594,7 +630,7 @@ export function BundleComposerDrawer({
   }, [bindings, contextId, costCtx, discountPercent, price, selected]);
 
   const toggle = (id: string) => {
-    if (isOccupiedElsewhere(id)) return;
+    if (isKitParentBlocked(id) || isOccupiedElsewhere(id)) return;
     if (!isBindingReady(bindings, id)) return;
     setSelected((prev) => {
       const next = { ...prev };
@@ -641,6 +677,15 @@ export function BundleComposerDrawer({
 
   const submit = async () => {
     if (!canSubmit) return;
+    const nestedKit = Object.keys(selected).find((id) => isKitParentBlocked(id));
+    if (nestedKit || isKitParentBlocked(contextId)) {
+      setError(
+        t("bundle.errorComponentizedWithIds", {
+          ids: nestedKit || contextId,
+        })
+      );
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -686,7 +731,7 @@ export function BundleComposerDrawer({
       onCreated();
       onClose();
     } catch (err) {
-      setError(readableError(err));
+      setError(mapBundleCreateError(readableError(err), t));
     } finally {
       setSaving(false);
     }
@@ -1208,8 +1253,9 @@ export function BundleComposerDrawer({
                   const id = p.thirdPlatformItemId;
                   const on = Boolean(selected[id]);
                   const occupied = isOccupiedElsewhere(id);
+                  const kitParent = isKitParentBlocked(id);
                   const unbound = !isBindingReady(bindings, id);
-                  const blocked = occupied || unbound;
+                  const blocked = occupied || kitParent || unbound;
                   const priceLabel = formatShopPrice(p.currency, p.minPrice);
                   return (
                     <li key={id} className="px-0.5 py-0.5">
@@ -1248,7 +1294,9 @@ export function BundleComposerDrawer({
                             {p.title || id}
                           </span>
                           <span className="mt-0.5 block truncate text-[10px] text-ink-subtle">
-                            {occupied
+                            {kitParent
+                              ? t("bundle.occupiedKitParent")
+                              : occupied
                               ? t("bundle.occupiedElsewhere")
                               : unbound
                                 ? t("bundle.needBinding")

@@ -3899,6 +3899,11 @@ export const fr: Dictionary = {
     openInShopify: "Ouvrir dans l’admin Shopify",
     clearSearch: "Effacer la recherche",
     occupiedElsewhere: "Déjà dans un autre pack",
+    occupiedKitParent: "Déjà parent de pack — ne peut pas être un composant",
+    errorComponentized:
+      "Un produit sélectionné est déjà un parent Fixed Kit. Shopify interdit les packs imbriqués — choisissez un produit simple ou dissolvez ce pack.",
+    errorComponentizedWithIds:
+      "Le produit {{ids}} est déjà parent de pack et ne peut pas être un composant. Choisissez un produit simple ou dissolvez ce pack.",
     staleHint:
       "Le parent ou un composant a changé sur Shopify. Vérifiez puis resynchronisez.",
     noSearchMatches: "Aucun produit ne correspond à cette recherche",
