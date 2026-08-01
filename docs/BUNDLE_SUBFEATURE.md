@@ -5,7 +5,7 @@
 
 ## 入口
 
-商品关联 · Shopify 商品卡 footer：「组套装」/「编辑套装」→ `BundleComposerDrawer`。  
+商品关联 · Shopify 商品卡 footer：「组套装」/「编辑套装」→ `BundleComposerDrawer`（居中弹窗：上左右当前/目标，下组合套装）。  
 已组套（ACTIVE / STALE）且存在 `parentProductId` 时，旁侧 icon-only「在 Shopify 打开」→ Admin 父商品页。
 
 抽屉侧约束：

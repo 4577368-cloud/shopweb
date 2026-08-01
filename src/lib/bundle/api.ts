@@ -77,10 +77,15 @@ export interface UpdateShopBundleInput {
   components: BundleComponentInput[];
 }
 
-async function bundleRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function bundleRequest<T>(
+  path: string,
+  init?: RequestInit,
+  retried = false
+): Promise<T> {
   const { resolveAuthStrategyFromLocation } = await import(
     "@/host/adapters/auth-transport"
   );
+  const { refreshAccessCookie } = await import("@/lib/api");
   const strategy = resolveAuthStrategyFromLocation();
   const auth = await strategy.prepareRequest();
   const headers: Record<string, string> = {
@@ -93,6 +98,19 @@ async function bundleRequest<T>(path: string, init?: RequestInit): Promise<T> {
     credentials: init?.credentials ?? auth.credentials,
     headers,
   });
+
+  if (res.status === 401 && !retried && typeof window !== "undefined") {
+    let refreshed = false;
+    if (strategy.kind === "session-token") {
+      refreshed = await strategy.refreshAfterUnauthorized();
+    } else {
+      refreshed = await refreshAccessCookie();
+    }
+    if (refreshed) {
+      return bundleRequest<T>(path, init, true);
+    }
+  }
+
   const text = await res.text();
   let data: unknown = undefined;
   try {
