@@ -1,0 +1,173 @@
+{% comment %}
+  Tangbuy / 60s — Fixed Kit composition (Track A).
+  Reads product metafields tangbuy_bundle.is_kit + tangbuy_bundle.components_json.
+  Non-kit products render nothing (no empty placeholder).
+{% endcomment %}
+
+{% liquid
+  assign is_kit = product.metafields.tangbuy_bundle.is_kit.value
+  assign components = product.metafields.tangbuy_bundle.components_json.value
+  assign show_qty = block.settings.show_quantity
+  assign heading = block.settings.heading
+  if heading == blank
+    assign heading = 'blocks.kit_components.heading' | t
+  endif
+%}
+
+{% if is_kit or components != blank %}
+  <div
+    class="tangbuy-kit-components"
+    {{ block.shopify_attributes }}
+    style="
+      --tkc-gap: {{ block.settings.gap }}px;
+      margin-top: {{ block.settings.margin_top }}px;
+      margin-bottom: {{ block.settings.margin_bottom }}px;
+    "
+  >
+    {% if heading != blank %}
+      <p class="tangbuy-kit-components__heading">{{ heading | escape }}</p>
+    {% endif %}
+
+    {% if components != blank %}
+      <ul class="tangbuy-kit-components__list" role="list">
+        {% for line in components %}
+          {% liquid
+            assign line_title = line.title
+            if line_title == blank
+              assign line_title = line.name
+            endif
+            assign line_qty = line.quantity | default: 1
+          %}
+          {% if line_title != blank %}
+            <li class="tangbuy-kit-components__item">
+              {% if block.settings.show_thumbnails and line.imageUrl != blank %}
+                <img
+                  class="tangbuy-kit-components__thumb"
+                  src="{{ line.imageUrl | escape }}"
+                  alt=""
+                  width="40"
+                  height="40"
+                  loading="lazy"
+                >
+              {% endif %}
+              <span class="tangbuy-kit-components__title">{{ line_title | escape }}</span>
+              {% if show_qty %}
+                <span class="tangbuy-kit-components__qty" aria-label="×{{ line_qty }}">
+                  ×{{ line_qty }}
+                </span>
+              {% endif %}
+            </li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="tangbuy-kit-components__empty">
+        {{ 'blocks.kit_components.empty' | t }}
+      </p>
+    {% endif %}
+  </div>
+
+  {% style %}
+    .tangbuy-kit-components__heading {
+      margin: 0 0 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+    .tangbuy-kit-components__list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--tkc-gap, 8px);
+    }
+    .tangbuy-kit-components__item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.9rem;
+      line-height: 1.35;
+    }
+    .tangbuy-kit-components__thumb {
+      width: 40px;
+      height: 40px;
+      object-fit: cover;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .tangbuy-kit-components__title {
+      flex: 1;
+      min-width: 0;
+    }
+    .tangbuy-kit-components__qty {
+      flex-shrink: 0;
+      opacity: 0.7;
+      font-variant-numeric: tabular-nums;
+    }
+    .tangbuy-kit-components__empty {
+      margin: 0;
+      font-size: 0.85rem;
+      opacity: 0.65;
+    }
+  {% endstyle %}
+{% endif %}
+
+{% schema %}
+{
+  "name": "t:blocks.kit_components.name",
+  "target": "section",
+  "templates": ["product"],
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "t:blocks.kit_components.settings.heading",
+      "default": "This kit includes"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_quantity",
+      "label": "t:blocks.kit_components.settings.show_quantity",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_thumbnails",
+      "label": "t:blocks.kit_components.settings.show_thumbnails",
+      "default": false,
+      "info": "t:blocks.kit_components.settings.show_thumbnails_info"
+    },
+    {
+      "type": "range",
+      "id": "gap",
+      "min": 4,
+      "max": 24,
+      "step": 2,
+      "unit": "px",
+      "label": "t:blocks.kit_components.settings.gap",
+      "default": 8
+    },
+    {
+      "type": "range",
+      "id": "margin_top",
+      "min": 0,
+      "max": 48,
+      "step": 4,
+      "unit": "px",
+      "label": "t:blocks.kit_components.settings.margin_top",
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "margin_bottom",
+      "min": 0,
+      "max": 48,
+      "step": 4,
+      "unit": "px",
+      "label": "t:blocks.kit_components.settings.margin_bottom",
+      "default": 16
+    }
+  ]
+}
+{% endschema %}

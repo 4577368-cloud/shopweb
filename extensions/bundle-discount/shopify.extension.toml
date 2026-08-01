@@ -1,10 +1,10 @@
-api_version = "2024-04"
+api_version = "2024-10"
 
 [[extensions]]
 name = "Tangbuy Bundle Discount"
 handle = "bundle-discount"
 type = "function"
-description = "Applies percentage discount from product metafield tangbuy_bundle.discount_percent"
+description = "Applies kit / combo percentage discounts from tangbuy_bundle + tangbuy_combo metafields"
 
   [[extensions.targeting]]
   target = "purchase.product-discount.run"
@@ -12,5 +12,6 @@ description = "Applies percentage discount from product metafield tangbuy_bundle
   export = "run"
 
   [extensions.build]
-  command = ""
+  command = "npm run build"
   path = "dist/function.wasm"
+  watch = [ "src/**/*.js", "src/**/*.graphql" ]

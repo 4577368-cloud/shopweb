@@ -9,7 +9,13 @@ query RunInput {
           id
           product {
             id
-            metafield(namespace: "tangbuy_bundle", key: "discount_percent") {
+            bundleDiscount: metafield(
+              namespace: "tangbuy_bundle"
+              key: "discount_percent"
+            ) {
+              value
+            }
+            comboConfig: metafield(namespace: "tangbuy_combo", key: "config") {
               value
             }
           }

@@ -1,0 +1,16 @@
+{
+  "blocks": {
+    "kit_components": {
+      "name": "60s · Kit components",
+      "settings": {
+        "heading": "Heading",
+        "show_quantity": "Show quantity",
+        "show_thumbnails": "Show thumbnails",
+        "show_thumbnails_info": "Requires imageUrl in components_json (optional).",
+        "gap": "Row gap",
+        "margin_top": "Top margin",
+        "margin_bottom": "Bottom margin"
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "blocks": {
+    "kit_components": {
+      "name": "60s · 套装组成",
+      "heading": "本套装包含",
+      "empty": "暂无套装组成信息。",
+      "settings": {
+        "heading": "标题",
+        "show_quantity": "显示数量",
+        "show_thumbnails": "显示缩略图",
+        "show_thumbnails_info": "需要 components_json 含 imageUrl（可选）。",
+        "gap": "行间距",
+        "margin_top": "上边距",
+        "margin_bottom": "下边距"
+      }
+    }
+  }
+}

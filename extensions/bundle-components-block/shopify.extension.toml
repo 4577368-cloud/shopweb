@@ -1,0 +1,6 @@
+api_version = "2024-10"
+
+[[extensions]]
+name = "Tangbuy Kit Components"
+handle = "bundle-components-block"
+type = "theme"

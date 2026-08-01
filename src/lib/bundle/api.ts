@@ -218,3 +218,31 @@ export function saveSameProductCombo(
     body: JSON.stringify(body),
   });
 }
+
+export interface SaveGiftRuleInput {
+  shopName: string;
+  productId: string;
+  kind?: "qty_gift";
+  minQty?: number | null;
+  giftProductId: string;
+  giftVariantId: string;
+  giftQty?: number | null;
+  label?: string | null;
+}
+
+export interface SaveGiftRuleResult {
+  productId: string;
+  kind: string;
+  saved: boolean;
+  checkoutPending: boolean;
+  message?: string | null;
+}
+
+export function saveGiftRule(
+  body: SaveGiftRuleInput
+): Promise<SaveGiftRuleResult> {
+  return bundleRequest("/api/plugin/bundle/gift/save", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

@@ -263,6 +263,7 @@ export function BundleComposerDrawer({
   const searchRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
+  const [discountPercent, setDiscountPercent] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Record<string, SelectedComponent>>(
@@ -301,6 +302,7 @@ export function BundleComposerDrawer({
         ? String(contextProduct.minPrice)
         : ""
     );
+    setDiscountPercent("");
     setQuery("");
     setPage(1);
     setSelected({});
@@ -374,6 +376,15 @@ export function BundleComposerDrawer({
           bundle.parentPrice > 0
         ) {
           setPrice(String(bundle.parentPrice));
+        }
+        if (
+          bundle.discountPercent != null &&
+          Number.isFinite(bundle.discountPercent) &&
+          bundle.discountPercent > 0
+        ) {
+          setDiscountPercent(String(bundle.discountPercent));
+        } else {
+          setDiscountPercent("");
         }
         const next: Record<string, SelectedComponent> = {};
         for (const c of bundle.components ?? []) {
@@ -553,8 +564,17 @@ export function BundleComposerDrawer({
       price.trim() && Number.isFinite(Number(price)) && Number(price) > 0
         ? Number(price)
         : null;
-    // Checkout discount Function not deployed — deal price = list price.
-    const dealPrice = parentPriceNum;
+    const discountRaw = discountPercent.trim()
+      ? Number(discountPercent)
+      : 0;
+    const discountPct =
+      Number.isFinite(discountRaw) && discountRaw > 0
+        ? Math.min(100, Math.max(0, discountRaw))
+        : 0;
+    const dealPrice =
+      parentPriceNum != null
+        ? parentPriceNum * (1 - discountPct / 100)
+        : null;
     const marginAbs =
       estimatedCost != null && dealPrice != null
         ? dealPrice - estimatedCost
@@ -567,10 +587,11 @@ export function BundleComposerDrawer({
       estimatedCost,
       parentPriceNum,
       dealPrice,
+      discountPct,
       marginAbs,
       marginPct,
     };
-  }, [bindings, contextId, costCtx, price, selected]);
+  }, [bindings, contextId, costCtx, discountPercent, price, selected]);
 
   const toggle = (id: string) => {
     if (isOccupiedElsewhere(id)) return;
@@ -631,6 +652,13 @@ export function BundleComposerDrawer({
         })
       );
       const parentPrice = price.trim() ? Number(price) : null;
+      const discountRaw = discountPercent.trim()
+        ? Number(discountPercent)
+        : null;
+      const discount =
+        discountRaw != null && Number.isFinite(discountRaw)
+          ? Math.min(100, Math.max(0, discountRaw))
+          : 0;
       const payload = {
         shopName,
         title: title.trim().slice(0, TITLE_MAX),
@@ -640,8 +668,7 @@ export function BundleComposerDrawer({
           parentPrice > 0
             ? parentPrice
             : null,
-        // Discount Function not live — clear % so checkout cannot imply a deal.
-        discountPercent: 0,
+        discountPercent: discount,
         ...(contextVariantId ? { contextVariantId } : {}),
         components,
       };
@@ -904,7 +931,7 @@ export function BundleComposerDrawer({
                 />
               </label>
 
-              {/* Pricing: list price + cost / margin (discount UI hidden until Function ships) */}
+              {/* Pricing: list price + checkout discount % + cost / margin */}
               <div className="mt-3 space-y-0 border-t border-hairline pt-3">
                 <p className="mb-2 text-[12px] font-semibold text-ink">
                   {t("bundle.pricingSection")}
@@ -934,6 +961,33 @@ export function BundleComposerDrawer({
                       aria-label={t("bundle.listPriceLabel")}
                     />
                   </div>
+                </label>
+
+                <label className="mt-2.5 block space-y-1">
+                  <span className="text-[11px] text-ink-muted">
+                    {t("bundle.discountLabel")}
+                  </span>
+                  <div className="flex h-9 items-center overflow-hidden rounded-md border border-input bg-surface">
+                    <input
+                      className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] tabular-nums text-ink outline-none"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      max={100}
+                      step="1"
+                      value={discountPercent}
+                      onChange={(e) => setDiscountPercent(e.target.value)}
+                      disabled={busy}
+                      placeholder="0"
+                      aria-label={t("bundle.discountLabel")}
+                    />
+                    <span className="border-l border-hairline px-2.5 text-[11px] font-medium text-ink-subtle">
+                      %
+                    </span>
+                  </div>
+                  <p className="text-[10px] leading-snug text-ink-subtle">
+                    {t("bundle.discountHint")}
+                  </p>
                 </label>
 
                 <dl className="mt-3 divide-y divide-hairline rounded-md border border-hairline bg-canvas/40">

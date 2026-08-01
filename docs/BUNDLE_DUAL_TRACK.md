@@ -15,19 +15,20 @@ A 解决「独立礼盒 SKU」；B 解决「原 PDP 上的组合价 / 多规格 
 ## 轨 A（已有主路径 · 继续增强）
 
 1. 创建 Fixed Bundle 父商品（须 ≥1 个其他已绑定组件）。
-2. ACTIVE 后：拷图/详情、设 ACTIVE、父商品视为「套装货源」（不重匹配）。
+2. ACTIVE 后：拷图/详情、设 ACTIVE、父商品视为「套装货源」（不重匹配）；**自动**打 Shopify tag `tangbuy-kit` + metafield `tangbuy_bundle.is_kit=true`。
 3. 父商品 metafield：
-   - `tangbuy_bundle.components_json` — 组成列表（标题、数量、productId），供主题 / App block 展示。
-   - `tangbuy_bundle.discount_percent` — 结账折扣（Function 上线后）。
+   - `tangbuy_bundle.components_json` — 组成列表（标题、数量），供主题 App Block 展示。
+   - `tangbuy_bundle.is_kit` — boolean，供 Block / Liquid 判断。
+   - `tangbuy_bundle.discount_percent` — 结账折扣（Discount Function）。
 4. 组件清单权威源：Tangbuy「编辑套装」；Admin 打开父商品改装修。
+5. 解散套装：删除父商品前清 tag + `is_kit`。
 
 **分期**
 
 | 期 | 内容 |
 |----|------|
-| 已完成 | create/update/dissolve、变体 pin、FAILED 重试、父商品货源语义、装修 enrich |
-| 进行中 | composition metafield；入口文案标明「跨商品 · 新建父商品」 |
-| 下一步 | Theme App Block「套装含…」；可选 Online Store publish |
+| 已完成 | create/update/dissolve、变体 pin、FAILED 重试、父商品货源语义、装修 enrich、kit tag、composition metafield |
+| 已完成 | Theme App Block「套装组成」；同商品组合 / 赠品入口 |
 
 ## 轨 B（新建 · 同商品组合）
 
@@ -45,12 +46,13 @@ A 解决「独立礼盒 SKU」；B 解决「原 PDP 上的组合价 / 多规格 
 - 实现优先：metafield 描述组合 + Function 校验加购；或后续 `productVariantRelationshipBulkUpdate` / variant fixed bundle。
 - UI：选两个规格 + 成交价。
 
-### B3 · 赠品福利（可选后置）
+### B3 · 赠品福利（独立入口）
 
-- 面膜作为赠品：满条件送；与 Fixed Kit 分开，避免和「可售组合」混按钮。
-- 实现：Free gift / Discount Function；另入口「赠品规则」。
+- 商品卡 footer **「赠品规则」**（与组套装并列，不进双轨 picker）。
+- 首版：满件数门槛 + 赠品商品/规格 → metafield `tangbuy_gift.rule`。
+- 结账自动加赠品行：Function 迭代（Phase 2）；Phase 1 只存规则。
 
-### 轨 B metafield 约定（草稿）
+### 轨 B metafield 约定
 
 Namespace `tangbuy_combo`，key `config`（json）：
 
@@ -64,29 +66,59 @@ Namespace `tangbuy_combo`，key `config`（json）：
 }
 ```
 
-Function 未部署前：UI 可保存配置，结账折扣不生效，界面标明「规则已保存，结账折扣待开通」。
+赠品 `tangbuy_gift.rule`：
+
+```json
+{
+  "kind": "qty_gift",
+  "triggerProductId": "...",
+  "minQty": 1,
+  "giftProductId": "...",
+  "giftVariantId": "...",
+  "giftQty": 1,
+  "label": "送面膜"
+}
+```
 
 ## 入口信息架构
 
-商品卡 footer 仍用一个入口，打开后先选轨：
-
-1. **跨商品套装** — 现有 composer（新建父商品）
-2. **同商品组合** — B1/B2 配置面板（不新建商品）
+| 入口 | 行为 |
+|------|------|
+| **组套装** | 打开后先选轨：跨商品套装 / 同商品组合 |
+| **赠品规则** | 独立抽屉，不进双轨 |
 
 文案禁止再用笼统「组套装」暗示两种都是新建父商品。
+
+---
+
+## 商家配置一页纸
+
+1. **60s 商品关联**：商品卡 →「组套装」→ 跨商品套装 → 保存（自动带「套装」标签 / `tangbuy-kit`）。
+2. **主题编辑器加 Block**（店铺级，一次性）：
+   - 在线商店 → 主题 → **自定义**
+   - 打开 **商品** 模板
+   - **添加区块** → Apps → **60s / Tangbuy · 套装组成**（`Kit components`）
+   - 拖到标题/加购附近 → 保存
+3. **结账折扣（Partner / 运维，一次性）**：见 [`docs/BUNDLE_DISCOUNT_DEPLOY.md`](./BUNDLE_DISCOUNT_DEPLOY.md) — `shopify app deploy` + Admin 创建 Automatic app discount。
+4. **同商品组合 / 赠品**：商品卡对应入口保存即可；不影响 Tangbuy 采购成本。
+
+---
 
 ## 明确不做（现阶段）
 
 - BYOB / 购物车随意搭配（Cart Transform）
 - 把轨 B 伪装成 `productBundleCreate` 父商品
 - 给套装父商品再绑一个虚假单一货源
+- 为折扣改造 Tangbuy 待下单/采购金额
+- 要求运营在 Admin 手打套装 tag
 
 ## 验收
 
 | 场景 | 通过标准 |
 |------|----------|
-| A 跨商品 | 父商品有图/详情；Tangbuy 可编辑组件；订单按组件货源展开 |
-| A PDP | metafield 含组成；主题可读（block 可后补） |
+| A 跨商品 | 父商品有图/详情/tag；Tangbuy 可编辑组件；订单按组件货源展开 |
+| A PDP | metafield 含组成；主题 App Block 可展示 |
 | B 件数 | 原商品上可保存「买 N 件折扣」；不出现新镜像商品 |
 | B 双规格 | 原商品上可保存两 variant 组合配置 |
+| 赠品 | footer 独立入口；规则写入 `tangbuy_gift.rule` |
 | 选错防护 | 父商品卡不出现「查找候选」 |
