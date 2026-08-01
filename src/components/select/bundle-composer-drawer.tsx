@@ -204,7 +204,6 @@ export function BundleComposerDrawer({
   const searchRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
-  const [discountPercent, setDiscountPercent] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Record<string, SelectedComponent>>(
@@ -222,8 +221,10 @@ export function BundleComposerDrawer({
   const currency = contextProduct.currency || "USD";
   const contextId = contextProduct.thirdPlatformItemId;
   const contextBundleId = existing?.bundleId ?? null;
+  /** Only ACTIVE/STALE can productBundleUpdate; FAILED must create a new row. */
   const editing =
     existing?.status === "ACTIVE" || existing?.status === "STALE";
+  const retryFromFailed = existing?.status === "FAILED";
   const busy = saving || dissolving || loadingBundle;
 
   useEffect(() => {
@@ -237,7 +238,6 @@ export function BundleComposerDrawer({
         ? String(contextProduct.minPrice)
         : ""
     );
-    setDiscountPercent("");
     setQuery("");
     setPage(1);
     setSelected({});
@@ -290,9 +290,10 @@ export function BundleComposerDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, shopName, contextId, Object.keys(selected).sort().join(",")]);
 
+  // Prefill from existing ACTIVE/STALE (edit) or FAILED (retry create with defaults).
   useEffect(() => {
     if (!open) return;
-    if (!editing || contextBundleId == null) return;
+    if ((!editing && !retryFromFailed) || contextBundleId == null) return;
     let cancelled = false;
     setLoadingBundle(true);
     setError(null);
@@ -309,14 +310,6 @@ export function BundleComposerDrawer({
           bundle.parentPrice > 0
         ) {
           setPrice(String(bundle.parentPrice));
-        }
-        if (
-          bundle.discountPercent != null &&
-          Number.isFinite(bundle.discountPercent)
-        ) {
-          setDiscountPercent(String(bundle.discountPercent));
-        } else {
-          setDiscountPercent("");
         }
         const next: Record<string, SelectedComponent> = {};
         for (const c of bundle.components ?? []) {
@@ -340,7 +333,7 @@ export function BundleComposerDrawer({
     return () => {
       cancelled = true;
     };
-  }, [open, contextBundleId, editing, shopName, contextId]);
+  }, [open, contextBundleId, editing, retryFromFailed, shopName, contextId]);
 
   useEffect(() => {
     if (!open) return;
@@ -422,11 +415,19 @@ export function BundleComposerDrawer({
 
   const selectedCount = selectedEntries.length;
   const eligible = feature?.eligibleForBundles !== false;
+  const contextNeedsVariant =
+    (variantOptions[contextId]?.length ?? 0) > 1 && !contextVariantId;
+  const componentNeedsVariant = selectedEntries.some(({ productId, variantId }) => {
+    const opts = variantOptions[productId];
+    return (opts?.length ?? 0) > 1 && !variantId;
+  });
   const canSubmit =
     eligible &&
     contextBound &&
     selectedCount >= 1 &&
     title.trim().length > 0 &&
+    !contextNeedsVariant &&
+    !componentNeedsVariant &&
     !busy;
 
   const submitBlockedReason = !eligible
@@ -437,7 +438,9 @@ export function BundleComposerDrawer({
         ? t("bundle.needOneMore")
         : !title.trim()
           ? t("bundle.needTitle")
-          : null;
+          : contextNeedsVariant || componentNeedsVariant
+            ? t("bundle.needVariant")
+            : null;
 
   const adminUrl = useMemo(() => {
     const parentId = existing?.parentProductId;
@@ -486,34 +489,24 @@ export function BundleComposerDrawer({
       price.trim() && Number.isFinite(Number(price)) && Number(price) > 0
         ? Number(price)
         : null;
-    const discountRaw = discountPercent.trim()
-      ? Number(discountPercent)
-      : 0;
-    const discount =
-      Number.isFinite(discountRaw) && discountRaw > 0
-        ? Math.min(100, Math.max(0, discountRaw))
-        : 0;
-    const effectivePrice =
-      parentPriceNum != null
-        ? parentPriceNum * (1 - discount / 100)
-        : null;
+    // Checkout discount Function not deployed — deal price = list price.
+    const dealPrice = parentPriceNum;
     const marginAbs =
-      estimatedCost != null && effectivePrice != null
-        ? effectivePrice - estimatedCost
+      estimatedCost != null && dealPrice != null
+        ? dealPrice - estimatedCost
         : null;
     const marginPct =
-      marginAbs != null && effectivePrice != null && effectivePrice > 0
-        ? (marginAbs / effectivePrice) * 100
+      marginAbs != null && dealPrice != null && dealPrice > 0
+        ? (marginAbs / dealPrice) * 100
         : null;
     return {
       estimatedCost,
       parentPriceNum,
-      discount,
-      dealPrice: effectivePrice,
+      dealPrice,
       marginAbs,
       marginPct,
     };
-  }, [bindings, contextId, costCtx, discountPercent, price, selected]);
+  }, [bindings, contextId, costCtx, price, selected]);
 
   const toggle = (id: string) => {
     if (isOccupiedElsewhere(id)) return;
@@ -574,15 +567,6 @@ export function BundleComposerDrawer({
         })
       );
       const parentPrice = price.trim() ? Number(price) : null;
-      const discountRaw = discountPercent.trim()
-        ? Number(discountPercent)
-        : null;
-      const discount =
-        discountRaw != null &&
-        Number.isFinite(discountRaw) &&
-        discountRaw >= 0
-          ? Math.min(100, discountRaw)
-          : null;
       const payload = {
         shopName,
         title: title.trim().slice(0, TITLE_MAX),
@@ -592,7 +576,9 @@ export function BundleComposerDrawer({
           parentPrice > 0
             ? parentPrice
             : null,
-        discountPercent: discount,
+        // Discount Function not live — clear % so checkout cannot imply a deal.
+        discountPercent: 0,
+        ...(contextVariantId ? { contextVariantId } : {}),
         components,
       };
       if (editing && contextBundleId != null) {
@@ -649,9 +635,13 @@ export function BundleComposerDrawer({
     ? feature?.ineligibilityReason?.trim() || t("bundle.ineligibleDefault")
     : !contextBound
       ? t("bundle.needBinding")
-      : existing?.status === "STALE"
-        ? t("bundle.staleHint")
-        : error;
+      : error
+        ? error
+        : existing?.status === "STALE"
+          ? t("bundle.staleHint")
+          : existing?.status === "FAILED"
+            ? t("bundle.failedRetryHint")
+            : null;
 
   const marginEstimateLabel =
     marginInfo.marginAbs != null && marginInfo.marginPct != null
@@ -661,10 +651,6 @@ export function BundleComposerDrawer({
     marginInfo.estimatedCost != null
       ? formatPurchaseCostMoney(marginInfo.estimatedCost, costCtx.currency)
       : "—";
-  const dealPriceLabel =
-    marginInfo.dealPrice != null
-      ? `${marginInfo.dealPrice.toFixed(2)} ${currency}`
-      : t("bundle.priceUnset");
 
   const contextVariants = variantOptions[contextId] ?? [];
   const contextCost = unitCost(contextId);
@@ -697,7 +683,11 @@ export function BundleComposerDrawer({
                 id="bundle-composer-title"
                 className="truncate text-[14px] font-semibold tracking-tight text-ink"
               >
-                {editing ? t("bundle.editTitle") : t("bundle.createComboTitle")}
+                {editing
+                  ? t("bundle.editTitle")
+                  : retryFromFailed
+                    ? t("bundle.retryTitle")
+                    : t("bundle.createComboTitle")}
               </h2>
               <span className="rounded bg-canvas px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
                 {t("bundle.eyebrow")}
@@ -784,62 +774,37 @@ export function BundleComposerDrawer({
                 />
               </label>
 
-              {/* Pricing: edit row + result rows — no competing mini-cards */}
+              {/* Pricing: list price + cost / margin (discount UI hidden until Function ships) */}
               <div className="mt-3 space-y-0 border-t border-hairline pt-3">
                 <p className="mb-2 text-[12px] font-semibold text-ink">
                   {t("bundle.pricingSection")}
                 </p>
 
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_7.5rem]">
-                  <label className="block space-y-1">
-                    <span className="text-[11px] text-ink-muted">
-                      {t("bundle.listPriceLabel")}
-                      <span className="ml-1 font-normal text-ink-subtle">
-                        · {t("bundle.listPriceHintShort")}
-                      </span>
+                <label className="block space-y-1">
+                  <span className="text-[11px] text-ink-muted">
+                    {t("bundle.listPriceLabel")}
+                    <span className="ml-1 font-normal text-ink-subtle">
+                      · {t("bundle.listPriceHintShort")}
                     </span>
-                    <div className="flex h-9 items-center overflow-hidden rounded-md border border-input bg-surface">
-                      <span className="border-r border-hairline px-2.5 text-[11px] font-medium text-ink-subtle">
-                        {currency}
-                      </span>
-                      <input
-                        className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] tabular-nums text-ink outline-none"
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        step="0.01"
-                        value={price}
-                        onChange={(e) => setPrice(e.target.value)}
-                        disabled={busy}
-                        placeholder={t("bundle.pricePlaceholder")}
-                        aria-label={t("bundle.listPriceLabel")}
-                      />
-                    </div>
-                  </label>
-                  <label className="block space-y-1">
-                    <span className="text-[11px] text-ink-muted">
-                      {t("bundle.discountLabelShort")}
+                  </span>
+                  <div className="flex h-9 items-center overflow-hidden rounded-md border border-input bg-surface">
+                    <span className="border-r border-hairline px-2.5 text-[11px] font-medium text-ink-subtle">
+                      {currency}
                     </span>
-                    <div className="flex h-9 items-center overflow-hidden rounded-md border border-input bg-surface">
-                      <input
-                        className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] tabular-nums text-ink outline-none"
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        max={100}
-                        step="1"
-                        value={discountPercent}
-                        onChange={(e) => setDiscountPercent(e.target.value)}
-                        disabled={busy}
-                        placeholder="0"
-                        aria-label={t("bundle.discountLabelShort")}
-                      />
-                      <span className="border-l border-hairline px-2.5 text-[11px] font-medium text-ink-subtle">
-                        %
-                      </span>
-                    </div>
-                  </label>
-                </div>
+                    <input
+                      className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-[13px] tabular-nums text-ink outline-none"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step="0.01"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      disabled={busy}
+                      placeholder={t("bundle.pricePlaceholder")}
+                      aria-label={t("bundle.listPriceLabel")}
+                    />
+                  </div>
+                </label>
 
                 <dl className="mt-3 divide-y divide-hairline rounded-md border border-hairline bg-canvas/40">
                   <div className="flex items-center justify-between gap-3 px-3 py-2">
@@ -848,17 +813,6 @@ export function BundleComposerDrawer({
                     </dt>
                     <dd className="text-[12px] font-medium tabular-nums text-ink">
                       {marginCostLabel}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 px-3 py-2">
-                    <dt className="text-[11px] text-ink-muted">
-                      {t("bundle.dealPriceLabel")}
-                      <span className="ml-1 text-ink-subtle">
-                        ({t("bundle.dealPriceHintShort")})
-                      </span>
-                    </dt>
-                    <dd className="text-[13px] font-semibold tabular-nums text-ink">
-                      {dealPriceLabel}
                     </dd>
                   </div>
                   <div className="flex items-center justify-between gap-3 bg-surface px-3 py-2.5">

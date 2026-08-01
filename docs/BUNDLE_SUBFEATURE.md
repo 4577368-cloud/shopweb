@@ -1,21 +1,23 @@
 # Bundle 子功能（Fixed Product Bundle）
 
 > 隶属于 Tangbuy AI Sourcing / 60s，**不是**独立 Shopify App。  
-> 折扣 Function 脚手架见 `extensions/bundle-discount/`；批量组套见分期计划。本目录代码与匹配/上架主路径解耦，便于合并主仓。
+> 折扣 Function 脚手架见 `extensions/bundle-discount/`（**未部署**，UI 暂隐藏折扣输入）；批量组套见分期计划。本目录代码与匹配/上架主路径解耦，便于合并主仓。
 
 ## 入口
 
-商品关联 · Shopify 商品卡 footer：「组套装」/「编辑套装」→ `BundleComposerDrawer`（居中弹窗：左套装信息+商品表，右选品列表）。  
+商品关联 · Shopify 商品卡 footer：「组套装」/「编辑套装」/「重新组套」→ `BundleComposerDrawer`（居中弹窗：左套装信息+商品表，右选品列表）。  
 已组套（ACTIVE / STALE）且存在 `parentProductId` 时，旁侧 icon-only「在 Shopify 打开」→ Admin 父商品页。
 
 抽屉侧约束：
 
 - 当前商品须已绑定货源（`bound` + `tangbuyProductId`，且 `bindStatus` 为空或 `ACTIVE`）才可提交。
 - 候选组件未绑定时禁用，文案 `bundle.needBinding`。
-- 编辑 ACTIVE/STALE：打开时 `GET /bundle/{id}` 回填标题、售价、折扣%、组件数量与 `variantId`。
-- 提交：编辑走 `update`，新建走 `create`；可选 `discountPercent`（0–100）；有 `variantId` 时一并提交。
-- 本 App 托管的套装可「解散」→ `dissolve` → 同步镜像 + 刷新 status-map。
-- 毛利估算：用绑定的 `offerPrice`（CNY）经 `purchase-cost-display` 换算后求和，对照父售价与折扣%。
+- 编辑 ACTIVE/STALE：打开时 `GET /bundle/{id}` 回填标题、售价、组件数量与 `variantId`；提交走 `update`。
+- FAILED：CTA 为「重新组套」；回填上次配置后走 **create**（不调用 update，避免假编辑）。
+- 提交：新建/更新均传 `contextVariantId`（主商品规格）与 `components[].variantId`；多规格未选时拦截。
+- 折扣 `%`：Function 未上线前不传 `discountPercent`、不展示输入。
+- 本 App 托管的套装可「解散」→ `dissolve`；Shopify 父商品删除失败则硬失败（已不存在除外）。
+- 毛利估算：绑定 `offerPrice`（CNY）经 `purchase-cost-display` 换算后求和，对照上架价。
 
 > `ShopMirrorProduct` 列表行无 variants；选中组件后会 `getShopProductDetail` 拉取变体并展示选择器（多 SKU 时）。
 
@@ -25,17 +27,17 @@
 |--------|------|------|
 | GET | `/api/plugin/bundle/feature?shopName=` | `BundlesFeature` |
 | GET | `/api/plugin/bundle/status-map?shopName=` | 列表卡状态 |
-| GET | `/api/plugin/bundle/{id}?shopName=` | 详情（编辑回填） |
-| POST | `/api/plugin/bundle/create` | `productBundleCreate` + 轮询；body 含 `discountPercent?`、`components[].variantId?` |
-| POST | `/api/plugin/bundle/update` | 更新托管套装标题/价/折扣/组件 |
-| POST | `/api/plugin/bundle/{id}/dissolve?shopName=` | 解散托管套装 |
+| GET | `/api/plugin/bundle/{id}?shopName=` | 详情（编辑/失败重试回填） |
+| POST | `/api/plugin/bundle/create` | `productBundleCreate` + 轮询；body 含 `contextVariantId?`、`components[].variantId?` |
+| POST | `/api/plugin/bundle/update` | 更新托管套装（拒绝 FAILED）；含 `contextVariantId?` |
+| POST | `/api/plugin/bundle/{id}/dissolve?shopName=` | 解散托管套装（父商品删除失败则 abort） |
 
 ## 语义
 
 - 在 Shopify **新建**固定套装父商品；当前卡片商品作为默认组件，须再选 ≥1 件。
 - 组件编辑权归本 App（平台规则）；`managedByApp` 才可 dissolve / update。
 - 表：`shop_product_bundle`。
-- 父商品 metafield：`tangbuy_bundle.discount_percent`（由后端写入；前端传 `discountPercent`）。
+- 父商品 metafield：`tangbuy_bundle.discount_percent`（Function 上线后再写入；当前前端不传折扣）。
 
 ## P1 · Webhook 状态
 
@@ -58,7 +60,7 @@
 - Input：cart line → `ProductVariant.product.metafield(namespace: "tangbuy_bundle", key: "discount_percent")`
 - 行为：对有有效正百分比 metafield 的行应用 percentage product discount
 
-尚未接入 App 部署流水线；需在 Shopify Partner 侧挂载 Automatic discount + Function。
+**尚未接入 App 部署流水线**；需在 Shopify Partner 侧挂载 Automatic discount + Function。上线前 UI 隐藏折扣输入。
 
 ## 前端
 

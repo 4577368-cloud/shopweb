@@ -62,6 +62,8 @@ export interface BundleComponentInput {
 export interface CreateShopBundleInput {
   shopName: string;
   contextProductId: string;
+  /** Pins optionSelections for the base (context) component when set. */
+  contextVariantId?: string | null;
   title: string;
   parentPrice?: number | null;
   discountPercent?: number | null;
@@ -71,6 +73,8 @@ export interface CreateShopBundleInput {
 export interface UpdateShopBundleInput {
   shopName: string;
   bundleId: number;
+  /** Pins optionSelections for the base (context) component when set. */
+  contextVariantId?: string | null;
   title: string;
   parentPrice?: number | null;
   discountPercent?: number | null;

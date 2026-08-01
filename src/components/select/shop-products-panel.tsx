@@ -3018,10 +3018,11 @@ function ShopProductCard({
               }}
             >
               {bundleStatus?.status === "ACTIVE" ||
-              bundleStatus?.status === "STALE" ||
-              bundleStatus?.status === "FAILED"
+              bundleStatus?.status === "STALE"
                 ? t("bundle.actionEdit")
-                : t("bundle.actionCreate")}
+                : bundleStatus?.status === "FAILED"
+                  ? t("bundle.actionRetry")
+                  : t("bundle.actionCreate")}
             </button>
             {(() => {
               const parentId = bundleStatus?.parentProductId;
