@@ -17,6 +17,7 @@
 - 提交：新建/更新均传 `contextVariantId`（主商品规格）与 `components[].variantId`；多规格未选时拦截。
 - 折扣 `%`：Function 未上线前不传 `discountPercent`、不展示输入。
 - **套装父商品卡片**：`asParent` 时视为「套装货源」——不进未匹配/查找候选/图搜批量；履约按组件绑定展开，禁止再给父商品另选货源。
+- **父商品装修**：创建/更新 ACTIVE 后自动从主商品拷贝详情 HTML + 主图/图库，并设为 `ACTIVE`（`productBundleCreate` 本身不支持图/详情）。
 - 本 App 托管的套装可「解散」→ `dissolve`；Shopify 父商品删除失败则硬失败（已不存在除外）。
 - 毛利估算：绑定 `offerPrice`（CNY）经 `purchase-cost-display` 换算后求和，对照上架价。
 

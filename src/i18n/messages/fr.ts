@@ -3973,6 +3973,8 @@ export const fr: Dictionary = {
     kitSourceTitle: "Pas de nouvel appariement",
     kitSourceBody:
       "Les commandes utilisent les sources des composants ({{bound}}/{{total}} liés). Ne choisissez pas une autre source pour le parent du pack.",
+    kitAdminHint:
+      "La boutique vend un seul produit parent. Voyez les composants via Modifier le pack. Ouvrez le parent dans l’admin pour médias/détails (copiés du produit de base à la création).",
     statusUnmatched: "Unmatched",
     stock: "Stock {{count}}",
     suggestImageSearch: "Try image search or retry later",

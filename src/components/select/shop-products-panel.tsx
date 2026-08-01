@@ -2964,6 +2964,9 @@ function ShopProductCard({
                   total: kitComponentTotal || kitBoundComponentCount || 0,
                 })}
               </p>
+              <p className="mt-1.5 text-[10px] leading-4 text-violet-700/80">
+                {t("shopProducts.kitAdminHint")}
+              </p>
             </div>
           ) : (
             <div className="flex flex-1 items-center rounded-lg border border-dashed border-surface-border px-3 py-2 text-[11px] text-muted-foreground">

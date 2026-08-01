@@ -3775,7 +3775,7 @@ export const en = {
     outcomeNotSku:
       "It does not add a new SKU to the current product, and it does not replace this listing.",
     outcomeShort:
-      "Creates a new Shopify parent product (not a new SKU on this listing).",
+      "Creates a Shopify parent (not a new SKU); copies base image/details after create.",
     stepName: "Name & price",
     stepComponents: "Choose components",
     panelCurrent: "Current product",
@@ -3977,6 +3977,8 @@ export const en = {
     kitSourceTitle: "No rematch needed",
     kitSourceBody:
       "Orders expand to component sources ({{bound}}/{{total}} linked). Do not pick a separate source for the kit parent.",
+    kitAdminHint:
+      "Storefront sells one parent product. Review components via Edit bundle here. Open the parent in Admin to tweak media/details (copied from the base product on create).",
     statusUnmatched: "Unmatched",
     stock: "Stock {{count}}",
     suggestImageSearch: "Try image search or retry later",

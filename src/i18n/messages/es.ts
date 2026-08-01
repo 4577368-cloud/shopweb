@@ -3972,6 +3972,8 @@ export const es: Dictionary = {
     kitSourceTitle: "No hace falta volver a emparejar",
     kitSourceBody:
       "Los pedidos usan las fuentes de los componentes ({{bound}}/{{total}} vinculados). No elijas otra fuente para el padre del kit.",
+    kitAdminHint:
+      "La tienda vende un solo producto padre. Revisa los componentes con Editar bundle. Abre el padre en Admin para medios/detalle (se copian del producto base al crear).",
     statusUnmatched: "Unmatched",
     stock: "Stock {{count}}",
     suggestImageSearch: "Try image search or retry later",

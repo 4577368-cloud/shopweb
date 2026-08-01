@@ -3755,7 +3755,7 @@ export const zh: Dictionary = {
       "店里会出现一个新的「套装主商品」。顾客下单买的是这个新商品；库存由下面各组件商品自动扣减。",
     outcomeNotSku: "不是给现有商品加一个新 SKU，也不会改掉当前这件商品本身。",
     outcomeShort:
-      "将新建一个 Shopify 套装商品（不是新 SKU）；顾客买的是新主商品。",
+      "将新建一个 Shopify 套装商品（不是新 SKU）；创建后自动拷贝主商品图/详情，顾客买的是新主商品。",
     stepName: "套装名称与售价",
     stepComponents: "选择组件",
     panelCurrent: "当前商品",
@@ -3953,6 +3953,8 @@ export const zh: Dictionary = {
     kitSourceTitle: "不需重新匹配",
     kitSourceBody:
       "订单履约按组件展开货源（{{bound}}/{{total}} 已关联）。请勿给套装父商品另选货源，以免选错。",
+    kitAdminHint:
+      "Shopify 前台卖的是「一个」套装商品；组件清单请在本页「编辑套装」查看。Admin 打开父商品后可改图/详情（创建时会自动从主商品拷贝）。",
     statusUnmatched: "未匹配",
     stock: "库存 {{count}}",
     suggestImageSearch: "建议使用图搜，或稍后重试",
