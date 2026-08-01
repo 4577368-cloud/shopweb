@@ -1,7 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, ExternalLink, Loader2, Search, X } from "@/lib/ui/icons";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  AlertTriangle,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Loader2,
+  Package,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThumbImage } from "@/components/ui/thumb-image";
@@ -31,6 +50,9 @@ import {
 import { parseGatewayPrice } from "@/lib/agents/products/match-rank";
 import { cn } from "@/lib/utils";
 import { useT } from "@/i18n/LocaleProvider";
+
+const CATALOG_PAGE_SIZE = 8;
+const TITLE_MAX = 100;
 
 type SelectedComponent = {
   quantity: number;
@@ -76,18 +98,76 @@ function ProductThumb({
   );
 }
 
-function SectionLabel({
+function CardShell({
   children,
-  trailing,
+  className,
 }: {
   children: ReactNode;
-  trailing?: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="flex h-8 items-center justify-between gap-2">
-      <p className="text-[13px] font-semibold tracking-tight text-ink">{children}</p>
-      {trailing}
+    <div
+      className={cn(
+        "rounded-lg border border-hairline bg-surface shadow-sm",
+        className
+      )}
+    >
+      {children}
     </div>
+  );
+}
+
+function QtyStepper({
+  value,
+  disabled,
+  onChange,
+  ariaLabel,
+}: {
+  value: number;
+  disabled?: boolean;
+  onChange: (n: number) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div className="inline-flex h-8 items-stretch overflow-hidden rounded-md border border-hairline bg-surface">
+      <button
+        type="button"
+        disabled={disabled || value <= 1}
+        className="w-7 text-[14px] text-ink-muted transition-colors hover:bg-canvas disabled:opacity-40"
+        aria-label="−"
+        onClick={() => onChange(value - 1)}
+      >
+        −
+      </button>
+      <input
+        type="number"
+        min={1}
+        max={99}
+        value={value}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        onChange={(e) => onChange(Number(e.target.value) || 1)}
+        className="w-9 border-x border-hairline bg-transparent text-center text-[12px] tabular-nums text-ink outline-none"
+      />
+      <button
+        type="button"
+        disabled={disabled || value >= 99}
+        className="w-7 text-[14px] text-ink-muted transition-colors hover:bg-canvas disabled:opacity-40"
+        aria-label="+"
+        onClick={() => onChange(value + 1)}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+function variantLabel(v: ShopMirrorSku): string {
+  return (
+    v.title ||
+    [v.option1, v.option2, v.option3].filter(Boolean).join(" / ") ||
+    v.sku ||
+    v.thirdPlatformSkuId
   );
 }
 
@@ -121,13 +201,16 @@ export function BundleComposerDrawer({
   onDissolved?: () => void;
 }) {
   const t = useT();
+  const searchRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
   const [discountPercent, setDiscountPercent] = useState("");
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Record<string, SelectedComponent>>(
     {}
   );
+  const [contextVariantId, setContextVariantId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [dissolving, setDissolving] = useState(false);
   const [loadingBundle, setLoadingBundle] = useState(false);
@@ -156,7 +239,9 @@ export function BundleComposerDrawer({
     );
     setDiscountPercent("");
     setQuery("");
+    setPage(1);
     setSelected({});
+    setContextVariantId(null);
     setSaving(false);
     setDissolving(false);
     setLoadingBundle(false);
@@ -165,11 +250,10 @@ export function BundleComposerDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional open/context gate
   }, [open, contextId]);
 
-  // Load variant matrices for selected components (multi-SKU picker).
+  // Load variants for context + selected components (edited in left table, not clipped list).
   useEffect(() => {
     if (!open) return;
-    const ids = Object.keys(selected);
-    if (ids.length === 0) return;
+    const ids = [contextId, ...Object.keys(selected)];
     let cancelled = false;
     void (async () => {
       for (const id of ids) {
@@ -179,16 +263,19 @@ export function BundleComposerDrawer({
           if (cancelled) return;
           const variants = detail.variants ?? [];
           setVariantOptions((prev) => ({ ...prev, [id]: variants }));
-          if (variants.length === 1 && !selected[id]?.variantId) {
+          if (id === contextId && variants.length === 1 && !contextVariantId) {
+            setContextVariantId(variants[0].thirdPlatformSkuId);
+          } else if (
+            id !== contextId &&
+            variants.length === 1 &&
+            !selected[id]?.variantId
+          ) {
             setSelected((prev) => {
               const cur = prev[id];
               if (!cur) return prev;
               return {
                 ...prev,
-                [id]: {
-                  ...cur,
-                  variantId: variants[0].thirdPlatformSkuId,
-                },
+                [id]: { ...cur, variantId: variants[0].thirdPlatformSkuId },
               };
             });
           }
@@ -200,8 +287,8 @@ export function BundleComposerDrawer({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per newly selected id
-  }, [open, shopName, Object.keys(selected).sort().join(",")]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, shopName, contextId, Object.keys(selected).sort().join(",")]);
 
   useEffect(() => {
     if (!open) return;
@@ -233,7 +320,11 @@ export function BundleComposerDrawer({
         }
         const next: Record<string, SelectedComponent> = {};
         for (const c of bundle.components ?? []) {
-          if (!c.productId || c.productId === contextId) continue;
+          if (!c.productId) continue;
+          if (c.productId === contextId) {
+            setContextVariantId(c.variantId ?? null);
+            continue;
+          }
           next[c.productId] = {
             quantity: Math.max(1, Math.min(99, c.quantity || 1)),
             variantId: c.variantId ?? null,
@@ -264,6 +355,10 @@ export function BundleComposerDrawer({
       document.removeEventListener("keydown", onKey);
     };
   }, [open, onClose, busy]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
 
   const catalogById = useMemo(() => {
     const map = new Map<string, ShopMirrorProduct>();
@@ -307,6 +402,13 @@ export function BundleComposerDrawer({
     });
   }, [catalog, contextId, isOccupiedElsewhere, query, selected]);
 
+  const totalPages = Math.max(1, Math.ceil(candidates.length / CATALOG_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = candidates.slice(
+    (safePage - 1) * CATALOG_PAGE_SIZE,
+    safePage * CATALOG_PAGE_SIZE
+  );
+
   const selectedEntries = useMemo(
     () =>
       Object.entries(selected).map(([productId, row]) => ({
@@ -319,7 +421,6 @@ export function BundleComposerDrawer({
   );
 
   const selectedCount = selectedEntries.length;
-  const totalComponentCount = 1 + selectedCount;
   const eligible = feature?.eligibleForBundles !== false;
   const canSubmit =
     eligible &&
@@ -351,14 +452,18 @@ export function BundleComposerDrawer({
     return shopifyProductAdminUrl(parentId, shopDomain);
   }, [existing?.parentProductId, existing?.status, shopDomain]);
 
-  const displayPrice =
-    price.trim() && Number.isFinite(Number(price)) && Number(price) > 0
-      ? `${currency} ${price.trim()}`
-      : t("bundle.priceUnset");
-
   const costCtx = useMemo(
     () => resolvePurchaseCostDisplayContext(currency, pricingTemplate),
     [currency, pricingTemplate]
+  );
+
+  const unitCost = useCallback(
+    (productId: string) => {
+      const cny = parseGatewayPrice(bindings[productId]?.offerPrice);
+      if (cny == null) return null;
+      return costInPurchaseDisplayCurrency(cny, costCtx);
+    },
+    [bindings, costCtx]
   );
 
   const marginInfo = useMemo(() => {
@@ -401,14 +506,7 @@ export function BundleComposerDrawer({
         ? (marginAbs / effectivePrice) * 100
         : null;
     return { estimatedCost, parentPriceNum, discount, marginAbs, marginPct };
-  }, [
-    bindings,
-    contextId,
-    costCtx,
-    discountPercent,
-    price,
-    selected,
-  ]);
+  }, [bindings, contextId, costCtx, discountPercent, price, selected]);
 
   const toggle = (id: string) => {
     if (isOccupiedElsewhere(id)) return;
@@ -435,6 +533,27 @@ export function BundleComposerDrawer({
     });
   };
 
+  const setVariant = (id: string, variantId: string | null) => {
+    setSelected((prev) => {
+      const cur = prev[id];
+      if (!cur) return prev;
+      return { ...prev, [id]: { ...cur, variantId } };
+    });
+  };
+
+  const removeSelected = (id: string) => {
+    setSelected((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const focusCatalog = () => {
+    searchRef.current?.focus();
+    searchRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+
   const submit = async () => {
     if (!canSubmit) return;
     setSaving(true);
@@ -459,7 +578,7 @@ export function BundleComposerDrawer({
           : null;
       const payload = {
         shopName,
-        title: title.trim(),
+        title: title.trim().slice(0, TITLE_MAX),
         parentPrice:
           parentPrice != null &&
           Number.isFinite(parentPrice) &&
@@ -505,12 +624,19 @@ export function BundleComposerDrawer({
     }
   };
 
-  if (!open) return null;
+  const pageNumbers = useMemo(() => {
+    const maxButtons = 5;
+    if (totalPages <= maxButtons) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const start = Math.max(
+      1,
+      Math.min(safePage - 2, totalPages - maxButtons + 1)
+    );
+    return Array.from({ length: maxButtons }, (_, i) => start + i);
+  }, [safePage, totalPages]);
 
-  const contextPriceLabel = formatShopPrice(
-    contextProduct.currency,
-    contextProduct.minPrice
-  );
+  if (!open) return null;
 
   const alertMessage = !eligible
     ? feature?.ineligibilityReason?.trim() || t("bundle.ineligibleDefault")
@@ -520,6 +646,10 @@ export function BundleComposerDrawer({
         ? t("bundle.staleHint")
         : error;
 
+  const marginEstimateLabel =
+    marginInfo.marginAbs != null && marginInfo.marginPct != null
+      ? `${marginInfo.marginAbs.toFixed(2)} ${currency} (${marginInfo.marginPct.toFixed(0)}%)`
+      : "—";
   const marginCostLabel =
     marginInfo.estimatedCost != null
       ? formatPurchaseCostMoney(marginInfo.estimatedCost, costCtx.currency)
@@ -528,10 +658,9 @@ export function BundleComposerDrawer({
     marginInfo.parentPriceNum != null
       ? `${marginInfo.parentPriceNum.toFixed(2)} ${currency}`
       : t("bundle.priceUnset");
-  const marginEstimateLabel =
-    marginInfo.marginAbs != null && marginInfo.marginPct != null
-      ? `${marginInfo.marginAbs.toFixed(2)} ${currency} (${marginInfo.marginPct.toFixed(0)}%)`
-      : "—";
+
+  const contextVariants = variantOptions[contextId] ?? [];
+  const contextCost = unitCost(contextId);
 
   return (
     <div
@@ -549,18 +678,21 @@ export function BundleComposerDrawer({
         }}
       />
 
-      <div className="relative z-10 flex h-[min(90vh,760px)] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-hairline bg-surface shadow-card">
-        {/* Header — compact, one line of hierarchy */}
-        <header className="flex shrink-0 items-center gap-3 border-b border-hairline px-4 py-3 sm:px-5">
+      <div className="relative z-10 flex h-[min(92vh,800px)] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-hairline bg-canvas shadow-card">
+        {/* Header */}
+        <header className="flex shrink-0 items-start gap-3 border-b border-hairline bg-surface px-5 py-4">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
+            <Package className="h-4 w-4" />
+          </span>
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h2
                 id="bundle-composer-title"
-                className="truncate text-[15px] font-semibold tracking-tight text-ink"
+                className="text-[16px] font-semibold tracking-tight text-ink"
               >
-                {editing ? t("bundle.editTitle") : t("bundle.createTitle")}
+                {editing ? t("bundle.editTitle") : t("bundle.createComboTitle")}
               </h2>
-              <span className="hidden shrink-0 text-[12px] text-ink-subtle sm:inline">
+              <span className="rounded-md bg-canvas px-1.5 py-0.5 text-[11px] font-medium text-ink-muted">
                 {t("bundle.eyebrow")}
               </span>
               {adminUrl ? (
@@ -577,7 +709,7 @@ export function BundleComposerDrawer({
                 </Button>
               ) : null}
             </div>
-            <p className="mt-0.5 truncate text-[12px] text-ink-muted">
+            <p className="mt-1 text-[12px] leading-5 text-ink-muted">
               {t("bundle.outcomeShort")}
             </p>
           </div>
@@ -595,7 +727,7 @@ export function BundleComposerDrawer({
         </header>
 
         {alertMessage || loadingBundle ? (
-          <div className="shrink-0 border-b border-hairline px-4 py-2 sm:px-5">
+          <div className="shrink-0 border-b border-hairline bg-surface px-5 py-2">
             {loadingBundle ? (
               <div className="flex items-center gap-2 text-[12px] text-ink-muted">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -614,349 +746,465 @@ export function BundleComposerDrawer({
           </div>
         ) : null}
 
-        {/* Body: split panes + compose — no nested cards */}
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-hairline lg:grid-cols-[minmax(240px,32%)_minmax(0,1fr)] lg:divide-x lg:divide-y-0">
-            {/* Left — current */}
-            <section className="flex min-h-0 flex-col bg-canvas/50 p-4 sm:p-5">
-              <SectionLabel>{t("bundle.panelCurrent")}</SectionLabel>
-              <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3">
-                <div className="relative mx-auto w-full max-w-[200px] overflow-hidden rounded-md border border-hairline bg-surface-muted">
-                  <div className="aspect-square w-full">
-                    {contextProduct.primaryImageUrl ? (
-                      <ThumbImage
-                        src={contextProduct.primaryImageUrl}
-                        alt=""
-                        className="h-full w-full object-cover"
-                      />
-                    ) : null}
-                  </div>
-                </div>
-                <div className="min-w-0 space-y-1.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="line-clamp-2 text-[13px] font-semibold leading-snug text-ink">
-                      {contextProduct.title || t("bundle.untitled")}
-                    </p>
-                    <span className="shrink-0 rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-medium text-white">
-                      {t("bundle.currentBadge")}
-                    </span>
-                  </div>
-                  <p className="text-[13px] font-semibold tabular-nums text-ink">
-                    {contextPriceLabel ?? t("bundle.priceUnset")}
-                  </p>
-                  <p className="text-[11px] leading-4 text-ink-subtle">
-                    {t("bundle.lockedComponent")}
-                    {!contextBound ? (
-                      <span className="ml-1 font-medium text-amber-700">
-                        · {t("bundle.unboundBadge")}
-                      </span>
-                    ) : null}
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            {/* Right — targets */}
-            <section className="flex min-h-0 flex-col p-4 sm:p-5">
-              <SectionLabel
-                trailing={
-                  <span
-                    className={cn(
-                      "text-[12px] tabular-nums",
-                      selectedCount >= 1
-                        ? "text-ink-muted"
-                        : "font-medium text-amber-700"
-                    )}
-                  >
-                    {t("bundle.selectedCount", { count: selectedCount })}
-                  </span>
-                }
-              >
-                {t("bundle.panelTargets")}
-              </SectionLabel>
-
-              <div className="relative mt-2 shrink-0">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
-                <Input
-                  className="h-9 pl-8 pr-9 text-sm"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  disabled={busy}
-                  placeholder={t("bundle.searchPlaceholder")}
-                />
-                {query ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 px-0"
-                    title={t("bundle.clearSearch")}
-                    aria-label={t("bundle.clearSearch")}
-                    disabled={busy}
-                    onClick={() => setQuery("")}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                ) : null}
-              </div>
-
-              <ul className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-hairline">
-                {candidates.length === 0 ? (
-                  <li className="px-1 py-10 text-center text-[12px] text-ink-muted">
-                    {query.trim()
-                      ? t("bundle.noSearchMatches")
-                      : t("bundle.noCandidates")}
-                  </li>
-                ) : (
-                  candidates.map((p) => {
-                    const id = p.thirdPlatformItemId;
-                    const on = Boolean(selected[id]);
-                    const occupied = isOccupiedElsewhere(id);
-                    const unbound = !isBindingReady(bindings, id);
-                    const blocked = occupied || unbound;
-                    const priceLabel = formatShopPrice(p.currency, p.minPrice);
-                    return (
-                      <li key={id} className="border-b border-hairline last:border-b-0">
-                        <button
-                          type="button"
-                          disabled={busy || blocked}
-                          onClick={() => toggle(id)}
-                          className={cn(
-                            "flex w-full items-center gap-2.5 py-2.5 pr-1 text-left transition-colors",
-                            blocked
-                              ? "cursor-not-allowed opacity-45"
-                              : on
-                                ? "bg-brand-soft/70"
-                                : "hover:bg-canvas/80"
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "flex h-5 w-5 shrink-0 items-center justify-center rounded border",
-                              blocked
-                                ? "border-hairline bg-surface-muted text-transparent"
-                                : on
-                                  ? "border-brand-accent bg-brand-accent text-white"
-                                  : "border-hairline-strong bg-surface text-transparent"
-                            )}
-                            aria-hidden
-                          >
-                            <Check className="h-3 w-3" />
-                          </span>
-                          <ProductThumb
-                            url={p.primaryImageUrl}
-                            className="h-9 w-9 rounded-md"
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-medium text-ink">
-                              {p.title || id}
-                            </span>
-                            <span className="mt-0.5 block truncate text-[11px] text-ink-subtle">
-                              {occupied
-                                ? t("bundle.occupiedElsewhere")
-                                : unbound
-                                  ? t("bundle.needBinding")
-                                  : (priceLabel ?? t("bundle.priceUnset"))}
-                            </span>
-                          </span>
-                          {on && !blocked ? (
-                            <div
-                              className="flex shrink-0 items-center gap-1.5"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {(variantOptions[id]?.length ?? 0) > 1 ? (
-                                <select
-                                  className="h-8 max-w-[7.5rem] rounded-md border border-hairline bg-surface px-1 text-[11px] text-ink"
-                                  value={selected[id]?.variantId ?? ""}
-                                  aria-label={t("bundle.variantLabel")}
-                                  onChange={(e) => {
-                                    const variantId = e.target.value || null;
-                                    setSelected((prev) => {
-                                      const cur = prev[id];
-                                      if (!cur) return prev;
-                                      return {
-                                        ...prev,
-                                        [id]: { ...cur, variantId },
-                                      };
-                                    });
-                                  }}
-                                >
-                                  <option value="">{t("bundle.variantLabel")}</option>
-                                  {(variantOptions[id] ?? []).map((v) => (
-                                    <option
-                                      key={v.thirdPlatformSkuId}
-                                      value={v.thirdPlatformSkuId}
-                                    >
-                                      {v.title ||
-                                        [v.option1, v.option2, v.option3]
-                                          .filter(Boolean)
-                                          .join(" / ") ||
-                                        v.sku ||
-                                        v.thirdPlatformSkuId}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : null}
-                              <input
-                                type="number"
-                                min={1}
-                                max={99}
-                                value={selected[id]?.quantity ?? 1}
-                                onChange={(e) =>
-                                  setQty(id, Number(e.target.value) || 1)
-                                }
-                                className="h-8 w-11 rounded-md border border-hairline bg-surface px-1 text-center text-[12px] tabular-nums text-ink"
-                                aria-label={t("bundle.qtyAria")}
-                              />
-                            </div>
-                          ) : !blocked ? (
-                            <span className="shrink-0 text-[11px] font-medium text-brand-accent">
-                              {t("bundle.tapToAdd")}
-                            </span>
-                          ) : null}
-                        </button>
-                      </li>
-                    );
-                  })
-                )}
-              </ul>
-            </section>
-          </div>
-
-          {/* Bottom compose — single band, divider not card-in-card */}
-          <section className="shrink-0 border-t border-hairline bg-canvas/40 px-4 py-3 sm:px-5">
-            <SectionLabel
-              trailing={
-                <span className="text-[12px] tabular-nums text-ink-muted">
-                  {t("bundle.previewParts", { count: totalComponentCount })}
-                </span>
-              }
-            >
-              {t("bundle.panelCompose")}
-            </SectionLabel>
-
-            <div className="mt-2.5 flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <ProductThumb
-                  url={contextProduct.primaryImageUrl}
-                  className="h-8 w-8 rounded-md"
-                />
-                {selectedEntries.slice(0, 3).map(({ productId, product }) => (
-                  <ProductThumb
-                    key={productId}
-                    url={product?.primaryImageUrl}
-                    className="h-8 w-8 rounded-md"
-                  />
-                ))}
-                {selectedCount > 3 ? (
-                  <span className="flex h-8 w-8 items-center justify-center rounded-md border border-hairline bg-surface text-[11px] font-medium text-ink-muted">
-                    +{selectedCount - 3}
-                  </span>
-                ) : null}
-              </div>
-              <span className="hidden h-4 w-px bg-hairline sm:block" />
-              <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
-                {title.trim() || t("bundle.untitled")}
-                <span className="ml-2 font-normal tabular-nums text-ink-muted">
-                  {displayPrice}
-                </span>
+        {/* Body: left config | right catalog */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.9fr)] lg:gap-5 lg:p-5">
+          {/* LEFT */}
+          <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
+            <CardShell className="shrink-0 p-4">
+              <p className="text-[13px] font-semibold text-ink">
+                {t("bundle.infoSection")}
               </p>
-            </div>
 
-            {selectedCount === 0 ? (
-              <p className="mt-2 text-[12px] text-ink-muted">
-                {t("bundle.previewEmpty")}
-              </p>
-            ) : null}
-
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-12">
-              <label className="col-span-2 space-y-1 sm:col-span-5">
-                <span className="text-[11px] text-ink-muted">
-                  {t("bundle.titleLabel")}
-                </span>
+              <label className="mt-3 block space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12px] text-ink-muted">
+                    {t("bundle.titleLabel")}
+                  </span>
+                  <span className="text-[11px] tabular-nums text-ink-subtle">
+                    {Math.min(title.length, TITLE_MAX)}/{TITLE_MAX}
+                  </span>
+                </div>
                 <Input
-                  className="h-9 text-sm"
+                  className="h-10 text-sm"
                   value={title}
+                  maxLength={TITLE_MAX}
                   onChange={(e) => setTitle(e.target.value)}
                   disabled={busy}
                   placeholder={t("bundle.titlePlaceholder")}
                 />
               </label>
-              <label className="space-y-1 sm:col-span-3">
-                <span className="text-[11px] text-ink-muted">
-                  {t("bundle.priceLabel")}
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    className="h-9 min-w-0 flex-1 text-sm tabular-nums"
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    step="0.01"
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    disabled={busy}
-                    placeholder={t("bundle.pricePlaceholder")}
-                  />
-                  <span className="shrink-0 text-[11px] text-ink-subtle">
-                    {currency}
+
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                <label className="block space-y-1.5">
+                  <span className="text-[12px] text-ink-muted">
+                    {t("bundle.priceLabel")}
                   </span>
+                  <div className="flex h-10 items-center overflow-hidden rounded-md border border-input bg-surface">
+                    <span className="border-r border-hairline px-2.5 text-[12px] font-medium text-ink-subtle">
+                      {currency}
+                    </span>
+                    <input
+                      className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-sm tabular-nums text-ink outline-none"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step="0.01"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      disabled={busy}
+                      placeholder={t("bundle.pricePlaceholder")}
+                    />
+                  </div>
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-[12px] text-ink-muted">
+                    {t("bundle.discountLabel")}
+                  </span>
+                  <div className="flex h-10 items-center overflow-hidden rounded-md border border-input bg-surface">
+                    <input
+                      className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-sm tabular-nums text-ink outline-none"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      max={100}
+                      step="1"
+                      value={discountPercent}
+                      onChange={(e) => setDiscountPercent(e.target.value)}
+                      disabled={busy}
+                      placeholder="0"
+                    />
+                    <span className="border-l border-hairline px-2.5 text-[12px] font-medium text-ink-subtle">
+                      %
+                    </span>
+                  </div>
+                </label>
+                <div className="flex min-w-[9.5rem] flex-col justify-end">
+                  <div className="flex h-10 items-center rounded-md border border-brand-accent/25 bg-brand-soft/70 px-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-ink-muted">
+                        {t("bundle.marginEstimate")}
+                      </p>
+                      <p className="truncate text-[12px] font-semibold tabular-nums text-ink">
+                        {marginEstimateLabel}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </label>
-              <label className="space-y-1 sm:col-span-2">
-                <span className="text-[11px] text-ink-muted">
-                  {t("bundle.discountLabel")}
+              </div>
+
+              <dl className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] tabular-nums text-ink-muted">
+                <div className="flex gap-1.5">
+                  <dt>{t("bundle.marginCost")}</dt>
+                  <dd className="font-medium text-ink">{marginCostLabel}</dd>
+                </div>
+                <div className="flex gap-1.5">
+                  <dt>{t("bundle.marginPrice")}</dt>
+                  <dd className="font-medium text-ink">
+                    {marginPriceLabel}
+                    {marginInfo.discount > 0
+                      ? ` (−${marginInfo.discount}%)`
+                      : ""}
+                  </dd>
+                </div>
+              </dl>
+            </CardShell>
+
+            <CardShell className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex items-center justify-between gap-2 border-b border-hairline px-4 py-3">
+                <p className="text-[13px] font-semibold text-ink">
+                  {t("bundle.productsSection")}
+                </p>
+                <span className="text-[12px] tabular-nums text-ink-muted">
+                  {t("bundle.previewParts", { count: 1 + selectedCount })}
                 </span>
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    className="h-9 w-full text-sm tabular-nums"
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    max={100}
-                    step="1"
-                    value={discountPercent}
-                    onChange={(e) => setDiscountPercent(e.target.value)}
-                    disabled={busy}
-                    placeholder="0"
-                  />
-                  <span className="shrink-0 text-[11px] text-ink-subtle">%</span>
-                </div>
-              </label>
-              <div className="col-span-2 flex items-end sm:col-span-2">
-                <div className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5">
-                  <p className="text-[10px] text-ink-subtle">
-                    {t("bundle.marginEstimate")}
-                  </p>
-                  <p className="truncate text-[12px] font-semibold tabular-nums text-ink">
-                    {marginEstimateLabel}
-                  </p>
-                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-auto">
+                <table className="w-full min-w-[520px] border-collapse text-left text-[12px]">
+                  <thead className="sticky top-0 z-[1] bg-canvas/95 text-[11px] text-ink-subtle backdrop-blur">
+                    <tr className="border-b border-hairline">
+                      <th className="px-4 py-2.5 font-medium">
+                        {t("bundle.colProduct")}
+                      </th>
+                      <th className="px-2 py-2.5 font-medium">
+                        {t("bundle.colVariant")}
+                      </th>
+                      <th className="px-2 py-2.5 font-medium">
+                        {t("bundle.colQty")}
+                      </th>
+                      <th className="px-2 py-2.5 font-medium">
+                        {t("bundle.colCost")}
+                      </th>
+                      <th className="px-3 py-2.5 text-right font-medium">
+                        {t("bundle.colAction")}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-hairline bg-canvas/40">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <ProductThumb
+                            url={contextProduct.primaryImageUrl}
+                            className="h-10 w-10 rounded-md"
+                          />
+                          <div className="min-w-0">
+                            <p className="truncate text-[13px] font-medium text-ink">
+                              {contextProduct.title || t("bundle.untitled")}
+                            </p>
+                            <p className="mt-0.5 text-[10px] font-medium text-ink-subtle">
+                              {t("bundle.currentBadge")}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-2 py-3">
+                        {contextVariants.length > 1 ? (
+                          <select
+                            className="h-8 max-w-[9rem] rounded-md border border-hairline bg-surface px-1.5 text-[11px] text-ink"
+                            value={contextVariantId ?? ""}
+                            disabled={busy}
+                            aria-label={t("bundle.variantLabel")}
+                            onChange={(e) =>
+                              setContextVariantId(e.target.value || null)
+                            }
+                          >
+                            <option value="">{t("bundle.variantLabel")}</option>
+                            {contextVariants.map((v) => (
+                              <option
+                                key={v.thirdPlatformSkuId}
+                                value={v.thirdPlatformSkuId}
+                              >
+                                {variantLabel(v)}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-ink-muted">
+                            {contextVariants[0]
+                              ? variantLabel(contextVariants[0])
+                              : "—"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-2 py-3">
+                        <span className="inline-flex h-8 items-center rounded-md border border-hairline bg-canvas px-2.5 text-[12px] tabular-nums text-ink-muted">
+                          ×1
+                        </span>
+                      </td>
+                      <td className="px-2 py-3 tabular-nums text-ink-muted">
+                        {contextCost != null
+                          ? formatPurchaseCostMoney(
+                              contextCost,
+                              costCtx.currency
+                            )
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        <span className="text-[11px] text-ink-subtle">—</span>
+                      </td>
+                    </tr>
+
+                    {selectedEntries.map(
+                      ({ productId, product, quantity, variantId }) => {
+                        const variants = variantOptions[productId] ?? [];
+                        const cost = unitCost(productId);
+                        return (
+                          <tr
+                            key={productId}
+                            className="border-b border-hairline last:border-b-0"
+                          >
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2.5">
+                                <ProductThumb
+                                  url={product?.primaryImageUrl}
+                                  className="h-10 w-10 rounded-md"
+                                />
+                                <p className="min-w-0 truncate text-[13px] font-medium text-ink">
+                                  {product?.title || productId}
+                                </p>
+                              </div>
+                            </td>
+                            <td className="px-2 py-3">
+                              {variants.length > 1 ? (
+                                <select
+                                  className="h-8 max-w-[9rem] rounded-md border border-hairline bg-surface px-1.5 text-[11px] text-ink"
+                                  value={variantId ?? ""}
+                                  disabled={busy}
+                                  aria-label={t("bundle.variantLabel")}
+                                  onChange={(e) =>
+                                    setVariant(
+                                      productId,
+                                      e.target.value || null
+                                    )
+                                  }
+                                >
+                                  <option value="">
+                                    {t("bundle.variantLabel")}
+                                  </option>
+                                  {variants.map((v) => (
+                                    <option
+                                      key={v.thirdPlatformSkuId}
+                                      value={v.thirdPlatformSkuId}
+                                    >
+                                      {variantLabel(v)}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span className="text-ink-muted">
+                                  {variants[0]
+                                    ? variantLabel(variants[0])
+                                    : "—"}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-2 py-3">
+                              <QtyStepper
+                                value={quantity}
+                                disabled={busy}
+                                ariaLabel={t("bundle.qtyAria")}
+                                onChange={(n) => setQty(productId, n)}
+                              />
+                            </td>
+                            <td className="px-2 py-3 tabular-nums text-ink-muted">
+                              {cost != null
+                                ? formatPurchaseCostMoney(
+                                    cost,
+                                    costCtx.currency
+                                  )
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-3 text-right">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="h-7 w-7 px-0 text-ink-muted hover:text-red-600"
+                                disabled={busy}
+                                title={t("bundle.removeComponent")}
+                                aria-label={t("bundle.removeComponent")}
+                                onClick={() => removeSelected(productId)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="border-t border-hairline px-4 py-3">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={focusCatalog}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-hairline-strong bg-canvas/50 py-2.5 text-[13px] font-medium text-brand-accent transition-colors hover:border-brand-accent/40 hover:bg-brand-soft/50 disabled:opacity-50"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t("bundle.addMoreProducts")}
+                </button>
+              </div>
+            </CardShell>
+          </div>
+
+          {/* RIGHT — catalog */}
+          <CardShell className="flex min-h-0 flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-2 border-b border-hairline px-4 py-3">
+              <p className="text-[13px] font-semibold text-ink">
+                {t("bundle.selectProducts")}
+              </p>
+              <span
+                className={cn(
+                  "text-[12px] tabular-nums",
+                  selectedCount >= 1
+                    ? "font-medium text-amber-700"
+                    : "text-ink-muted"
+                )}
+              >
+                {t("bundle.pickedCount", { count: selectedCount })}
+              </span>
+            </div>
+
+            <div className="shrink-0 px-4 pt-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
+                <Input
+                  ref={searchRef}
+                  className="h-9 pl-8 text-sm"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  disabled={busy}
+                  placeholder={t("bundle.searchPlaceholder")}
+                />
               </div>
             </div>
 
-            <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] tabular-nums text-ink-muted">
-              <div className="flex gap-1.5">
-                <dt>{t("bundle.marginCost")}</dt>
-                <dd className="font-medium text-ink">{marginCostLabel}</dd>
+            <ul className="mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-1">
+              {pageRows.length === 0 ? (
+                <li className="px-2 py-12 text-center text-[12px] text-ink-muted">
+                  {query.trim()
+                    ? t("bundle.noSearchMatches")
+                    : t("bundle.noCandidates")}
+                </li>
+              ) : (
+                pageRows.map((p) => {
+                  const id = p.thirdPlatformItemId;
+                  const on = Boolean(selected[id]);
+                  const occupied = isOccupiedElsewhere(id);
+                  const unbound = !isBindingReady(bindings, id);
+                  const blocked = occupied || unbound;
+                  const priceLabel = formatShopPrice(p.currency, p.minPrice);
+                  return (
+                    <li key={id} className="px-1 py-0.5">
+                      <button
+                        type="button"
+                        disabled={busy || blocked}
+                        onClick={() => toggle(id)}
+                        className={cn(
+                          "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition-colors",
+                          blocked
+                            ? "cursor-not-allowed opacity-45"
+                            : on
+                              ? "bg-brand-soft ring-1 ring-brand-accent/25"
+                              : "hover:bg-canvas"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "flex h-5 w-5 shrink-0 items-center justify-center rounded border",
+                            blocked
+                              ? "border-hairline bg-surface-muted text-transparent"
+                              : on
+                                ? "border-brand-accent bg-brand-accent text-white"
+                                : "border-hairline-strong bg-surface text-transparent"
+                          )}
+                          aria-hidden
+                        >
+                          <Check className="h-3 w-3" />
+                        </span>
+                        <ProductThumb
+                          url={p.primaryImageUrl}
+                          className="h-10 w-10 rounded-md"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-medium text-ink">
+                            {p.title || id}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[11px] text-ink-subtle">
+                            {occupied
+                              ? t("bundle.occupiedElsewhere")
+                              : unbound
+                                ? t("bundle.needBinding")
+                                : (priceLabel ?? t("bundle.priceUnset"))}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+
+            {totalPages > 1 ? (
+              <div className="flex shrink-0 items-center justify-center gap-1 border-t border-hairline px-3 py-2.5">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 w-7 px-0"
+                  disabled={busy || safePage <= 1}
+                  title={t("shopProducts.prevPage")}
+                  aria-label={t("shopProducts.prevPage")}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                {pageNumbers.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setPage(n)}
+                    className={cn(
+                      "flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-[12px] tabular-nums transition-colors",
+                      n === safePage
+                        ? "bg-brand-accent font-semibold text-white"
+                        : "text-ink-muted hover:bg-canvas"
+                    )}
+                  >
+                    {n}
+                  </button>
+                ))}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 w-7 px-0"
+                  disabled={busy || safePage >= totalPages}
+                  title={t("shopProducts.nextPage")}
+                  aria-label={t("shopProducts.nextPage")}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
               </div>
-              <div className="flex gap-1.5">
-                <dt>{t("bundle.marginPrice")}</dt>
-                <dd className="font-medium text-ink">
-                  {marginPriceLabel}
-                  {marginInfo.discount > 0 ? ` (−${marginInfo.discount}%)` : ""}
-                </dd>
-              </div>
-            </dl>
-          </section>
+            ) : null}
+          </CardShell>
         </div>
 
-        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-hairline px-4 py-3 sm:px-5">
-          <p className="min-w-0 flex-1 text-[11px] leading-4 text-ink-subtle">
-            {submitBlockedReason && !busy
-              ? submitBlockedReason
-              : t("bundle.inventoryHint")}
-          </p>
+        {/* Footer */}
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-hairline bg-surface px-5 py-3.5">
+          <div className="flex min-w-0 items-start gap-2 text-[12px] leading-5 text-ink-muted">
+            {submitBlockedReason && !busy ? (
+              <>
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                <span className="text-amber-800">{submitBlockedReason}</span>
+              </>
+            ) : (
+              <span>{t("bundle.inventoryHint")}</span>
+            )}
+          </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             <Button size="sm" variant="ghost" disabled={busy} onClick={onClose}>
               {t("common.cancel")}
@@ -981,7 +1229,7 @@ export function BundleComposerDrawer({
             ) : null}
             <Button
               size="sm"
-              className="min-w-[9.5rem]"
+              className="min-w-[10.5rem]"
               disabled={!canSubmit}
               onClick={() => void submit()}
             >
