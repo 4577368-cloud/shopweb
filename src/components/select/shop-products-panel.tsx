@@ -80,6 +80,7 @@ import type {
 } from "@/lib/types";
 import {
   fetchBundleStatusMap,
+  isBundleParentKit,
   type BundleCardStatus,
   type BundleStatusMap,
 } from "@/lib/bundle/api";
@@ -1004,8 +1005,13 @@ export function ShopProductsPanel({
   }, [mirrorRefreshSignal]);
 
   // null = unbound; "pending" = needs manual ack; "confirmed" = active binding.
+  // ACTIVE/STALE kit parents count as confirmed — sources live on components.
   const stateOf = useCallback(
     (p: ShopMirrorProduct): "pending" | "confirmed" | null => {
+      const kit = bundleStatusMap?.byProductId?.[p.thirdPlatformItemId];
+      if (isBundleParentKit(kit)) {
+        return "confirmed";
+      }
       const b = bindings[p.thirdPlatformItemId];
       if (isAlreadySourcedProduct(b, shopName, p.thirdPlatformItemId)) {
         if (!b?.bound) return null;
@@ -1016,7 +1022,7 @@ export function ShopProductsPanel({
       if (b.bindStatus !== "PENDING") return "confirmed";
       return isHighConfidencePendingBinding(b) ? "confirmed" : "pending";
     },
-    [bindings, shopName]
+    [bindings, shopName, bundleStatusMap]
   );
 
   const manualAckPendingCount = useMemo(() => {
@@ -1220,8 +1226,14 @@ export function ShopProductsPanel({
   }, [batchLinkProgress, batchLinkSessionActive, displayProducts, filter, page]);
 
   const pageLinkableProducts = useMemo(
-    () => filterLinkableProducts(paginatedProducts, bindings, shopName),
-    [paginatedProducts, bindings, shopName]
+    () =>
+      filterLinkableProducts(paginatedProducts, bindings, shopName).filter(
+        (p) =>
+          !isBundleParentKit(
+            bundleStatusMap?.byProductId?.[p.thirdPlatformItemId]
+          )
+      ),
+    [paginatedProducts, bindings, shopName, bundleStatusMap]
   );
 
   // Rail「重搜候选」: only current page — full-catalog queues wait too long.
@@ -1270,7 +1282,12 @@ export function ShopProductsPanel({
     if (!onMinisChange) return;
     const all = buildShopProductMinis(products, bindings, shopName);
     const pending = all.filter((m) => m.state === "pending");
-    const unbound = all.filter((m) => m.state === "unbound");
+    const unbound = all.filter((m) => {
+      if (m.state !== "unbound") return false;
+      return !isBundleParentKit(
+        bundleStatusMap?.byProductId?.[m.productId]
+      );
+    });
     const fp = `${pending.map((m) => m.productId).join(",")}|${unbound
       .map((m) => m.productId)
       .join(",")}`;
@@ -1279,7 +1296,7 @@ export function ShopProductsPanel({
     onMinisChange({ pending, unbound });
     // Intentionally omit onMinisChange from deps — parent often passes an inline fn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, bindings]);
+  }, [products, bindings, bundleStatusMap, shopName]);
 
   useEffect(() => {
     if (!scrollToProductId) return;
@@ -1479,6 +1496,7 @@ export function ShopProductsPanel({
                 shopName={shopName}
                 shopDomain={shop.domain}
                 binding={bindings[p.thirdPlatformItemId] ?? null}
+                bindingsByItemId={bindings}
                 bundleStatus={
                   bundleStatusMap?.byProductId?.[p.thirdPlatformItemId] ?? null
                 }
@@ -1624,6 +1642,7 @@ function ShopProductCard({
   shopName,
   shopDomain = null,
   binding,
+  bindingsByItemId = {},
   bundleStatus = null,
   onOpenBundle,
   onBound,
@@ -1648,6 +1667,8 @@ function ShopProductCard({
   shopName: string;
   shopDomain?: string | null;
   binding: ImageBindingView | null;
+  /** Full shop bindings map — used for kit-parent component source status. */
+  bindingsByItemId?: Record<string, ImageBindingView>;
   bundleStatus?: BundleCardStatus | null;
   onOpenBundle?: () => void;
   onBound: (itemId: string, view: ImageBindingView) => void;
@@ -1838,6 +1859,30 @@ function ShopProductCard({
     isPublishSourcedBinding(binding) ||
     isAlreadySourcedProduct(binding, shopName, item.thirdPlatformItemId);
   const fromManual = isManualImageBinding(binding);
+  /** Fixed-kit parent: fulfillment expands to component sources — never rematch. */
+  const isKitParent = isBundleParentKit(bundleStatus);
+  const kitComponentIds = useMemo(() => {
+    const ids = bundleStatus?.componentProductIds;
+    if (ids && ids.length > 0) return ids;
+    return [] as string[];
+  }, [bundleStatus?.componentProductIds]);
+  const kitBoundComponentCount = useMemo(() => {
+    if (!isKitParent || kitComponentIds.length === 0) {
+      return bundleStatus?.componentCount ?? 0;
+    }
+    let n = 0;
+    for (const id of kitComponentIds) {
+      const b = bindingsByItemId[id];
+      if (b?.bound && (b.bindStatus == null || b.bindStatus === "ACTIVE")) {
+        n += 1;
+      }
+    }
+    return n;
+  }, [isKitParent, kitComponentIds, bindingsByItemId, bundleStatus?.componentCount]);
+  const kitComponentTotal =
+    kitComponentIds.length > 0
+      ? kitComponentIds.length
+      : bundleStatus?.componentCount ?? 0;
 
   const storedSourceIdentity = useMemo(
     () => readProductSourceIdentity(shopName, item.thirdPlatformItemId),
@@ -2380,7 +2425,7 @@ function ShopProductCard({
 
   const cardState: "matched" | "pending" | "unbound" = needsManualAck
     ? "pending"
-    : boundOfferId || fromPublish
+    : isKitParent || boundOfferId || fromPublish
       ? "matched"
       : "unbound";
 
@@ -2414,6 +2459,12 @@ function ShopProductCard({
     }
     if (batchLinking) {
       return { label: t("shopProducts.statusLinking"), variant: "linking" as const };
+    }
+    if (isKitParent) {
+      return {
+        label: t("shopProducts.statusKitLinked"),
+        variant: "matched" as const,
+      };
     }
     if (boundOfferId || bindConfirmed) {
       if (needsManualAck) {
@@ -2451,6 +2502,7 @@ function ShopProductCard({
     fromPublish,
     fromManual,
     current,
+    isKitParent,
     t,
   ]);
 
@@ -2553,17 +2605,20 @@ function ShopProductCard({
   const detailUrl = sourceDetailUrl;
 
   const primaryLabel =
-    cardState === "unbound" && !current
-      ? t("shopProducts.findCandidates")
-      : current && !isBoundHere
-        ? isRebind
-          ? t("shopProducts.rebind")
-          : t("shopProducts.confirm")
-        : cardState === "pending"
-          ? t("shopProducts.confirm")
-          : null;
+    isKitParent
+      ? null
+      : cardState === "unbound" && !current
+        ? t("shopProducts.findCandidates")
+        : current && !isBoundHere
+          ? isRebind
+            ? t("shopProducts.rebind")
+            : t("shopProducts.confirm")
+          : cardState === "pending"
+            ? t("shopProducts.confirm")
+            : null;
 
   const onPrimary = () => {
+    if (isKitParent) return;
     if (cardState === "unbound" && !current) {
       void openOrRunSearch(true);
       return;
@@ -2695,7 +2750,23 @@ function ShopProductCard({
 
         {/* B. AI Match */}
         <div className="flex w-full min-w-0 flex-col items-center justify-center rounded-lg bg-brand-soft/40 border border-brand-accent/10 py-2 md:px-3 md:py-0">
-          {cardState === "unbound" && !current ? (
+          {isKitParent ? (
+            <>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-violet-700/90">
+                {t("shopProducts.kitMatch")}
+              </p>
+              <MoveRight className="my-1 h-5 w-5 text-violet-600" />
+              <p className="text-center text-xs font-bold text-violet-800">
+                {t("shopProducts.kitLinkedHeadline")}
+              </p>
+              <p className="mt-1 max-w-[10rem] text-center text-[10px] leading-4 text-violet-700/80">
+                {t("shopProducts.kitLinkedHint", {
+                  bound: kitBoundComponentCount,
+                  total: kitComponentTotal || kitBoundComponentCount || 0,
+                })}
+              </p>
+            </>
+          ) : cardState === "unbound" && !current ? (
             <>
               <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
                 {t("shopProducts.aiMatch")}
@@ -2884,6 +2955,16 @@ function ShopProductCard({
             <div className="flex flex-1 items-center rounded-lg border border-dashed border-brand-accent/25 bg-brand-soft/50 px-3 py-2 text-[11px] leading-relaxed text-brand-accent">
               {t("shopProducts.publishNoSearchHint")}
             </div>
+          ) : isKitParent ? (
+            <div className="flex flex-1 flex-col justify-center rounded-lg border border-dashed border-violet-200 bg-violet-50/60 px-3 py-2 text-[11px] leading-relaxed text-violet-800">
+              <p className="font-medium">{t("shopProducts.kitSourceTitle")}</p>
+              <p className="mt-0.5 text-violet-700/90">
+                {t("shopProducts.kitSourceBody", {
+                  bound: kitBoundComponentCount,
+                  total: kitComponentTotal || kitBoundComponentCount || 0,
+                })}
+              </p>
+            </div>
           ) : (
             <div className="flex flex-1 items-center rounded-lg border border-dashed border-surface-border px-3 py-2 text-[11px] text-muted-foreground">
               {hasImage
@@ -2971,42 +3052,46 @@ function ShopProductCard({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
           <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[12px]">
-            <button
-              type="button"
-              className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
-              disabled={searching || !hasImage}
-              title={
-                !hasImage
-                  ? t("shopProducts.noImageNoSearch")
-                  : result && result.items.length > 0
-                    ? t("shopProducts.expandLastSearch")
-                    : t("shopProducts.imageSearchMatch")
-              }
-              onClick={(e) => {
-                e.stopPropagation();
-                void openOrRunSearch(false);
-              }}
-            >
-              {searching ? t("shopProducts.searching") : t("shopProducts.rematch")}
-            </button>
-            <span className="text-surface-border">|</span>
-            <button
-              type="button"
-              className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
-              disabled={cardActionsLocked || !isMallGatewayConfigured()}
-              title={
-                !isMallGatewayConfigured()
-                  ? t("shopProducts.mallUnavailable")
-                  : t("shopProducts.manualMatchHint")
-              }
-              onClick={(e) => {
-                e.stopPropagation();
-                setManualDrawerOpen(true);
-              }}
-            >
-              {t("shopProducts.manualMatch")}
-            </button>
-            <span className="text-surface-border">|</span>
+            {!isKitParent ? (
+              <>
+                <button
+                  type="button"
+                  className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+                  disabled={searching || !hasImage}
+                  title={
+                    !hasImage
+                      ? t("shopProducts.noImageNoSearch")
+                      : result && result.items.length > 0
+                        ? t("shopProducts.expandLastSearch")
+                        : t("shopProducts.imageSearchMatch")
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void openOrRunSearch(false);
+                  }}
+                >
+                  {searching ? t("shopProducts.searching") : t("shopProducts.rematch")}
+                </button>
+                <span className="text-surface-border">|</span>
+                <button
+                  type="button"
+                  className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+                  disabled={cardActionsLocked || !isMallGatewayConfigured()}
+                  title={
+                    !isMallGatewayConfigured()
+                      ? t("shopProducts.mallUnavailable")
+                      : t("shopProducts.manualMatchHint")
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setManualDrawerOpen(true);
+                  }}
+                >
+                  {t("shopProducts.manualMatch")}
+                </button>
+                <span className="text-surface-border">|</span>
+              </>
+            ) : null}
             <button
               type="button"
               className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
@@ -3055,7 +3140,7 @@ function ShopProductCard({
                 </>
               );
             })()}
-            {!fromPublish ? (
+            {!fromPublish && !isKitParent ? (
               <>
                 <span className="text-surface-border">|</span>
                 <button

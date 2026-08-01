@@ -3970,6 +3970,13 @@ export const en = {
     statusPublishLink: "Published link",
     statusQueued: "Waiting",
     statusSelected: "Source selected",
+    statusKitLinked: "Kit sources",
+    kitMatch: "Kit sources",
+    kitLinkedHeadline: "From components",
+    kitLinkedHint: "{{bound}}/{{total}} components linked",
+    kitSourceTitle: "No rematch needed",
+    kitSourceBody:
+      "Orders expand to component sources ({{bound}}/{{total}} linked). Do not pick a separate source for the kit parent.",
     statusUnmatched: "Unmatched",
     stock: "Stock {{count}}",
     suggestImageSearch: "Try image search or retry later",

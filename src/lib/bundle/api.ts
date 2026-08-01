@@ -43,9 +43,23 @@ export interface BundleCardStatus {
   parentProductId?: string | null;
   parentTitle?: string | null;
   componentCount: number;
+  /** Shopify product ids of kit components (when asParent). */
+  componentProductIds?: string[] | null;
   asParent: boolean;
   asComponent: boolean;
   managedByApp: boolean;
+}
+
+/** Parent kit card: sources come from components — do not rematch. */
+export function isBundleParentKit(
+  status?: BundleCardStatus | null
+): boolean {
+  if (!status?.asParent) return false;
+  return (
+    status.status === "ACTIVE" ||
+    status.status === "STALE" ||
+    status.status === "CREATING"
+  );
 }
 
 export interface BundleStatusMap {

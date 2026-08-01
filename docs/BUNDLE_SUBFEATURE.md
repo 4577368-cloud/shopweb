@@ -16,6 +16,7 @@
 - FAILED：CTA 为「重新组套」；回填上次配置后走 **create**（不调用 update，避免假编辑）。
 - 提交：新建/更新均传 `contextVariantId`（主商品规格）与 `components[].variantId`；多规格未选时拦截。
 - 折扣 `%`：Function 未上线前不传 `discountPercent`、不展示输入。
+- **套装父商品卡片**：`asParent` 时视为「套装货源」——不进未匹配/查找候选/图搜批量；履约按组件绑定展开，禁止再给父商品另选货源。
 - 本 App 托管的套装可「解散」→ `dissolve`；Shopify 父商品删除失败则硬失败（已不存在除外）。
 - 毛利估算：绑定 `offerPrice`（CNY）经 `purchase-cost-display` 换算后求和，对照上架价。
 

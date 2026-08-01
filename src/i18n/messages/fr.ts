@@ -3966,6 +3966,13 @@ export const fr: Dictionary = {
     statusPublishLink: "Published link",
     statusQueued: "En attente",
     statusSelected: "Source selected",
+    statusKitLinked: "Sources du pack",
+    kitMatch: "Sources du pack",
+    kitLinkedHeadline: "Via les composants",
+    kitLinkedHint: "{{bound}}/{{total}} composants liés",
+    kitSourceTitle: "Pas de nouvel appariement",
+    kitSourceBody:
+      "Les commandes utilisent les sources des composants ({{bound}}/{{total}} liés). Ne choisissez pas une autre source pour le parent du pack.",
     statusUnmatched: "Unmatched",
     stock: "Stock {{count}}",
     suggestImageSearch: "Try image search or retry later",

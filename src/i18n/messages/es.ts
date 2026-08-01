@@ -3965,6 +3965,13 @@ export const es: Dictionary = {
     statusPublishLink: "Published link",
     statusQueued: "En espera",
     statusSelected: "Source selected",
+    statusKitLinked: "Fuentes del kit",
+    kitMatch: "Fuentes del kit",
+    kitLinkedHeadline: "Desde componentes",
+    kitLinkedHint: "{{bound}}/{{total}} componentes vinculados",
+    kitSourceTitle: "No hace falta volver a emparejar",
+    kitSourceBody:
+      "Los pedidos usan las fuentes de los componentes ({{bound}}/{{total}} vinculados). No elijas otra fuente para el padre del kit.",
     statusUnmatched: "Unmatched",
     stock: "Stock {{count}}",
     suggestImageSearch: "Try image search or retry later",

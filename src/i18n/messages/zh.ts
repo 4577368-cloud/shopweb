@@ -3946,6 +3946,13 @@ export const zh: Dictionary = {
     statusPublishLink: "商城上架关联",
     statusQueued: "等待中",
     statusSelected: "已选货源",
+    statusKitLinked: "套装货源",
+    kitMatch: "套装货源",
+    kitLinkedHeadline: "随组件货源",
+    kitLinkedHint: "已关联 {{bound}}/{{total}} 件组件",
+    kitSourceTitle: "不需重新匹配",
+    kitSourceBody:
+      "订单履约按组件展开货源（{{bound}}/{{total}} 已关联）。请勿给套装父商品另选货源，以免选错。",
     statusUnmatched: "未匹配",
     stock: "库存 {{count}}",
     suggestImageSearch: "建议使用图搜，或稍后重试",
