@@ -76,12 +76,16 @@ function ProductThumb({
   );
 }
 
-function PanelTitle({ children, trailing }: { children: ReactNode; trailing?: ReactNode }) {
+function SectionLabel({
+  children,
+  trailing,
+}: {
+  children: ReactNode;
+  trailing?: ReactNode;
+}) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-subtle">
-        {children}
-      </p>
+    <div className="flex h-8 items-center justify-between gap-2">
+      <p className="text-[13px] font-semibold tracking-tight text-ink">{children}</p>
       {trailing}
     </div>
   );
@@ -503,45 +507,35 @@ export function BundleComposerDrawer({
 
   if (!open) return null;
 
-  const alerts = (
-    <>
-      {!eligible ? (
-        <div className="rounded-[var(--radius-control)] border border-amber-200/80 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-950">
-          {feature?.ineligibilityReason?.trim() || t("bundle.ineligibleDefault")}
-        </div>
-      ) : null}
-      {!contextBound ? (
-        <div className="rounded-[var(--radius-control)] border border-amber-200/80 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-950">
-          {t("bundle.needBinding")}
-        </div>
-      ) : null}
-      {existing?.status === "STALE" ? (
-        <div className="rounded-[var(--radius-control)] border border-amber-200/80 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-950">
-          {t("bundle.staleHint")}
-        </div>
-      ) : null}
-      {loadingBundle ? (
-        <div className="flex items-center gap-2 text-[12px] text-ink-muted">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          {t("bundle.syncing")}
-        </div>
-      ) : null}
-      {error ? (
-        <div className="rounded-[var(--radius-control)] border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
-          {error}
-        </div>
-      ) : null}
-    </>
-  );
-
   const contextPriceLabel = formatShopPrice(
     contextProduct.currency,
     contextProduct.minPrice
   );
 
+  const alertMessage = !eligible
+    ? feature?.ineligibilityReason?.trim() || t("bundle.ineligibleDefault")
+    : !contextBound
+      ? t("bundle.needBinding")
+      : existing?.status === "STALE"
+        ? t("bundle.staleHint")
+        : error;
+
+  const marginCostLabel =
+    marginInfo.estimatedCost != null
+      ? formatPurchaseCostMoney(marginInfo.estimatedCost, costCtx.currency)
+      : "—";
+  const marginPriceLabel =
+    marginInfo.parentPriceNum != null
+      ? `${marginInfo.parentPriceNum.toFixed(2)} ${currency}`
+      : t("bundle.priceUnset");
+  const marginEstimateLabel =
+    marginInfo.marginAbs != null && marginInfo.marginPct != null
+      ? `${marginInfo.marginAbs.toFixed(2)} ${currency} (${marginInfo.marginPct.toFixed(0)}%)`
+      : "—";
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-3 sm:p-5"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-3 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="bundle-composer-title"
@@ -555,479 +549,416 @@ export function BundleComposerDrawer({
         }}
       />
 
-      <div className="relative z-10 flex max-h-[min(92vh,880px)] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-hairline bg-surface shadow-card">
-        {/* Header */}
-        <header className="shrink-0 border-b border-hairline px-5 py-3.5 sm:px-6">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-subtle">
+      <div className="relative z-10 flex h-[min(90vh,760px)] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-hairline bg-surface shadow-card">
+        {/* Header — compact, one line of hierarchy */}
+        <header className="flex shrink-0 items-center gap-3 border-b border-hairline px-4 py-3 sm:px-5">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2
+                id="bundle-composer-title"
+                className="truncate text-[15px] font-semibold tracking-tight text-ink"
+              >
+                {editing ? t("bundle.editTitle") : t("bundle.createTitle")}
+              </h2>
+              <span className="hidden shrink-0 text-[12px] text-ink-subtle sm:inline">
                 {t("bundle.eyebrow")}
-              </p>
-              <div className="mt-1 flex items-center gap-1.5">
-                <h2
-                  id="bundle-composer-title"
-                  className="truncate text-[17px] font-semibold tracking-tight text-ink"
+              </span>
+              {adminUrl ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 w-7 shrink-0 px-0"
+                  title={t("bundle.openInShopify")}
+                  aria-label={t("bundle.openInShopify")}
+                  disabled={busy}
+                  onClick={() => openExternal(adminUrl, { newTab: true })}
                 >
-                  {editing ? t("bundle.editTitle") : t("bundle.createTitle")}
-                </h2>
-                {adminUrl ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="h-7 w-7 shrink-0 px-0"
-                    title={t("bundle.openInShopify")}
-                    aria-label={t("bundle.openInShopify")}
-                    disabled={busy}
-                    onClick={() => openExternal(adminUrl, { newTab: true })}
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </Button>
-                ) : null}
-              </div>
-              <p className="mt-1 text-[12px] leading-5 text-ink-muted">
-                {t("bundle.outcomeShort")}
-              </p>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </Button>
+              ) : null}
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-7 w-7 shrink-0 px-0"
-              onClick={onClose}
-              disabled={busy}
-              title={t("bundle.close")}
-              aria-label={t("bundle.close")}
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
+            <p className="mt-0.5 truncate text-[12px] text-ink-muted">
+              {t("bundle.outcomeShort")}
+            </p>
           </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 w-7 shrink-0 px-0"
+            onClick={onClose}
+            disabled={busy}
+            title={t("bundle.close")}
+            aria-label={t("bundle.close")}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="flex flex-col gap-4 p-4 sm:gap-5 sm:p-5">
-            {alerts}
+        {alertMessage || loadingBundle ? (
+          <div className="shrink-0 border-b border-hairline px-4 py-2 sm:px-5">
+            {loadingBundle ? (
+              <div className="flex items-center gap-2 text-[12px] text-ink-muted">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {t("bundle.syncing")}
+              </div>
+            ) : (
+              <p
+                className={cn(
+                  "text-[12px] leading-5",
+                  error ? "text-red-700" : "text-amber-800"
+                )}
+              >
+                {alertMessage}
+              </p>
+            )}
+          </div>
+        ) : null}
 
-            {/* Top: current | targets */}
-            <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.28fr)] lg:gap-5">
-              {/* Left — current product */}
-              <section className="flex min-h-[220px] flex-col rounded-lg border border-hairline bg-canvas/40 p-4 sm:min-h-[280px]">
-                <PanelTitle>{t("bundle.panelCurrent")}</PanelTitle>
-                <div className="mt-3 flex min-h-0 flex-1 flex-col items-center justify-center gap-4 sm:flex-row sm:items-start sm:justify-start sm:gap-5">
-                  <div className="relative shrink-0">
-                    <ProductThumb
-                      url={contextProduct.primaryImageUrl}
-                      className="h-28 w-28 rounded-lg sm:h-32 sm:w-32"
-                    />
-                    <span className="absolute -left-1.5 -top-1.5 rounded-md bg-ink px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">
+        {/* Body: split panes + compose — no nested cards */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="grid min-h-0 flex-1 grid-cols-1 divide-y divide-hairline lg:grid-cols-[minmax(240px,32%)_minmax(0,1fr)] lg:divide-x lg:divide-y-0">
+            {/* Left — current */}
+            <section className="flex min-h-0 flex-col bg-canvas/50 p-4 sm:p-5">
+              <SectionLabel>{t("bundle.panelCurrent")}</SectionLabel>
+              <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3">
+                <div className="relative mx-auto w-full max-w-[200px] overflow-hidden rounded-md border border-hairline bg-surface-muted">
+                  <div className="aspect-square w-full">
+                    {contextProduct.primaryImageUrl ? (
+                      <ThumbImage
+                        src={contextProduct.primaryImageUrl}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    ) : null}
+                  </div>
+                </div>
+                <div className="min-w-0 space-y-1.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="line-clamp-2 text-[13px] font-semibold leading-snug text-ink">
+                      {contextProduct.title || t("bundle.untitled")}
+                    </p>
+                    <span className="shrink-0 rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-medium text-white">
                       {t("bundle.currentBadge")}
                     </span>
                   </div>
-                  <div className="min-w-0 flex-1 space-y-2 text-center sm:pt-1 sm:text-left">
-                    <p className="line-clamp-3 text-[14px] font-semibold leading-snug text-ink">
-                      {contextProduct.title || t("bundle.untitled")}
-                    </p>
-                    <p className="text-[12px] tabular-nums text-ink-muted">
-                      {contextPriceLabel ?? t("bundle.priceUnset")}
-                      <span className="mx-1.5 text-ink-subtle">·</span>
-                      <span className="font-medium text-ink">×1</span>
-                    </p>
-                    <p className="text-[11px] leading-4 text-ink-subtle">
-                      {t("bundle.lockedComponent")}
-                      {!contextBound ? (
-                        <span className="ml-1.5 font-medium text-amber-700">
-                          · {t("bundle.unboundBadge")}
-                        </span>
-                      ) : null}
-                    </p>
-                  </div>
-                </div>
-              </section>
-
-              {/* Right — target products */}
-              <section className="flex min-h-[220px] flex-col rounded-lg border border-hairline bg-surface p-4 sm:min-h-[280px]">
-                <PanelTitle
-                  trailing={
-                    <span
-                      className={cn(
-                        "text-[11px] tabular-nums",
-                        selectedCount >= 1
-                          ? "text-ink-muted"
-                          : "font-medium text-amber-700"
-                      )}
-                    >
-                      {t("bundle.selectedCount", { count: selectedCount })}
-                      {selectedCount < 1 ? (
-                        <span className="ml-1.5">· {t("bundle.needOneMore")}</span>
-                      ) : null}
-                    </span>
-                  }
-                >
-                  {t("bundle.panelTargets")}
-                </PanelTitle>
-
-                <div className="relative mt-3 shrink-0">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
-                  <Input
-                    className="h-9 pl-9 pr-9 text-sm"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    disabled={busy}
-                    placeholder={t("bundle.searchPlaceholder")}
-                  />
-                  {query ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className="absolute right-1.5 top-1/2 h-7 w-7 -translate-y-1/2 px-0"
-                      title={t("bundle.clearSearch")}
-                      aria-label={t("bundle.clearSearch")}
-                      disabled={busy}
-                      onClick={() => setQuery("")}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  ) : null}
-                </div>
-
-                <ul className="mt-3 min-h-0 flex-1 divide-y divide-hairline overflow-y-auto rounded-[var(--radius-control)] border border-hairline">
-                  {candidates.length === 0 ? (
-                    <li className="px-3 py-12 text-center text-[12px] text-ink-muted">
-                      {query.trim()
-                        ? t("bundle.noSearchMatches")
-                        : t("bundle.noCandidates")}
-                    </li>
-                  ) : (
-                    candidates.map((p) => {
-                      const id = p.thirdPlatformItemId;
-                      const on = Boolean(selected[id]);
-                      const occupied = isOccupiedElsewhere(id);
-                      const unbound = !isBindingReady(bindings, id);
-                      const blocked = occupied || unbound;
-                      const priceLabel = formatShopPrice(p.currency, p.minPrice);
-                      return (
-                        <li key={id}>
-                          <button
-                            type="button"
-                            disabled={busy || blocked}
-                            onClick={() => toggle(id)}
-                            className={cn(
-                              "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
-                              blocked
-                                ? "cursor-not-allowed bg-canvas/40 opacity-55"
-                                : on
-                                  ? "bg-brand-soft/80"
-                                  : "bg-surface hover:bg-canvas/70 active:bg-canvas"
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] border transition-colors",
-                                blocked
-                                  ? "border-hairline bg-surface-muted text-transparent"
-                                  : on
-                                    ? "border-brand-accent bg-brand-accent text-white"
-                                    : "border-hairline-strong bg-surface text-transparent"
-                              )}
-                              aria-hidden
-                            >
-                              <Check className="h-3 w-3" />
-                            </span>
-                            <ProductThumb
-                              url={p.primaryImageUrl}
-                              className="h-10 w-10 rounded-[var(--radius-control)]"
-                            />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[13px] font-medium text-ink">
-                                {p.title || id}
-                              </span>
-                              <span className="mt-0.5 block text-[11px] text-ink-subtle">
-                                {occupied
-                                  ? t("bundle.occupiedElsewhere")
-                                  : unbound
-                                    ? t("bundle.needBinding")
-                                    : (priceLabel ?? t("bundle.priceUnset"))}
-                              </span>
-                            </span>
-                            {on && !blocked ? (
-                              <div
-                                className="flex shrink-0 flex-col items-end gap-1"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={99}
-                                  value={selected[id]?.quantity ?? 1}
-                                  onChange={(e) =>
-                                    setQty(id, Number(e.target.value) || 1)
-                                  }
-                                  className="h-8 w-12 rounded-[var(--radius-control)] border border-hairline bg-surface px-1 text-center text-[12px] tabular-nums text-ink"
-                                  aria-label={t("bundle.qtyAria")}
-                                />
-                                {(variantOptions[id]?.length ?? 0) > 1 ? (
-                                  <select
-                                    className="h-8 max-w-[9rem] rounded-[var(--radius-control)] border border-hairline bg-surface px-1 text-[11px] text-ink"
-                                    value={selected[id]?.variantId ?? ""}
-                                    aria-label={t("bundle.variantLabel")}
-                                    onChange={(e) => {
-                                      const variantId = e.target.value || null;
-                                      setSelected((prev) => {
-                                        const cur = prev[id];
-                                        if (!cur) return prev;
-                                        return {
-                                          ...prev,
-                                          [id]: { ...cur, variantId },
-                                        };
-                                      });
-                                    }}
-                                  >
-                                    <option value="">
-                                      {t("bundle.variantLabel")}
-                                    </option>
-                                    {(variantOptions[id] ?? []).map((v) => (
-                                      <option
-                                        key={v.thirdPlatformSkuId}
-                                        value={v.thirdPlatformSkuId}
-                                      >
-                                        {v.title ||
-                                          [v.option1, v.option2, v.option3]
-                                            .filter(Boolean)
-                                            .join(" / ") ||
-                                          v.sku ||
-                                          v.thirdPlatformSkuId}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : null}
-                              </div>
-                            ) : !blocked ? (
-                              <span className="shrink-0 text-[11px] font-medium text-brand-accent">
-                                {t("bundle.tapToAdd")}
-                              </span>
-                            ) : unbound ? (
-                              <span className="shrink-0 text-[10px] font-medium text-amber-700">
-                                {t("bundle.unboundBadge")}
-                              </span>
-                            ) : null}
-                          </button>
-                        </li>
-                      );
-                    })
-                  )}
-                </ul>
-                <p className="mt-2 text-[11px] leading-4 text-ink-subtle">
-                  {t("bundle.inventoryHint")}
-                </p>
-              </section>
-            </div>
-
-            {/* Bottom — composed bundle */}
-            <section className="rounded-lg border border-hairline bg-canvas/30 p-4 sm:p-5">
-              <PanelTitle
-                trailing={
-                  <span className="text-[11px] tabular-nums text-ink-muted">
-                    {t("bundle.previewParts", { count: totalComponentCount })}
-                  </span>
-                }
-              >
-                {t("bundle.panelCompose")}
-              </PanelTitle>
-
-              <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-                <div className="space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex shrink-0 -space-x-2">
-                      <ProductThumb
-                        url={contextProduct.primaryImageUrl}
-                        className="h-11 w-11 rounded-lg ring-2 ring-surface"
-                      />
-                      {selectedEntries.slice(0, 4).map(({ productId, product }) => (
-                        <ProductThumb
-                          key={productId}
-                          url={product?.primaryImageUrl}
-                          className="h-11 w-11 rounded-lg ring-2 ring-surface"
-                        />
-                      ))}
-                      {selectedCount > 4 ? (
-                        <span className="relative z-[1] flex h-11 w-11 items-center justify-center rounded-lg bg-surface-muted text-[11px] font-semibold text-ink-muted ring-2 ring-surface">
-                          +{selectedCount - 4}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="min-w-0 flex-1 pt-0.5">
-                      <p className="text-[11px] font-medium text-ink-subtle">
-                        {t("bundle.previewParentLabel")}
-                      </p>
-                      <p className="mt-0.5 truncate text-[14px] font-semibold text-ink">
-                        {title.trim() || t("bundle.untitled")}
-                      </p>
-                      <p className="mt-0.5 text-[12px] tabular-nums text-ink-muted">
-                        {displayPrice}
-                        {marginInfo.discount > 0
-                          ? ` · −${marginInfo.discount}%`
-                          : ""}
-                      </p>
-                    </div>
-                  </div>
-
-                  {selectedCount === 0 ? (
-                    <p className="rounded-[var(--radius-control)] border border-dashed border-hairline-strong bg-surface px-3 py-3 text-[12px] text-ink-muted">
-                      {t("bundle.previewEmpty")}
-                    </p>
-                  ) : (
-                    <ul className="flex flex-wrap gap-2">
-                      <li className="inline-flex max-w-full items-center gap-2 rounded-full border border-hairline bg-surface px-2.5 py-1 text-[11px]">
-                        <ProductThumb
-                          url={contextProduct.primaryImageUrl}
-                          className="h-5 w-5 rounded-full"
-                        />
-                        <span className="truncate font-medium text-ink">
-                          {contextProduct.title || t("bundle.untitled")}
-                        </span>
-                        <span className="tabular-nums text-ink-subtle">×1</span>
-                      </li>
-                      {selectedEntries.map(
-                        ({ productId, product, quantity }) => (
-                          <li
-                            key={productId}
-                            className="inline-flex max-w-full items-center gap-2 rounded-full border border-hairline bg-surface px-2.5 py-1 text-[11px]"
-                          >
-                            <ProductThumb
-                              url={product?.primaryImageUrl}
-                              className="h-5 w-5 rounded-full"
-                            />
-                            <span className="truncate font-medium text-ink">
-                              {product?.title || productId}
-                            </span>
-                            <span className="tabular-nums text-ink-subtle">
-                              ×{quantity}
-                            </span>
-                          </li>
-                        )
-                      )}
-                    </ul>
-                  )}
-
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <label className="block space-y-1.5 sm:col-span-2">
-                      <span className="text-[11px] text-ink-muted">
-                        {t("bundle.titleLabel")}
-                      </span>
-                      <Input
-                        className="h-9 text-sm"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        disabled={busy}
-                        placeholder={t("bundle.titlePlaceholder")}
-                      />
-                    </label>
-                    <label className="block space-y-1.5">
-                      <span className="text-[11px] text-ink-muted">
-                        {t("bundle.priceLabel")}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          className="h-9 min-w-0 flex-1 text-sm tabular-nums"
-                          type="number"
-                          inputMode="decimal"
-                          min={0}
-                          step="0.01"
-                          value={price}
-                          onChange={(e) => setPrice(e.target.value)}
-                          disabled={busy}
-                          placeholder={t("bundle.pricePlaceholder")}
-                        />
-                        <span className="shrink-0 text-[12px] font-medium text-ink-subtle">
-                          {currency}
-                        </span>
-                      </div>
-                    </label>
-                    <label className="block space-y-1.5">
-                      <span className="text-[11px] text-ink-muted">
-                        {t("bundle.discountLabel")}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          className="h-9 w-full max-w-[6.5rem] text-sm tabular-nums"
-                          type="number"
-                          inputMode="decimal"
-                          min={0}
-                          max={100}
-                          step="1"
-                          value={discountPercent}
-                          onChange={(e) => setDiscountPercent(e.target.value)}
-                          disabled={busy}
-                          placeholder="0"
-                        />
-                        <span className="text-[12px] font-medium text-ink-subtle">
-                          %
-                        </span>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="rounded-[var(--radius-control)] border border-hairline bg-surface px-3.5 py-3">
-                  <p className="text-[11px] font-semibold text-ink-muted">
-                    {t("bundle.marginSection")}
+                  <p className="text-[13px] font-semibold tabular-nums text-ink">
+                    {contextPriceLabel ?? t("bundle.priceUnset")}
                   </p>
-                  <dl className="mt-2.5 space-y-2 text-[12px] tabular-nums">
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-ink-subtle">{t("bundle.marginCost")}</dt>
-                      <dd className="font-medium text-ink">
-                        {marginInfo.estimatedCost != null
-                          ? formatPurchaseCostMoney(
-                              marginInfo.estimatedCost,
-                              costCtx.currency
-                            )
-                          : "—"}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-ink-subtle">
-                        {t("bundle.marginPrice")}
-                      </dt>
-                      <dd className="font-medium text-ink">
-                        {marginInfo.parentPriceNum != null
-                          ? `${marginInfo.parentPriceNum.toFixed(2)} ${currency}`
-                          : t("bundle.priceUnset")}
-                        {marginInfo.discount > 0
-                          ? ` (−${marginInfo.discount}%)`
-                          : ""}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between gap-3 border-t border-hairline pt-2">
-                      <dt className="text-ink-subtle">
-                        {t("bundle.marginEstimate")}
-                      </dt>
-                      <dd className="font-semibold text-ink">
-                        {marginInfo.marginAbs != null &&
-                        marginInfo.marginPct != null
-                          ? `${marginInfo.marginAbs.toFixed(2)} ${currency} (${marginInfo.marginPct.toFixed(0)}%)`
-                          : "—"}
-                      </dd>
-                    </div>
-                  </dl>
+                  <p className="text-[11px] leading-4 text-ink-subtle">
+                    {t("bundle.lockedComponent")}
+                    {!contextBound ? (
+                      <span className="ml-1 font-medium text-amber-700">
+                        · {t("bundle.unboundBadge")}
+                      </span>
+                    ) : null}
+                  </p>
                 </div>
               </div>
             </section>
+
+            {/* Right — targets */}
+            <section className="flex min-h-0 flex-col p-4 sm:p-5">
+              <SectionLabel
+                trailing={
+                  <span
+                    className={cn(
+                      "text-[12px] tabular-nums",
+                      selectedCount >= 1
+                        ? "text-ink-muted"
+                        : "font-medium text-amber-700"
+                    )}
+                  >
+                    {t("bundle.selectedCount", { count: selectedCount })}
+                  </span>
+                }
+              >
+                {t("bundle.panelTargets")}
+              </SectionLabel>
+
+              <div className="relative mt-2 shrink-0">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
+                <Input
+                  className="h-9 pl-8 pr-9 text-sm"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  disabled={busy}
+                  placeholder={t("bundle.searchPlaceholder")}
+                />
+                {query ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 px-0"
+                    title={t("bundle.clearSearch")}
+                    aria-label={t("bundle.clearSearch")}
+                    disabled={busy}
+                    onClick={() => setQuery("")}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
+              </div>
+
+              <ul className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain border-y border-hairline">
+                {candidates.length === 0 ? (
+                  <li className="px-1 py-10 text-center text-[12px] text-ink-muted">
+                    {query.trim()
+                      ? t("bundle.noSearchMatches")
+                      : t("bundle.noCandidates")}
+                  </li>
+                ) : (
+                  candidates.map((p) => {
+                    const id = p.thirdPlatformItemId;
+                    const on = Boolean(selected[id]);
+                    const occupied = isOccupiedElsewhere(id);
+                    const unbound = !isBindingReady(bindings, id);
+                    const blocked = occupied || unbound;
+                    const priceLabel = formatShopPrice(p.currency, p.minPrice);
+                    return (
+                      <li key={id} className="border-b border-hairline last:border-b-0">
+                        <button
+                          type="button"
+                          disabled={busy || blocked}
+                          onClick={() => toggle(id)}
+                          className={cn(
+                            "flex w-full items-center gap-2.5 py-2.5 pr-1 text-left transition-colors",
+                            blocked
+                              ? "cursor-not-allowed opacity-45"
+                              : on
+                                ? "bg-brand-soft/70"
+                                : "hover:bg-canvas/80"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "flex h-5 w-5 shrink-0 items-center justify-center rounded border",
+                              blocked
+                                ? "border-hairline bg-surface-muted text-transparent"
+                                : on
+                                  ? "border-brand-accent bg-brand-accent text-white"
+                                  : "border-hairline-strong bg-surface text-transparent"
+                            )}
+                            aria-hidden
+                          >
+                            <Check className="h-3 w-3" />
+                          </span>
+                          <ProductThumb
+                            url={p.primaryImageUrl}
+                            className="h-9 w-9 rounded-md"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-medium text-ink">
+                              {p.title || id}
+                            </span>
+                            <span className="mt-0.5 block truncate text-[11px] text-ink-subtle">
+                              {occupied
+                                ? t("bundle.occupiedElsewhere")
+                                : unbound
+                                  ? t("bundle.needBinding")
+                                  : (priceLabel ?? t("bundle.priceUnset"))}
+                            </span>
+                          </span>
+                          {on && !blocked ? (
+                            <div
+                              className="flex shrink-0 items-center gap-1.5"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {(variantOptions[id]?.length ?? 0) > 1 ? (
+                                <select
+                                  className="h-8 max-w-[7.5rem] rounded-md border border-hairline bg-surface px-1 text-[11px] text-ink"
+                                  value={selected[id]?.variantId ?? ""}
+                                  aria-label={t("bundle.variantLabel")}
+                                  onChange={(e) => {
+                                    const variantId = e.target.value || null;
+                                    setSelected((prev) => {
+                                      const cur = prev[id];
+                                      if (!cur) return prev;
+                                      return {
+                                        ...prev,
+                                        [id]: { ...cur, variantId },
+                                      };
+                                    });
+                                  }}
+                                >
+                                  <option value="">{t("bundle.variantLabel")}</option>
+                                  {(variantOptions[id] ?? []).map((v) => (
+                                    <option
+                                      key={v.thirdPlatformSkuId}
+                                      value={v.thirdPlatformSkuId}
+                                    >
+                                      {v.title ||
+                                        [v.option1, v.option2, v.option3]
+                                          .filter(Boolean)
+                                          .join(" / ") ||
+                                        v.sku ||
+                                        v.thirdPlatformSkuId}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : null}
+                              <input
+                                type="number"
+                                min={1}
+                                max={99}
+                                value={selected[id]?.quantity ?? 1}
+                                onChange={(e) =>
+                                  setQty(id, Number(e.target.value) || 1)
+                                }
+                                className="h-8 w-11 rounded-md border border-hairline bg-surface px-1 text-center text-[12px] tabular-nums text-ink"
+                                aria-label={t("bundle.qtyAria")}
+                              />
+                            </div>
+                          ) : !blocked ? (
+                            <span className="shrink-0 text-[11px] font-medium text-brand-accent">
+                              {t("bundle.tapToAdd")}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
+            </section>
           </div>
+
+          {/* Bottom compose — single band, divider not card-in-card */}
+          <section className="shrink-0 border-t border-hairline bg-canvas/40 px-4 py-3 sm:px-5">
+            <SectionLabel
+              trailing={
+                <span className="text-[12px] tabular-nums text-ink-muted">
+                  {t("bundle.previewParts", { count: totalComponentCount })}
+                </span>
+              }
+            >
+              {t("bundle.panelCompose")}
+            </SectionLabel>
+
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <ProductThumb
+                  url={contextProduct.primaryImageUrl}
+                  className="h-8 w-8 rounded-md"
+                />
+                {selectedEntries.slice(0, 3).map(({ productId, product }) => (
+                  <ProductThumb
+                    key={productId}
+                    url={product?.primaryImageUrl}
+                    className="h-8 w-8 rounded-md"
+                  />
+                ))}
+                {selectedCount > 3 ? (
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md border border-hairline bg-surface text-[11px] font-medium text-ink-muted">
+                    +{selectedCount - 3}
+                  </span>
+                ) : null}
+              </div>
+              <span className="hidden h-4 w-px bg-hairline sm:block" />
+              <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
+                {title.trim() || t("bundle.untitled")}
+                <span className="ml-2 font-normal tabular-nums text-ink-muted">
+                  {displayPrice}
+                </span>
+              </p>
+            </div>
+
+            {selectedCount === 0 ? (
+              <p className="mt-2 text-[12px] text-ink-muted">
+                {t("bundle.previewEmpty")}
+              </p>
+            ) : null}
+
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-12">
+              <label className="col-span-2 space-y-1 sm:col-span-5">
+                <span className="text-[11px] text-ink-muted">
+                  {t("bundle.titleLabel")}
+                </span>
+                <Input
+                  className="h-9 text-sm"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  disabled={busy}
+                  placeholder={t("bundle.titlePlaceholder")}
+                />
+              </label>
+              <label className="space-y-1 sm:col-span-3">
+                <span className="text-[11px] text-ink-muted">
+                  {t("bundle.priceLabel")}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className="h-9 min-w-0 flex-1 text-sm tabular-nums"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="0.01"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    disabled={busy}
+                    placeholder={t("bundle.pricePlaceholder")}
+                  />
+                  <span className="shrink-0 text-[11px] text-ink-subtle">
+                    {currency}
+                  </span>
+                </div>
+              </label>
+              <label className="space-y-1 sm:col-span-2">
+                <span className="text-[11px] text-ink-muted">
+                  {t("bundle.discountLabel")}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className="h-9 w-full text-sm tabular-nums"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={100}
+                    step="1"
+                    value={discountPercent}
+                    onChange={(e) => setDiscountPercent(e.target.value)}
+                    disabled={busy}
+                    placeholder="0"
+                  />
+                  <span className="shrink-0 text-[11px] text-ink-subtle">%</span>
+                </div>
+              </label>
+              <div className="col-span-2 flex items-end sm:col-span-2">
+                <div className="w-full rounded-md border border-hairline bg-surface px-2.5 py-1.5">
+                  <p className="text-[10px] text-ink-subtle">
+                    {t("bundle.marginEstimate")}
+                  </p>
+                  <p className="truncate text-[12px] font-semibold tabular-nums text-ink">
+                    {marginEstimateLabel}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] tabular-nums text-ink-muted">
+              <div className="flex gap-1.5">
+                <dt>{t("bundle.marginCost")}</dt>
+                <dd className="font-medium text-ink">{marginCostLabel}</dd>
+              </div>
+              <div className="flex gap-1.5">
+                <dt>{t("bundle.marginPrice")}</dt>
+                <dd className="font-medium text-ink">
+                  {marginPriceLabel}
+                  {marginInfo.discount > 0 ? ` (−${marginInfo.discount}%)` : ""}
+                </dd>
+              </div>
+            </dl>
+          </section>
         </div>
 
-        {/* Sticky actions */}
-        <footer className="shrink-0 border-t border-hairline bg-surface px-5 py-3.5 sm:px-6">
-          {submitBlockedReason && !busy ? (
-            <p className="mb-2.5 text-[11px] leading-4 text-amber-700">
-              {submitBlockedReason}
-            </p>
-          ) : null}
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={onClose}
-            >
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-hairline px-4 py-3 sm:px-5">
+          <p className="min-w-0 flex-1 text-[11px] leading-4 text-ink-subtle">
+            {submitBlockedReason && !busy
+              ? submitBlockedReason
+              : t("bundle.inventoryHint")}
+          </p>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <Button size="sm" variant="ghost" disabled={busy} onClick={onClose}>
               {t("common.cancel")}
             </Button>
             {editing && existing?.managedByApp ? (
@@ -1050,7 +981,7 @@ export function BundleComposerDrawer({
             ) : null}
             <Button
               size="sm"
-              className="min-w-[10rem]"
+              className="min-w-[9.5rem]"
               disabled={!canSubmit}
               onClick={() => void submit()}
             >
