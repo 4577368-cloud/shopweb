@@ -988,7 +988,7 @@ export function BundleComposerDrawer({
                             </div>
                             <VariantPicker
                               variants={variants}
-                              value={variantId}
+                              value={variantId ?? null}
                               disabled={busy}
                               ariaLabel={t("bundle.variantLabel")}
                               placeholder={t("bundle.pickVariant")}
