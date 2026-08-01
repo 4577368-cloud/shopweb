@@ -505,7 +505,14 @@ export function BundleComposerDrawer({
       marginAbs != null && effectivePrice != null && effectivePrice > 0
         ? (marginAbs / effectivePrice) * 100
         : null;
-    return { estimatedCost, parentPriceNum, discount, marginAbs, marginPct };
+    return {
+      estimatedCost,
+      parentPriceNum,
+      discount,
+      dealPrice: effectivePrice,
+      marginAbs,
+      marginPct,
+    };
   }, [bindings, contextId, costCtx, discountPercent, price, selected]);
 
   const toggle = (id: string) => {
@@ -654,9 +661,13 @@ export function BundleComposerDrawer({
     marginInfo.estimatedCost != null
       ? formatPurchaseCostMoney(marginInfo.estimatedCost, costCtx.currency)
       : "—";
-  const marginPriceLabel =
+  const listPriceLabel =
     marginInfo.parentPriceNum != null
       ? `${marginInfo.parentPriceNum.toFixed(2)} ${currency}`
+      : t("bundle.priceUnset");
+  const dealPriceLabel =
+    marginInfo.dealPrice != null
+      ? `${marginInfo.dealPrice.toFixed(2)} ${currency}`
       : t("bundle.priceUnset");
 
   const contextVariants = variantOptions[contextId] ?? [];
@@ -664,7 +675,7 @@ export function BundleComposerDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-3 sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-2 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="bundle-composer-title"
@@ -678,21 +689,21 @@ export function BundleComposerDrawer({
         }}
       />
 
-      <div className="relative z-10 flex h-[min(92vh,800px)] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-hairline bg-canvas shadow-card">
-        {/* Header */}
-        <header className="flex shrink-0 items-start gap-3 border-b border-hairline bg-surface px-5 py-4">
-          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand-accent">
-            <Package className="h-4 w-4" />
+      <div className="relative z-10 flex h-[min(86vh,700px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-hairline bg-canvas shadow-card">
+        {/* Header — compact */}
+        <header className="flex shrink-0 items-center gap-2.5 border-b border-hairline bg-surface px-3.5 py-2.5 sm:px-4">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand-accent">
+            <Package className="h-3.5 w-3.5" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
               <h2
                 id="bundle-composer-title"
-                className="text-[16px] font-semibold tracking-tight text-ink"
+                className="truncate text-[14px] font-semibold tracking-tight text-ink"
               >
                 {editing ? t("bundle.editTitle") : t("bundle.createComboTitle")}
               </h2>
-              <span className="rounded-md bg-canvas px-1.5 py-0.5 text-[11px] font-medium text-ink-muted">
+              <span className="rounded bg-canvas px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
                 {t("bundle.eyebrow")}
               </span>
               {adminUrl ? (
@@ -709,7 +720,7 @@ export function BundleComposerDrawer({
                 </Button>
               ) : null}
             </div>
-            <p className="mt-1 text-[12px] leading-5 text-ink-muted">
+            <p className="mt-0.5 truncate text-[11px] text-ink-muted">
               {t("bundle.outcomeShort")}
             </p>
           </div>
@@ -727,16 +738,16 @@ export function BundleComposerDrawer({
         </header>
 
         {alertMessage || loadingBundle ? (
-          <div className="shrink-0 border-b border-hairline bg-surface px-5 py-2">
+          <div className="shrink-0 border-b border-hairline bg-surface px-3.5 py-1.5 sm:px-4">
             {loadingBundle ? (
-              <div className="flex items-center gap-2 text-[12px] text-ink-muted">
+              <div className="flex items-center gap-2 text-[11px] text-ink-muted">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 {t("bundle.syncing")}
               </div>
             ) : (
               <p
                 className={cn(
-                  "text-[12px] leading-5",
+                  "text-[11px] leading-4",
                   error ? "text-red-700" : "text-amber-800"
                 )}
               >
@@ -746,26 +757,29 @@ export function BundleComposerDrawer({
           </div>
         ) : null}
 
-        {/* Body: left config | right catalog */}
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.9fr)] lg:gap-5 lg:p-5">
+        {/*
+          Body scrolls as one column on mobile; on lg each pane scrolls independently
+          with explicit min-h-0 so footer never clips content.
+        */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.85fr)] lg:gap-3 lg:overflow-hidden lg:p-3.5">
           {/* LEFT */}
-          <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
-            <CardShell className="shrink-0 p-4">
-              <p className="text-[13px] font-semibold text-ink">
+          <div className="flex min-h-0 flex-col gap-3 lg:overflow-y-auto lg:overscroll-contain lg:pr-0.5">
+            <CardShell className="shrink-0 p-3">
+              <p className="text-[12px] font-semibold text-ink">
                 {t("bundle.infoSection")}
               </p>
 
-              <label className="mt-3 block space-y-1.5">
+              <label className="mt-2 block space-y-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[12px] text-ink-muted">
+                  <span className="text-[11px] text-ink-muted">
                     {t("bundle.titleLabel")}
                   </span>
-                  <span className="text-[11px] tabular-nums text-ink-subtle">
+                  <span className="text-[10px] tabular-nums text-ink-subtle">
                     {Math.min(title.length, TITLE_MAX)}/{TITLE_MAX}
                   </span>
                 </div>
                 <Input
-                  className="h-10 text-sm"
+                  className="h-8 text-[13px]"
                   value={title}
                   maxLength={TITLE_MAX}
                   onChange={(e) => setTitle(e.target.value)}
@@ -774,17 +788,29 @@ export function BundleComposerDrawer({
                 />
               </label>
 
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]">
-                <label className="block space-y-1.5">
-                  <span className="text-[12px] text-ink-muted">
-                    {t("bundle.priceLabel")}
+              {/* Pricing logic strip: cost → list → deal → profit */}
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="rounded-md border border-hairline bg-canvas/60 px-2.5 py-2">
+                  <p className="text-[10px] font-medium text-ink-subtle">
+                    {t("bundle.costTotalLabel")}
+                  </p>
+                  <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-ink">
+                    {marginCostLabel}
+                  </p>
+                  <p className="mt-0.5 text-[10px] leading-3 text-ink-subtle">
+                    {t("bundle.costTotalHint")}
+                  </p>
+                </div>
+                <label className="rounded-md border border-hairline bg-surface px-2.5 py-2">
+                  <span className="text-[10px] font-medium text-ink-subtle">
+                    {t("bundle.listPriceLabel")}
                   </span>
-                  <div className="flex h-10 items-center overflow-hidden rounded-md border border-input bg-surface">
-                    <span className="border-r border-hairline px-2.5 text-[12px] font-medium text-ink-subtle">
+                  <div className="mt-1 flex h-7 items-center overflow-hidden rounded border border-input">
+                    <span className="border-r border-hairline px-1.5 text-[10px] text-ink-subtle">
                       {currency}
                     </span>
                     <input
-                      className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-sm tabular-nums text-ink outline-none"
+                      className="h-full min-w-0 flex-1 bg-transparent px-1.5 text-[12px] tabular-nums text-ink outline-none"
                       type="number"
                       inputMode="decimal"
                       min={0}
@@ -793,16 +819,20 @@ export function BundleComposerDrawer({
                       onChange={(e) => setPrice(e.target.value)}
                       disabled={busy}
                       placeholder={t("bundle.pricePlaceholder")}
+                      aria-label={t("bundle.listPriceLabel")}
                     />
                   </div>
-                </label>
-                <label className="block space-y-1.5">
-                  <span className="text-[12px] text-ink-muted">
-                    {t("bundle.discountLabel")}
+                  <span className="mt-0.5 block text-[10px] leading-3 text-ink-subtle">
+                    {t("bundle.listPriceHint")}
                   </span>
-                  <div className="flex h-10 items-center overflow-hidden rounded-md border border-input bg-surface">
+                </label>
+                <label className="rounded-md border border-hairline bg-surface px-2.5 py-2">
+                  <span className="text-[10px] font-medium text-ink-subtle">
+                    {t("bundle.discountLabelShort")}
+                  </span>
+                  <div className="mt-1 flex h-7 items-center overflow-hidden rounded border border-input">
                     <input
-                      className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-sm tabular-nums text-ink outline-none"
+                      className="h-full min-w-0 flex-1 bg-transparent px-1.5 text-[12px] tabular-nums text-ink outline-none"
                       type="number"
                       inputMode="decimal"
                       min={0}
@@ -812,96 +842,112 @@ export function BundleComposerDrawer({
                       onChange={(e) => setDiscountPercent(e.target.value)}
                       disabled={busy}
                       placeholder="0"
+                      aria-label={t("bundle.discountLabelShort")}
                     />
-                    <span className="border-l border-hairline px-2.5 text-[12px] font-medium text-ink-subtle">
+                    <span className="border-l border-hairline px-1.5 text-[10px] text-ink-subtle">
                       %
                     </span>
                   </div>
+                  <span className="mt-0.5 block text-[10px] leading-3 text-ink-subtle">
+                    {t("bundle.discountLogicHint")}
+                  </span>
                 </label>
-                <div className="flex min-w-[9.5rem] flex-col justify-end">
-                  <div className="flex h-10 items-center rounded-md border border-brand-accent/25 bg-brand-soft/70 px-3">
-                    <div className="min-w-0">
-                      <p className="text-[10px] text-ink-muted">
-                        {t("bundle.marginEstimate")}
-                      </p>
-                      <p className="truncate text-[12px] font-semibold tabular-nums text-ink">
-                        {marginEstimateLabel}
-                      </p>
-                    </div>
-                  </div>
+                <div className="rounded-md border border-brand-accent/30 bg-brand-soft/60 px-2.5 py-2">
+                  <p className="text-[10px] font-medium text-ink-subtle">
+                    {t("bundle.dealPriceLabel")}
+                  </p>
+                  <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-ink">
+                    {dealPriceLabel}
+                  </p>
+                  <p className="mt-0.5 text-[10px] leading-3 text-ink-subtle">
+                    {t("bundle.dealPriceHint")}
+                  </p>
                 </div>
               </div>
 
-              <dl className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] tabular-nums text-ink-muted">
-                <div className="flex gap-1.5">
-                  <dt>{t("bundle.marginCost")}</dt>
-                  <dd className="font-medium text-ink">{marginCostLabel}</dd>
+              <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-hairline bg-surface px-2.5 py-2">
+                <div>
+                  <p className="text-[10px] font-medium text-ink-subtle">
+                    {t("bundle.profitLabel")}
+                  </p>
+                  <p className="text-[10px] text-ink-subtle">
+                    {t("bundle.profitHint")}
+                  </p>
                 </div>
-                <div className="flex gap-1.5">
-                  <dt>{t("bundle.marginPrice")}</dt>
-                  <dd className="font-medium text-ink">
-                    {marginPriceLabel}
-                    {marginInfo.discount > 0
-                      ? ` (−${marginInfo.discount}%)`
-                      : ""}
-                  </dd>
-                </div>
-              </dl>
+                <p
+                  className={cn(
+                    "text-[14px] font-semibold tabular-nums",
+                    marginInfo.marginAbs != null && marginInfo.marginAbs < 0
+                      ? "text-red-600"
+                      : "text-ink"
+                  )}
+                >
+                  {marginEstimateLabel}
+                </p>
+              </div>
+
+              <p className="mt-2 text-[10px] leading-4 text-ink-subtle">
+                {t("bundle.pricingFlowHint", {
+                  cost: marginCostLabel,
+                  list: listPriceLabel,
+                  deal: dealPriceLabel,
+                })}
+              </p>
             </CardShell>
 
-            <CardShell className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="flex items-center justify-between gap-2 border-b border-hairline px-4 py-3">
-                <p className="text-[13px] font-semibold text-ink">
+            <CardShell className="flex shrink-0 flex-col overflow-hidden">
+              <div className="flex items-center justify-between gap-2 border-b border-hairline px-3 py-2">
+                <p className="text-[12px] font-semibold text-ink">
                   {t("bundle.productsSection")}
                 </p>
-                <span className="text-[12px] tabular-nums text-ink-muted">
+                <span className="text-[11px] tabular-nums text-ink-muted">
                   {t("bundle.previewParts", { count: 1 + selectedCount })}
                 </span>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-auto">
-                <table className="w-full min-w-[520px] border-collapse text-left text-[12px]">
-                  <thead className="sticky top-0 z-[1] bg-canvas/95 text-[11px] text-ink-subtle backdrop-blur">
+              <div className="max-h-[min(240px,32vh)] overflow-auto overscroll-contain">
+                <table className="w-full min-w-[480px] border-collapse text-left text-[11px]">
+                  <thead className="sticky top-0 z-[1] bg-canvas text-[10px] text-ink-subtle">
                     <tr className="border-b border-hairline">
-                      <th className="px-4 py-2.5 font-medium">
+                      <th className="px-3 py-2 font-medium">
                         {t("bundle.colProduct")}
                       </th>
-                      <th className="px-2 py-2.5 font-medium">
+                      <th className="px-2 py-2 font-medium">
                         {t("bundle.colVariant")}
                       </th>
-                      <th className="px-2 py-2.5 font-medium">
+                      <th className="px-2 py-2 font-medium">
                         {t("bundle.colQty")}
                       </th>
-                      <th className="px-2 py-2.5 font-medium">
+                      <th className="px-2 py-2 font-medium">
                         {t("bundle.colCost")}
                       </th>
-                      <th className="px-3 py-2.5 text-right font-medium">
+                      <th className="px-2 py-2 text-right font-medium">
                         {t("bundle.colAction")}
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr className="border-b border-hairline bg-canvas/40">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
                           <ProductThumb
                             url={contextProduct.primaryImageUrl}
-                            className="h-10 w-10 rounded-md"
+                            className="h-8 w-8 rounded"
                           />
                           <div className="min-w-0">
-                            <p className="truncate text-[13px] font-medium text-ink">
+                            <p className="truncate text-[12px] font-medium text-ink">
                               {contextProduct.title || t("bundle.untitled")}
                             </p>
-                            <p className="mt-0.5 text-[10px] font-medium text-ink-subtle">
+                            <p className="text-[9px] font-medium text-ink-subtle">
                               {t("bundle.currentBadge")}
                             </p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-2 py-3">
+                      <td className="px-2 py-2">
                         {contextVariants.length > 1 ? (
                           <select
-                            className="h-8 max-w-[9rem] rounded-md border border-hairline bg-surface px-1.5 text-[11px] text-ink"
+                            className="h-7 max-w-[8rem] rounded border border-hairline bg-surface px-1 text-[11px] text-ink"
                             value={contextVariantId ?? ""}
                             disabled={busy}
                             aria-label={t("bundle.variantLabel")}
@@ -927,12 +973,12 @@ export function BundleComposerDrawer({
                           </span>
                         )}
                       </td>
-                      <td className="px-2 py-3">
-                        <span className="inline-flex h-8 items-center rounded-md border border-hairline bg-canvas px-2.5 text-[12px] tabular-nums text-ink-muted">
+                      <td className="px-2 py-2">
+                        <span className="inline-flex h-7 items-center rounded border border-hairline bg-canvas px-2 text-[11px] tabular-nums text-ink-muted">
                           ×1
                         </span>
                       </td>
-                      <td className="px-2 py-3 tabular-nums text-ink-muted">
+                      <td className="px-2 py-2 tabular-nums text-ink-muted">
                         {contextCost != null
                           ? formatPurchaseCostMoney(
                               contextCost,
@@ -940,35 +986,35 @@ export function BundleComposerDrawer({
                             )
                           : "—"}
                       </td>
-                      <td className="px-3 py-3 text-right">
-                        <span className="text-[11px] text-ink-subtle">—</span>
-                      </td>
+                      <td className="px-2 py-2 text-right text-ink-subtle">—</td>
                     </tr>
 
                     {selectedEntries.map(
                       ({ productId, product, quantity, variantId }) => {
                         const variants = variantOptions[productId] ?? [];
                         const cost = unitCost(productId);
+                        const lineCost =
+                          cost != null ? cost * quantity : null;
                         return (
                           <tr
                             key={productId}
                             className="border-b border-hairline last:border-b-0"
                           >
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2.5">
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
                                 <ProductThumb
                                   url={product?.primaryImageUrl}
-                                  className="h-10 w-10 rounded-md"
+                                  className="h-8 w-8 rounded"
                                 />
-                                <p className="min-w-0 truncate text-[13px] font-medium text-ink">
+                                <p className="min-w-0 truncate text-[12px] font-medium text-ink">
                                   {product?.title || productId}
                                 </p>
                               </div>
                             </td>
-                            <td className="px-2 py-3">
+                            <td className="px-2 py-2">
                               {variants.length > 1 ? (
                                 <select
-                                  className="h-8 max-w-[9rem] rounded-md border border-hairline bg-surface px-1.5 text-[11px] text-ink"
+                                  className="h-7 max-w-[8rem] rounded border border-hairline bg-surface px-1 text-[11px] text-ink"
                                   value={variantId ?? ""}
                                   disabled={busy}
                                   aria-label={t("bundle.variantLabel")}
@@ -999,7 +1045,7 @@ export function BundleComposerDrawer({
                                 </span>
                               )}
                             </td>
-                            <td className="px-2 py-3">
+                            <td className="px-2 py-2">
                               <QtyStepper
                                 value={quantity}
                                 disabled={busy}
@@ -1007,15 +1053,15 @@ export function BundleComposerDrawer({
                                 onChange={(n) => setQty(productId, n)}
                               />
                             </td>
-                            <td className="px-2 py-3 tabular-nums text-ink-muted">
-                              {cost != null
+                            <td className="px-2 py-2 tabular-nums text-ink-muted">
+                              {lineCost != null
                                 ? formatPurchaseCostMoney(
-                                    cost,
+                                    lineCost,
                                     costCtx.currency
                                   )
                                 : "—"}
                             </td>
-                            <td className="px-3 py-3 text-right">
+                            <td className="px-2 py-2 text-right">
                               <Button
                                 size="sm"
                                 variant="secondary"
@@ -1036,12 +1082,12 @@ export function BundleComposerDrawer({
                 </table>
               </div>
 
-              <div className="border-t border-hairline px-4 py-3">
+              <div className="border-t border-hairline px-3 py-2">
                 <button
                   type="button"
                   disabled={busy}
                   onClick={focusCatalog}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-hairline-strong bg-canvas/50 py-2.5 text-[13px] font-medium text-brand-accent transition-colors hover:border-brand-accent/40 hover:bg-brand-soft/50 disabled:opacity-50"
+                  className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-hairline-strong bg-canvas/50 py-1.5 text-[12px] font-medium text-brand-accent transition-colors hover:border-brand-accent/40 hover:bg-brand-soft/50 disabled:opacity-50"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   {t("bundle.addMoreProducts")}
@@ -1050,15 +1096,15 @@ export function BundleComposerDrawer({
             </CardShell>
           </div>
 
-          {/* RIGHT — catalog */}
-          <CardShell className="flex min-h-0 flex-col overflow-hidden">
-            <div className="flex items-center justify-between gap-2 border-b border-hairline px-4 py-3">
-              <p className="text-[13px] font-semibold text-ink">
+          {/* RIGHT — catalog pane with own scroll */}
+          <CardShell className="flex min-h-[280px] flex-col overflow-hidden lg:min-h-0">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-3 py-2">
+              <p className="text-[12px] font-semibold text-ink">
                 {t("bundle.selectProducts")}
               </p>
               <span
                 className={cn(
-                  "text-[12px] tabular-nums",
+                  "text-[11px] tabular-nums",
                   selectedCount >= 1
                     ? "font-medium text-amber-700"
                     : "text-ink-muted"
@@ -1068,12 +1114,12 @@ export function BundleComposerDrawer({
               </span>
             </div>
 
-            <div className="shrink-0 px-4 pt-3">
+            <div className="shrink-0 px-3 pt-2">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
+                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
                 <Input
                   ref={searchRef}
-                  className="h-9 pl-8 text-sm"
+                  className="h-8 pl-7 text-[13px]"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   disabled={busy}
@@ -1082,9 +1128,9 @@ export function BundleComposerDrawer({
               </div>
             </div>
 
-            <ul className="mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-1">
+            <ul className="mt-1.5 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5">
               {pageRows.length === 0 ? (
-                <li className="px-2 py-12 text-center text-[12px] text-ink-muted">
+                <li className="px-2 py-8 text-center text-[11px] text-ink-muted">
                   {query.trim()
                     ? t("bundle.noSearchMatches")
                     : t("bundle.noCandidates")}
@@ -1098,13 +1144,13 @@ export function BundleComposerDrawer({
                   const blocked = occupied || unbound;
                   const priceLabel = formatShopPrice(p.currency, p.minPrice);
                   return (
-                    <li key={id} className="px-1 py-0.5">
+                    <li key={id} className="px-0.5 py-0.5">
                       <button
                         type="button"
                         disabled={busy || blocked}
                         onClick={() => toggle(id)}
                         className={cn(
-                          "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition-colors",
+                          "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
                           blocked
                             ? "cursor-not-allowed opacity-45"
                             : on
@@ -1114,7 +1160,7 @@ export function BundleComposerDrawer({
                       >
                         <span
                           className={cn(
-                            "flex h-5 w-5 shrink-0 items-center justify-center rounded border",
+                            "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
                             blocked
                               ? "border-hairline bg-surface-muted text-transparent"
                               : on
@@ -1123,17 +1169,17 @@ export function BundleComposerDrawer({
                           )}
                           aria-hidden
                         >
-                          <Check className="h-3 w-3" />
+                          <Check className="h-2.5 w-2.5" />
                         </span>
                         <ProductThumb
                           url={p.primaryImageUrl}
-                          className="h-10 w-10 rounded-md"
+                          className="h-8 w-8 rounded"
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13px] font-medium text-ink">
+                          <span className="block truncate text-[12px] font-medium text-ink">
                             {p.title || id}
                           </span>
-                          <span className="mt-0.5 block truncate text-[11px] text-ink-subtle">
+                          <span className="mt-0.5 block truncate text-[10px] text-ink-subtle">
                             {occupied
                               ? t("bundle.occupiedElsewhere")
                               : unbound
@@ -1149,7 +1195,7 @@ export function BundleComposerDrawer({
             </ul>
 
             {totalPages > 1 ? (
-              <div className="flex shrink-0 items-center justify-center gap-1 border-t border-hairline px-3 py-2.5">
+              <div className="flex shrink-0 items-center justify-center gap-0.5 border-t border-hairline px-2 py-1.5">
                 <Button
                   size="sm"
                   variant="secondary"
@@ -1168,7 +1214,7 @@ export function BundleComposerDrawer({
                     disabled={busy}
                     onClick={() => setPage(n)}
                     className={cn(
-                      "flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-[12px] tabular-nums transition-colors",
+                      "flex h-7 min-w-7 items-center justify-center rounded-md px-1 text-[11px] tabular-nums transition-colors",
                       n === safePage
                         ? "bg-brand-accent font-semibold text-white"
                         : "text-ink-muted hover:bg-canvas"
@@ -1193,19 +1239,18 @@ export function BundleComposerDrawer({
           </CardShell>
         </div>
 
-        {/* Footer */}
-        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-hairline bg-surface px-5 py-3.5">
-          <div className="flex min-w-0 items-start gap-2 text-[12px] leading-5 text-ink-muted">
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-hairline bg-surface px-3.5 py-2.5 sm:px-4">
+          <div className="flex min-w-0 max-w-[55%] items-start gap-1.5 text-[11px] leading-4 text-ink-muted">
             {submitBlockedReason && !busy ? (
               <>
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                 <span className="text-amber-800">{submitBlockedReason}</span>
               </>
             ) : (
-              <span>{t("bundle.inventoryHint")}</span>
+              <span className="truncate">{t("bundle.inventoryHint")}</span>
             )}
           </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
             <Button size="sm" variant="ghost" disabled={busy} onClick={onClose}>
               {t("common.cancel")}
             </Button>
@@ -1229,7 +1274,7 @@ export function BundleComposerDrawer({
             ) : null}
             <Button
               size="sm"
-              className="min-w-[10.5rem]"
+              className="min-w-[9rem]"
               disabled={!canSubmit}
               onClick={() => void submit()}
             >
