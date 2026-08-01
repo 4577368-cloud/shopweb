@@ -171,6 +171,59 @@ function variantLabel(v: ShopMirrorSku): string {
   );
 }
 
+/** Variant picker under product title — not a clipped table column. */
+function VariantPicker({
+  variants,
+  value,
+  disabled,
+  ariaLabel,
+  placeholder,
+  needsPick,
+  onChange,
+}: {
+  variants: ShopMirrorSku[];
+  value: string | null;
+  disabled?: boolean;
+  ariaLabel: string;
+  placeholder: string;
+  needsPick?: boolean;
+  onChange: (id: string | null) => void;
+}) {
+  if (variants.length > 1) {
+    return (
+      <select
+        className={cn(
+          "mt-1 h-8 w-full max-w-full rounded-md border bg-surface px-2 text-[12px] text-ink outline-none",
+          needsPick
+            ? "border-amber-500 ring-1 ring-amber-400/40"
+            : "border-input"
+        )}
+        value={value ?? ""}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        onChange={(e) => onChange(e.target.value || null)}
+      >
+        <option value="">{placeholder}</option>
+        {variants.map((v) => (
+          <option key={v.thirdPlatformSkuId} value={v.thirdPlatformSkuId}>
+            {variantLabel(v)}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  if (variants[0]) {
+    return (
+      <p className="mt-0.5 truncate text-[11px] text-ink-muted">
+        {variantLabel(variants[0])}
+      </p>
+    );
+  }
+  return (
+    <p className="mt-0.5 text-[11px] text-ink-subtle">—</p>
+  );
+}
+
 export function BundleComposerDrawer({
   open,
   shopName,
@@ -847,167 +900,84 @@ export function BundleComposerDrawer({
                 </span>
               </div>
 
-              <div className="max-h-[min(240px,32vh)] overflow-auto overscroll-contain">
-                <table className="w-full min-w-[480px] border-collapse text-left text-[11px]">
-                  <thead className="sticky top-0 z-[1] bg-canvas text-[10px] text-ink-subtle">
-                    <tr className="border-b border-hairline">
-                      <th className="px-3 py-2 font-medium">
-                        {t("bundle.colProduct")}
-                      </th>
-                      <th className="px-2 py-2 font-medium">
-                        {t("bundle.colVariant")}
-                      </th>
-                      <th className="px-2 py-2 font-medium">
-                        {t("bundle.colQty")}
-                      </th>
-                      <th className="px-2 py-2 font-medium">
-                        {t("bundle.colCost")}
-                      </th>
-                      <th className="px-2 py-2 text-right font-medium">
-                        {t("bundle.colAction")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-hairline bg-canvas/40">
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <ProductThumb
-                            url={contextProduct.primaryImageUrl}
-                            className="h-8 w-8 rounded"
-                          />
-                          <div className="min-w-0">
-                            <p className="truncate text-[12px] font-medium text-ink">
-                              {contextProduct.title || t("bundle.untitled")}
-                            </p>
-                            <p className="text-[9px] font-medium text-ink-subtle">
-                              {t("bundle.currentBadge")}
-                            </p>
-                          </div>
+              <div className="max-h-[min(280px,36vh)] space-y-0 overflow-y-auto overscroll-contain">
+                <div
+                  className={cn(
+                    "border-b border-hairline bg-canvas/40 px-3 py-2.5",
+                    contextNeedsVariant && "bg-amber-50/80"
+                  )}
+                >
+                  <div className="flex items-start gap-2">
+                    <ProductThumb
+                      url={contextProduct.primaryImageUrl}
+                      className="mt-0.5 h-9 w-9 shrink-0 rounded"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-[12px] font-medium text-ink">
+                            {contextProduct.title || t("bundle.untitled")}
+                          </p>
+                          <p className="text-[9px] font-medium text-ink-subtle">
+                            {t("bundle.currentBadge")}
+                          </p>
                         </div>
-                      </td>
-                      <td className="px-2 py-2">
-                        {contextVariants.length > 1 ? (
-                          <select
-                            className="h-7 max-w-[8rem] rounded border border-hairline bg-surface px-1 text-[11px] text-ink"
-                            value={contextVariantId ?? ""}
-                            disabled={busy}
-                            aria-label={t("bundle.variantLabel")}
-                            onChange={(e) =>
-                              setContextVariantId(e.target.value || null)
-                            }
-                          >
-                            <option value="">{t("bundle.variantLabel")}</option>
-                            {contextVariants.map((v) => (
-                              <option
-                                key={v.thirdPlatformSkuId}
-                                value={v.thirdPlatformSkuId}
-                              >
-                                {variantLabel(v)}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className="text-ink-muted">
-                            {contextVariants[0]
-                              ? variantLabel(contextVariants[0])
-                              : "—"}
+                        <div className="shrink-0 text-right">
+                          <span className="inline-flex h-7 items-center rounded border border-hairline bg-canvas px-2 text-[11px] tabular-nums text-ink-muted">
+                            ×1
                           </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-2">
-                        <span className="inline-flex h-7 items-center rounded border border-hairline bg-canvas px-2 text-[11px] tabular-nums text-ink-muted">
-                          ×1
-                        </span>
-                      </td>
-                      <td className="px-2 py-2 tabular-nums text-ink-muted">
-                        {contextCost != null
-                          ? formatPurchaseCostMoney(
-                              contextCost,
-                              costCtx.currency
-                            )
-                          : "—"}
-                      </td>
-                      <td className="px-2 py-2 text-right text-ink-subtle">—</td>
-                    </tr>
+                          <p className="mt-0.5 text-[10px] tabular-nums text-ink-muted">
+                            {contextCost != null
+                              ? formatPurchaseCostMoney(
+                                  contextCost,
+                                  costCtx.currency
+                                )
+                              : "—"}
+                          </p>
+                        </div>
+                      </div>
+                      <VariantPicker
+                        variants={contextVariants}
+                        value={contextVariantId}
+                        disabled={busy}
+                        ariaLabel={t("bundle.variantLabel")}
+                        placeholder={t("bundle.pickVariant")}
+                        needsPick={contextNeedsVariant}
+                        onChange={setContextVariantId}
+                      />
+                    </div>
+                  </div>
+                </div>
 
-                    {selectedEntries.map(
-                      ({ productId, product, quantity, variantId }) => {
-                        const variants = variantOptions[productId] ?? [];
-                        const cost = unitCost(productId);
-                        const lineCost =
-                          cost != null ? cost * quantity : null;
-                        return (
-                          <tr
-                            key={productId}
-                            className="border-b border-hairline last:border-b-0"
-                          >
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-2">
-                                <ProductThumb
-                                  url={product?.primaryImageUrl}
-                                  className="h-8 w-8 rounded"
-                                />
-                                <p className="min-w-0 truncate text-[12px] font-medium text-ink">
-                                  {product?.title || productId}
-                                </p>
-                              </div>
-                            </td>
-                            <td className="px-2 py-2">
-                              {variants.length > 1 ? (
-                                <select
-                                  className="h-7 max-w-[8rem] rounded border border-hairline bg-surface px-1 text-[11px] text-ink"
-                                  value={variantId ?? ""}
-                                  disabled={busy}
-                                  aria-label={t("bundle.variantLabel")}
-                                  onChange={(e) =>
-                                    setVariant(
-                                      productId,
-                                      e.target.value || null
-                                    )
-                                  }
-                                >
-                                  <option value="">
-                                    {t("bundle.variantLabel")}
-                                  </option>
-                                  {variants.map((v) => (
-                                    <option
-                                      key={v.thirdPlatformSkuId}
-                                      value={v.thirdPlatformSkuId}
-                                    >
-                                      {variantLabel(v)}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <span className="text-ink-muted">
-                                  {variants[0]
-                                    ? variantLabel(variants[0])
-                                    : "—"}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-2 py-2">
-                              <QtyStepper
-                                value={quantity}
-                                disabled={busy}
-                                ariaLabel={t("bundle.qtyAria")}
-                                onChange={(n) => setQty(productId, n)}
-                              />
-                            </td>
-                            <td className="px-2 py-2 tabular-nums text-ink-muted">
-                              {lineCost != null
-                                ? formatPurchaseCostMoney(
-                                    lineCost,
-                                    costCtx.currency
-                                  )
-                                : "—"}
-                            </td>
-                            <td className="px-2 py-2 text-right">
+                {selectedEntries.map(
+                  ({ productId, product, quantity, variantId }) => {
+                    const variants = variantOptions[productId] ?? [];
+                    const cost = unitCost(productId);
+                    const lineCost = cost != null ? cost * quantity : null;
+                    const needsPick =
+                      variants.length > 1 && !variantId;
+                    return (
+                      <div
+                        key={productId}
+                        className={cn(
+                          "border-b border-hairline px-3 py-2.5 last:border-b-0",
+                          needsPick && "bg-amber-50/80"
+                        )}
+                      >
+                        <div className="flex items-start gap-2">
+                          <ProductThumb
+                            url={product?.primaryImageUrl}
+                            className="mt-0.5 h-9 w-9 shrink-0 rounded"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">
+                                {product?.title || productId}
+                              </p>
                               <Button
                                 size="sm"
                                 variant="secondary"
-                                className="h-7 w-7 px-0 text-ink-muted hover:text-red-600"
+                                className="h-7 w-7 shrink-0 px-0 text-ink-muted hover:text-red-600"
                                 disabled={busy}
                                 title={t("bundle.removeComponent")}
                                 aria-label={t("bundle.removeComponent")}
@@ -1015,13 +985,38 @@ export function BundleComposerDrawer({
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
-                            </td>
-                          </tr>
-                        );
-                      }
-                    )}
-                  </tbody>
-                </table>
+                            </div>
+                            <VariantPicker
+                              variants={variants}
+                              value={variantId}
+                              disabled={busy}
+                              ariaLabel={t("bundle.variantLabel")}
+                              placeholder={t("bundle.pickVariant")}
+                              needsPick={needsPick}
+                              onChange={(id) => setVariant(productId, id)}
+                            />
+                            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                              <QtyStepper
+                                value={quantity}
+                                disabled={busy}
+                                ariaLabel={t("bundle.qtyAria")}
+                                onChange={(n) => setQty(productId, n)}
+                              />
+                              <span className="text-[10px] tabular-nums text-ink-muted">
+                                {lineCost != null
+                                  ? formatPurchaseCostMoney(
+                                      lineCost,
+                                      costCtx.currency
+                                    )
+                                  : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                )}
               </div>
 
               <div className="border-t border-hairline px-3 py-2">
