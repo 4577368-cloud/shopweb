@@ -6,9 +6,6 @@ import { ShopProductsPanel } from "@/components/select/shop-products-panel";
 
 export interface ProductsShopTabSummaryProps {
   pendingNewAnalysis: number;
-  onViewNewArrivals: () => void;
-  onBatchLinkNewArrivals?: () => void;
-  batchLinkBusy: boolean;
 }
 
 export interface ProductsShopTabProps {
@@ -31,9 +28,6 @@ export function ProductsShopTab({
     <>
       <SmartSourcingSummaryBar
         pendingNewAnalysis={summary.pendingNewAnalysis}
-        onViewNewArrivals={summary.onViewNewArrivals}
-        onBatchLinkNewArrivals={summary.onBatchLinkNewArrivals}
-        batchLinkBusy={summary.batchLinkBusy}
       />
       <ShopProductsPanel
         {...panel}

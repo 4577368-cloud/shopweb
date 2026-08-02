@@ -21,8 +21,6 @@ export interface UseProductsShopTabPropsParams {
   setCatalogScope: (scope: CatalogScope) => void;
   scopeCounts: { all: number; linked: number; listed: number };
   setShopFilter: (filter: ShopFilter) => void;
-  hasNewProductsToLink: boolean;
-  enqueueNewArrivalsBatchLink: () => void;
   batchLinkActive: boolean;
   listRefreshing?: boolean;
   onRefreshList?: () => void;
@@ -77,8 +75,6 @@ export function useProductsShopTabProps(
     setCatalogScope,
     scopeCounts,
     setShopFilter,
-    hasNewProductsToLink,
-    enqueueNewArrivalsBatchLink,
     batchLinkActive,
     listRefreshing = false,
     onRefreshList,
@@ -110,32 +106,11 @@ export function useProductsShopTabProps(
     template,
   } = params;
 
-  const onViewNewArrivals = useCallback(
-    () => setShopFilter("new_arrivals"),
-    [setShopFilter]
-  );
-
-  const onBatchLinkNewArrivals = useMemo(
-    () =>
-      hasNewProductsToLink
-        ? () => void enqueueNewArrivalsBatchLink()
-        : undefined,
-    [hasNewProductsToLink, enqueueNewArrivalsBatchLink]
-  );
-
   const summary = useMemo(
     (): ProductsShopTabSummaryProps => ({
       pendingNewAnalysis: pendingNewAnalysisCount,
-      onViewNewArrivals,
-      onBatchLinkNewArrivals,
-      batchLinkBusy: batchLinkActive,
     }),
-    [
-      pendingNewAnalysisCount,
-      onViewNewArrivals,
-      onBatchLinkNewArrivals,
-      batchLinkActive,
-    ]
+    [pendingNewAnalysisCount]
   );
 
   const onScrollToConsumed = useCallback(

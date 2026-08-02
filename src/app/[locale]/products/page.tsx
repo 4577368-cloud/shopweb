@@ -378,8 +378,6 @@ function SelectContent() {
     setCatalogScope,
     scopeCounts,
     setShopFilter,
-    hasNewProductsToLink,
-    enqueueNewArrivalsBatchLink,
     batchLinkActive,
     listRefreshing,
     onRefreshList: isEmbedded ? undefined : () => void handleRefreshList(),
