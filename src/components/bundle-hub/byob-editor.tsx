@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/i18n/LocaleProvider";
@@ -9,6 +9,7 @@ import { saveByobCampaign } from "@/lib/bundle/campaign-api";
 import type { BundleCampaign, ByobSlot } from "@/lib/bundle/campaign-types";
 import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
 import { Loader2, Plus, Trash2 } from "@/lib/ui/icons";
+import { cn } from "@/lib/utils";
 
 function newSlot(role: ByobSlot["role"]): ByobSlot {
   return {
@@ -19,6 +20,19 @@ function newSlot(role: ByobSlot["role"]): ByobSlot {
     max: role === "main" ? 1 : 3,
     poolProductIds: [],
   };
+}
+
+function roleTitleKey(role: ByobSlot["role"]): string {
+  switch (role) {
+    case "main":
+      return "bundleHub.roleMain";
+    case "accessory":
+      return "bundleHub.roleAccessory";
+    case "gift":
+      return "bundleHub.roleGift";
+    default:
+      return "bundleHub.roleOther";
+  }
 }
 
 /** BYOB slot template editor — persists draft; storefront Block reads metafield. */
@@ -57,17 +71,45 @@ export function ByobEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const boundIds = catalog
-    .filter((p) => {
-      const b = bindings[p.thirdPlatformItemId];
-      return b?.bound && b.tangbuyProductId && (b.bindStatus == null || b.bindStatus === "ACTIVE");
-    })
-    .map((p) => p.thirdPlatformItemId);
+  const candidates = useMemo(
+    () =>
+      catalog.filter((p) => {
+        const b = bindings[p.thirdPlatformItemId];
+        return (
+          b?.bound &&
+          b.tangbuyProductId &&
+          (b.bindStatus == null || b.bindStatus === "ACTIVE")
+        );
+      }),
+    [bindings, catalog]
+  );
+
+  const togglePool = (slotId: string, productId: string) => {
+    setSlots((all) =>
+      all.map((s) => {
+        if (s.id !== slotId) return s;
+        const set = new Set(s.poolProductIds);
+        if (set.has(productId)) set.delete(productId);
+        else set.add(productId);
+        return { ...s, poolProductIds: Array.from(set) };
+      })
+    );
+  };
 
   const submit = async () => {
     if (!title.trim()) {
       setError(t("bundleHub.errTitle"));
       return;
+    }
+    for (const slot of slots) {
+      if (slot.min > slot.max) {
+        setError(t("bundleHub.errSlotMinMax", { index: slots.indexOf(slot) + 1 }));
+        return;
+      }
+      if (slot.poolProductIds.length === 0) {
+        setError(t("bundleHub.errSlotPoolEmpty", { index: slots.indexOf(slot) + 1 }));
+        return;
+      }
     }
     setSaving(true);
     setError(null);
@@ -95,12 +137,16 @@ export function ByobEditor({
       <p className="rounded-md border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-[11px] text-amber-950">
         {t("bundleHub.byobDraftHint")}
       </p>
+      <p className="text-[11px] leading-relaxed text-ink-muted">
+        {t("bundleHub.byobHowTo")}
+      </p>
+
       <label className="block space-y-1">
         <span className="text-[11px] text-ink-muted">{t("bundleHub.fieldTitle")}</span>
         <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={saving} />
       </label>
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {slots.map((slot, idx) => (
           <div
             key={slot.id}
@@ -108,7 +154,10 @@ export function ByobEditor({
           >
             <div className="flex items-center justify-between gap-2">
               <p className="text-[12px] font-semibold text-ink">
-                {t("bundleHub.slotLabel", { index: idx + 1, role: slot.role })}
+                {t("bundleHub.slotLabel", {
+                  index: idx + 1,
+                  role: t(roleTitleKey(slot.role)),
+                })}
               </p>
               <Button
                 type="button"
@@ -123,7 +172,9 @@ export function ByobEditor({
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
-            <div className="mt-2 grid gap-2 sm:grid-cols-3">
+
+            <label className="mt-2 block space-y-1">
+              <span className="text-[11px] text-ink-muted">{t("bundleHub.slotTitle")}</span>
               <Input
                 value={slot.title}
                 onChange={(e) =>
@@ -133,68 +184,95 @@ export function ByobEditor({
                     )
                   )
                 }
-                placeholder={t("bundleHub.slotTitle")}
+                placeholder={t(roleTitleKey(slot.role))}
                 disabled={saving}
               />
-              <Input
-                type="number"
-                min={0}
-                value={slot.min}
-                onChange={(e) =>
-                  setSlots((all) =>
-                    all.map((s) =>
-                      s.id === slot.id
-                        ? { ...s, min: Math.max(0, Number(e.target.value) || 0) }
-                        : s
-                    )
-                  )
-                }
-                disabled={saving}
-              />
-              <Input
-                type="number"
-                min={1}
-                value={slot.max}
-                onChange={(e) =>
-                  setSlots((all) =>
-                    all.map((s) =>
-                      s.id === slot.id
-                        ? { ...s, max: Math.max(1, Number(e.target.value) || 1) }
-                        : s
-                    )
-                  )
-                }
-                disabled={saving}
-              />
-            </div>
-            <label className="mt-2 block space-y-1">
-              <span className="text-[10px] text-ink-muted">{t("bundleHub.slotPool")}</span>
-              <select
-                multiple
-                className="h-24 w-full rounded-md border border-input bg-surface px-2 text-[11px]"
-                value={slot.poolProductIds}
-                disabled={saving}
-                onChange={(e) => {
-                  const selected = Array.from(e.target.selectedOptions).map(
-                    (o) => o.value
-                  );
-                  setSlots((all) =>
-                    all.map((s) =>
-                      s.id === slot.id ? { ...s, poolProductIds: selected } : s
-                    )
-                  );
-                }}
-              >
-                {boundIds.map((id) => {
-                  const p = catalog.find((x) => x.thirdPlatformItemId === id);
-                  return (
-                    <option key={id} value={id}>
-                      {p?.title || id}
-                    </option>
-                  );
-                })}
-              </select>
             </label>
+
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <label className="block space-y-1">
+                <span className="text-[11px] text-ink-muted">{t("bundleHub.slotMin")}</span>
+                <Input
+                  type="number"
+                  min={0}
+                  value={slot.min}
+                  onChange={(e) =>
+                    setSlots((all) =>
+                      all.map((s) =>
+                        s.id === slot.id
+                          ? { ...s, min: Math.max(0, Number(e.target.value) || 0) }
+                          : s
+                      )
+                    )
+                  }
+                  disabled={saving}
+                />
+                <span className="block text-[10px] text-ink-subtle">
+                  {t("bundleHub.slotMinHint")}
+                </span>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-[11px] text-ink-muted">{t("bundleHub.slotMax")}</span>
+                <Input
+                  type="number"
+                  min={1}
+                  value={slot.max}
+                  onChange={(e) =>
+                    setSlots((all) =>
+                      all.map((s) =>
+                        s.id === slot.id
+                          ? { ...s, max: Math.max(1, Number(e.target.value) || 1) }
+                          : s
+                      )
+                    )
+                  }
+                  disabled={saving}
+                />
+                <span className="block text-[10px] text-ink-subtle">
+                  {t("bundleHub.slotMaxHint")}
+                </span>
+              </label>
+            </div>
+
+            <div className="mt-2 overflow-hidden rounded-md border border-hairline">
+              <div className="border-b border-hairline px-2.5 py-1.5 text-[11px] font-medium text-ink">
+                {t("bundleHub.slotPool", { count: slot.poolProductIds.length })}
+              </div>
+              <p className="border-b border-hairline px-2.5 py-1.5 text-[10px] text-ink-muted">
+                {t("bundleHub.slotPoolHint")}
+              </p>
+              <div className="max-h-40 overflow-y-auto">
+                {candidates.length === 0 ? (
+                  <p className="px-2.5 py-3 text-[11px] text-ink-muted">
+                    {t("bundleHub.poolEmpty")}
+                  </p>
+                ) : (
+                  candidates.map((p) => {
+                    const id = p.thirdPlatformItemId;
+                    const on = slot.poolProductIds.includes(id);
+                    return (
+                      <label
+                        key={id}
+                        className={cn(
+                          "flex cursor-pointer items-center gap-2 border-b border-hairline px-2.5 py-1.5 last:border-b-0",
+                          on && "bg-brand-soft/20"
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => togglePool(slot.id, id)}
+                          disabled={saving}
+                        />
+                        <span className="min-w-0 flex-1 truncate text-[12px] text-ink">
+                          {p.title || id}
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </div>
         ))}
       </div>
