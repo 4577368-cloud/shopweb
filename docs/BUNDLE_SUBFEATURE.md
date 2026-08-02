@@ -55,6 +55,15 @@
 前端：窗口 focus + 约 60s 轮询重拉 `status-map`；抽屉对 STALE 显示提示；已被其他套装占用的商品不可选。  
 创建 / 更新 / 解散后：`syncShopProducts` → `load({ silent, force })` → `refreshBundleStatus`。
 
+## 主题 PDP（Kit Components App Block）
+
+路径：[`extensions/bundle-components-block/`](../extensions/bundle-components-block/)
+
+1. `shopify app deploy` 后，主题编辑器 → **默认产品** → **产品信息** → **添加区块** → **60s · Kit components**
+2. **放置位置**：标题/价格下方、购买按钮上方（不要放在标题之上，也不要和「商品描述」重复叠两遍）
+3. 组成列表来自 metafield `tangbuy_bundle.components_json`；商品描述只保留主商品详情，不再写入「Bundle includes」列表
+4. 非套装商品该区块自动不渲染
+
 ## Discount Function（脚手架）
 
 路径：[`extensions/bundle-discount/`](../extensions/bundle-discount/)
