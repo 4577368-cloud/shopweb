@@ -57,6 +57,16 @@ const tiedImage = rankCandidatesWithImageGate(
 );
 assert(tiedImage[0]?.productId === "b", "image-gate: tied similarity may use sold");
 
+const titleMustNotBeatImage = rankCandidatesWithImageGate(
+  [item("lookalike", 12), item("title-winner", 10)],
+  { lookalike: 40, "title-winner": 99 },
+  { lookalike: 92, "title-winner": 70 }
+);
+assert(
+  titleMustNotBeatImage[0]?.productId === "lookalike",
+  "image-gate: higher image beats higher title score"
+);
+
 if (failed) {
   console.error(`\n${failed} assertion(s) failed`);
   process.exit(1);

@@ -32,17 +32,11 @@ function sortCandidatesByRanking(a: CandidateSummary, b: CandidateSummary): numb
   const imageDiff = (b.imageScore ?? -1) - (a.imageScore ?? -1);
   if (imageDiff !== 0) return imageDiff;
 
-  const scoreA = a.matchScore ?? 0;
-  const scoreB = b.matchScore ?? 0;
-  const scoreDiff = scoreB - scoreA;
-  if (scoreDiff !== 0) return scoreDiff;
-
-  const hasSimilaritySignal =
+  // Title / text composite (matchScore) does not affect 首选 — image then sold.
+  const hasImageSignal =
     (a.imageScore != null && a.imageScore > 0) ||
-    (b.imageScore != null && b.imageScore > 0) ||
-    scoreA > 0 ||
-    scoreB > 0;
-  if (hasSimilaritySignal) {
+    (b.imageScore != null && b.imageScore > 0);
+  if (hasImageSignal) {
     const soldDiff = (b.soldCount ?? 0) - (a.soldCount ?? 0);
     if (soldDiff !== 0) return soldDiff;
   }

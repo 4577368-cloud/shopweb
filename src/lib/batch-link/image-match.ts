@@ -102,15 +102,16 @@ function imageGateSortTier(imageScore: number | null | undefined): number {
 }
 
 /**
- * Rank candidates for auto-bind — similarity always first:
+ * Rank candidates for auto-bind / 首选 — image similarity only (title scores do not reorder):
  * - Pending image scores keep image-search order (not sunk as "unverified")
  * - Verified low scores sink
- * - Order: image score → title → (sold / repurchase only when a real similarity signal exists) → search index
- * - When image+title are both missing, preserve 1688 gateway order (sold must not steal the top slot)
+ * - Order: image score → (sold / repurchase only when a verified image signal exists) → search index
+ * - When image scores are missing/pending, preserve 1688 gateway order (sold must not steal the top slot)
+ * - `titleScores` kept for call-site compatibility; used by auto-bind confidence, not ranking
  */
 export function rankCandidatesWithImageGate(
   items: ImageSearchProduct[],
-  titleScores: Record<string, number>,
+  _titleScores: Record<string, number>,
   imageScores: Record<string, number | null>
 ): ImageSearchProduct[] {
   if (items.length <= 1) return items.slice();
@@ -130,16 +131,10 @@ export function rankCandidatesWithImageGate(
       const imgB = imageB ?? -1;
       if (imgA !== imgB) return imgB - imgA;
 
-      const titleA = titleScores[keyA] ?? 0;
-      const titleB = titleScores[keyB] ?? 0;
-      if (titleA !== titleB) return titleB - titleA;
-
-      const hasSimilaritySignal =
+      const hasImageSignal =
         (!isImageScorePending(imageA) && (imageA as number) > 0) ||
-        (!isImageScorePending(imageB) && (imageB as number) > 0) ||
-        titleA > 0 ||
-        titleB > 0;
-      if (hasSimilaritySignal) {
+        (!isImageScorePending(imageB) && (imageB as number) > 0);
+      if (hasImageSignal) {
         const soldA = a.item.soldCount ?? 0;
         const soldB = b.item.soldCount ?? 0;
         if (soldA !== soldB) return soldB - soldA;

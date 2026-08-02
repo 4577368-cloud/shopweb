@@ -68,7 +68,7 @@ export function buildCandidateTrayInlineReason(
     if ((candidate.soldCount ?? 0) > 0 || candidate.repurchaseRate) {
       return t("candidateTray.topSupplySignal");
     }
-    if (candidate.matchScore != null && candidate.matchScore > 0) {
+    if (candidate.imageScore != null && candidate.imageScore > 0) {
       return t("candidateTray.topHighestScore");
     }
     return null;
@@ -79,9 +79,9 @@ export function buildCandidateTrayInlineReason(
     top.productId !== candidate.productId;
 
   if (isCheapest) {
-    const topScore = top.matchScore ?? 0;
-    const candScore = candidate.matchScore ?? 0;
-    if (topScore > candScore) return t("candidateTray.cheaperWeakerMatch");
+    const topImg = top.imageScore ?? 0;
+    const candImg = candidate.imageScore ?? 0;
+    if (topImg > candImg) return t("candidateTray.cheaperWeakerMatch");
     return t("candidateTray.lowestCost");
   }
 
@@ -94,9 +94,9 @@ export function buildCandidateTrayInlineReason(
     return t("candidateTray.lowProfit");
   }
 
-  const topScore = top.matchScore ?? 0;
-  const candScore = candidate.matchScore ?? 0;
-  if (topScore > candScore + 3) return t("candidateTray.lowerTitleScore");
+  const topImg = top.imageScore ?? 0;
+  const candImg = candidate.imageScore ?? 0;
+  if (topImg > candImg + 3) return t("candidateTray.lowerTitleScore");
 
   if ((candidate.inventory ?? 0) > 0 && (top.inventory ?? 0) <= 0) {
     return t("candidateTray.stableInventory");
