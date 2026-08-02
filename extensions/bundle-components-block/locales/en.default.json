@@ -8,7 +8,7 @@
         "heading": "Heading",
         "show_quantity": "Show quantity",
         "show_thumbnails": "Show thumbnails",
-        "show_thumbnails_info": "Requires imageUrl in components_json (optional).",
+        "show_thumbnails_info": "Uses imageUrl from kit metafield when present.",
         "gap": "Row gap",
         "margin_top": "Top margin",
         "margin_bottom": "Bottom margin"

@@ -8,7 +8,7 @@
         "heading": "标题",
         "show_quantity": "显示数量",
         "show_thumbnails": "显示缩略图",
-        "show_thumbnails_info": "需要 components_json 含 imageUrl（可选）。",
+        "show_thumbnails_info": "有组件图时显示缩略图；无图显示占位。",
         "gap": "行间距",
         "margin_top": "上边距",
         "margin_bottom": "下边距"
