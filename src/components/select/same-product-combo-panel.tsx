@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { useT } from "@/i18n/LocaleProvider";
 import { api } from "@/lib/api";
 import {
@@ -127,29 +126,18 @@ export function SameProductComboPanel({
           {t("bundle.comboTrackHint")}
         </p>
 
-        <div className="grid grid-cols-2 gap-2">
-          {(
-            [
-              ["qty_discount", t("bundle.comboKindQty")],
-              ["variant_pair", t("bundle.comboKindVariants")],
-            ] as const
-          ).map(([id, labelText]) => (
-            <button
-              key={id}
-              type="button"
-              disabled={busy}
-              onClick={() => setKind(id)}
-              className={cn(
-                "rounded-md border px-3 py-2 text-left text-[12px] font-medium transition-colors",
-                kind === id
-                  ? "border-brand-accent bg-brand-soft/60 text-ink"
-                  : "border-hairline bg-surface text-ink-muted hover:border-hairline-strong"
-              )}
-            >
-              {labelText}
-            </button>
-          ))}
-        </div>
+        <label className="block space-y-1">
+          <span className="text-[11px] text-ink-muted">{t("bundle.comboKindLabel")}</span>
+          <select
+            className="h-9 w-full rounded-md border border-input bg-surface px-2 text-[13px] text-ink"
+            value={kind}
+            disabled={busy}
+            onChange={(e) => setKind(e.target.value as SameProductComboKind)}
+          >
+            <option value="qty_discount">{t("bundle.comboKindQty")}</option>
+            <option value="variant_pair">{t("bundle.comboKindVariants")}</option>
+          </select>
+        </label>
 
         <label className="block space-y-1">
           <span className="text-[11px] text-ink-muted">
@@ -182,7 +170,7 @@ export function SameProductComboPanel({
             </label>
             <label className="block space-y-1">
               <span className="text-[11px] text-ink-muted">
-                {t("bundle.comboDiscount")}
+                {t("bundle.comboDiscountPercent")}
               </span>
               <div className="flex h-9 items-center overflow-hidden rounded-md border border-input bg-surface">
                 <input
@@ -198,6 +186,11 @@ export function SameProductComboPanel({
                   %
                 </span>
               </div>
+              <span className="block text-[10px] text-ink-subtle">
+                {t("bundle.comboDiscountHint", {
+                  percent: Math.min(100, Math.max(0, Number(discountPercent) || 0)),
+                })}
+              </span>
             </label>
           </div>
         ) : (
@@ -257,7 +250,7 @@ export function SameProductComboPanel({
                 </label>
                 <label className="block space-y-1">
                   <span className="text-[11px] text-ink-muted">
-                    {t("bundle.comboDiscount")}
+                    {t("bundle.comboDiscountPercent")}
                   </span>
                   <div className="flex h-9 max-w-[10rem] items-center overflow-hidden rounded-md border border-input bg-surface">
                     <input
@@ -273,6 +266,14 @@ export function SameProductComboPanel({
                       %
                     </span>
                   </div>
+                  <span className="block text-[10px] text-ink-subtle">
+                    {t("bundle.comboDiscountHint", {
+                      percent: Math.min(
+                        100,
+                        Math.max(0, Number(discountPercent) || 0)
+                      ),
+                    })}
+                  </span>
                 </label>
               </>
             )}

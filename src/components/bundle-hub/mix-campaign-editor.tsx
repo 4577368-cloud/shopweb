@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { useT } from "@/i18n/LocaleProvider";
 import { readableError } from "@/lib/api";
 import { saveMixCampaign } from "@/lib/bundle/campaign-api";
@@ -76,6 +77,20 @@ export function MixCampaignEditor({
   const [error, setError] = useState<string | null>(null);
 
   const candidates = catalog;
+  const qtyNum = Math.max(2, Number(minQty) || 2);
+  const pctNum = Math.min(100, Math.max(1, Number(percent) || 1));
+  const amountNum = Math.max(0.01, Number(amount) || 0.01);
+
+  const ruleSummary =
+    pricingType === "percent"
+      ? t("bundleHub.mixRuleSummaryPercent", {
+          qty: qtyNum,
+          percent: pctNum,
+        })
+      : t("bundleHub.mixRuleSummaryFixed", {
+          qty: qtyNum,
+          amount: amountNum,
+        });
 
   const toggle = (id: string) => {
     if (!isBindingReady(bindings, id)) return;
@@ -88,28 +103,21 @@ export function MixCampaignEditor({
   };
 
   const submit = async () => {
-    const qty = Math.max(2, Number(minQty) || 2);
     if (!title.trim()) {
       setError(t("bundleHub.errTitle"));
       return;
     }
-    if (pool.size < qty) {
-      setError(t("bundleHub.errPoolSmall", { count: qty }));
+    if (pool.size < qtyNum) {
+      setError(t("bundleHub.errPoolSmall", { count: qtyNum }));
       return;
     }
     const rule: MixMatchRule = {
       kind: "mix_match",
-      minQty: qty,
+      minQty: qtyNum,
       pricing:
         pricingType === "percent"
-          ? {
-              type: "percent",
-              percent: Math.min(100, Math.max(1, Number(percent) || 1)),
-            }
-          : {
-              type: "fixed_price",
-              amount: Math.max(0.01, Number(amount) || 0.01),
-            },
+          ? { type: "percent", percent: pctNum }
+          : { type: "fixed_price", amount: amountNum },
       label: title.trim(),
     };
     setSaving(true);
@@ -133,63 +141,83 @@ export function MixCampaignEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <p className="text-[11px] leading-relaxed text-ink-muted">
+        {t("bundleHub.mixHowTo")}
+      </p>
+
       <label className="block space-y-1">
         <span className="text-[11px] text-ink-muted">{t("bundleHub.fieldTitle")}</span>
         <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={saving} />
       </label>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <label className="block space-y-1">
-          <span className="text-[11px] text-ink-muted">{t("bundleHub.fieldMinQty")}</span>
-          <Input
-            type="number"
-            min={2}
-            value={minQty}
-            onChange={(e) => setMinQty(e.target.value)}
-            disabled={saving}
-          />
-        </label>
-        <label className="block space-y-1 sm:col-span-2">
-          <span className="text-[11px] text-ink-muted">{t("bundleHub.fieldPricing")}</span>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className={cn(
-                "h-9 rounded-md border px-2.5 text-[12px]",
-                pricingType === "percent"
-                  ? "border-brand-accent bg-brand-soft/40"
-                  : "border-hairline"
-              )}
-              onClick={() => setPricingType("percent")}
+
+      <div className="rounded-lg border border-hairline bg-canvas/40 px-3 py-2.5">
+        <p className="mb-2 text-[12px] font-semibold text-ink">
+          {t("bundleHub.mixRuleSection")}
+        </p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <label className="block space-y-1">
+            <span className="text-[11px] text-ink-muted">{t("bundleHub.fieldMinQty")}</span>
+            <Input
+              type="number"
+              min={2}
+              value={minQty}
+              onChange={(e) => setMinQty(e.target.value)}
               disabled={saving}
-            >
-              {t("bundleHub.pricingPercent")}
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "h-9 rounded-md border px-2.5 text-[12px]",
-                pricingType === "fixed_price"
-                  ? "border-brand-accent bg-brand-soft/40"
-                  : "border-hairline"
-              )}
-              onClick={() => setPricingType("fixed_price")}
+            />
+            <span className="block text-[10px] text-ink-subtle">
+              {t("bundleHub.fieldMinQtyHint")}
+            </span>
+          </label>
+          <label className="block space-y-1">
+            <span className="text-[11px] text-ink-muted">{t("bundleHub.fieldPricing")}</span>
+            <Select
+              value={pricingType}
               disabled={saving}
+              onChange={(e) =>
+                setPricingType(e.target.value as "percent" | "fixed_price")
+              }
             >
-              {t("bundleHub.pricingFixed")}
-            </button>
-            {pricingType === "percent" ? (
+              <option value="percent">{t("bundleHub.pricingPercent")}</option>
+              <option value="fixed_price">{t("bundleHub.pricingFixed")}</option>
+            </Select>
+            <span className="block text-[10px] text-ink-subtle">
+              {pricingType === "percent"
+                ? t("bundleHub.pricingPercentHint")
+                : t("bundleHub.pricingFixedHint")}
+            </span>
+          </label>
+          {pricingType === "percent" ? (
+            <label className="block space-y-1">
+              <span className="text-[11px] text-ink-muted">
+                {t("bundleHub.fieldDiscountPercent")}
+              </span>
+              <div className="flex h-9 items-center overflow-hidden rounded-[var(--radius-control)] border border-input bg-surface">
+                <Input
+                  className="h-full border-0 shadow-none focus-visible:ring-0"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={percent}
+                  onChange={(e) => setPercent(e.target.value)}
+                  disabled={saving}
+                />
+                <span className="shrink-0 border-l border-hairline px-2 text-[11px] text-ink-subtle">
+                  %
+                </span>
+              </div>
+              <span className="block text-[10px] text-ink-subtle">
+                {t("bundleHub.fieldDiscountPercentHint", {
+                  percent: pctNum,
+                  remain: Math.max(0, 100 - pctNum),
+                })}
+              </span>
+            </label>
+          ) : (
+            <label className="block space-y-1">
+              <span className="text-[11px] text-ink-muted">
+                {t("bundleHub.fieldFixedAmount")}
+              </span>
               <Input
-                className="w-24"
-                type="number"
-                min={1}
-                max={100}
-                value={percent}
-                onChange={(e) => setPercent(e.target.value)}
-                disabled={saving}
-              />
-            ) : (
-              <Input
-                className="w-28"
                 type="number"
                 min={0.01}
                 step="0.01"
@@ -197,9 +225,15 @@ export function MixCampaignEditor({
                 onChange={(e) => setAmount(e.target.value)}
                 disabled={saving}
               />
-            )}
-          </div>
-        </label>
+              <span className="block text-[10px] text-ink-subtle">
+                {t("bundleHub.fieldFixedAmountHint")}
+              </span>
+            </label>
+          )}
+        </div>
+        <p className="mt-2 rounded-md bg-brand-soft/30 px-2.5 py-1.5 text-[11px] text-ink">
+          {ruleSummary}
+        </p>
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-hairline">

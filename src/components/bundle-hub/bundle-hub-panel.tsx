@@ -33,7 +33,7 @@ type HubMode =
   | { kind: "offer"; productId: string };
 
 function playLabel(
-  t: (k: string) => string,
+  t: (k: string, params?: Record<string, string | number>) => string,
   play: BundlePlayType
 ): string {
   switch (play) {
@@ -47,6 +47,30 @@ function playLabel(
       return t("bundleHub.playOfferTitle");
     default:
       return play;
+  }
+}
+
+function statusLabel(
+  t: (k: string, params?: Record<string, string | number>) => string,
+  status: string
+): string {
+  switch (status) {
+    case "ACTIVE":
+      return t("bundleHub.statusActive");
+    case "DRAFT":
+      return t("bundleHub.statusDraft");
+    case "ARCHIVED":
+      return t("bundleHub.statusArchived");
+    case "COMING_SOON":
+      return t("bundleHub.statusComingSoon");
+    case "FAILED":
+      return t("bundleHub.statusFailed");
+    case "STALE":
+      return t("bundleHub.statusStale");
+    case "CREATING":
+      return t("bundleHub.statusCreating");
+    default:
+      return status;
   }
 }
 
@@ -223,8 +247,10 @@ export function BundleHubPanel({
                     <p className="text-[11px] text-ink-muted">
                       {playLabel(t, c.playType)}
                       {" · "}
-                      {c.status}
-                      {c.poolCount != null ? ` · ${c.poolCount}` : ""}
+                      {statusLabel(t, c.status)}
+                      {c.poolCount != null && c.poolCount > 0
+                        ? ` · ${t("bundleHub.listPoolCount", { count: c.poolCount })}`
+                        : ""}
                     </p>
                   </div>
                   <div className="flex gap-1.5">
