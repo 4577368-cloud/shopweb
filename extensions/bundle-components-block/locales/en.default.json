@@ -2,17 +2,12 @@
   "blocks": {
     "kit_components": {
       "name": "60s · Kit components",
-      "heading": "This kit includes",
-      "empty": "Kit composition is not available yet.",
-      "settings": {
-        "heading": "Heading",
-        "show_quantity": "Show quantity",
-        "show_thumbnails": "Show thumbnails",
-        "show_thumbnails_info": "Uses imageUrl from kit metafield when present.",
-        "gap": "Row gap",
-        "margin_top": "Top margin",
-        "margin_bottom": "Bottom margin"
-      }
+      "eyebrow": "Bundle deal",
+      "heading": "Complete Your Bundle",
+      "list_heading": "Included items",
+      "save_amount": "Save {{ amount }} with this bundle",
+      "save_percent": "Save {{ percent }}% with this bundle",
+      "empty": "Kit composition is not available yet."
     }
   }
 }

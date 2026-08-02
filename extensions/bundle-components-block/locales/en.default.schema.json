@@ -3,11 +3,13 @@
     "kit_components": {
       "name": "60s · Kit components",
       "settings": {
-        "heading": "Heading",
-        "show_quantity": "Show quantity",
-        "show_thumbnails": "Show thumbnails",
-        "show_thumbnails_info": "Uses imageUrl from kit metafield when present.",
-        "gap": "Row gap",
+        "heading": "Headline",
+        "promo_text": "Value line (optional)",
+        "promo_text_info": "Leave blank to auto-fill from discount % (Save $X / Save N%).",
+        "list_heading": "Included list title",
+        "show_media_strip": "Show media strip",
+        "show_included_list": "Show included checklist",
+        "show_quantity": "Show quantities",
         "margin_top": "Top margin",
         "margin_bottom": "Bottom margin"
       }

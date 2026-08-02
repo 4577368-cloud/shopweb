@@ -2,17 +2,12 @@
   "blocks": {
     "kit_components": {
       "name": "60s · 套装组成",
-      "heading": "本套装包含",
-      "empty": "暂无套装组成信息。",
-      "settings": {
-        "heading": "标题",
-        "show_quantity": "显示数量",
-        "show_thumbnails": "显示缩略图",
-        "show_thumbnails_info": "有组件图时显示缩略图；无图显示占位。",
-        "gap": "行间距",
-        "margin_top": "上边距",
-        "margin_bottom": "下边距"
-      }
+      "eyebrow": "套装优惠",
+      "heading": "一站配齐本套装",
+      "list_heading": "套装内含",
+      "save_amount": "本套装可省 {{ amount }}",
+      "save_percent": "本套装可省 {{ percent }}%",
+      "empty": "暂无套装组成信息。"
     }
   }
 }
