@@ -16,11 +16,11 @@
   assign line_count = 0
   if components != blank
     for line in components
-      assign _t = line.title
-      if _t == blank
-        assign _t = line.name
+      assign probe_title = line.title
+      if probe_title == blank
+        assign probe_title = line.name
       endif
-      if _t != blank and _t != 'null'
+      if probe_title != blank and probe_title != 'null'
         assign line_count = line_count | plus: 1
       endif
     endfor
