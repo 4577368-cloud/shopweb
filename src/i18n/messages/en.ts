@@ -3961,6 +3961,9 @@ export const en = {
     pricingFixed: "Flat price",
     poolTitle: "Pool ({{count}} selected)",
     poolEmpty: "No ACTIVE-linked products to add. Link sources first.",
+    poolEmptyCatalog: "No store products yet. Sync the catalog first.",
+    poolNeedBinding: "Link a source before adding to the pool (needed for procurement)",
+    poolUnboundBadge: "Unlinked",
     mixDefaultTitle: "Mix & match",
     mixCheckoutHint:
       "Checkout keeps separate line items (normal sourcing). Percent off applies when Function is deployed.",
@@ -3982,7 +3985,8 @@ export const en = {
     slotMinHint: "Shoppers must pick at least this many in this slot (0 = optional)",
     slotMaxHint: "Shoppers may pick at most this many in this slot",
     slotPool: "Products in this slot ({{count}} checked)",
-    slotPoolHint: "Check products customers can choose from in this slot.",
+    slotPoolHint:
+      "All store products are listed. Only source-linked items can be checked — unlinked ones can’t be procured.",
     roleMain: "Main",
     roleAccessory: "Accessory",
     roleGift: "Gift",

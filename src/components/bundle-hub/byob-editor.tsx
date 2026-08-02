@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/i18n/LocaleProvider";
@@ -71,20 +71,16 @@ export function ByobEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const candidates = useMemo(
-    () =>
-      catalog.filter((p) => {
-        const b = bindings[p.thirdPlatformItemId];
-        return (
-          b?.bound &&
-          b.tangbuyProductId &&
-          (b.bindStatus == null || b.bindStatus === "ACTIVE")
-        );
-      }),
-    [bindings, catalog]
-  );
+  const isReady = (productId: string) => {
+    const b = bindings[productId];
+    if (!b?.bound || !b.tangbuyProductId) return false;
+    return b.bindStatus == null || b.bindStatus === "ACTIVE";
+  };
+
+  const candidates = catalog;
 
   const togglePool = (slotId: string, productId: string) => {
+    if (!isReady(productId)) return;
     setSlots((all) =>
       all.map((s) => {
         if (s.id !== slotId) return s;
@@ -244,29 +240,41 @@ export function ByobEditor({
               <div className="max-h-40 overflow-y-auto">
                 {candidates.length === 0 ? (
                   <p className="px-2.5 py-3 text-[11px] text-ink-muted">
-                    {t("bundleHub.poolEmpty")}
+                    {t("bundleHub.poolEmptyCatalog")}
                   </p>
                 ) : (
                   candidates.map((p) => {
                     const id = p.thirdPlatformItemId;
+                    const ready = isReady(id);
                     const on = slot.poolProductIds.includes(id);
                     return (
                       <label
                         key={id}
                         className={cn(
-                          "flex cursor-pointer items-center gap-2 border-b border-hairline px-2.5 py-1.5 last:border-b-0",
+                          "flex items-center gap-2 border-b border-hairline px-2.5 py-1.5 last:border-b-0",
+                          ready ? "cursor-pointer" : "cursor-not-allowed opacity-60",
                           on && "bg-brand-soft/20"
                         )}
+                        title={
+                          ready
+                            ? undefined
+                            : t("bundleHub.poolNeedBinding")
+                        }
                       >
                         <input
                           type="checkbox"
                           checked={on}
                           onChange={() => togglePool(slot.id, id)}
-                          disabled={saving}
+                          disabled={saving || !ready}
                         />
                         <span className="min-w-0 flex-1 truncate text-[12px] text-ink">
                           {p.title || id}
                         </span>
+                        {!ready ? (
+                          <span className="shrink-0 text-[10px] text-ink-muted">
+                            {t("bundleHub.poolUnboundBadge")}
+                          </span>
+                        ) : null}
                       </label>
                     );
                   })

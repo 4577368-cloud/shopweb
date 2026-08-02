@@ -3935,6 +3935,9 @@ export const zh: Dictionary = {
     pricingFixed: "一口价",
     poolTitle: "可选池（已选 {{count}}）",
     poolEmpty: "暂无 ACTIVE 绑定商品。请先完成货源关联。",
+    poolEmptyCatalog: "店铺里还没有商品，请先同步。",
+    poolNeedBinding: "请先完成货源关联后再加入可选池（否则无法采购）",
+    poolUnboundBadge: "未关联",
     mixDefaultTitle: "任选组合",
     mixCheckoutHint:
       "结账仍为多商品行（按行采购）。折扣%需已部署 Discount Function。",
@@ -3956,7 +3959,8 @@ export const zh: Dictionary = {
     slotMinHint: "顾客在此槽位至少要选多少件（0 = 可不选）",
     slotMaxHint: "顾客在此槽位最多可选多少件",
     slotPool: "本槽位可选商品（已勾 {{count}}）",
-    slotPoolHint: "勾选即可；这些商品会出现在店面该槽位供顾客挑选。",
+    slotPoolHint:
+      "列出店铺全部商品。仅「已关联货源」的可勾选——未关联无法采购，所以不能进池。",
     roleMain: "主品",
     roleAccessory: "配件",
     roleGift: "赠品",

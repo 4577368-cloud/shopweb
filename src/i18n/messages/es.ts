@@ -3957,6 +3957,9 @@ export const es: Dictionary = {
     pricingFixed: "Precio fijo",
     poolTitle: "Pool ({{count}} seleccionados)",
     poolEmpty: "No hay productos con enlace ACTIVE. Vincula fuentes primero.",
+    poolEmptyCatalog: "Aún no hay productos. Sincroniza el catálogo.",
+    poolNeedBinding: "Vincula una fuente antes de añadir al pool (necesario para comprar)",
+    poolUnboundBadge: "Sin vincular",
     mixDefaultTitle: "Mix & match",
     mixCheckoutHint:
       "El checkout mantiene líneas separadas (sourcing normal). El % aplica con Function desplegada.",
@@ -3978,7 +3981,8 @@ export const es: Dictionary = {
     slotMinHint: "Al menos esta cantidad en el slot (0 = opcional)",
     slotMaxHint: "Como máximo esta cantidad en el slot",
     slotPool: "Productos del slot ({{count}} marcados)",
-    slotPoolHint: "Marca los productos que el cliente puede elegir aquí.",
+    slotPoolHint:
+      "Se listan todos los productos. Solo los vinculados se pueden marcar — sin vínculo no se puede comprar.",
     roleMain: "Principal",
     roleAccessory: "Accesorio",
     roleGift: "Regalo",

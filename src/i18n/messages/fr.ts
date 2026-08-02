@@ -3958,6 +3958,9 @@ export const fr: Dictionary = {
     pricingFixed: "Prix fixe",
     poolTitle: "Pool ({{count}} sélectionnés)",
     poolEmpty: "Aucun produit lié ACTIVE. Liez d’abord les sources.",
+    poolEmptyCatalog: "Pas encore de produits. Synchronisez le catalogue.",
+    poolNeedBinding: "Liez une source avant d’ajouter au pool (nécessaire pour l’achat)",
+    poolUnboundBadge: "Non lié",
     mixDefaultTitle: "Mix & match",
     mixCheckoutHint:
       "Le checkout garde des lignes séparées (sourcing normal). Le % s’applique avec la Function déployée.",
@@ -3979,7 +3982,8 @@ export const fr: Dictionary = {
     slotMinHint: "Au moins ce nombre dans le slot (0 = facultatif)",
     slotMaxHint: "Au plus ce nombre dans le slot",
     slotPool: "Produits du slot ({{count}} cochés)",
-    slotPoolHint: "Cochez les produits que le client peut choisir ici.",
+    slotPoolHint:
+      "Tous les produits sont listés. Seuls ceux liés à une source sont cochables — sinon pas d’achat possible.",
     roleMain: "Principal",
     roleAccessory: "Accessoire",
     roleGift: "Cadeau",

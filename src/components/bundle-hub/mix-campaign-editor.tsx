@@ -75,13 +75,10 @@ export function MixCampaignEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const candidates = useMemo(
-    () =>
-      catalog.filter((p) => isBindingReady(bindings, p.thirdPlatformItemId)),
-    [bindings, catalog]
-  );
+  const candidates = catalog;
 
   const toggle = (id: string) => {
+    if (!isBindingReady(bindings, id)) return;
     setPool((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -209,30 +206,43 @@ export function MixCampaignEditor({
         <div className="border-b border-hairline px-3 py-2 text-[12px] font-semibold text-ink">
           {t("bundleHub.poolTitle", { count: pool.size })}
         </div>
+        <p className="border-b border-hairline px-3 py-1.5 text-[10px] text-ink-muted">
+          {t("bundleHub.slotPoolHint")}
+        </p>
         <div className="max-h-[min(360px,50vh)] space-y-0 overflow-y-auto">
           {candidates.length === 0 ? (
-            <p className="px-3 py-4 text-[12px] text-ink-muted">{t("bundleHub.poolEmpty")}</p>
+            <p className="px-3 py-4 text-[12px] text-ink-muted">
+              {t("bundleHub.poolEmptyCatalog")}
+            </p>
           ) : (
             candidates.map((p) => {
               const id = p.thirdPlatformItemId;
+              const ready = isBindingReady(bindings, id);
               const on = pool.has(id);
               return (
                 <label
                   key={id}
                   className={cn(
-                    "flex cursor-pointer items-center gap-2 border-b border-hairline px-3 py-2 last:border-b-0",
+                    "flex items-center gap-2 border-b border-hairline px-3 py-2 last:border-b-0",
+                    ready ? "cursor-pointer" : "cursor-not-allowed opacity-60",
                     on && "bg-brand-soft/20"
                   )}
+                  title={ready ? undefined : t("bundleHub.poolNeedBinding")}
                 >
                   <input
                     type="checkbox"
                     checked={on}
                     onChange={() => toggle(id)}
-                    disabled={saving}
+                    disabled={saving || !ready}
                   />
                   <span className="min-w-0 flex-1 truncate text-[12px] text-ink">
                     {p.title || id}
                   </span>
+                  {!ready ? (
+                    <span className="shrink-0 text-[10px] text-ink-muted">
+                      {t("bundleHub.poolUnboundBadge")}
+                    </span>
+                  ) : null}
                 </label>
               );
             })
