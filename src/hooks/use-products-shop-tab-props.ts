@@ -60,6 +60,7 @@ export interface UseProductsShopTabPropsParams {
   searchQuery: string;
   filtersHighlighted: boolean;
   template: PricingTemplate | null;
+  onOpenBundleHub?: (productId: string) => void;
 }
 
 export function useProductsShopTabProps(
@@ -104,6 +105,7 @@ export function useProductsShopTabProps(
     searchQuery,
     filtersHighlighted,
     template,
+    onOpenBundleHub,
   } = params;
 
   const summary = useMemo(
@@ -189,6 +191,7 @@ export function useProductsShopTabProps(
       searchQuery,
       highlighted: filtersHighlighted,
       pricingTemplate: template,
+      onOpenBundleHub,
     }),
     [
       refreshProductsQuietly,
@@ -224,6 +227,7 @@ export function useProductsShopTabProps(
       searchQuery,
       filtersHighlighted,
       template,
+      onOpenBundleHub,
     ]
   );
 

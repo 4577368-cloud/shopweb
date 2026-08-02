@@ -9,8 +9,9 @@ import type { ProductsPageTab } from "@/lib/products/page-constants";
 export function useProductsPageTab(locale: Locale) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const raw = searchParams.get("tab");
   const urlTab: ProductsPageTab =
-    searchParams.get("tab") === "catalog" ? "catalog" : "shop";
+    raw === "catalog" || raw === "bundles" ? raw : "shop";
   const [tab, setTabLocal] = useState<ProductsPageTab>(urlTab);
 
   useEffect(() => {

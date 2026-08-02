@@ -1,0 +1,204 @@
+{% comment %}
+  Tangbuy / 60s — BYOB slot picker (multi-line cart).
+  Metafield: tangbuy_byob.rule (slots with poolProductIds).
+  No parent SKU — each pick is a separate cart line for normal sourcing.
+{% endcomment %}
+
+{% liquid
+  assign rule = product.metafields.tangbuy_byob.rule.value
+  assign slots = rule.slots
+  assign label = rule.label
+  if label == blank
+    assign label = block.settings.heading
+  endif
+  if label == blank
+    assign label = 'blocks.byob_builder.heading' | t
+  endif
+  assign status = rule.status | default: 'DRAFT'
+  assign show = false
+  if slots != blank
+    if status == 'ACTIVE' or status == 'DRAFT'
+      assign show = true
+    endif
+  endif
+%}
+
+{% if show %}
+  <div
+    class="tb-byob"
+    {{ block.shopify_attributes }}
+    style="
+      margin-top: {{ block.settings.margin_top }}px;
+      margin-bottom: {{ block.settings.margin_bottom }}px;
+    "
+    data-tb-byob
+  >
+    <p class="tb-byob__eyebrow">{{ 'blocks.byob_builder.eyebrow' | t }}</p>
+    <p class="tb-byob__heading">{{ label | escape }}</p>
+    <p class="tb-byob__hint">{{ 'blocks.byob_builder.hint' | t }}</p>
+
+    {% for slot in slots %}
+      {% liquid
+        assign slot_title = slot.title
+        if slot_title == blank
+          assign slot_title = slot.role
+        endif
+        assign pool = slot.poolProductIds
+        assign min_n = slot.min | default: 0
+        assign max_n = slot.max | default: 1
+      %}
+      <div class="tb-byob__slot" data-slot-id="{{ slot.id | escape }}">
+        <div class="tb-byob__slot-head">
+          <span class="tb-byob__slot-title">{{ slot_title | escape }}</span>
+          <span class="tb-byob__slot-meta">{{ min_n }}–{{ max_n }}</span>
+        </div>
+        {% if pool != blank %}
+          <ul class="tb-byob__pool">
+            {% for pid in pool %}
+              {% assign pid_s = pid | append: '' %}
+              {% assign current_id = product.id | append: '' %}
+              {% if pid_s == current_id %}
+                <li class="tb-byob__pool-item">
+                  <span>{{ product.title | escape }}</span>
+                  {% if product.selected_or_first_available_variant %}
+                    <form action="{{ routes.cart_add_url }}" method="post" class="tb-byob__add">
+                      <input type="hidden" name="id" value="{{ product.selected_or_first_available_variant.id }}">
+                      <input type="hidden" name="quantity" value="1">
+                      <button type="submit" class="tb-byob__btn">
+                        {{ 'blocks.byob_builder.add' | t }}
+                      </button>
+                    </form>
+                  {% endif %}
+                </li>
+              {% else %}
+                <li class="tb-byob__pool-item tb-byob__pool-item--id">
+                  <span>{{ 'blocks.byob_builder.product_id' | t: id: pid }}</span>
+                </li>
+              {% endif %}
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="tb-byob__empty">{{ 'blocks.byob_builder.empty_slot' | t }}</p>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+
+  {% style %}
+    .tb-byob {
+      --tb-fg: #1a1a1a;
+      --tb-mute: #6b7280;
+      --tb-border: #e5e7eb;
+      --tb-soft: #f3f4f6;
+      --tb-accent: #0f766e;
+      border: 1px solid var(--tb-border);
+      border-radius: 12px;
+      padding: 1rem;
+      background: #fff;
+    }
+    .tb-byob__eyebrow {
+      margin: 0;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--tb-mute);
+    }
+    .tb-byob__heading {
+      margin: 0.25rem 0 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--tb-fg);
+    }
+    .tb-byob__hint {
+      margin: 0.35rem 0 0.85rem;
+      font-size: 0.8rem;
+      color: var(--tb-mute);
+    }
+    .tb-byob__slot {
+      border-top: 1px solid var(--tb-border);
+      padding: 0.75rem 0;
+    }
+    .tb-byob__slot-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.45rem;
+    }
+    .tb-byob__slot-title {
+      font-size: 0.9rem;
+      font-weight: 650;
+    }
+    .tb-byob__slot-meta {
+      font-size: 0.75rem;
+      color: var(--tb-mute);
+      font-variant-numeric: tabular-nums;
+    }
+    .tb-byob__pool {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .tb-byob__pool-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+    }
+    .tb-byob__btn {
+      font-size: 0.75rem;
+      font-weight: 650;
+      padding: 0.35rem 0.65rem;
+      border-radius: 8px;
+      border: 1px solid var(--tb-border);
+      background: var(--tb-soft);
+      color: var(--tb-fg);
+      cursor: pointer;
+    }
+    .tb-byob__empty {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--tb-mute);
+    }
+  {% endstyle %}
+{% endif %}
+
+{% schema %}
+{
+  "name": "t:blocks.byob_builder.name",
+  "target": "section",
+  "templates": ["product"],
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "t:blocks.byob_builder.settings.heading",
+      "default": "Build your bundle"
+    },
+    {
+      "type": "range",
+      "id": "margin_top",
+      "min": 0,
+      "max": 48,
+      "step": 4,
+      "unit": "px",
+      "label": "t:blocks.byob_builder.settings.margin_top",
+      "default": 12
+    },
+    {
+      "type": "range",
+      "id": "margin_bottom",
+      "min": 0,
+      "max": 48,
+      "step": 4,
+      "unit": "px",
+      "label": "t:blocks.byob_builder.settings.margin_bottom",
+      "default": 16
+    }
+  ]
+}
+{% endschema %}

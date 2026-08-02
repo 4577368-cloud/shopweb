@@ -1,4 +1,4 @@
-query RunInput {
+query CartLinesDiscountsGenerateRun {
   cart {
     lines {
       id
@@ -18,9 +18,15 @@ query RunInput {
             comboConfig: metafield(namespace: "tangbuy_combo", key: "config") {
               value
             }
+            mixRule: metafield(namespace: "tangbuy_mix", key: "rule") {
+              value
+            }
           }
         }
       }
     }
+  }
+  discount {
+    discountClasses
   }
 }

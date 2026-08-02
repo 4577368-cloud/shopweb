@@ -24,7 +24,6 @@ import {
 } from "@/lib/ui/icons";
 import { AccountManagerContactCta } from "@/components/account-manager/account-manager-contact-cta";
 import { BundleComposerDrawer } from "@/components/select/bundle-composer-drawer";
-import { GiftRuleDrawer } from "@/components/select/gift-rule-drawer";
 import { openExternal } from "@/host/adapters/external-link";
 import { shopifyProductAdminUrl } from "@/lib/shop-product-external-link";
 import { Button } from "@/components/ui/button";
@@ -519,6 +518,7 @@ export function ShopProductsPanel({
   searchQuery = "",
   highlighted = false,
   pricingTemplate = null,
+  onOpenBundleHub,
 }: {
   onActivity?: () => void;
   /** Optional controlled filter — lets the page's top CTA jump straight to e.g. 待确认. */
@@ -534,6 +534,8 @@ export function ShopProductsPanel({
   filtersMountEl?: HTMLElement | null;
   /** When set, batch-ack / refresh portal into this host (sticky toolbar right, with page CTAs). */
   actionsMountEl?: HTMLElement | null;
+  /** Open shop-level Bundle Hub (preferred over local composer). */
+  onOpenBundleHub?: (productId: string) => void;
   focusProductId?: string | null;
   scrollToProductId?: string | null;
   onScrollToConsumed?: () => void;
@@ -629,7 +631,6 @@ export function ShopProductsPanel({
   const [bundleDrawerItemId, setBundleDrawerItemId] = useState<string | null>(
     null
   );
-  const [giftDrawerItemId, setGiftDrawerItemId] = useState<string | null>(null);
   const [bundleStatusMap, setBundleStatusMap] =
     useState<BundleStatusMap | null>(null);
   const [page, setPage] = useState(1);
@@ -1502,8 +1503,11 @@ export function ShopProductsPanel({
                 bundleStatus={
                   bundleStatusMap?.byProductId?.[p.thirdPlatformItemId] ?? null
                 }
-                onOpenBundle={() => setBundleDrawerItemId(p.thirdPlatformItemId)}
-                onOpenGift={() => setGiftDrawerItemId(p.thirdPlatformItemId)}
+                onOpenBundle={() => {
+                  const id = p.thirdPlatformItemId;
+                  if (onOpenBundleHub) onOpenBundleHub(id);
+                  else setBundleDrawerItemId(id);
+                }}
                 pricingTemplate={pricingTemplate}
                 isNewArrival={pendingNewAnalysisIds?.has(p.thirdPlatformItemId) ?? false}
                 listingPriceEdit={
@@ -1641,26 +1645,6 @@ export function ShopProductsPanel({
         );
       })()}
 
-      {(() => {
-        const ctx = products.find(
-          (p) => p.thirdPlatformItemId === giftDrawerItemId
-        );
-        if (!giftDrawerItemId || !ctx) return null;
-        return (
-          <GiftRuleDrawer
-            open
-            shopName={shopName}
-            triggerProduct={ctx}
-            catalog={products}
-            bindings={bindings}
-            onClose={() => setGiftDrawerItemId(null)}
-            onSaved={(message) => {
-              showToast(message || t("bundle.giftSaved"));
-              onActivity?.();
-            }}
-          />
-        );
-      })()}
     </>
   );
 }
@@ -1673,7 +1657,6 @@ function ShopProductCard({
   bindingsByItemId = {},
   bundleStatus = null,
   onOpenBundle,
-  onOpenGift,
   onBound,
   onOpenDetail,
   focused = false,
@@ -1700,7 +1683,6 @@ function ShopProductCard({
   bindingsByItemId?: Record<string, ImageBindingView>;
   bundleStatus?: BundleCardStatus | null;
   onOpenBundle?: () => void;
-  onOpenGift?: () => void;
   onBound: (itemId: string, view: ImageBindingView) => void;
   onOpenDetail: () => void;
   focused?: boolean;
@@ -3134,7 +3116,7 @@ function ShopProductCard({
               type="button"
               className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
               disabled={cardActionsLocked || !onOpenBundle}
-              title={t("bundle.subtitle")}
+              title={t("bundleHub.cardHint")}
               onClick={(e) => {
                 e.stopPropagation();
                 onOpenBundle?.();
@@ -3142,28 +3124,11 @@ function ShopProductCard({
             >
               {bundleStatus?.status === "ACTIVE" ||
               bundleStatus?.status === "STALE"
-                ? t("bundle.actionEdit")
+                ? t("bundleHub.cardEdit")
                 : bundleStatus?.status === "FAILED"
                   ? t("bundle.actionRetry")
-                  : t("bundle.actionCreate")}
+                  : t("bundleHub.cardAction")}
             </button>
-            {!isKitParent ? (
-              <>
-                <span className="text-surface-border">|</span>
-                <button
-                  type="button"
-                  className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
-                  disabled={cardActionsLocked || !onOpenGift}
-                  title={t("bundle.giftHint")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenGift?.();
-                  }}
-                >
-                  {t("bundle.giftAction")}
-                </button>
-              </>
-            ) : null}
             {(() => {
               const parentId = bundleStatus?.parentProductId;
               if (

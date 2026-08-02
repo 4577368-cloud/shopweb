@@ -17,7 +17,7 @@ export interface ProductsPurchaseDisplayContext {
   summaryLine: string;
 }
 
-export type ProductsTab = "shop" | "catalog";
+export type ProductsTab = "shop" | "catalog" | "bundles";
 export type ProductsShopFilter =
   | "all"
   | "new_arrivals"

@@ -1,17 +1,25 @@
-api_version = "2024-10"
+api_version = "2026-01"
+uid = "208e9edf-8b9b-6b74-3f3a-539fdede2328f859a084"
 
 [[extensions]]
 name = "Tangbuy Bundle Discount"
 handle = "bundle-discount"
 type = "function"
-description = "Applies kit / combo percentage discounts from tangbuy_bundle + tangbuy_combo metafields"
+description = "Applies kit / combo / mix percentage discounts from tangbuy_bundle + tangbuy_combo + tangbuy_mix metafields"
 
   [[extensions.targeting]]
-  target = "purchase.product-discount.run"
-  input_query = "src/run.graphql"
-  export = "run"
+  target = "cart.lines.discounts.generate.run"
+  input_query = "src/cart_lines_discounts_generate_run.graphql"
+  export = "cart-lines-discounts-generate-run"
 
+  [[extensions.targeting]]
+  target = "cart.delivery-options.discounts.generate.run"
+  input_query = "src/cart_delivery_options_discounts_generate_run.graphql"
+  export = "cart-delivery-options-discounts-generate-run"
+
+  # Empty command → CLI built-in JS builder (esbuild + javy).
   [extensions.build]
-  command = "npm run build"
+  command = ""
+  typegen_command = "true"
   path = "dist/function.wasm"
   watch = [ "src/**/*.js", "src/**/*.graphql" ]

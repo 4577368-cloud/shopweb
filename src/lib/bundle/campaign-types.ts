@@ -1,0 +1,64 @@
+/** Unified Bundle Hub — play types and campaign shapes. */
+
+export type BundlePlayType =
+  | "fixed_kit"
+  | "mix_match"
+  | "byob"
+  | "product_offer";
+
+export type BundleCampaignStatus =
+  | "ACTIVE"
+  | "DRAFT"
+  | "ARCHIVED"
+  | "COMING_SOON"
+  | "FAILED"
+  | "STALE"
+  | "CREATING";
+
+export type ProductOfferKind = "qty_discount" | "variant_pair" | "qty_gift";
+
+export interface MixMatchRule {
+  kind: "mix_match";
+  minQty: number;
+  pricing:
+    | { type: "percent"; percent: number }
+    | { type: "fixed_price"; amount: number; currency?: string };
+  label?: string;
+}
+
+export interface ByobSlot {
+  id: string;
+  role: "main" | "accessory" | "gift" | "other";
+  title: string;
+  min: number;
+  max: number;
+  poolProductIds: string[];
+}
+
+export interface ByobRule {
+  kind: "byob";
+  slots: ByobSlot[];
+  label?: string;
+}
+
+export interface BundleCampaign {
+  id: string;
+  shopName: string;
+  playType: BundlePlayType;
+  title: string;
+  status: BundleCampaignStatus;
+  ruleJson?: string | null;
+  poolJson?: string | null;
+  shopifyRefsJson?: string | null;
+  /** Links to shop_product_bundle.id for fixed_kit */
+  linkedBundleId?: number | null;
+  poolCount?: number;
+  updatedAt?: string | null;
+  /** Synthesized from status-map (not persisted campaign row). */
+  synthetic?: boolean;
+}
+
+export interface BundleHubSeed {
+  productId: string;
+  title?: string | null;
+}

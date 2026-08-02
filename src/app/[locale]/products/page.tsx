@@ -15,6 +15,8 @@ import { ProductsScanView } from "@/components/select/products-page/products-sca
 import { ProductsPageHeaderActions } from "@/components/select/products-page/products-page-header-actions";
 import { ProductsShopTab } from "@/components/select/products-page/products-shop-tab";
 import { ProductsCatalogTab } from "@/components/select/products-page/products-catalog-tab";
+import { BundleHubPanel } from "@/components/bundle-hub/bundle-hub-panel";
+import type { BundleHubSeed } from "@/lib/bundle/campaign-types";
 import { useProductsPageTab } from "@/hooks/use-products-page-tab";
 import { useProductsBatchLink } from "@/hooks/use-products-batch-link";
 import { useProductsNewArrivals } from "@/hooks/use-products-new-arrivals";
@@ -89,6 +91,9 @@ function SelectContent() {
     useState<HTMLDivElement | null>(null);
   const [catalogFiltersMountEl, setCatalogFiltersMountEl] =
     useState<HTMLDivElement | null>(null);
+  const [bundleHubSeed, setBundleHubSeed] = useState<BundleHubSeed | null>(
+    null
+  );
   const { newArrivalStats, refreshNewArrivalAwareness, commitAnalysisBaseline } =
     useProductsNewArrivals(shopName, shopMirrorKey);
 
@@ -371,6 +376,14 @@ function SelectContent() {
     ]
   );
 
+  const openBundleHub = useCallback(
+    (productId: string) => {
+      setBundleHubSeed({ productId });
+      setTab("bundles");
+    },
+    [setTab]
+  );
+
   const shopTab = useProductsShopTabProps({
     pendingNewAnalysisCount: newArrivalStats.pendingNewAnalysisCount,
     pendingNewAnalysisIds: newArrivalStats.pendingNewAnalysisIds,
@@ -407,6 +420,7 @@ function SelectContent() {
     searchQuery,
     filtersHighlighted: highlightedArea === "filters",
     template,
+    onOpenBundleHub: openBundleHub,
   });
 
   useRegisterEmbeddedPageChrome({
@@ -541,6 +555,7 @@ function SelectContent() {
 
   const tabs = [
     { id: "shop", label: t("products.tabShop"), count: displaySummary?.shopProducts },
+    { id: "bundles", label: t("products.tabBundles") },
     { id: "catalog", label: t("products.tabDiscover") },
   ];
 
@@ -554,7 +569,8 @@ function SelectContent() {
   );
 
   const isShopTab = tab === "shop";
-  const pageCtas = (
+  const isBundlesTab = tab === "bundles";
+  const pageCtas = !isBundlesTab ? (
     <ProductsPageHeaderActions
       // Discover has its own SmartSourcingFilters; shop search here does nothing on catalog.
       showSearch={isShopTab && !isEmbedded}
@@ -573,33 +589,35 @@ function SelectContent() {
           : undefined
       }
     />
-  );
+  ) : null;
 
   /**
-   * Row 1: Shopify / 选品发现 tabs only.
+   * Row 1: Shopify / 套装与组合 / 选品发现 tabs.
    * Row 2: tab-specific filters + CTAs (single nowrap row, scroll if narrow).
    */
   const pageToolbar = (
     <div className="flex w-full min-w-0 flex-col gap-2">
       <div className="shrink-0">{pageTabs}</div>
-      <div className="flex w-full min-w-0 items-center gap-2">
-        <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:thin]">
-          {isShopTab ? (
-            <div ref={setShopFiltersMountEl} className="min-w-0" />
-          ) : (
-            <div ref={setCatalogFiltersMountEl} className="min-w-0" />
-          )}
+      {!isBundlesTab ? (
+        <div className="flex w-full min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:thin]">
+            {isShopTab ? (
+              <div ref={setShopFiltersMountEl} className="min-w-0" />
+            ) : (
+              <div ref={setCatalogFiltersMountEl} className="min-w-0" />
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {isShopTab ? (
+              <div
+                ref={setShopActionsMountEl}
+                className="flex shrink-0 items-center gap-2"
+              />
+            ) : null}
+            {pageCtas}
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {isShopTab ? (
-            <div
-              ref={setShopActionsMountEl}
-              className="flex shrink-0 items-center gap-2"
-            />
-          ) : null}
-          {pageCtas}
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 
@@ -622,6 +640,20 @@ function SelectContent() {
               panel={shopTab.panel}
               filtersMountEl={shopFiltersMountEl}
               actionsMountEl={shopActionsMountEl}
+            />
+          ) : null}
+
+          {tab === "bundles" ? (
+            <BundleHubPanel
+              shopName={shopName}
+              shopDomain={shop.domain}
+              catalog={shopProducts}
+              bindings={bindingsMap}
+              pricingTemplate={template}
+              seed={bundleHubSeed}
+              onSeedConsumed={() => setBundleHubSeed(null)}
+              onToast={showToast}
+              onActivity={refreshProductsQuietly}
             />
           ) : null}
 

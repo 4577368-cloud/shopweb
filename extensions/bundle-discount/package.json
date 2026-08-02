@@ -5,11 +5,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "shopify app function build",
     "typegen": "shopify app function typegen",
     "preview": "shopify app function run"
   },
   "dependencies": {
-    "@shopify/shopify_function": "~1.0.0"
+    "@shopify/shopify_function": "~2.0.0"
   }
 }

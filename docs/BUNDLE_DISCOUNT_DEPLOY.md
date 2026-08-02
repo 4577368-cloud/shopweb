@@ -28,16 +28,17 @@ cd extensions/bundle-discount && npm install && cd ../..
 shopify app deploy
 ```
 
-CLI runs `npm run build` → writes `extensions/bundle-discount/dist/function.wasm`.
-Confirm `shopify.app.toml` webhooks / scopes stay aligned; Function target is
-`purchase.product-discount.run` (API `2024-10`).
+CLI builds JS → `extensions/bundle-discount/dist/function.wasm`.
+Confirm `shopify.app.toml` stays aligned; Function targets are
+`cart.lines.discounts.generate.run` (+ delivery stub) on API `2026-01`.
 
 ## Enable Automatic App Discount (Admin)
 
 1. Shopify Admin → **Discounts** → **Create discount**
-2. Choose **Amount off products** / **App discount** → select **Tangbuy Bundle Discount**
+2. Choose **App discount** → **Tangbuy Bundle Discount**
 3. Method: **Automatic** (no code)
-4. Combinations: allow with shipping/order as needed; save & activate
+4. Discount classes: enable **Product** (required)
+5. Combinations: allow with shipping/order as needed; save & activate
 
 Without this step, metafields are written but checkout never invokes the Function.
 

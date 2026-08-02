@@ -8,6 +8,15 @@
       "save_amount": "本套装可省 {{ amount }}",
       "save_percent": "本套装可省 {{ percent }}%",
       "empty": "暂无套装组成信息。"
+    },
+    "byob_builder": {
+      "name": "60s · 自组礼盒",
+      "eyebrow": "自组礼盒",
+      "heading": "组合你的礼盒",
+      "hint": "按槽位加购，结账为多商品行，按行采购。",
+      "add": "加入购物车",
+      "empty_slot": "此槽位暂无商品。",
+      "product_id": "商品 {{ id }}"
     }
   }
 }

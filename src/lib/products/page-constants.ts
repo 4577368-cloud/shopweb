@@ -2,7 +2,7 @@ import { SCAN_STAGE_PROGRESS_ANIMATION_MS } from "@/components/workbench/scan-st
 import { hasScanned } from "@/lib/scan/gate";
 import { peekMirrorCache } from "@/lib/products/mirror-cache";
 
-export type ProductsPageTab = "shop" | "catalog";
+export type ProductsPageTab = "shop" | "catalog" | "bundles";
 
 export interface ProductsSummary {
   shopProducts: number;

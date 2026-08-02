@@ -257,6 +257,8 @@ export function BundleComposerDrawer({
   statusMap,
   bindings,
   pricingTemplate = null,
+  /** When set, skip dual-track picker (Hub already chose Fixed Kit). */
+  lockedTrack = null,
   onClose,
   onCreated,
   onComboSaved,
@@ -272,6 +274,7 @@ export function BundleComposerDrawer({
   statusMap?: BundleStatusMap | null;
   bindings: Record<string, ImageBindingView>;
   pricingTemplate?: PricingTemplate | null;
+  lockedTrack?: Exclude<BundleTrack, "pick"> | null;
   onClose: () => void;
   onCreated: () => void;
   /** Track B same-product combo saved (no new parent). */
@@ -331,9 +334,13 @@ export function BundleComposerDrawer({
     setLoadingBundle(false);
     setError(null);
     setVariantOptions({});
-    setTrack(editing || retryFromFailed ? "cross" : "pick");
+    setTrack(
+      editing || retryFromFailed
+        ? "cross"
+        : lockedTrack ?? "pick"
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional open/context gate
-  }, [open, contextId]);
+  }, [open, contextId, lockedTrack]);
 
   // Load variants for context + selected components (edited in left table, not clipped list).
   useEffect(() => {

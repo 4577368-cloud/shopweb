@@ -1,5 +1,7 @@
 # 套装双轨（Tangbuy Fixed Kit + Same-Product Combo）
 
+> **入口已统一为 Bundle Hub**（见 [`BUNDLE_HUB.md`](./BUNDLE_HUB.md)）。本文保留为 Fixed Kit / 同商品组合的实现细节参考。
+>
 > 隶属于 60s / AI Sourcing，不是独立 Shopify App。  
 > 目标：**两条都要**——跨商品可独立售卖的组合，与同商品上的组合价/多规格组合。
 
