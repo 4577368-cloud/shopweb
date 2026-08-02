@@ -581,18 +581,30 @@ export function BundleComposerDrawer({
   );
 
   const marginInfo = useMemo(() => {
-    let totalCny = 0;
-    let anyCost = false;
-    const addCost = (productId: string, qty: number) => {
+    const cnyOf = (productId: string, qty: number): number | null => {
       const cny = parseGatewayPrice(bindings[productId]?.offerPrice);
-      if (cny == null) return;
-      anyCost = true;
-      totalCny += cny * qty;
+      if (cny == null) return null;
+      return cny * qty;
     };
-    addCost(contextId, 1);
+    const contextCny = cnyOf(contextId, 1);
+    let componentsCny = 0;
+    let anyComponentCost = false;
     for (const [id, row] of Object.entries(selected)) {
-      addCost(id, row.quantity);
+      const line = cnyOf(id, row.quantity);
+      if (line == null) continue;
+      anyComponentCost = true;
+      componentsCny += line;
     }
+    const anyCost = contextCny != null || anyComponentCost;
+    const totalCny =
+      (contextCny ?? 0) + (anyComponentCost ? componentsCny : 0);
+    const contextCost =
+      contextCny != null
+        ? costInPurchaseDisplayCurrency(contextCny, costCtx)
+        : null;
+    const componentsCost = anyComponentCost
+      ? costInPurchaseDisplayCurrency(componentsCny, costCtx)
+      : null;
     const estimatedCost = anyCost
       ? costInPurchaseDisplayCurrency(totalCny, costCtx)
       : null;
@@ -620,7 +632,10 @@ export function BundleComposerDrawer({
         ? (marginAbs / dealPrice) * 100
         : null;
     return {
+      contextCost,
+      componentsCost,
       estimatedCost,
+      missingContextCost: contextCny == null,
       parentPriceNum,
       dealPrice,
       discountPct,
@@ -783,10 +798,13 @@ export function BundleComposerDrawer({
     marginInfo.marginAbs != null && marginInfo.marginPct != null
       ? `${marginInfo.marginAbs.toFixed(2)} ${currency} (${marginInfo.marginPct.toFixed(0)}%)`
       : "—";
-  const marginCostLabel =
-    marginInfo.estimatedCost != null
-      ? formatPurchaseCostMoney(marginInfo.estimatedCost, costCtx.currency)
+  const formatCostLine = (amount: number | null | undefined) =>
+    amount != null
+      ? formatPurchaseCostMoney(amount, costCtx.currency)
       : "—";
+  const marginCostLabel = formatCostLine(marginInfo.estimatedCost);
+  const contextCostLabel = formatCostLine(marginInfo.contextCost);
+  const componentsCostLabel = formatCostLine(marginInfo.componentsCost);
 
   const contextVariants = variantOptions[contextId] ?? [];
   const contextCost = unitCost(contextId);
@@ -1038,12 +1056,45 @@ export function BundleComposerDrawer({
                 <dl className="mt-3 divide-y divide-hairline rounded-md border border-hairline bg-canvas/40">
                   <div className="flex items-center justify-between gap-3 px-3 py-2">
                     <dt className="text-[11px] text-ink-muted">
-                      {t("bundle.costTotalLabel")}
+                      {t("bundle.costContextLabel")}
+                    </dt>
+                    <dd
+                      className={cn(
+                        "text-[12px] tabular-nums",
+                        marginInfo.missingContextCost
+                          ? "text-ink-subtle"
+                          : "font-medium text-ink"
+                      )}
+                    >
+                      {contextCostLabel}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 px-3 py-2">
+                    <dt className="text-[11px] text-ink-muted">
+                      {t("bundle.costComponentsLabel")}
                     </dt>
                     <dd className="text-[12px] font-medium tabular-nums text-ink">
+                      {componentsCostLabel}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 px-3 py-2">
+                    <dt className="text-[11px] font-medium text-ink">
+                      {t("bundle.costTotalLabel")}
+                      <span className="ml-1 font-normal text-ink-subtle">
+                        ({t("bundle.costTotalHintShort")})
+                      </span>
+                    </dt>
+                    <dd className="text-[12px] font-semibold tabular-nums text-ink">
                       {marginCostLabel}
                     </dd>
                   </div>
+                  {marginInfo.missingContextCost ? (
+                    <div className="px-3 py-1.5">
+                      <p className="text-[10px] leading-snug text-amber-700">
+                        {t("bundle.costContextMissing")}
+                      </p>
+                    </div>
+                  ) : null}
                   <div className="flex items-center justify-between gap-3 bg-surface px-3 py-2.5">
                     <dt className="text-[11px] font-medium text-ink">
                       {t("bundle.profitLabel")}
