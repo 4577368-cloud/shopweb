@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.join(__dirname),
   },
+  env: {
+    NEXT_PUBLIC_API_BASE: process.env.NEXT_PUBLIC_API_BASE
+  },
   async rewrites() {
     const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
     if (!apiBase) return [];
