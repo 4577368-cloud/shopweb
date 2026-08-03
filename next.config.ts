@@ -21,10 +21,6 @@ const nextConfig: NextConfig = {
         source: "/api/plugin/:path*",
         destination: `${apiBase}/api/plugin/:path*`,
       },
-      {
-        source: "/api/shopify/:path*",
-        destination: `${apiBase}/api/shopify/:path*`,
-      },
     ];
   },
   /**
