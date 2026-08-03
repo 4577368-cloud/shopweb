@@ -3862,7 +3862,7 @@ export const zh: Dictionary = {
     giftAction: "赠品规则",
     giftTitle: "赠品规则",
     giftHint:
-      "满件数送另一商品。规则写入 Shopify；结账自动加赠品行将在 Function 下一迭代启用。不影响采购。",
+      "满件数送另一商品。保存后写入 Shopify；店面需添加「满件赠品」区块以便同步赠品行，结账由 Discount Function 免单。采购仍按多商品行。",
     giftTrigger: "触发商品",
     giftTriggerCurrent: "购物车含当前商品",
     giftMinQty: "满件数",
@@ -3938,7 +3938,7 @@ export const zh: Dictionary = {
     pricingPercent: "按折扣百分比",
     pricingFixed: "按一口价（满件总价）",
     pricingPercentHint: "对池内已选商品行按百分比减免",
-    pricingFixedHint: "满件后整单池内商品合计收这个价（结账一口价能力仍在完善）",
+    pricingFixedHint: "满件后池内商品合计按此一口价结算（需已部署 Discount Function）",
     fieldDiscountPercent: "折扣百分比",
     fieldDiscountPercentHint: "填 {{percent}} 表示减 {{percent}}%，例如标价 100 实付约 {{remain}}",
     fieldFixedAmount: "一口价金额",
@@ -3968,14 +3968,17 @@ export const zh: Dictionary = {
     mixSaved: "Mix 活动已保存",
     byobDefaultTitle: "自组礼盒",
     byobDraftHint:
-      "当前是草稿配置：保存后写入后台与商品 metafield。店面需加上「自组礼盒」Theme Block 后，顾客才能按槽位加购。不会新建父商品 SKU。",
+      "草稿不会在店面展示。点「发布」后顾客才能在已挂载的「自组礼盒」Theme Block 里选配。不会新建父商品 SKU。",
+    byobPublishHint:
+      "发布后仅 ACTIVE 状态会在店面显示。请确认主题已添加「60s · 自组礼盒」区块。",
     byobHowTo:
       "每个「槽位」是顾客要选的一类商品。例如：主品必须 1 件 + 配件最多 3 件。勾选该槽位里顾客可以选的店内商品；最少/最多 = 顾客在该槽位至少/至多选几件。",
     byobEffectExample:
       "举例：槽位「主品」最少 1、最多 1，可选池勾了牙刷和 T 恤 → 顾客在店面该活动里必须从这两件里选 1 件加入购物车；再按其它槽位继续选。结账是多行商品，订单中心按行采购，不会合成一个套装父 SKU。",
     errByobNoPool: "请至少在一个槽位勾选可选商品",
-    saveByobDraft: "保存 BYOB 草稿",
-    byobSaved: "BYOB 草稿已保存",
+    saveByobDraft: "保存草稿",
+    publishByob: "发布到店面",
+    byobSaved: "BYOB 已保存",
     addSlot: "添加槽位",
     removeSlot: "删除槽位",
     slotLabel: "槽位 {{index}} · {{role}}",

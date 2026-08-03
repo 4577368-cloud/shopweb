@@ -3880,7 +3880,7 @@ export const es: Dictionary = {
     giftAction: "Regalo",
     giftTitle: "Regla de regalo",
     giftHint:
-      "Compra N de este producto y recibe otro SKU. Se guarda en Shopify; el regalo automático en checkout es una iteración posterior. No cambia el coste de sourcing.",
+      "Compra N de este producto y recibe otro SKU. Se guarda en Shopify; añade el bloque de regalo en el tema y el Discount Function lo deja a 0 en checkout. El sourcing sigue multi-línea.",
     giftTrigger: "Disparador",
     giftTriggerCurrent: "El carrito contiene este producto",
     giftMinQty: "Cantidad mínima",
@@ -3960,7 +3960,7 @@ export const es: Dictionary = {
     pricingPercent: "Porcentaje de descuento",
     pricingFixed: "Precio total fijo",
     pricingPercentHint: "Descuenta un % en las líneas del pool",
-    pricingFixedHint: "Paga este total al cumplir el mínimo (precio fijo en checkout aún en evolución)",
+    pricingFixedHint: "El total del pool es este precio fijo al cumplir el mínimo (requiere Discount Function)",
     fieldDiscountPercent: "Porcentaje de descuento",
     fieldDiscountPercentHint:
       "{{percent}} = {{percent}}% dto. (p. ej. 100 → unos {{remain}})",
@@ -3991,14 +3991,17 @@ export const es: Dictionary = {
     mixSaved: "Campaña mix guardada",
     byobDefaultTitle: "Arma tu bundle",
     byobDraftHint:
-      "Borrador: al guardar se escriben app + metafields. Añade el Theme Block BYOB para que el cliente elija por slot. Sin SKU padre.",
+      "Los borradores no se muestran en la tienda. Publica para que el cliente use el Theme Block BYOB. Sin SKU padre.",
+    byobPublishHint:
+      "Solo las campañas ACTIVE aparecen en la tienda. Asegúrate de tener el bloque «60s · Build your own».",
     byobHowTo:
       "Cada slot es un grupo de elección (p. ej. 1 principal + hasta 3 accesorios). Marca qué productos entran en ese slot. Mín/máx = cuántos deben/pueden elegir.",
     byobEffectExample:
       "Ejemplo: slot “Principal” mín 1 / máx 1 con cepillo + camiseta → el cliente debe añadir exactamente uno de esos dos. Checkout multi-línea; compra por línea — sin SKU padre.",
     errByobNoPool: "Marca al menos un producto en algún slot",
-    saveByobDraft: "Guardar borrador BYOB",
-    byobSaved: "Borrador BYOB guardado",
+    saveByobDraft: "Guardar borrador",
+    publishByob: "Publicar en la tienda",
+    byobSaved: "BYOB guardado",
     addSlot: "Añadir slot",
     removeSlot: "Quitar slot",
     slotLabel: "Slot {{index}} · {{role}}",

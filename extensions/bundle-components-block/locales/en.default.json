@@ -13,10 +13,22 @@
       "name": "60s · Build your own",
       "eyebrow": "Build your own",
       "heading": "Build your bundle",
-      "hint": "Add items from each slot — they check out as separate lines.",
+      "hint": "Pick quantities in each slot, then add all at once. Items check out as separate lines.",
       "add": "Add",
+      "add_bundle": "Add bundle to cart",
+      "ready": "Ready to add",
+      "added": "Added to cart",
+      "add_error": "Could not add bundle",
+      "unavailable": "Unavailable",
       "empty_slot": "No products in this slot yet.",
       "product_id": "Product {{ id }}"
+    },
+    "gift_offer": {
+      "name": "60s · Free gift",
+      "eyebrow": "Free gift",
+      "heading": "Free gift with purchase",
+      "hint": "Buy {{ qty }}+ of this product and get a free gift at checkout.",
+      "cta": "Add / sync free gift"
     }
   }
 }

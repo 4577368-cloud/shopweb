@@ -10,8 +10,16 @@ Does **not** change Tangbuy procurement or `OrderBindingResolver` expand logic.
 | Track A Fixed Kit parent | `tangbuy_bundle.discount_percent` | % off parent cart line |
 | Track B qty combo | `tangbuy_combo.config` (`kind=qty_discount`) | % off when cart qty ≥ threshold |
 | Track B variant pair | same (`kind=variant_pair`) | % off when both variants are in cart |
+| Mix percent | `tangbuy_mix.rule` (`pricing.type=percent`) | % off pool lines when qty ≥ minQty |
+| Mix flat price | `tangbuy_mix.rule` (`pricing.type=fixed_price`) | Fixed-amount split so pool totals `amount` |
+| Free gift | `tangbuy_gift.rule` (`kind=qty_gift`) | 100% off gift variant when trigger qty ≥ minQty (gift line must be in cart — Theme Block syncs it) |
 
-Gift free-line (`tangbuy_gift.rule`) is Phase 2 — rules are saved from 60s first.
+## Theme blocks (customer UX)
+
+After `shopify app deploy`, in Theme editor add:
+
+- **60s · Free gift** on trigger product template (syncs gift into cart)
+- **60s · Build your own** on BYOB pool product templates (slot picker; only `ACTIVE` campaigns)
 
 ## Prerequisites
 

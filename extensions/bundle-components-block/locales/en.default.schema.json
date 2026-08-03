@@ -21,6 +21,14 @@
         "margin_top": "Top margin",
         "margin_bottom": "Bottom margin"
       }
+    },
+    "gift_offer": {
+      "name": "60s · Free gift",
+      "settings": {
+        "heading": "Headline",
+        "margin_top": "Top margin",
+        "margin_bottom": "Bottom margin"
+      }
     }
   }
 }

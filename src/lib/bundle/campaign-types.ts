@@ -26,6 +26,14 @@ export interface MixMatchRule {
   label?: string;
 }
 
+export interface ByobPoolProduct {
+  id: string;
+  handle?: string;
+  title?: string;
+  /** Shopify variant id — optional; theme resolves first available if missing. */
+  variantId?: string;
+}
+
 export interface ByobSlot {
   id: string;
   role: "main" | "accessory" | "gift" | "other";
@@ -33,6 +41,8 @@ export interface ByobSlot {
   min: number;
   max: number;
   poolProductIds: string[];
+  /** Enriched for Theme Block (`all_products[handle]`). */
+  poolProducts?: ByobPoolProduct[];
 }
 
 export interface ByobRule {

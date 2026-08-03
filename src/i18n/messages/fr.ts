@@ -3881,7 +3881,7 @@ export const fr: Dictionary = {
     giftAction: "Cadeau",
     giftTitle: "Règle cadeau",
     giftHint:
-      "Achetez N de ce produit, recevez un autre SKU. Enregistré sur Shopify ; le cadeau auto au checkout vient plus tard. N’affecte pas le coût d’achat.",
+      "Achetez N de ce produit, recevez un autre SKU. Enregistré sur Shopify ; ajoutez le bloc cadeau thème et la Discount Function le met à 0 au checkout. Sourcing multi-lignes.",
     giftTrigger: "Déclencheur",
     giftTriggerCurrent: "Le panier contient ce produit",
     giftMinQty: "Quantité min.",
@@ -3961,7 +3961,7 @@ export const fr: Dictionary = {
     pricingPercent: "Pourcentage de remise",
     pricingFixed: "Prix total forfaitaire",
     pricingPercentHint: "Remise en % sur les lignes du pool",
-    pricingFixedHint: "Payer ce total une fois le minimum atteint (forfait checkout encore en cours)",
+    pricingFixedHint: "Le pool paie ce forfait une fois le minimum atteint (Function Discount requise)",
     fieldDiscountPercent: "Pourcentage de remise",
     fieldDiscountPercentHint:
       "{{percent}} = {{percent}} % de remise (ex. 100 → environ {{remain}})",
@@ -3992,14 +3992,17 @@ export const fr: Dictionary = {
     mixSaved: "Campagne mix enregistrée",
     byobDefaultTitle: "Composez votre bundle",
     byobDraftHint:
-      "Brouillon : l’enregistrement écrit app + metafields. Ajoutez le Theme Block BYOB pour le choix par slot. Pas de SKU parent.",
+      "Les brouillons sont masqués en vitrine. Publiez pour le Theme Block BYOB. Pas de SKU parent.",
+    byobPublishHint:
+      "Seules les campagnes ACTIVE s’affichent. Ajoutez le bloc « 60s · Build your own » au thème.",
     byobHowTo:
       "Chaque slot est un groupe de choix (ex. 1 principal + jusqu’à 3 accessoires). Cochez les produits du slot. Min/max = combien le client doit/peut en prendre.",
     byobEffectExample:
       "Exemple : slot « Principal » min 1 / max 1 avec brosse + T-shirt → le client doit ajouter exactement un des deux. Checkout multi-lignes ; achat par ligne — pas de SKU parent.",
     errByobNoPool: "Cochez au moins un produit dans un slot",
-    saveByobDraft: "Enregistrer le brouillon BYOB",
-    byobSaved: "Brouillon BYOB enregistré",
+    saveByobDraft: "Enregistrer le brouillon",
+    publishByob: "Publier en vitrine",
+    byobSaved: "BYOB enregistré",
     addSlot: "Ajouter un slot",
     removeSlot: "Supprimer le slot",
     slotLabel: "Slot {{index}} · {{role}}",

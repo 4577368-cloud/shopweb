@@ -1,6 +1,6 @@
 {% comment %}
   Tangbuy / 60s — BYOB slot picker (multi-line cart).
-  Metafield: tangbuy_byob.rule (slots with poolProductIds).
+  Metafield: tangbuy_byob.rule (slots with poolProductIds / poolProducts).
   No parent SKU — each pick is a separate cart line for normal sourcing.
 {% endcomment %}
 
@@ -16,10 +16,8 @@
   endif
   assign status = rule.status | default: 'DRAFT'
   assign show = false
-  if slots != blank
-    if status == 'ACTIVE' or status == 'DRAFT'
-      assign show = true
-    endif
+  if slots != blank and status == 'ACTIVE'
+    assign show = true
   endif
 %}
 
@@ -43,32 +41,94 @@
         if slot_title == blank
           assign slot_title = slot.role
         endif
-        assign pool = slot.poolProductIds
+        assign pool_ids = slot.poolProductIds
+        assign pool_products = slot.poolProducts
         assign min_n = slot.min | default: 0
         assign max_n = slot.max | default: 1
       %}
-      <div class="tb-byob__slot" data-slot-id="{{ slot.id | escape }}">
+      <div
+        class="tb-byob__slot"
+        data-tb-byob-slot
+        data-slot-id="{{ slot.id | escape }}"
+        data-title="{{ slot_title | escape }}"
+        data-min="{{ min_n }}"
+        data-max="{{ max_n }}"
+      >
         <div class="tb-byob__slot-head">
           <span class="tb-byob__slot-title">{{ slot_title | escape }}</span>
           <span class="tb-byob__slot-meta">{{ min_n }}–{{ max_n }}</span>
         </div>
-        {% if pool != blank %}
-          <ul class="tb-byob__pool">
-            {% for pid in pool %}
+
+        <ul class="tb-byob__pool">
+          {% if pool_products != blank %}
+            {% for item in pool_products %}
+              {% assign handle = item.handle %}
+              {% assign vid = item.variantId %}
+              {% assign ptitle = item.title %}
+              {% if handle != blank and all_products[handle] != blank %}
+                {% assign p = all_products[handle] %}
+                {% assign ptitle = p.title %}
+                {% if vid == blank and p.selected_or_first_available_variant %}
+                  {% assign vid = p.selected_or_first_available_variant.id %}
+                {% endif %}
+                {% if vid != blank %}
+                  <li class="tb-byob__pool-item">
+                    <span class="tb-byob__pool-name">{{ ptitle | escape }}</span>
+                    <label class="tb-byob__qty">
+                      <span class="visually-hidden">Qty</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="{{ max_n }}"
+                        value="0"
+                        data-tb-byob-pick
+                        data-variant-id="{{ vid }}"
+                      >
+                    </label>
+                  </li>
+                {% else %}
+                  <li class="tb-byob__pool-item tb-byob__pool-item--muted">
+                    <span>{{ ptitle | escape }}</span>
+                    <span>{{ 'blocks.byob_builder.unavailable' | t }}</span>
+                  </li>
+                {% endif %}
+              {% elsif vid != blank %}
+                <li class="tb-byob__pool-item">
+                  <span class="tb-byob__pool-name">{{ ptitle | default: item.id | escape }}</span>
+                  <label class="tb-byob__qty">
+                    <input
+                      type="number"
+                      min="0"
+                      max="{{ max_n }}"
+                      value="0"
+                      data-tb-byob-pick
+                      data-variant-id="{{ vid }}"
+                    >
+                  </label>
+                </li>
+              {% else %}
+                <li class="tb-byob__pool-item tb-byob__pool-item--id">
+                  <span>{{ 'blocks.byob_builder.product_id' | t: id: item.id }}</span>
+                </li>
+              {% endif %}
+            {% endfor %}
+          {% elsif pool_ids != blank %}
+            {% for pid in pool_ids %}
               {% assign pid_s = pid | append: '' %}
               {% assign current_id = product.id | append: '' %}
-              {% if pid_s == current_id %}
+              {% if pid_s == current_id and product.selected_or_first_available_variant %}
                 <li class="tb-byob__pool-item">
-                  <span>{{ product.title | escape }}</span>
-                  {% if product.selected_or_first_available_variant %}
-                    <form action="{{ routes.cart_add_url }}" method="post" class="tb-byob__add">
-                      <input type="hidden" name="id" value="{{ product.selected_or_first_available_variant.id }}">
-                      <input type="hidden" name="quantity" value="1">
-                      <button type="submit" class="tb-byob__btn">
-                        {{ 'blocks.byob_builder.add' | t }}
-                      </button>
-                    </form>
-                  {% endif %}
+                  <span class="tb-byob__pool-name">{{ product.title | escape }}</span>
+                  <label class="tb-byob__qty">
+                    <input
+                      type="number"
+                      min="0"
+                      max="{{ max_n }}"
+                      value="0"
+                      data-tb-byob-pick
+                      data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+                    >
+                  </label>
                 </li>
               {% else %}
                 <li class="tb-byob__pool-item tb-byob__pool-item--id">
@@ -76,13 +136,30 @@
                 </li>
               {% endif %}
             {% endfor %}
-          </ul>
-        {% else %}
-          <p class="tb-byob__empty">{{ 'blocks.byob_builder.empty_slot' | t }}</p>
-        {% endif %}
+          {% else %}
+            <li>
+              <p class="tb-byob__empty">{{ 'blocks.byob_builder.empty_slot' | t }}</p>
+            </li>
+          {% endif %}
+        </ul>
       </div>
     {% endfor %}
+
+    <div class="tb-byob__footer">
+      <p
+        class="tb-byob__status"
+        data-tb-byob-status
+        data-ok="{{ 'blocks.byob_builder.ready' | t }}"
+        data-added="{{ 'blocks.byob_builder.added' | t }}"
+        data-err="{{ 'blocks.byob_builder.add_error' | t }}"
+      ></p>
+      <button type="button" class="tb-byob__btn tb-byob__btn--primary" data-tb-byob-add>
+        {{ 'blocks.byob_builder.add_bundle' | t }}
+      </button>
+    </div>
   </div>
+
+  <script src="{{ 'byob-builder.js' | asset_url }}" defer></script>
 
   {% style %}
     .tb-byob {
@@ -149,20 +226,66 @@
       gap: 0.5rem;
       font-size: 0.85rem;
     }
-    .tb-byob__btn {
+    .tb-byob__pool-item--muted,
+    .tb-byob__pool-item--id {
+      color: var(--tb-mute);
+    }
+    .tb-byob__qty input {
+      width: 3.5rem;
+      padding: 0.25rem 0.35rem;
+      border: 1px solid var(--tb-border);
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+    .tb-byob__footer {
+      border-top: 1px solid var(--tb-border);
+      padding-top: 0.75rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .tb-byob__status {
+      margin: 0;
       font-size: 0.75rem;
+      color: var(--tb-mute);
+      flex: 1;
+    }
+    .tb-byob__btn {
+      font-size: 0.8rem;
       font-weight: 650;
-      padding: 0.35rem 0.65rem;
+      padding: 0.45rem 0.85rem;
       border-radius: 8px;
       border: 1px solid var(--tb-border);
       background: var(--tb-soft);
       color: var(--tb-fg);
       cursor: pointer;
     }
+    .tb-byob__btn--primary {
+      background: var(--tb-accent);
+      border-color: var(--tb-accent);
+      color: #fff;
+    }
+    .tb-byob__btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
     .tb-byob__empty {
       margin: 0;
       font-size: 0.8rem;
       color: var(--tb-mute);
+    }
+    .visually-hidden {
+      position: absolute !important;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
   {% endstyle %}
 {% endif %}

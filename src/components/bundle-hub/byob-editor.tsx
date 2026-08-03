@@ -101,17 +101,33 @@ export function ByobEditor({
     );
   };
 
-  const submit = async () => {
+  const submit = async (status: "DRAFT" | "ACTIVE") => {
     if (!title.trim()) {
       setError(t("bundleHub.errTitle"));
       return;
     }
-    const normalized = slots.map((s) => ({
-      ...s,
-      min: Math.max(0, s.min),
-      max: Math.max(1, s.max),
-      title: s.title.trim() || t(roleTitleKey(s.role)),
-    }));
+    const byId = new Map(
+      catalog.map((p) => [p.thirdPlatformItemId, p] as const)
+    );
+    const normalized = slots.map((s) => {
+      const poolProductIds = s.poolProductIds;
+      const poolProducts = poolProductIds.map((id) => {
+        const p = byId.get(id);
+        return {
+          id,
+          handle: p?.handle ?? undefined,
+          title: p?.title ?? undefined,
+        };
+      });
+      return {
+        ...s,
+        min: Math.max(0, s.min),
+        max: Math.max(1, s.max),
+        title: s.title.trim() || t(roleTitleKey(s.role)),
+        poolProductIds,
+        poolProducts,
+      };
+    });
     for (let i = 0; i < normalized.length; i++) {
       const slot = normalized[i];
       if (slot.min > slot.max) {
@@ -138,7 +154,7 @@ export function ByobEditor({
             ? null
             : initial?.id,
         title: title.trim(),
-        status: "DRAFT",
+        status,
         rule: { kind: "byob", slots: normalized, label: title.trim() },
       });
       onSaved(saved);
@@ -151,8 +167,8 @@ export function ByobEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <p className="rounded-md border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-[11px] text-amber-950">
-        {t("bundleHub.byobDraftHint")}
+      <p className="rounded-md border border-hairline bg-canvas/50 px-2.5 py-2 text-[11px] leading-relaxed text-ink">
+        {t("bundleHub.byobPublishHint")}
       </p>
       <p className="text-[11px] leading-relaxed text-ink-muted">
         {t("bundleHub.byobHowTo")}
@@ -323,13 +339,22 @@ export function ByobEditor({
 
       {error ? <p className="text-[12px] text-red-600">{error}</p> : null}
 
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={saving}>
           {t("bundleHub.cancel")}
         </Button>
-        <Button type="button" onClick={() => void submit()} disabled={saving}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => void submit("DRAFT")}
+          disabled={saving}
+        >
           {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
           {t("bundleHub.saveByobDraft")}
+        </Button>
+        <Button type="button" onClick={() => void submit("ACTIVE")} disabled={saving}>
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {t("bundleHub.publishByob")}
         </Button>
       </div>
     </div>

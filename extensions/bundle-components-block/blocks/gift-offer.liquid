@@ -1,0 +1,141 @@
+{% comment %}
+  Tangbuy / 60s — Free gift offer on trigger product PDP.
+  Metafield: tangbuy_gift.rule
+  Adds gift variant via Cart AJAX; Discount Function applies 100% when minQty met.
+{% endcomment %}
+
+{% liquid
+  assign rule = product.metafields.tangbuy_gift.rule.value
+  assign show = false
+  assign gift_variant_id = blank
+  assign min_qty = 1
+  assign gift_qty = 1
+  assign label = blank
+  if rule != blank and rule.kind == 'qty_gift'
+    assign gift_variant_id = rule.giftVariantId | append: ''
+    assign min_qty = rule.minQty | default: 1
+    assign gift_qty = rule.giftQty | default: 1
+    assign label = rule.label
+    if gift_variant_id != blank
+      assign show = true
+    endif
+  endif
+  if label == blank
+    assign label = block.settings.heading
+  endif
+  if label == blank
+    assign label = 'blocks.gift_offer.heading' | t
+  endif
+%}
+
+{% if show %}
+  <div
+    class="tb-gift"
+    {{ block.shopify_attributes }}
+    style="
+      margin-top: {{ block.settings.margin_top }}px;
+      margin-bottom: {{ block.settings.margin_bottom }}px;
+    "
+    data-tb-gift
+    data-trigger-product-id="{{ product.id }}"
+    data-min-qty="{{ min_qty }}"
+    data-gift-variant-id="{{ gift_variant_id }}"
+    data-gift-qty="{{ gift_qty }}"
+  >
+    <p class="tb-gift__eyebrow">{{ 'blocks.gift_offer.eyebrow' | t }}</p>
+    <p class="tb-gift__heading">{{ label | escape }}</p>
+    <p class="tb-gift__hint">
+      {{ 'blocks.gift_offer.hint' | t: qty: min_qty }}
+    </p>
+    <button type="button" class="tb-gift__btn" data-tb-gift-sync>
+      {{ 'blocks.gift_offer.cta' | t }}
+    </button>
+    <p class="tb-gift__status" data-tb-gift-status hidden></p>
+  </div>
+
+  <script src="{{ 'gift-offer.js' | asset_url }}" defer></script>
+
+  {% style %}
+    .tb-gift {
+      --tb-fg: #1a1a1a;
+      --tb-mute: #6b7280;
+      --tb-border: #e5e7eb;
+      --tb-soft: #ecfdf5;
+      --tb-accent: #0f766e;
+      border: 1px solid #a7f3d0;
+      border-radius: 12px;
+      padding: 1rem;
+      background: var(--tb-soft);
+    }
+    .tb-gift__eyebrow {
+      margin: 0;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--tb-accent);
+    }
+    .tb-gift__heading {
+      margin: 0.25rem 0 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--tb-fg);
+    }
+    .tb-gift__hint {
+      margin: 0.35rem 0 0.75rem;
+      font-size: 0.8rem;
+      color: var(--tb-mute);
+    }
+    .tb-gift__btn {
+      font-size: 0.8rem;
+      font-weight: 650;
+      padding: 0.45rem 0.85rem;
+      border-radius: 8px;
+      border: 1px solid var(--tb-accent);
+      background: var(--tb-accent);
+      color: #fff;
+      cursor: pointer;
+    }
+    .tb-gift__status {
+      margin: 0.5rem 0 0;
+      font-size: 0.75rem;
+      color: var(--tb-mute);
+    }
+  {% endstyle %}
+{% endif %}
+
+{% schema %}
+{
+  "name": "t:blocks.gift_offer.name",
+  "target": "section",
+  "templates": ["product"],
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "t:blocks.gift_offer.settings.heading",
+      "default": "Free gift with purchase"
+    },
+    {
+      "type": "range",
+      "id": "margin_top",
+      "min": 0,
+      "max": 48,
+      "step": 4,
+      "unit": "px",
+      "label": "t:blocks.gift_offer.settings.margin_top",
+      "default": 12
+    },
+    {
+      "type": "range",
+      "id": "margin_bottom",
+      "min": 0,
+      "max": 48,
+      "step": 4,
+      "unit": "px",
+      "label": "t:blocks.gift_offer.settings.margin_bottom",
+      "default": 16
+    }
+  ]
+}
+{% endschema %}

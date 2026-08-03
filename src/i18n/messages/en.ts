@@ -3885,7 +3885,7 @@ export const en = {
     giftAction: "Gift rule",
     giftTitle: "Gift rule",
     giftHint:
-      "Buy N of this product, get another SKU free. Saved to Shopify; auto free gift at checkout is a later Function step. Does not change sourcing cost.",
+      "Buy N of this product, get another SKU free. Saved to Shopify; add the Free gift Theme Block to sync the gift line, and Discount Function zeros it at checkout. Sourcing stays multi-line.",
     giftTrigger: "Trigger",
     giftTriggerCurrent: "Cart contains this product",
     giftMinQty: "Min quantity",
@@ -3964,7 +3964,7 @@ export const en = {
     pricingPercent: "Percent off",
     pricingFixed: "Flat total price",
     pricingPercentHint: "Take a percentage off matching pool lines",
-    pricingFixedHint: "Pay this total for the pool once the min qty is met (flat checkout still maturing)",
+    pricingFixedHint: "Pool lines total this flat price once min qty is met (requires Discount Function deploy)",
     fieldDiscountPercent: "Discount percent",
     fieldDiscountPercentHint:
       "{{percent}} means {{percent}}% off (e.g. 100 → about {{remain}})",
@@ -3995,14 +3995,17 @@ export const en = {
     mixSaved: "Mix campaign saved",
     byobDefaultTitle: "Build your own bundle",
     byobDraftHint:
-      "Draft mode: saving writes app + metafields. Add the BYOB Theme Block so shoppers can pick by slot. No parent SKU is created.",
+      "Drafts are hidden on the storefront. Publish so shoppers can use the BYOB Theme Block. No parent SKU is created.",
+    byobPublishHint:
+      "Only ACTIVE campaigns show on the storefront. Ensure the theme includes the “60s · Build your own” block.",
     byobHowTo:
       "Each slot is a choice group for the shopper (e.g. 1 main + up to 3 accessories). Check which store products belong in that slot. Min/max = how many they must/may pick from that slot.",
     byobEffectExample:
       "Example: slot “Main” min 1 / max 1 with toothbrush + T-shirt in the pool → shoppers must add exactly one of those two. Other slots work the same. Checkout stays multi-line; procurement is per line — no kit parent SKU.",
     errByobNoPool: "Check at least one product in any slot",
-    saveByobDraft: "Save BYOB draft",
-    byobSaved: "BYOB draft saved",
+    saveByobDraft: "Save draft",
+    publishByob: "Publish to storefront",
+    byobSaved: "BYOB saved",
     addSlot: "Add slot",
     removeSlot: "Remove slot",
     slotLabel: "Slot {{index}} · {{role}}",

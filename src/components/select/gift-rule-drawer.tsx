@@ -30,7 +30,8 @@ function isBindingReady(
 
 /**
  * Gift rule drawer — separate from kit dual-track composer.
- * Phase 1: persist tangbuy_gift.rule; checkout free gift is Function Phase 2.
+ * Persists tangbuy_gift.rule; storefront Theme Block syncs gift line;
+ * Discount Function applies 100% when trigger qty is met.
  */
 export function GiftRuleDrawer({
   open,

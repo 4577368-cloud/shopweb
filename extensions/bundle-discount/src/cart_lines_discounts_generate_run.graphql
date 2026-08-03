@@ -3,6 +3,11 @@ query CartLinesDiscountsGenerateRun {
     lines {
       id
       quantity
+      cost {
+        subtotalAmount {
+          amount
+        }
+      }
       merchandise {
         __typename
         ... on ProductVariant {
@@ -19,6 +24,9 @@ query CartLinesDiscountsGenerateRun {
               value
             }
             mixRule: metafield(namespace: "tangbuy_mix", key: "rule") {
+              value
+            }
+            giftRule: metafield(namespace: "tangbuy_gift", key: "rule") {
               value
             }
           }
