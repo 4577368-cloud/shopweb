@@ -3968,9 +3968,12 @@ export const zh: Dictionary = {
     mixSaved: "Mix 活动已保存",
     byobDefaultTitle: "自组礼盒",
     byobDraftHint:
-      "BYOB 现为草稿：槽位写入应用与 metafield。店面选配以多行加购，不建父 SKU。",
+      "当前是草稿配置：保存后写入后台与商品 metafield。店面需加上「自组礼盒」Theme Block 后，顾客才能按槽位加购。不会新建父商品 SKU。",
     byobHowTo:
-      "每个「槽位」是顾客要选的一类商品。例如：主品 1 件 + 配件最多 3 件。勾选该槽位里顾客可以选的店内商品；最少/最多 = 顾客在该槽位至少/至多选几件。",
+      "每个「槽位」是顾客要选的一类商品。例如：主品必须 1 件 + 配件最多 3 件。勾选该槽位里顾客可以选的店内商品；最少/最多 = 顾客在该槽位至少/至多选几件。",
+    byobEffectExample:
+      "举例：槽位「主品」最少 1、最多 1，可选池勾了牙刷和 T 恤 → 顾客在店面该活动里必须从这两件里选 1 件加入购物车；再按其它槽位继续选。结账是多行商品，订单中心按行采购，不会合成一个套装父 SKU。",
+    errByobNoPool: "请至少在一个槽位勾选可选商品",
     saveByobDraft: "保存 BYOB 草稿",
     byobSaved: "BYOB 草稿已保存",
     addSlot: "添加槽位",

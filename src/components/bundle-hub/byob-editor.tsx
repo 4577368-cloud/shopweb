@@ -35,6 +35,15 @@ function roleTitleKey(role: ByobSlot["role"]): string {
   }
 }
 
+/** Avoid browser number quirks that produce leading zeros like "01". */
+function parseQty(raw: string, fallback: number, min: number): number {
+  const cleaned = raw.replace(/[^\d]/g, "");
+  if (cleaned === "") return fallback;
+  const n = Number.parseInt(cleaned, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, n);
+}
+
 /** BYOB slot template editor — persists draft; storefront Block reads metafield. */
 export function ByobEditor({
   shopName,
@@ -97,15 +106,27 @@ export function ByobEditor({
       setError(t("bundleHub.errTitle"));
       return;
     }
-    for (const slot of slots) {
+    const normalized = slots.map((s) => ({
+      ...s,
+      min: Math.max(0, s.min),
+      max: Math.max(1, s.max),
+      title: s.title.trim() || t(roleTitleKey(s.role)),
+    }));
+    for (let i = 0; i < normalized.length; i++) {
+      const slot = normalized[i];
       if (slot.min > slot.max) {
-        setError(t("bundleHub.errSlotMinMax", { index: slots.indexOf(slot) + 1 }));
+        setError(t("bundleHub.errSlotMinMax", { index: i + 1 }));
         return;
       }
-      if (slot.poolProductIds.length === 0) {
-        setError(t("bundleHub.errSlotPoolEmpty", { index: slots.indexOf(slot) + 1 }));
+      // Optional slots (min=0) may stay empty; required slots need a pool.
+      if (slot.min > 0 && slot.poolProductIds.length === 0) {
+        setError(t("bundleHub.errSlotPoolEmpty", { index: i + 1 }));
         return;
       }
+    }
+    if (!normalized.some((s) => s.poolProductIds.length > 0)) {
+      setError(t("bundleHub.errByobNoPool"));
+      return;
     }
     setSaving(true);
     setError(null);
@@ -118,7 +139,7 @@ export function ByobEditor({
             : initial?.id,
         title: title.trim(),
         status: "DRAFT",
-        rule: { kind: "byob", slots, label: title.trim() },
+        rule: { kind: "byob", slots: normalized, label: title.trim() },
       });
       onSaved(saved);
     } catch (err) {
@@ -135,6 +156,9 @@ export function ByobEditor({
       </p>
       <p className="text-[11px] leading-relaxed text-ink-muted">
         {t("bundleHub.byobHowTo")}
+      </p>
+      <p className="rounded-md border border-hairline bg-canvas/50 px-2.5 py-2 text-[11px] leading-relaxed text-ink">
+        {t("bundleHub.byobEffectExample")}
       </p>
 
       <label className="block space-y-1">
@@ -189,14 +213,14 @@ export function ByobEditor({
               <label className="block space-y-1">
                 <span className="text-[11px] text-ink-muted">{t("bundleHub.slotMin")}</span>
                 <Input
-                  type="number"
-                  min={0}
-                  value={slot.min}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={String(slot.min)}
                   onChange={(e) =>
                     setSlots((all) =>
                       all.map((s) =>
                         s.id === slot.id
-                          ? { ...s, min: Math.max(0, Number(e.target.value) || 0) }
+                          ? { ...s, min: parseQty(e.target.value, 0, 0) }
                           : s
                       )
                     )
@@ -210,14 +234,14 @@ export function ByobEditor({
               <label className="block space-y-1">
                 <span className="text-[11px] text-ink-muted">{t("bundleHub.slotMax")}</span>
                 <Input
-                  type="number"
-                  min={1}
-                  value={slot.max}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={String(slot.max)}
                   onChange={(e) =>
                     setSlots((all) =>
                       all.map((s) =>
                         s.id === slot.id
-                          ? { ...s, max: Math.max(1, Number(e.target.value) || 1) }
+                          ? { ...s, max: parseQty(e.target.value, 1, 1) }
                           : s
                       )
                     )

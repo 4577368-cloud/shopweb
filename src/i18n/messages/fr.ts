@@ -3992,9 +3992,12 @@ export const fr: Dictionary = {
     mixSaved: "Campagne mix enregistrée",
     byobDefaultTitle: "Composez votre bundle",
     byobDraftHint:
-      "BYOB en brouillon : slots dans l’app et metafields. Le picker ajoute plusieurs lignes — pas de SKU parent.",
+      "Brouillon : l’enregistrement écrit app + metafields. Ajoutez le Theme Block BYOB pour le choix par slot. Pas de SKU parent.",
     byobHowTo:
       "Chaque slot est un groupe de choix (ex. 1 principal + jusqu’à 3 accessoires). Cochez les produits du slot. Min/max = combien le client doit/peut en prendre.",
+    byobEffectExample:
+      "Exemple : slot « Principal » min 1 / max 1 avec brosse + T-shirt → le client doit ajouter exactement un des deux. Checkout multi-lignes ; achat par ligne — pas de SKU parent.",
+    errByobNoPool: "Cochez au moins un produit dans un slot",
     saveByobDraft: "Enregistrer le brouillon BYOB",
     byobSaved: "Brouillon BYOB enregistré",
     addSlot: "Ajouter un slot",

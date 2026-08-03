@@ -3991,9 +3991,12 @@ export const es: Dictionary = {
     mixSaved: "Campaña mix guardada",
     byobDefaultTitle: "Arma tu bundle",
     byobDraftHint:
-      "BYOB en borrador: slots en app y metafields. El picker añade varias líneas — sin SKU padre.",
+      "Borrador: al guardar se escriben app + metafields. Añade el Theme Block BYOB para que el cliente elija por slot. Sin SKU padre.",
     byobHowTo:
       "Cada slot es un grupo de elección (p. ej. 1 principal + hasta 3 accesorios). Marca qué productos entran en ese slot. Mín/máx = cuántos deben/pueden elegir.",
+    byobEffectExample:
+      "Ejemplo: slot “Principal” mín 1 / máx 1 con cepillo + camiseta → el cliente debe añadir exactamente uno de esos dos. Checkout multi-línea; compra por línea — sin SKU padre.",
+    errByobNoPool: "Marca al menos un producto en algún slot",
     saveByobDraft: "Guardar borrador BYOB",
     byobSaved: "Borrador BYOB guardado",
     addSlot: "Añadir slot",

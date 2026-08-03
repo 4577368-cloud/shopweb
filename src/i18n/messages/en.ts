@@ -3995,9 +3995,12 @@ export const en = {
     mixSaved: "Mix campaign saved",
     byobDefaultTitle: "Build your own bundle",
     byobDraftHint:
-      "BYOB is draft: slots save to the app and metafields. Storefront picker adds multiple cart lines — no parent SKU.",
+      "Draft mode: saving writes app + metafields. Add the BYOB Theme Block so shoppers can pick by slot. No parent SKU is created.",
     byobHowTo:
       "Each slot is a choice group for the shopper (e.g. 1 main + up to 3 accessories). Check which store products belong in that slot. Min/max = how many they must/may pick from that slot.",
+    byobEffectExample:
+      "Example: slot “Main” min 1 / max 1 with toothbrush + T-shirt in the pool → shoppers must add exactly one of those two. Other slots work the same. Checkout stays multi-line; procurement is per line — no kit parent SKU.",
+    errByobNoPool: "Check at least one product in any slot",
     saveByobDraft: "Save BYOB draft",
     byobSaved: "BYOB draft saved",
     addSlot: "Add slot",
