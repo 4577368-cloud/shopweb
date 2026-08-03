@@ -23,7 +23,8 @@ export type ProductsShopFilter =
   | "new_arrivals"
   | "pending"
   | "confirmed"
-  | "unbound";
+  | "unbound"
+  | "bundled";
 export type ProductsPhase = "scan" | "result";
 
 export interface ProductsPricingContext {

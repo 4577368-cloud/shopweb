@@ -24,7 +24,8 @@ export type ProductCommandShopFilter =
   | "pending"
   | "confirmed"
   | "unbound"
-  | "new_arrivals";
+  | "new_arrivals"
+  | "bundled";
 
 export type ListingPriceScope = "all" | "one";
 

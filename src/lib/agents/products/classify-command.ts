@@ -836,7 +836,7 @@ ${langBlock}
 - JSON only: {"intent":"...","targetScope":"current|explicit|none|all","productId":null,"params":{},"confirmationRequired":false}
 - intent must be one of the commands above
 - update_listing_price: extract price + currency; confirmationRequired=true
-- open_filter: params.shopFilter = all|pending|confirmed|unbound|new_arrivals
+- open_filter: params.shopFilter = all|pending|confirmed|unbound|new_arrivals|bundled
 - explain_product_match: params.matchExplain = reason|risk
 - update_product_copy / batch_update_product_copy:
    - params.copyField: title|description|all

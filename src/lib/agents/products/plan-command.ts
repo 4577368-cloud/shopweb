@@ -32,6 +32,7 @@ function filterLabel(t: TranslateFn, filter: ProductCommandShopFilter): string {
     unbound: "agentProducts.filterUnbound",
     confirmed: "agentProducts.filterConfirmed",
     new_arrivals: "agentProducts.filterNewArrivals",
+    bundled: "agentProducts.filterBundled",
   };
   return t(keys[filter]);
 }

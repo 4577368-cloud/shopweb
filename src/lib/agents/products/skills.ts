@@ -25,7 +25,7 @@ export interface SkillNextStep {
   kind?: SuggestedActionKind;
 
   /** 筛选条件，用于 set_shop_filter */
-  shopFilter?: "all" | "pending" | "confirmed" | "unbound" | "new_arrivals";
+  shopFilter?: "all" | "pending" | "confirmed" | "unbound" | "new_arrivals" | "bundled";
 
   /** 标签页，用于 set_tab */
   tab?: "shop" | "catalog";

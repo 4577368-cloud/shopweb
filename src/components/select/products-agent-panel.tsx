@@ -474,7 +474,9 @@ export function ProductsAgentPanel({
               ? t("productsAgent.bindStateConfirmed")
               : context.shopFilter === "unbound"
                 ? t("productsAgent.bindStateUnbound")
-                : t("productsAgent.filterNewArrivals")
+                : context.shopFilter === "bundled"
+                  ? t("productsAgent.filterBundled")
+                  : t("productsAgent.filterNewArrivals")
         : null,
       pendingCount: context.pendingCount,
       unboundCount: context.unboundCount,
