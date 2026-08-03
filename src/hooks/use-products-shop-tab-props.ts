@@ -61,6 +61,7 @@ export interface UseProductsShopTabPropsParams {
   filtersHighlighted: boolean;
   template: PricingTemplate | null;
   onOpenBundleHub?: (productId: string) => void;
+  onOpenBundleHubList?: () => void;
 }
 
 export function useProductsShopTabProps(
@@ -106,6 +107,7 @@ export function useProductsShopTabProps(
     filtersHighlighted,
     template,
     onOpenBundleHub,
+    onOpenBundleHubList,
   } = params;
 
   const summary = useMemo(
@@ -192,6 +194,7 @@ export function useProductsShopTabProps(
       highlighted: filtersHighlighted,
       pricingTemplate: template,
       onOpenBundleHub,
+      onOpenBundleHubList,
     }),
     [
       refreshProductsQuietly,
@@ -228,6 +231,7 @@ export function useProductsShopTabProps(
       filtersHighlighted,
       template,
       onOpenBundleHub,
+      onOpenBundleHubList,
     ]
   );
 

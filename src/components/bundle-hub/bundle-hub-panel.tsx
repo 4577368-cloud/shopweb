@@ -82,6 +82,7 @@ export function BundleHubPanel({
   pricingTemplate,
   seed,
   onSeedConsumed,
+  onClose,
   onToast,
   onActivity,
 }: {
@@ -92,6 +93,8 @@ export function BundleHubPanel({
   pricingTemplate?: PricingTemplate | null;
   seed?: BundleHubSeed | null;
   onSeedConsumed?: () => void;
+  /** Leave hub overlay and return to Shopify product list. */
+  onClose?: () => void;
   onToast?: (msg: string) => void;
   onActivity?: () => void;
 }) {
@@ -197,6 +200,18 @@ export function BundleHubPanel({
           </Button>
         ) : (
           <>
+            {onClose ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 gap-1"
+                onClick={onClose}
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                {t("bundleHub.backToProducts")}
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"

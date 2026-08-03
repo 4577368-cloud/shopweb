@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Loader2,
   MoveRight,
+  Package,
   RefreshCw,
   Search,
 } from "@/lib/ui/icons";
@@ -80,6 +81,7 @@ import type {
 } from "@/lib/types";
 import {
   fetchBundleStatusMap,
+  hasConfiguredBundle,
   isBundleParentKit,
   type BundleCardStatus,
   type BundleStatusMap,
@@ -480,7 +482,8 @@ export type ShopFilter =
   | "new_arrivals"
   | "pending"
   | "confirmed"
-  | "unbound";
+  | "unbound"
+  | "bundled";
 
 export function ShopProductsPanel({
   onActivity,
@@ -519,6 +522,7 @@ export function ShopProductsPanel({
   highlighted = false,
   pricingTemplate = null,
   onOpenBundleHub,
+  onOpenBundleHubList,
 }: {
   onActivity?: () => void;
   /** Optional controlled filter — lets the page's top CTA jump straight to e.g. 待确认. */
@@ -536,6 +540,8 @@ export function ShopProductsPanel({
   actionsMountEl?: HTMLElement | null;
   /** Open shop-level Bundle Hub (preferred over local composer). */
   onOpenBundleHub?: (productId: string) => void;
+  /** Open Bundle Hub list (no product seed) — toolbar revisit entry. */
+  onOpenBundleHubList?: () => void;
   focusProductId?: string | null;
   scrollToProductId?: string | null;
   onScrollToConsumed?: () => void;
@@ -1042,10 +1048,16 @@ export function ShopProductsPanel({
   const counts = useMemo(() => {
     let pending = 0;
     let confirmed = 0;
+    let bundled = 0;
     for (const p of products) {
       const s = stateOf(p);
       if (s === "pending") pending += 1;
       else if (s === "confirmed") confirmed += 1;
+      if (
+        hasConfiguredBundle(bundleStatusMap?.byProductId?.[p.thirdPlatformItemId])
+      ) {
+        bundled += 1;
+      }
     }
     const newArrivalsInList = pendingNewAnalysisIds
       ? products.filter((p) => pendingNewAnalysisIds.has(p.thirdPlatformItemId)).length
@@ -1056,8 +1068,9 @@ export function ShopProductsPanel({
       pending,
       confirmed,
       unbound: products.length - pending - confirmed,
+      bundled,
     };
-  }, [products, stateOf, pendingNewAnalysisIds]);
+  }, [products, stateOf, pendingNewAnalysisIds, bundleStatusMap]);
 
   // Empty pending tab is not useful — return to「全部」after the last ack/unbind.
   useEffect(() => {
@@ -1129,6 +1142,10 @@ export function ShopProductsPanel({
       result = products.filter((p) => stateOf(p) === "confirmed");
     } else if (filter === "unbound") {
       result = products.filter((p) => stateOf(p) === null);
+    } else if (filter === "bundled") {
+      result = products.filter((p) =>
+        hasConfiguredBundle(bundleStatusMap?.byProductId?.[p.thirdPlatformItemId])
+      );
     }
 
     if (catalogScope === "linked") {
@@ -1179,6 +1196,7 @@ export function ShopProductsPanel({
     catalogScope,
     bindings,
     shopName,
+    bundleStatusMap,
   ]);
 
   // Rail「重搜候选」signal ref — effect runs after pageLinkableProducts (page-scoped).
@@ -1328,6 +1346,11 @@ export function ShopProductsPanel({
           { id: "pending", label: t("shopProducts.filterPending"), count: counts.pending },
           { id: "confirmed", label: t("shopProducts.filterConfirmed"), count: counts.confirmed },
           { id: "unbound", label: t("shopProducts.filterUnbound"), count: counts.unbound },
+          {
+            id: "bundled",
+            label: t("shopProducts.filterBundled"),
+            count: counts.bundled,
+          },
         ]}
         value={filter}
         onValueChange={(id) => {
@@ -1384,6 +1407,23 @@ export function ShopProductsPanel({
   /** Right-aligned with page CTAs / embedded top chrome (search · refresh · assistant). */
   const toolbarActions = (
     <div className="flex shrink-0 flex-nowrap items-center gap-2">
+      {onOpenBundleHubList || onOpenBundleHub ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="h-7 w-7 px-0"
+          title={t("bundleHub.toolbarOpen")}
+          aria-label={t("bundleHub.toolbarOpen")}
+          disabled={linkingLocked}
+          onClick={() => {
+            if (onOpenBundleHubList) onOpenBundleHubList();
+            else onOpenBundleHub?.("");
+          }}
+        >
+          <Package className="h-3.5 w-3.5" />
+        </Button>
+      ) : null}
       {manualAckPendingCount > 0 ? (
         <Button
           size="sm"
@@ -3049,9 +3089,9 @@ function ShopProductCard({
               })}
             </span>
           ) : null}
-          {isKitParent ? (
-            <span className="inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-800">
-              {t("shopProducts.badgeKitTag")}
+          {bundleStatus?.status === "STALE" ? (
+            <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+              {t("bundle.badgeStale")}
             </span>
           ) : null}
           {bundleStatus?.status === "CREATING" ? (
@@ -3062,11 +3102,6 @@ function ShopProductCard({
           {bundleStatus?.status === "FAILED" ? (
             <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">
               {t("bundle.badgeFailed")}
-            </span>
-          ) : null}
-          {bundleStatus?.status === "STALE" ? (
-            <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-              {t("bundle.badgeStale")}
             </span>
           ) : null}
         </div>
@@ -3116,17 +3151,20 @@ function ShopProductCard({
               type="button"
               className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
               disabled={cardActionsLocked || !onOpenBundle}
-              title={t("bundleHub.cardHint")}
+              title={
+                hasConfiguredBundle(bundleStatus)
+                  ? t("bundleHub.cardHintManage")
+                  : t("bundleHub.cardHintCreate")
+              }
               onClick={(e) => {
                 e.stopPropagation();
                 onOpenBundle?.();
               }}
             >
-              {bundleStatus?.status === "ACTIVE" ||
-              bundleStatus?.status === "STALE"
-                ? t("bundleHub.cardEdit")
-                : bundleStatus?.status === "FAILED"
-                  ? t("bundle.actionRetry")
+              {bundleStatus?.status === "FAILED"
+                ? t("bundle.actionRetry")
+                : hasConfiguredBundle(bundleStatus)
+                  ? t("bundleHub.cardManage")
                   : t("bundleHub.cardAction")}
             </button>
             {(() => {

@@ -62,6 +62,19 @@ export function isBundleParentKit(
   );
 }
 
+/** Product has a kit setup worth showing a badge / manage CTA (incl. failed). */
+export function hasConfiguredBundle(
+  status?: BundleCardStatus | null
+): boolean {
+  if (!status?.asParent) return false;
+  return (
+    status.status === "ACTIVE" ||
+    status.status === "STALE" ||
+    status.status === "CREATING" ||
+    status.status === "FAILED"
+  );
+}
+
 export interface BundleStatusMap {
   feature: BundlesFeature;
   byProductId: Record<string, BundleCardStatus>;

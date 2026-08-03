@@ -2,7 +2,10 @@ import { SCAN_STAGE_PROGRESS_ANIMATION_MS } from "@/components/workbench/scan-st
 import { hasScanned } from "@/lib/scan/gate";
 import { peekMirrorCache } from "@/lib/products/mirror-cache";
 
-export type ProductsPageTab = "shop" | "catalog" | "bundles";
+export type ProductsPageTab = "shop" | "catalog";
+
+/** Legacy `?tab=bundles` — open hub overlay instead of a top tab. */
+export const PRODUCTS_LEGACY_BUNDLES_TAB = "bundles";
 
 export interface ProductsSummary {
   shopProducts: number;

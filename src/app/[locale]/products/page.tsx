@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -78,7 +78,11 @@ function SelectContent() {
   const t = useT();
   const locale = useLocale();
   const { isEmbedded } = useEmbeddedMode();
-  const { tab, setTab } = useProductsPageTab(locale);
+  const { tab, setTab, openBundlesHubFromUrl } = useProductsPageTab(locale);
+  const [bundleHubOpen, setBundleHubOpen] = useState(false);
+  const [bundleHubSeed, setBundleHubSeed] = useState<BundleHubSeed | null>(
+    null
+  );
   const breadcrumbs = [
     { label: t("nav.workbench"), href: localePath(locale, "/") },
     { label: t("products.title") },
@@ -91,9 +95,6 @@ function SelectContent() {
     useState<HTMLDivElement | null>(null);
   const [catalogFiltersMountEl, setCatalogFiltersMountEl] =
     useState<HTMLDivElement | null>(null);
-  const [bundleHubSeed, setBundleHubSeed] = useState<BundleHubSeed | null>(
-    null
-  );
   const { newArrivalStats, refreshNewArrivalAwareness, commitAnalysisBaseline } =
     useProductsNewArrivals(shopName, shopMirrorKey);
 
@@ -377,12 +378,18 @@ function SelectContent() {
   );
 
   const openBundleHub = useCallback(
-    (productId: string) => {
-      setBundleHubSeed({ productId });
-      setTab("bundles");
+    (productId?: string) => {
+      setBundleHubSeed(productId?.trim() ? { productId } : null);
+      setBundleHubOpen(true);
+      if (tab !== "shop") setTab("shop");
     },
-    [setTab]
+    [setTab, tab]
   );
+
+  useEffect(() => {
+    if (!openBundlesHubFromUrl) return;
+    setBundleHubOpen(true);
+  }, [openBundlesHubFromUrl]);
 
   const shopTab = useProductsShopTabProps({
     pendingNewAnalysisCount: newArrivalStats.pendingNewAnalysisCount,
@@ -420,7 +427,8 @@ function SelectContent() {
     searchQuery,
     filtersHighlighted: highlightedArea === "filters",
     template,
-    onOpenBundleHub: openBundleHub,
+    onOpenBundleHub: (productId: string) => openBundleHub(productId),
+    onOpenBundleHubList: () => openBundleHub(),
   });
 
   useRegisterEmbeddedPageChrome({
@@ -555,7 +563,6 @@ function SelectContent() {
 
   const tabs = [
     { id: "shop", label: t("products.tabShop"), count: displaySummary?.shopProducts },
-    { id: "bundles", label: t("products.tabBundles") },
     { id: "catalog", label: t("products.tabDiscover") },
   ];
 
@@ -569,8 +576,7 @@ function SelectContent() {
   );
 
   const isShopTab = tab === "shop";
-  const isBundlesTab = tab === "bundles";
-  const pageCtas = !isBundlesTab ? (
+  const pageCtas = !bundleHubOpen ? (
     <ProductsPageHeaderActions
       // Discover has its own SmartSourcingFilters; shop search here does nothing on catalog.
       showSearch={isShopTab && !isEmbedded}
@@ -592,13 +598,13 @@ function SelectContent() {
   ) : null;
 
   /**
-   * Row 1: Shopify / 套装与组合 / 选品发现 tabs.
+   * Row 1: Shopify / 选品发现 tabs.
    * Row 2: tab-specific filters + CTAs (single nowrap row, scroll if narrow).
    */
   const pageToolbar = (
     <div className="flex w-full min-w-0 flex-col gap-2">
       <div className="shrink-0">{pageTabs}</div>
-      {!isBundlesTab ? (
+      {!bundleHubOpen ? (
         <div className="flex w-full min-w-0 items-center gap-2">
           <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:thin]">
             {isShopTab ? (
@@ -634,16 +640,7 @@ function SelectContent() {
         toolbar={pageToolbar}
       >
         <div className="space-y-3">
-          {tab === "shop" ? (
-            <ProductsShopTab
-              summary={shopTab.summary}
-              panel={shopTab.panel}
-              filtersMountEl={shopFiltersMountEl}
-              actionsMountEl={shopActionsMountEl}
-            />
-          ) : null}
-
-          {tab === "bundles" ? (
+          {tab === "shop" && bundleHubOpen ? (
             <BundleHubPanel
               shopName={shopName}
               shopDomain={shop.domain}
@@ -652,8 +649,21 @@ function SelectContent() {
               pricingTemplate={template}
               seed={bundleHubSeed}
               onSeedConsumed={() => setBundleHubSeed(null)}
+              onClose={() => {
+                setBundleHubOpen(false);
+                setBundleHubSeed(null);
+              }}
               onToast={showToast}
               onActivity={refreshProductsQuietly}
+            />
+          ) : null}
+
+          {tab === "shop" && !bundleHubOpen ? (
+            <ProductsShopTab
+              summary={shopTab.summary}
+              panel={shopTab.panel}
+              filtersMountEl={shopFiltersMountEl}
+              actionsMountEl={shopActionsMountEl}
             />
           ) : null}
 
