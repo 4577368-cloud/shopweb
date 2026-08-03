@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "cp -rf .env.prod .env.production && next build && npm run cp",
+    "build:test": "cp -rf .env.test .env.production && next build && npm run cp",
+    "cp": "cp -rf ./public .next/standalone/ && cp -rf .next/static .next/standalone/.next",
     "start": "next start",
     "lint": "eslint",
     "validate:env": "node scripts/validate-env.mjs",
