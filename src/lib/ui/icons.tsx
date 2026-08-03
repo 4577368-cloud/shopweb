@@ -52,6 +52,7 @@ import {
   PersonIcon,
   PlusIcon,
   ProductIcon,
+  QuestionCircleIcon,
   RefreshIcon,
   SaveIcon,
   SearchIcon,
@@ -110,6 +111,7 @@ export const Pencil = createPolarisIcon(EditIcon, "Pencil");
 export const Person = createPolarisIcon(PersonIcon, "Person");
 export const PieChart = createPolarisIcon(ChartDonutIcon, "PieChart");
 export const Plus = createPolarisIcon(PlusIcon, "Plus");
+export const CircleHelp = createPolarisIcon(QuestionCircleIcon, "CircleHelp");
 export const RefreshCw = createPolarisIcon(RefreshIcon, "RefreshCw");
 export const Save = createPolarisIcon(SaveIcon, "Save");
 export const Scale = createPolarisIcon(MeasurementWeightIcon, "Scale");

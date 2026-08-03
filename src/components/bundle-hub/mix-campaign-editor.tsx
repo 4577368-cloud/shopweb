@@ -11,6 +11,8 @@ import type { BundleCampaign, MixMatchRule } from "@/lib/bundle/campaign-types";
 import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
 import { Loader2 } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { BundleHelpBubble } from "@/components/bundle-hub/bundle-help-bubble";
+import { BundleAiNameButton } from "@/components/bundle-hub/bundle-ai-name-button";
 
 function isBindingReady(
   bindings: Record<string, ImageBindingView>,
@@ -141,12 +143,34 @@ export function MixCampaignEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <p className="text-[11px] leading-relaxed text-ink-muted">
-        {t("bundleHub.mixHowTo")}
-      </p>
+      <div className="flex items-start gap-1.5">
+        <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-ink-muted">
+          {t("bundleHub.mixHowTo")}
+        </p>
+        <BundleHelpBubble guideId="mix" className="shrink-0" />
+      </div>
 
       <label className="block space-y-1">
-        <span className="text-[11px] text-ink-muted">{t("bundleHub.fieldTitle")}</span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-ink-muted">{t("bundleHub.fieldTitle")}</span>
+          <BundleAiNameButton
+            kind="mix_title"
+            disabled={saving}
+            onError={(msg) => setError(msg)}
+            context={{
+              minQty: qtyNum,
+              pricingType,
+              percent: pctNum,
+              fixedAmount: String(amountNum),
+              poolTitles: candidates
+                .filter((p) => pool.has(p.thirdPlatformItemId))
+                .map((p) => p.title)
+                .filter(Boolean)
+                .slice(0, 8),
+            }}
+            onNamed={setTitle}
+          />
+        </div>
         <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={saving} />
       </label>
 

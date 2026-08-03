@@ -3,10 +3,13 @@
     "kit_components": {
       "name": "60s · Kit components",
       "settings": {
+        "eyebrow": "Eyebrow",
         "heading": "Headline",
+        "subtext": "Supporting text",
         "promo_text": "Value line (optional)",
         "promo_text_info": "Leave blank to auto-fill from discount % (Save $X / Save N%).",
         "list_heading": "Included list title",
+        "show_summary_row": "Show summary row",
         "show_media_strip": "Show media strip",
         "show_included_list": "Show included checklist",
         "show_quantity": "Show quantities",
@@ -26,6 +29,8 @@
       "name": "60s · Free gift",
       "settings": {
         "heading": "Headline",
+        "gift_title": "Gift title fallback",
+        "gift_subtitle": "Gift subtitle fallback",
         "margin_top": "Top margin",
         "margin_bottom": "Bottom margin"
       }

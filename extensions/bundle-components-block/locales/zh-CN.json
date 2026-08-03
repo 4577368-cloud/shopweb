@@ -7,28 +7,54 @@
       "list_heading": "套装内含",
       "save_amount": "本套装可省 {{ amount }}",
       "save_percent": "本套装可省 {{ percent }}%",
-      "empty": "暂无套装组成信息。"
+      "empty": "暂无套装组成信息。",
+      "items_count": "件组成",
+      "total_units": "总件数",
+      "included_products": "商品种数",
+      "bundle_discount": "套装折扣"
     },
     "byob_builder": {
       "name": "60s · 自组礼盒",
       "eyebrow": "自组礼盒",
       "heading": "组合你的礼盒",
-      "hint": "按槽位选择数量后一次加入购物车；结账为多商品行，按行采购。",
+      "hint": "按槽位挑选商品后一次加入购物车；结账为多商品行，按行采购。",
       "add": "加入购物车",
       "add_bundle": "将礼盒加入购物车",
       "ready": "可以加入购物车",
       "added": "已加入购物车",
       "add_error": "加购失败",
+      "incomplete": "请先完成必选槽位",
+      "over_limit": "某个槽位超过最多可选件数",
       "unavailable": "暂不可售",
       "empty_slot": "此槽位暂无商品。",
-      "product_id": "商品 {{ id }}"
+      "empty_slot_hint": "请商家在后台为该槽位勾选可选商品。",
+      "slot_unavailable": "此槽位当前没有可售商品。",
+      "product_id": "商品 {{ id }}",
+      "slots": "个槽位",
+      "slot_label": "槽位",
+      "required": "必选",
+      "optional": "可选",
+      "summary": "已选预览",
+      "items_selected": "件已选",
+      "current_product": "当前商品",
+      "qty_decrease": "减少数量",
+      "qty_increase": "增加数量"
     },
     "gift_offer": {
       "name": "60s · 满件赠品",
       "eyebrow": "满件赠品",
       "heading": "满件送赠品",
       "hint": "购买本商品满 {{ qty }} 件，结账自动免单赠品。",
-      "cta": "添加 / 同步赠品"
+      "cta": "领取赠品",
+      "badge": "赠品",
+      "free_label": "免费",
+      "default_gift_title": "附赠礼品",
+      "progress_default": "满 {{ qty }} 件即可解锁赠品",
+      "locked": "尚未达到件数门槛",
+      "need_more": "再买 __COUNT__ 件即可解锁赠品",
+      "ready": "已达门槛，可领取赠品",
+      "added": "赠品已加入购物车",
+      "add_error": "赠品添加失败，请重试"
     }
   }
 }

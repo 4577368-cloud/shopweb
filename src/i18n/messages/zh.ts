@@ -3913,6 +3913,13 @@ export const zh: Dictionary = {
   bundleHub: {
     title: "套装与组合",
     subtitle: "固定套装、任选组合、单品优惠与自组礼盒，统一在这里配置。",
+    guideOpen: "查看使用教程",
+    guideClose: "关闭教程",
+    guideHow: "怎么配",
+    guideScenes: "日常场景与案例",
+    guideShopify: "配置后还要在 Shopify 做什么",
+    aiName: "AI 一键起名",
+    aiNameFailed: "AI 起名失败，请稍后重试或手动填写",
     create: "新建活动",
     refresh: "刷新活动列表",
     back: "返回",

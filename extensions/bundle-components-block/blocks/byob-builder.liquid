@@ -1,23 +1,51 @@
 {% comment %}
-  Tangbuy / 60s — BYOB slot picker (multi-line cart).
-  Metafield: tangbuy_byob.rule (slots with poolProductIds / poolProducts).
-  No parent SKU — each pick is a separate cart line for normal sourcing.
+  Tangbuy / 60s — BYOB builder (Theme App Block)
+  Runtime: product.metafields.tangbuy_byob.rule (schemaVersion 1)
+  Preferred poolProducts fields: title, handle, variantId, imageUrl, price (cents),
+  compareAtPrice (cents), available, variantTitle
+  Fallback: poolProductIds (current product only) / all_products[handle]
 {% endcomment %}
 
 {% liquid
   assign rule = product.metafields.tangbuy_byob.rule.value
-  assign slots = rule.slots
-  assign label = rule.label
+  assign slots = blank
+  assign label = blank
+  assign hint = blank
+  assign status = 'DRAFT'
+
+  if rule != blank
+    assign slots = rule.slots
+    assign label = rule.label
+    assign hint = rule.hint
+    assign status = rule.status | default: 'DRAFT'
+  endif
+
   if label == blank
     assign label = block.settings.heading
   endif
   if label == blank
     assign label = 'blocks.byob_builder.heading' | t
   endif
-  assign status = rule.status | default: 'DRAFT'
+  if hint == blank
+    assign hint = 'blocks.byob_builder.hint' | t
+  endif
+
   assign show = false
+  assign total_min = 0
+  assign total_max = 0
+  assign slot_count = 0
+
   if slots != blank and status == 'ACTIVE'
-    assign show = true
+    for slot in slots
+      assign slot_count = slot_count | plus: 1
+      assign min_n = slot.min | default: 0 | plus: 0
+      assign max_n = slot.max | default: 1 | plus: 0
+      assign total_min = total_min | plus: min_n
+      assign total_max = total_max | plus: max_n
+    endfor
+    if slot_count > 0
+      assign show = true
+    endif
   endif
 %}
 
@@ -25,135 +53,265 @@
   <div
     class="tb-byob"
     {{ block.shopify_attributes }}
-    style="
-      margin-top: {{ block.settings.margin_top }}px;
-      margin-bottom: {{ block.settings.margin_bottom }}px;
-    "
+    style="margin-top: {{ block.settings.margin_top }}px; margin-bottom: {{ block.settings.margin_bottom }}px;"
     data-tb-byob
+    data-money-format="{{ shop.money_format | escape }}"
+    data-total-min="{{ total_min }}"
+    data-total-max="{{ total_max }}"
   >
-    <p class="tb-byob__eyebrow">{{ 'blocks.byob_builder.eyebrow' | t }}</p>
-    <p class="tb-byob__heading">{{ label | escape }}</p>
-    <p class="tb-byob__hint">{{ 'blocks.byob_builder.hint' | t }}</p>
-
-    {% for slot in slots %}
-      {% liquid
-        assign slot_title = slot.title
-        if slot_title == blank
-          assign slot_title = slot.role
-        endif
-        assign pool_ids = slot.poolProductIds
-        assign pool_products = slot.poolProducts
-        assign min_n = slot.min | default: 0
-        assign max_n = slot.max | default: 1
-      %}
-      <div
-        class="tb-byob__slot"
-        data-tb-byob-slot
-        data-slot-id="{{ slot.id | escape }}"
-        data-title="{{ slot_title | escape }}"
-        data-min="{{ min_n }}"
-        data-max="{{ max_n }}"
-      >
-        <div class="tb-byob__slot-head">
-          <span class="tb-byob__slot-title">{{ slot_title | escape }}</span>
-          <span class="tb-byob__slot-meta">{{ min_n }}–{{ max_n }}</span>
-        </div>
-
-        <ul class="tb-byob__pool">
-          {% if pool_products != blank %}
-            {% for item in pool_products %}
-              {% assign handle = item.handle %}
-              {% assign vid = item.variantId %}
-              {% assign ptitle = item.title %}
-              {% if handle != blank and all_products[handle] != blank %}
-                {% assign p = all_products[handle] %}
-                {% assign ptitle = p.title %}
-                {% if vid == blank and p.selected_or_first_available_variant %}
-                  {% assign vid = p.selected_or_first_available_variant.id %}
-                {% endif %}
-                {% if vid != blank %}
-                  <li class="tb-byob__pool-item">
-                    <span class="tb-byob__pool-name">{{ ptitle | escape }}</span>
-                    <label class="tb-byob__qty">
-                      <span class="visually-hidden">Qty</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max="{{ max_n }}"
-                        value="0"
-                        data-tb-byob-pick
-                        data-variant-id="{{ vid }}"
-                      >
-                    </label>
-                  </li>
-                {% else %}
-                  <li class="tb-byob__pool-item tb-byob__pool-item--muted">
-                    <span>{{ ptitle | escape }}</span>
-                    <span>{{ 'blocks.byob_builder.unavailable' | t }}</span>
-                  </li>
-                {% endif %}
-              {% elsif vid != blank %}
-                <li class="tb-byob__pool-item">
-                  <span class="tb-byob__pool-name">{{ ptitle | default: item.id | escape }}</span>
-                  <label class="tb-byob__qty">
-                    <input
-                      type="number"
-                      min="0"
-                      max="{{ max_n }}"
-                      value="0"
-                      data-tb-byob-pick
-                      data-variant-id="{{ vid }}"
-                    >
-                  </label>
-                </li>
-              {% else %}
-                <li class="tb-byob__pool-item tb-byob__pool-item--id">
-                  <span>{{ 'blocks.byob_builder.product_id' | t: id: item.id }}</span>
-                </li>
-              {% endif %}
-            {% endfor %}
-          {% elsif pool_ids != blank %}
-            {% for pid in pool_ids %}
-              {% assign pid_s = pid | append: '' %}
-              {% assign current_id = product.id | append: '' %}
-              {% if pid_s == current_id and product.selected_or_first_available_variant %}
-                <li class="tb-byob__pool-item">
-                  <span class="tb-byob__pool-name">{{ product.title | escape }}</span>
-                  <label class="tb-byob__qty">
-                    <input
-                      type="number"
-                      min="0"
-                      max="{{ max_n }}"
-                      value="0"
-                      data-tb-byob-pick
-                      data-variant-id="{{ product.selected_or_first_available_variant.id }}"
-                    >
-                  </label>
-                </li>
-              {% else %}
-                <li class="tb-byob__pool-item tb-byob__pool-item--id">
-                  <span>{{ 'blocks.byob_builder.product_id' | t: id: pid }}</span>
-                </li>
-              {% endif %}
-            {% endfor %}
-          {% else %}
-            <li>
-              <p class="tb-byob__empty">{{ 'blocks.byob_builder.empty_slot' | t }}</p>
-            </li>
-          {% endif %}
-        </ul>
+    <div class="tb-byob__hero">
+      <div class="tb-byob__hero-copy">
+        <p class="tb-byob__eyebrow">{{ 'blocks.byob_builder.eyebrow' | t }}</p>
+        <h3 class="tb-byob__heading">{{ label | escape }}</h3>
+        <p class="tb-byob__hint">{{ hint | escape }}</p>
       </div>
-    {% endfor %}
+      <div class="tb-byob__badge-wrap">
+        <span class="tb-byob__badge">{{ slot_count }} {{ 'blocks.byob_builder.slots' | t }}</span>
+      </div>
+    </div>
 
-    <div class="tb-byob__footer">
-      <p
-        class="tb-byob__status"
-        data-tb-byob-status
-        data-ok="{{ 'blocks.byob_builder.ready' | t }}"
-        data-added="{{ 'blocks.byob_builder.added' | t }}"
-        data-err="{{ 'blocks.byob_builder.add_error' | t }}"
-      ></p>
-      <button type="button" class="tb-byob__btn tb-byob__btn--primary" data-tb-byob-add>
+    <div class="tb-byob__slots" data-tb-byob-slots>
+      {% for slot in slots %}
+        {% liquid
+          assign slot_title = slot.title
+          if slot_title == blank
+            assign slot_title = slot.role
+          endif
+          if slot_title == blank
+            assign slot_title = 'Slot' | append: ' ' | append: forloop.index
+          endif
+
+          assign slot_desc = slot.description | default: slot.hint
+          assign pool_ids = slot.poolProductIds
+          assign pool_products = slot.poolProducts
+          assign min_n = slot.min | default: 0 | plus: 0
+          assign max_n = slot.max | default: 1 | plus: 0
+          assign available_count = 0
+        %}
+
+        <section
+          class="tb-byob__slot"
+          data-tb-byob-slot
+          data-slot-id="{{ slot.id | default: forloop.index | escape }}"
+          data-title="{{ slot_title | escape }}"
+          data-min="{{ min_n }}"
+          data-max="{{ max_n }}"
+        >
+          <div class="tb-byob__slot-head">
+            <div>
+              <p class="tb-byob__slot-kicker">{{ 'blocks.byob_builder.slot_label' | t }} {{ forloop.index }}</p>
+              <h4 class="tb-byob__slot-title">{{ slot_title | escape }}</h4>
+              {% if slot_desc != blank %}
+                <p class="tb-byob__slot-desc">{{ slot_desc | escape }}</p>
+              {% endif %}
+            </div>
+            <div class="tb-byob__slot-side">
+              <span class="tb-byob__slot-rule">{{ min_n }}–{{ max_n }}</span>
+              <span class="tb-byob__slot-state" data-tb-byob-slot-state>
+                {% if min_n > 0 %}
+                  {{ 'blocks.byob_builder.required' | t }}
+                {% else %}
+                  {{ 'blocks.byob_builder.optional' | t }}
+                {% endif %}
+              </span>
+              <span class="tb-byob__slot-progress" data-tb-byob-slot-progress>0 / {{ max_n }}</span>
+            </div>
+          </div>
+
+          <div class="tb-byob__grid">
+            {% if pool_products != blank %}
+              {% for item in pool_products %}
+                {% liquid
+                  assign handle = item.handle
+                  assign vid = item.variantId | default: item.variant_id
+                  assign ptitle = item.title
+                  assign image_url = item.imageUrl | default: item.image_url
+                  assign variant_title = item.variantTitle | default: item.variant_title
+                  assign item_available = item.available
+                  assign item_price = item.price
+                  assign compare_price = item.compareAtPrice | default: item.compare_at_price
+
+                  if handle != blank and all_products[handle] != blank
+                    assign fallback_product = all_products[handle]
+                    assign ptitle = fallback_product.title
+                    if vid == blank and fallback_product.selected_or_first_available_variant
+                      assign vid = fallback_product.selected_or_first_available_variant.id
+                    endif
+                    if image_url == blank and fallback_product.featured_image != blank
+                      assign image_url = fallback_product.featured_image | image_url: width: 240
+                    endif
+                    if item_available == blank and fallback_product.selected_or_first_available_variant
+                      assign item_available = fallback_product.selected_or_first_available_variant.available
+                    endif
+                    if item_price == blank and fallback_product.selected_or_first_available_variant
+                      assign item_price = fallback_product.selected_or_first_available_variant.price
+                    endif
+                    if compare_price == blank and fallback_product.selected_or_first_available_variant and fallback_product.selected_or_first_available_variant.compare_at_price > fallback_product.selected_or_first_available_variant.price
+                      assign compare_price = fallback_product.selected_or_first_available_variant.compare_at_price
+                    endif
+                  endif
+
+                  assign is_sellable = false
+                  if vid != blank
+                    if item_available == blank or item_available
+                      assign is_sellable = true
+                    endif
+                  endif
+                  if is_sellable
+                    assign available_count = available_count | plus: 1
+                  endif
+                %}
+
+                <article
+                  class="tb-byob__card{% unless is_sellable %} tb-byob__card--disabled{% endunless %}"
+                  data-tb-byob-item
+                  {% if is_sellable %}data-variant-id="{{ vid }}"{% endif %}
+                  data-title="{{ ptitle | escape }}"
+                  data-price="{{ item_price | default: 0 }}"
+                  data-slot-title="{{ slot_title | escape }}"
+                >
+                  <div class="tb-byob__media-wrap">
+                    {% if image_url != blank %}
+                      <img class="tb-byob__media" src="{{ image_url | escape }}" alt="{{ ptitle | escape }}" width="112" height="112" loading="lazy">
+                    {% else %}
+                      <div class="tb-byob__media tb-byob__media--placeholder" aria-hidden="true"></div>
+                    {% endif %}
+                  </div>
+
+                  <div class="tb-byob__card-copy">
+                    <p class="tb-byob__card-title">{{ ptitle | escape }}</p>
+                    {% if variant_title != blank %}
+                      <p class="tb-byob__card-meta">{{ variant_title | escape }}</p>
+                    {% endif %}
+                    <div class="tb-byob__card-row">
+                      <div class="tb-byob__price">
+                        {% if item_price != blank and item_price != 0 %}
+                          <span class="tb-byob__price-current">{{ item_price | money }}</span>
+                        {% endif %}
+                        {% if compare_price != blank and compare_price > item_price %}
+                          <span class="tb-byob__price-compare">{{ compare_price | money }}</span>
+                        {% endif %}
+                      </div>
+
+                      {% if is_sellable %}
+                        <div class="tb-byob__stepper" data-tb-byob-stepper>
+                          <button type="button" class="tb-byob__step-btn" aria-label="{{ 'blocks.byob_builder.qty_decrease' | t }}" data-tb-action="decrease">−</button>
+                          <input
+                            class="tb-byob__qty-input"
+                            type="number"
+                            inputmode="numeric"
+                            min="0"
+                            max="{{ max_n }}"
+                            value="0"
+                            aria-label="{{ ptitle | escape }}"
+                            data-tb-byob-pick
+                            data-variant-id="{{ vid }}"
+                            data-title="{{ ptitle | escape }}"
+                            data-price="{{ item_price | default: 0 }}"
+                          >
+                          <button type="button" class="tb-byob__step-btn" aria-label="{{ 'blocks.byob_builder.qty_increase' | t }}" data-tb-action="increase">+</button>
+                        </div>
+                      {% else %}
+                        <span class="tb-byob__pill tb-byob__pill--muted">{{ 'blocks.byob_builder.unavailable' | t }}</span>
+                      {% endif %}
+                    </div>
+                  </div>
+                </article>
+              {% endfor %}
+            {% elsif pool_ids != blank %}
+              {% for pid in pool_ids %}
+                {% assign pid_s = pid | append: '' %}
+                {% assign current_id = product.id | append: '' %}
+                {% if pid_s == current_id and product.selected_or_first_available_variant %}
+                  <article
+                    class="tb-byob__card"
+                    data-tb-byob-item
+                    data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+                    data-title="{{ product.title | escape }}"
+                    data-price="{{ product.selected_or_first_available_variant.price | default: 0 }}"
+                    data-slot-title="{{ slot_title | escape }}"
+                  >
+                    <div class="tb-byob__media-wrap">
+                      {% if product.featured_image != blank %}
+                        <img class="tb-byob__media" src="{{ product.featured_image | image_url: width: 240 }}" alt="{{ product.title | escape }}" width="112" height="112" loading="lazy">
+                      {% else %}
+                        <div class="tb-byob__media tb-byob__media--placeholder" aria-hidden="true"></div>
+                      {% endif %}
+                    </div>
+                    <div class="tb-byob__card-copy">
+                      <p class="tb-byob__card-title">{{ product.title | escape }}</p>
+                      <p class="tb-byob__card-meta">{{ 'blocks.byob_builder.current_product' | t }}</p>
+                      <div class="tb-byob__card-row">
+                        <div class="tb-byob__price">
+                          <span class="tb-byob__price-current">{{ product.selected_or_first_available_variant.price | money }}</span>
+                        </div>
+                        <div class="tb-byob__stepper" data-tb-byob-stepper>
+                          <button type="button" class="tb-byob__step-btn" aria-label="{{ 'blocks.byob_builder.qty_decrease' | t }}" data-tb-action="decrease">−</button>
+                          <input
+                            class="tb-byob__qty-input"
+                            type="number"
+                            inputmode="numeric"
+                            min="0"
+                            max="{{ max_n }}"
+                            value="0"
+                            aria-label="{{ product.title | escape }}"
+                            data-tb-byob-pick
+                            data-variant-id="{{ product.selected_or_first_available_variant.id }}"
+                            data-title="{{ product.title | escape }}"
+                            data-price="{{ product.selected_or_first_available_variant.price | default: 0 }}"
+                          >
+                          <button type="button" class="tb-byob__step-btn" aria-label="{{ 'blocks.byob_builder.qty_increase' | t }}" data-tb-action="increase">+</button>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                  {% assign available_count = available_count | plus: 1 %}
+                {% else %}
+                  <article class="tb-byob__card tb-byob__card--disabled">
+                    <div class="tb-byob__media-wrap">
+                      <div class="tb-byob__media tb-byob__media--placeholder" aria-hidden="true"></div>
+                    </div>
+                    <div class="tb-byob__card-copy">
+                      <p class="tb-byob__card-title">{{ 'blocks.byob_builder.product_id' | t: id: pid }}</p>
+                      <span class="tb-byob__pill tb-byob__pill--muted">{{ 'blocks.byob_builder.unavailable' | t }}</span>
+                    </div>
+                  </article>
+                {% endif %}
+              {% endfor %}
+            {% else %}
+              <div class="tb-byob__empty-state">
+                <p class="tb-byob__empty-title">{{ 'blocks.byob_builder.empty_slot' | t }}</p>
+                <p class="tb-byob__empty-copy">{{ 'blocks.byob_builder.empty_slot_hint' | t }}</p>
+              </div>
+            {% endif %}
+          </div>
+
+          {% if available_count == 0 %}
+            <p class="tb-byob__warning">{{ 'blocks.byob_builder.slot_unavailable' | t }}</p>
+          {% endif %}
+        </section>
+      {% endfor %}
+    </div>
+
+    <div class="tb-byob__summary" data-tb-byob-summary>
+      <div class="tb-byob__summary-copy">
+        <p class="tb-byob__summary-label">{{ 'blocks.byob_builder.summary' | t }}</p>
+        <p
+          class="tb-byob__summary-text"
+          data-tb-byob-status
+          data-ready="{{ 'blocks.byob_builder.ready' | t }}"
+          data-added="{{ 'blocks.byob_builder.added' | t }}"
+          data-error="{{ 'blocks.byob_builder.add_error' | t }}"
+          data-incomplete="{{ 'blocks.byob_builder.incomplete' | t }}"
+          data-over="{{ 'blocks.byob_builder.over_limit' | t }}"
+        >{{ 'blocks.byob_builder.incomplete' | t }}</p>
+        <ul class="tb-byob__picks" data-tb-byob-picks hidden></ul>
+      </div>
+      <div class="tb-byob__summary-metrics">
+        <span class="tb-byob__metric"><span data-tb-byob-picked>0</span> {{ 'blocks.byob_builder.items_selected' | t }}</span>
+        <span class="tb-byob__metric" data-tb-byob-price>{{ 0 | money }}</span>
+      </div>
+      <button type="button" class="tb-byob__btn tb-byob__btn--primary" data-tb-byob-add disabled>
         {{ 'blocks.byob_builder.add_bundle' | t }}
       </button>
     </div>
@@ -163,129 +321,363 @@
 
   {% style %}
     .tb-byob {
-      --tb-fg: #1a1a1a;
-      --tb-mute: #6b7280;
-      --tb-border: #e5e7eb;
-      --tb-soft: #f3f4f6;
+      --tb-fg: rgb(var(--color-foreground, 18 18 18));
+      --tb-bg: rgb(var(--color-background, 255 255 255));
+      --tb-muted: color-mix(in srgb, var(--tb-fg) 56%, transparent);
+      --tb-faint: color-mix(in srgb, var(--tb-fg) 36%, transparent);
+      --tb-border: color-mix(in srgb, var(--tb-fg) 12%, transparent);
+      --tb-soft: color-mix(in srgb, var(--tb-fg) 4.5%, transparent);
+      --tb-soft-2: color-mix(in srgb, var(--tb-fg) 7%, transparent);
       --tb-accent: #0f766e;
+      --tb-accent-ink: #ffffff;
       border: 1px solid var(--tb-border);
-      border-radius: 12px;
-      padding: 1rem;
-      background: #fff;
+      border-radius: 16px;
+      background: var(--tb-bg);
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--tb-fg) 5%, transparent);
+      overflow: hidden;
     }
-    .tb-byob__eyebrow {
+    .tb-byob__hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem 1rem 0.9rem;
+      background: linear-gradient(180deg, var(--tb-soft), transparent 78%);
+      border-bottom: 1px solid var(--tb-border);
+    }
+    .tb-byob__hero-copy { min-width: 0; }
+    .tb-byob__eyebrow,
+    .tb-byob__slot-kicker,
+    .tb-byob__summary-label {
       margin: 0;
-      font-size: 0.7rem;
+      font-size: 0.72rem;
+      line-height: 1.2;
       font-weight: 700;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.07em;
       text-transform: uppercase;
-      color: var(--tb-mute);
+      color: var(--tb-muted);
     }
     .tb-byob__heading {
-      margin: 0.25rem 0 0;
-      font-size: 1.05rem;
+      margin: 0.28rem 0 0;
+      font-size: 1.1rem;
+      line-height: 1.25;
       font-weight: 700;
       color: var(--tb-fg);
     }
     .tb-byob__hint {
-      margin: 0.35rem 0 0.85rem;
-      font-size: 0.8rem;
-      color: var(--tb-mute);
+      margin: 0.38rem 0 0;
+      font-size: 0.875rem;
+      line-height: 1.4;
+      color: var(--tb-muted);
+      max-width: 48ch;
+    }
+    .tb-byob__badge-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.35rem;
+      flex-shrink: 0;
+    }
+    .tb-byob__badge,
+    .tb-byob__pill,
+    .tb-byob__slot-rule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 1.8rem;
+      padding: 0 0.7rem;
+      border-radius: 999px;
+      border: 1px solid var(--tb-border);
+      background: var(--tb-soft);
+      color: var(--tb-fg);
+      font-size: 0.74rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .tb-byob__slots {
+      padding: 0.25rem 1rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
     }
     .tb-byob__slot {
-      border-top: 1px solid var(--tb-border);
-      padding: 0.75rem 0;
+      border: 1px solid var(--tb-border);
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--tb-soft) 45%, var(--tb-bg));
+      padding: 0.95rem;
     }
     .tb-byob__slot-head {
       display: flex;
       justify-content: space-between;
-      gap: 0.5rem;
-      margin-bottom: 0.45rem;
+      gap: 0.8rem;
+      margin-bottom: 0.85rem;
     }
     .tb-byob__slot-title {
-      font-size: 0.9rem;
-      font-weight: 650;
+      margin: 0.18rem 0 0;
+      font-size: 1rem;
+      line-height: 1.25;
+      font-weight: 700;
+      color: var(--tb-fg);
     }
-    .tb-byob__slot-meta {
+    .tb-byob__slot-desc {
+      margin: 0.32rem 0 0;
+      font-size: 0.84rem;
+      line-height: 1.4;
+      color: var(--tb-muted);
+    }
+    .tb-byob__slot-side {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.3rem;
+      flex-shrink: 0;
+    }
+    .tb-byob__slot-state,
+    .tb-byob__slot-progress {
       font-size: 0.75rem;
-      color: var(--tb-mute);
+      color: var(--tb-muted);
+      text-align: right;
       font-variant-numeric: tabular-nums;
     }
-    .tb-byob__pool {
-      list-style: none;
+    .tb-byob__slot.is-complete {
+      border-color: color-mix(in srgb, #1f6b4a 35%, var(--tb-border));
+    }
+    .tb-byob__slot.is-complete .tb-byob__slot-state { color: #1f6b4a; }
+    .tb-byob__slot.is-invalid {
+      border-color: color-mix(in srgb, #b42318 40%, var(--tb-border));
+      background: color-mix(in srgb, #b42318 3%, var(--tb-bg));
+    }
+    .tb-byob__grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.8rem;
+    }
+    .tb-byob__card {
+      display: flex;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border-radius: 12px;
+      border: 1px solid var(--tb-border);
+      background: var(--tb-bg);
+      min-width: 0;
+    }
+    .tb-byob__card--disabled {
+      opacity: 0.6;
+      background: color-mix(in srgb, var(--tb-soft) 70%, var(--tb-bg));
+    }
+    .tb-byob__media-wrap { width: 84px; flex-shrink: 0; }
+    .tb-byob__media {
+      width: 84px;
+      height: 84px;
+      object-fit: cover;
+      border-radius: 10px;
+      border: 1px solid var(--tb-border);
+      background: var(--tb-soft);
+      display: block;
+    }
+    .tb-byob__media--placeholder {
+      background: linear-gradient(145deg, var(--tb-soft), var(--tb-soft-2));
+    }
+    .tb-byob__card-copy {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .tb-byob__card-title {
       margin: 0;
+      font-size: 0.92rem;
+      line-height: 1.35;
+      font-weight: 650;
+      color: var(--tb-fg);
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+    .tb-byob__card-meta {
+      margin: 0.15rem 0 0;
+      font-size: 0.78rem;
+      color: var(--tb-muted);
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 1;
+      overflow: hidden;
+    }
+    .tb-byob__card-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .tb-byob__price {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      align-items: baseline;
+    }
+    .tb-byob__price-current {
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: var(--tb-fg);
+    }
+    .tb-byob__price-compare {
+      font-size: 0.75rem;
+      color: var(--tb-muted);
+      text-decoration: line-through;
+    }
+    .tb-byob__stepper {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--tb-border);
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--tb-bg);
+    }
+    .tb-byob__step-btn {
+      width: 2rem;
+      height: 2rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      background: transparent;
+      color: var(--tb-fg);
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    .tb-byob__qty-input {
+      width: 2.4rem;
+      height: 2rem;
+      border: 0;
+      border-left: 1px solid var(--tb-border);
+      border-right: 1px solid var(--tb-border);
+      border-radius: 0;
+      padding: 0;
+      text-align: center;
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: var(--tb-fg);
+      background: transparent;
+      -moz-appearance: textfield;
+    }
+    .tb-byob__qty-input::-webkit-outer-spin-button,
+    .tb-byob__qty-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .tb-byob__summary {
+      position: sticky;
+      bottom: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      padding: 0.9rem 1rem 1rem;
+      border-top: 1px solid var(--tb-border);
+      background: color-mix(in srgb, var(--tb-bg) 92%, white);
+      backdrop-filter: blur(10px);
+    }
+    .tb-byob__summary-copy { min-width: 0; flex: 1; }
+    .tb-byob__summary-text {
+      margin: 0.24rem 0 0;
+      font-size: 0.84rem;
+      line-height: 1.35;
+      color: var(--tb-muted);
+    }
+    .tb-byob__picks {
+      list-style: none;
+      margin: 0.45rem 0 0;
       padding: 0;
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
+      gap: 0.2rem;
     }
-    .tb-byob__pool-item {
+    .tb-byob__picks[hidden] { display: none; }
+    .tb-byob__pick {
+      font-size: 0.78rem;
+      color: var(--tb-fg);
+      font-variant-numeric: tabular-nums;
+    }
+    .tb-byob__summary-metrics {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
       gap: 0.5rem;
-      font-size: 0.85rem;
-    }
-    .tb-byob__pool-item--muted,
-    .tb-byob__pool-item--id {
-      color: var(--tb-mute);
-    }
-    .tb-byob__qty input {
-      width: 3.5rem;
-      padding: 0.25rem 0.35rem;
-      border: 1px solid var(--tb-border);
-      border-radius: 6px;
-      font-size: 0.85rem;
-    }
-    .tb-byob__footer {
-      border-top: 1px solid var(--tb-border);
-      padding-top: 0.75rem;
-      display: flex;
       flex-wrap: wrap;
       align-items: center;
-      justify-content: space-between;
-      gap: 0.5rem;
     }
-    .tb-byob__status {
-      margin: 0;
-      font-size: 0.75rem;
-      color: var(--tb-mute);
-      flex: 1;
+    .tb-byob__metric {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2rem;
+      padding: 0 0.75rem;
+      border-radius: 999px;
+      background: var(--tb-soft);
+      border: 1px solid var(--tb-border);
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--tb-fg);
+      font-variant-numeric: tabular-nums;
     }
     .tb-byob__btn {
-      font-size: 0.8rem;
-      font-weight: 650;
-      padding: 0.45rem 0.85rem;
-      border-radius: 8px;
+      min-height: 2.75rem;
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
       border: 1px solid var(--tb-border);
       background: var(--tb-soft);
       color: var(--tb-fg);
+      font-size: 0.87rem;
+      font-weight: 700;
       cursor: pointer;
     }
     .tb-byob__btn--primary {
       background: var(--tb-accent);
       border-color: var(--tb-accent);
-      color: #fff;
+      color: var(--tb-accent-ink);
     }
     .tb-byob__btn:disabled {
-      opacity: 0.5;
+      opacity: 0.45;
       cursor: not-allowed;
     }
-    .tb-byob__empty {
+    .tb-byob__warning,
+    .tb-byob__empty-copy,
+    .tb-byob__empty-title {
       margin: 0;
-      font-size: 0.8rem;
-      color: var(--tb-mute);
+      font-size: 0.82rem;
+      color: var(--tb-muted);
     }
-    .visually-hidden {
-      position: absolute !important;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
+    .tb-byob__empty-state {
+      border: 1px dashed var(--tb-border);
+      border-radius: 12px;
+      padding: 0.9rem;
+      background: color-mix(in srgb, var(--tb-soft) 75%, var(--tb-bg));
+    }
+    .tb-byob__empty-title {
+      font-weight: 700;
+      color: var(--tb-fg);
+      margin-bottom: 0.25rem;
+    }
+    .tb-byob__pill--muted { color: var(--tb-muted); }
+
+    @media screen and (max-width: 749px) {
+      .tb-byob__hero,
+      .tb-byob__slot-head,
+      .tb-byob__summary {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .tb-byob__badge-wrap,
+      .tb-byob__slot-side {
+        align-items: flex-start;
+      }
+      .tb-byob__grid { grid-template-columns: 1fr; }
+      .tb-byob__media-wrap { width: 72px; }
+      .tb-byob__media { width: 72px; height: 72px; }
+      .tb-byob__btn { width: 100%; }
     }
   {% endstyle %}
 {% endif %}

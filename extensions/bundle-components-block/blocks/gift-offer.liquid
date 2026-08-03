@@ -1,7 +1,7 @@
 {% comment %}
-  Tangbuy / 60s — Free gift offer on trigger product PDP.
+  Tangbuy / 60s — Premium Free Gift Offer block
   Metafield: tangbuy_gift.rule
-  Adds gift variant via Cart AJAX; Discount Function applies 100% when minQty met.
+  Behavior: renders a premium gift module on trigger product PDP and syncs gift via Cart AJAX.
 {% endcomment %}
 
 {% liquid
@@ -11,95 +11,320 @@
   assign min_qty = 1
   assign gift_qty = 1
   assign label = blank
+  assign gift_title = blank
+  assign gift_subtitle = blank
+  assign gift_image = blank
+  assign gift_compare_at = blank
+  assign gift_price = blank
+  assign status = rule.status | default: 'ACTIVE'
+
   if rule != blank and rule.kind == 'qty_gift'
     assign gift_variant_id = rule.giftVariantId | append: ''
-    assign min_qty = rule.minQty | default: 1
-    assign gift_qty = rule.giftQty | default: 1
+    assign min_qty = rule.minQty | default: 1 | plus: 0
+    assign gift_qty = rule.giftQty | default: 1 | plus: 0
     assign label = rule.label
-    if gift_variant_id != blank
+    assign gift_title = rule.giftTitle | default: rule.title
+    assign gift_subtitle = rule.giftSubtitle | default: rule.subtitle
+    assign gift_image = rule.giftImage | default: rule.imageUrl | default: rule.image_url
+    assign gift_compare_at = rule.giftCompareAtPrice | default: rule.compareAtPrice
+    assign gift_price = rule.giftPrice | default: rule.price
+    if gift_variant_id != blank and status == 'ACTIVE'
       assign show = true
     endif
   endif
+
   if label == blank
     assign label = block.settings.heading
   endif
   if label == blank
     assign label = 'blocks.gift_offer.heading' | t
   endif
+
+  if gift_title == blank
+    assign gift_title = block.settings.gift_title
+  endif
+  if gift_title == blank
+    assign gift_title = 'blocks.gift_offer.default_gift_title' | t
+  endif
+  if gift_subtitle == blank
+    assign gift_subtitle = block.settings.gift_subtitle
+  endif
 %}
 
 {% if show %}
   <div
-    class="tb-gift"
+    class="tb-gift-premium"
     {{ block.shopify_attributes }}
-    style="
-      margin-top: {{ block.settings.margin_top }}px;
-      margin-bottom: {{ block.settings.margin_bottom }}px;
-    "
+    style="margin-top: {{ block.settings.margin_top }}px; margin-bottom: {{ block.settings.margin_bottom }}px;"
     data-tb-gift
     data-trigger-product-id="{{ product.id }}"
+    data-trigger-variant-id="{{ product.selected_or_first_available_variant.id }}"
     data-min-qty="{{ min_qty }}"
     data-gift-variant-id="{{ gift_variant_id }}"
     data-gift-qty="{{ gift_qty }}"
   >
-    <p class="tb-gift__eyebrow">{{ 'blocks.gift_offer.eyebrow' | t }}</p>
-    <p class="tb-gift__heading">{{ label | escape }}</p>
-    <p class="tb-gift__hint">
-      {{ 'blocks.gift_offer.hint' | t: qty: min_qty }}
-    </p>
-    <button type="button" class="tb-gift__btn" data-tb-gift-sync>
-      {{ 'blocks.gift_offer.cta' | t }}
-    </button>
-    <p class="tb-gift__status" data-tb-gift-status hidden></p>
+    <div class="tb-gift-premium__head">
+      <div class="tb-gift-premium__head-copy">
+        <p class="tb-gift-premium__eyebrow">{{ 'blocks.gift_offer.eyebrow' | t }}</p>
+        <h3 class="tb-gift-premium__title">{{ label | escape }}</h3>
+        <p class="tb-gift-premium__hint">{{ 'blocks.gift_offer.hint' | t: qty: min_qty }}</p>
+      </div>
+      <span class="tb-gift-premium__badge">{{ 'blocks.gift_offer.badge' | t }}</span>
+    </div>
+
+    <div class="tb-gift-premium__body">
+      <div class="tb-gift-premium__media-wrap">
+        {% if gift_image != blank %}
+          <img class="tb-gift-premium__media" src="{{ gift_image | escape }}" alt="{{ gift_title | escape }}" width="112" height="112" loading="lazy">
+        {% else %}
+          <div class="tb-gift-premium__media tb-gift-premium__media--placeholder" aria-hidden="true"></div>
+        {% endif %}
+      </div>
+
+      <div class="tb-gift-premium__copy">
+        <p class="tb-gift-premium__product-title">{{ gift_title | escape }}</p>
+        {% if gift_subtitle != blank %}
+          <p class="tb-gift-premium__product-subtitle">{{ gift_subtitle | escape }}</p>
+        {% endif %}
+        <div class="tb-gift-premium__price-row">
+          {% if gift_compare_at != blank and gift_compare_at != 0 %}
+            <span class="tb-gift-premium__compare">{{ gift_compare_at | money }}</span>
+          {% elsif gift_price != blank and gift_price != 0 %}
+            <span class="tb-gift-premium__compare">{{ gift_price | money }}</span>
+          {% endif %}
+          <span class="tb-gift-premium__free">{{ 'blocks.gift_offer.free_label' | t }}</span>
+          {% if gift_qty > 1 %}
+            <span class="tb-gift-premium__qty">×{{ gift_qty }}</span>
+          {% endif %}
+        </div>
+        <div class="tb-gift-premium__progress">
+          <div class="tb-gift-premium__progress-bar"><span data-tb-gift-progress-bar></span></div>
+          <p class="tb-gift-premium__progress-text" data-tb-gift-progress>{{ 'blocks.gift_offer.progress_default' | t: qty: min_qty }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tb-gift-premium__footer">
+      <p
+        class="tb-gift-premium__status"
+        data-tb-gift-status
+        data-default="{{ 'blocks.gift_offer.progress_default' | t: qty: min_qty }}"
+        data-locked="{{ 'blocks.gift_offer.locked' | t }}"
+        data-need-more="{{ 'blocks.gift_offer.need_more' | t }}"
+        data-ready="{{ 'blocks.gift_offer.ready' | t }}"
+        data-added="{{ 'blocks.gift_offer.added' | t }}"
+        data-error="{{ 'blocks.gift_offer.add_error' | t }}"
+      >{{ 'blocks.gift_offer.progress_default' | t: qty: min_qty }}</p>
+      <button type="button" class="tb-gift-premium__btn" data-tb-gift-sync disabled>
+        {{ 'blocks.gift_offer.cta' | t }}
+      </button>
+    </div>
   </div>
 
-  <script src="{{ 'gift-offer.js' | asset_url }}" defer></script>
+  <script src="{{ 'gift-offer-premium.js' | asset_url }}" defer></script>
 
   {% style %}
-    .tb-gift {
-      --tb-fg: #1a1a1a;
-      --tb-mute: #6b7280;
-      --tb-border: #e5e7eb;
-      --tb-soft: #ecfdf5;
-      --tb-accent: #0f766e;
-      border: 1px solid #a7f3d0;
-      border-radius: 12px;
-      padding: 1rem;
-      background: var(--tb-soft);
+    .tb-gift-premium {
+      --tb-gift-fg: rgb(var(--color-foreground, 18 18 18));
+      --tb-gift-bg: rgb(var(--color-background, 255 255 255));
+      --tb-gift-muted: color-mix(in srgb, var(--tb-gift-fg) 56%, transparent);
+      --tb-gift-border: color-mix(in srgb, var(--tb-gift-fg) 12%, transparent);
+      --tb-gift-soft: color-mix(in srgb, #0f766e 8%, var(--tb-gift-bg));
+      --tb-gift-soft-2: color-mix(in srgb, #0f766e 14%, var(--tb-gift-bg));
+      --tb-gift-accent: #0f766e;
+      --tb-gift-accent-2: #14b8a6;
+      border: 1px solid var(--tb-gift-border);
+      border-radius: 18px;
+      background: linear-gradient(180deg, var(--tb-gift-soft), var(--tb-gift-bg) 32%);
+      box-shadow:
+        0 1px 2px color-mix(in srgb, var(--tb-gift-fg) 5%, transparent),
+        0 10px 30px color-mix(in srgb, var(--tb-gift-fg) 4%, transparent);
+      overflow: hidden;
     }
-    .tb-gift__eyebrow {
+    .tb-gift-premium__head {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: flex-start;
+      padding: 1rem 1rem 0.85rem;
+      border-bottom: 1px solid var(--tb-gift-border);
+    }
+    .tb-gift-premium__eyebrow {
       margin: 0;
-      font-size: 0.7rem;
+      font-size: 0.72rem;
       font-weight: 700;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--tb-accent);
+      color: var(--tb-gift-accent);
     }
-    .tb-gift__heading {
-      margin: 0.25rem 0 0;
-      font-size: 1.05rem;
+    .tb-gift-premium__title {
+      margin: 0.3rem 0 0;
+      font-size: 1.1rem;
+      line-height: 1.24;
       font-weight: 700;
-      color: var(--tb-fg);
+      color: var(--tb-gift-fg);
     }
-    .tb-gift__hint {
-      margin: 0.35rem 0 0.75rem;
-      font-size: 0.8rem;
-      color: var(--tb-mute);
+    .tb-gift-premium__hint {
+      margin: 0.38rem 0 0;
+      font-size: 0.88rem;
+      line-height: 1.42;
+      color: var(--tb-gift-muted);
+      max-width: 44ch;
     }
-    .tb-gift__btn {
+    .tb-gift-premium__badge {
+      flex-shrink: 0;
+      min-height: 1.9rem;
+      padding: 0 0.75rem;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--tb-gift-accent) 10%, var(--tb-gift-bg));
+      color: var(--tb-gift-accent);
+      border: 1px solid color-mix(in srgb, var(--tb-gift-accent) 22%, transparent);
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .tb-gift-premium__body {
+      display: flex;
+      gap: 0.95rem;
+      padding: 1rem;
+      align-items: center;
+    }
+    .tb-gift-premium__media-wrap {
+      width: 112px;
+      flex-shrink: 0;
+    }
+    .tb-gift-premium__media {
+      width: 112px;
+      height: 112px;
+      object-fit: cover;
+      display: block;
+      border-radius: 16px;
+      border: 1px solid var(--tb-gift-border);
+      background: var(--tb-gift-bg);
+      box-shadow: 0 4px 14px color-mix(in srgb, var(--tb-gift-fg) 6%, transparent);
+    }
+    .tb-gift-premium__media--placeholder {
+      background: linear-gradient(145deg, var(--tb-gift-soft), var(--tb-gift-soft-2));
+    }
+    .tb-gift-premium__copy {
+      min-width: 0;
+      flex: 1;
+    }
+    .tb-gift-premium__product-title {
+      margin: 0;
+      font-size: 0.98rem;
+      line-height: 1.35;
+      font-weight: 700;
+      color: var(--tb-gift-fg);
+    }
+    .tb-gift-premium__product-subtitle {
+      margin: 0.28rem 0 0;
+      font-size: 0.82rem;
+      line-height: 1.4;
+      color: var(--tb-gift-muted);
+    }
+    .tb-gift-premium__price-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem;
+      margin-top: 0.55rem;
+    }
+    .tb-gift-premium__compare {
       font-size: 0.8rem;
-      font-weight: 650;
-      padding: 0.45rem 0.85rem;
-      border-radius: 8px;
-      border: 1px solid var(--tb-accent);
-      background: var(--tb-accent);
+      color: var(--tb-gift-muted);
+      text-decoration: line-through;
+    }
+    .tb-gift-premium__free,
+    .tb-gift-premium__qty {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.7rem;
+      padding: 0 0.6rem;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      border: 1px solid color-mix(in srgb, var(--tb-gift-accent) 18%, transparent);
+      background: color-mix(in srgb, var(--tb-gift-accent) 8%, var(--tb-gift-bg));
+      color: var(--tb-gift-accent);
+    }
+    .tb-gift-premium__progress {
+      margin-top: 0.75rem;
+    }
+    .tb-gift-premium__progress-bar {
+      width: 100%;
+      height: 0.45rem;
+      border-radius: 999px;
+      overflow: hidden;
+      background: color-mix(in srgb, var(--tb-gift-fg) 8%, transparent);
+    }
+    .tb-gift-premium__progress-bar span {
+      display: block;
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--tb-gift-accent), var(--tb-gift-accent-2));
+      transition: width 220ms ease;
+    }
+    .tb-gift-premium__progress-text {
+      margin: 0.45rem 0 0;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      color: var(--tb-gift-muted);
+    }
+    .tb-gift-premium__footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      padding: 0.9rem 1rem 1rem;
+      border-top: 1px solid var(--tb-gift-border);
+      background: color-mix(in srgb, var(--tb-gift-soft) 42%, var(--tb-gift-bg));
+    }
+    .tb-gift-premium__status {
+      margin: 0;
+      font-size: 0.82rem;
+      line-height: 1.4;
+      color: var(--tb-gift-muted);
+      flex: 1;
+      min-width: 16rem;
+    }
+    .tb-gift-premium__btn {
+      min-height: 2.75rem;
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
+      border: 1px solid var(--tb-gift-accent);
+      background: var(--tb-gift-accent);
       color: #fff;
+      font-size: 0.87rem;
+      font-weight: 700;
       cursor: pointer;
     }
-    .tb-gift__status {
-      margin: 0.5rem 0 0;
-      font-size: 0.75rem;
-      color: var(--tb-mute);
+    .tb-gift-premium__btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    @media screen and (max-width: 749px) {
+      .tb-gift-premium__head,
+      .tb-gift-premium__body,
+      .tb-gift-premium__footer {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .tb-gift-premium__media-wrap,
+      .tb-gift-premium__media {
+        width: 92px;
+        height: 92px;
+      }
+      .tb-gift-premium__btn {
+        width: 100%;
+      }
+      .tb-gift-premium__status {
+        min-width: 0;
+      }
     }
   {% endstyle %}
 {% endif %}
@@ -115,6 +340,18 @@
       "id": "heading",
       "label": "t:blocks.gift_offer.settings.heading",
       "default": "Free gift with purchase"
+    },
+    {
+      "type": "text",
+      "id": "gift_title",
+      "label": "t:blocks.gift_offer.settings.gift_title",
+      "default": "Bonus gift included"
+    },
+    {
+      "type": "text",
+      "id": "gift_subtitle",
+      "label": "t:blocks.gift_offer.settings.gift_subtitle",
+      "default": "Automatically discounted at checkout when the quantity threshold is met."
     },
     {
       "type": "range",

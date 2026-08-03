@@ -23,6 +23,7 @@ import type {
 } from "@/lib/types";
 import { ArrowLeft, Loader2, Plus, RefreshCw } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { BundleHelpBubble } from "@/components/bundle-hub/bundle-help-bubble";
 
 type HubMode =
   | { kind: "list" }
@@ -183,7 +184,24 @@ export function BundleHubPanel({
   const header = (
     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
       <div className="min-w-0">
-        <h2 className="text-[15px] font-semibold text-ink">{t("bundleHub.title")}</h2>
+        <div className="flex items-center gap-1.5">
+          <h2 className="text-[15px] font-semibold text-ink">{t("bundleHub.title")}</h2>
+          <BundleHelpBubble
+            guideId={
+              mode.kind === "mix"
+                ? "mix"
+                : mode.kind === "byob"
+                  ? "byob"
+                  : mode.kind === "fixed"
+                    ? "fixed"
+                    : mode.kind === "offer"
+                      ? "offer"
+                      : mode.kind === "pick"
+                        ? "pick"
+                        : "hub"
+            }
+          />
+        </div>
         <p className="text-[11px] text-ink-muted">{t("bundleHub.subtitle")}</p>
       </div>
       <div className="flex items-center gap-1.5">
@@ -327,10 +345,7 @@ export function BundleHubPanel({
       ) : null}
 
       {mode.kind === "pick" ? (
-        <div className="space-y-3">
-          <p className="text-[12px] text-ink-muted">{t("bundleHub.pickHint")}</p>
-          <PlayTypePicker onSelect={onPick} />
-        </div>
+        <PlayTypePicker onSelect={onPick} />
       ) : null}
 
       {mode.kind === "mix" ? (

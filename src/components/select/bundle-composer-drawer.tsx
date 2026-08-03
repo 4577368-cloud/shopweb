@@ -34,6 +34,8 @@ import {
   type BundlesFeature,
 } from "@/lib/bundle/api";
 import { SameProductComboPanel } from "@/components/select/same-product-combo-panel";
+import { BundleHelpBubble } from "@/components/bundle-hub/bundle-help-bubble";
+import { BundleAiNameButton } from "@/components/bundle-hub/bundle-ai-name-button";
 import { api, readableError } from "@/lib/api";
 import { openExternal } from "@/host/adapters/external-link";
 import { shopifyProductAdminUrl } from "@/lib/shop-product-external-link";
@@ -854,6 +856,11 @@ export function BundleComposerDrawer({
                         ? t("bundle.retryTitle")
                         : t("bundle.createComboTitle")}
               </h2>
+              <BundleHelpBubble
+                guideId={
+                  showSameProduct ? "combo" : showTrackPicker ? "pick" : "fixed"
+                }
+              />
               <span className="rounded bg-canvas px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
                 {showSameProduct
                   ? t("bundle.comboEyebrow")
@@ -987,9 +994,28 @@ export function BundleComposerDrawer({
                   <span className="text-[11px] text-ink-muted">
                     {t("bundle.titleLabel")}
                   </span>
-                  <span className="text-[10px] tabular-nums text-ink-subtle">
-                    {Math.min(title.length, TITLE_MAX)}/{TITLE_MAX}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <BundleAiNameButton
+                      kind="fixed_kit_title"
+                      disabled={busy}
+                      onError={(msg) => setError(msg)}
+                      context={{
+                        triggerTitle: contextProduct.title,
+                        componentTitles: [
+                          contextProduct.title,
+                          ...Object.keys(selected).map(
+                            (id) =>
+                              catalog.find((p) => p.thirdPlatformItemId === id)
+                                ?.title || id
+                          ),
+                        ].filter(Boolean),
+                      }}
+                      onNamed={(name) => setTitle(name.slice(0, TITLE_MAX))}
+                    />
+                    <span className="text-[10px] tabular-nums text-ink-subtle">
+                      {Math.min(title.length, TITLE_MAX)}/{TITLE_MAX}
+                    </span>
+                  </div>
                 </div>
                 <Input
                   className="h-8 text-[13px]"

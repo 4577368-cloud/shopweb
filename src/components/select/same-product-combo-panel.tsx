@@ -10,6 +10,8 @@ import {
 } from "@/lib/bundle/api";
 import type { ShopMirrorSku } from "@/lib/types";
 import { Loader2 } from "@/lib/ui/icons";
+import { BundleHelpBubble } from "@/components/bundle-hub/bundle-help-bubble";
+import { BundleAiNameButton } from "@/components/bundle-hub/bundle-ai-name-button";
 
 function variantLabel(v: ShopMirrorSku): string {
   return (
@@ -122,9 +124,12 @@ export function SameProductComboPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 sm:p-4">
-        <p className="text-[12px] leading-5 text-ink-muted">
-          {t("bundle.comboTrackHint")}
-        </p>
+        <div className="flex items-start gap-1.5">
+          <p className="min-w-0 flex-1 text-[12px] leading-5 text-ink-muted">
+            {t("bundle.comboTrackHint")}
+          </p>
+          <BundleHelpBubble guideId="combo" className="shrink-0" />
+        </div>
 
         <label className="block space-y-1">
           <span className="text-[11px] text-ink-muted">{t("bundle.comboKindLabel")}</span>
@@ -140,9 +145,22 @@ export function SameProductComboPanel({
         </label>
 
         <label className="block space-y-1">
-          <span className="text-[11px] text-ink-muted">
-            {t("bundle.comboLabel")}
-          </span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-ink-muted">
+              {t("bundle.comboLabel")}
+            </span>
+            <BundleAiNameButton
+              kind="combo_label"
+              disabled={busy}
+              onError={(msg) => setError(msg)}
+              context={{
+                productTitle: productId,
+                minQty: Math.max(1, Number(qty) || 2),
+                percent: Math.min(100, Math.max(1, Number(discountPercent) || 10)),
+              }}
+              onNamed={setLabel}
+            />
+          </div>
           <input
             className="h-9 w-full rounded-md border border-input bg-surface px-2.5 text-[13px] text-ink outline-none"
             value={label}

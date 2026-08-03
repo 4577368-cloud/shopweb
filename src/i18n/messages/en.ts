@@ -3939,6 +3939,13 @@ export const en = {
   bundleHub: {
     title: "Bundles & offers",
     subtitle: "One place for fixed kits, mix & match, product offers, and BYOB.",
+    guideOpen: "Open how-to guide",
+    guideClose: "Close guide",
+    guideHow: "How to set up",
+    guideScenes: "Everyday scenarios",
+    guideShopify: "What to finish in Shopify after saving",
+    aiName: "AI name",
+    aiNameFailed: "AI naming failed — try again or type manually",
     create: "New campaign",
     refresh: "Refresh campaigns",
     back: "Back",

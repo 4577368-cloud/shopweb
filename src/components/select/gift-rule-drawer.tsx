@@ -9,6 +9,8 @@ import { api, readableError } from "@/lib/api";
 import { saveGiftRule } from "@/lib/bundle/api";
 import type { ImageBindingView, ShopMirrorProduct, ShopMirrorSku } from "@/lib/types";
 import { Loader2, X } from "@/lib/ui/icons";
+import { BundleHelpBubble } from "@/components/bundle-hub/bundle-help-bubble";
+import { BundleAiNameButton } from "@/components/bundle-hub/bundle-ai-name-button";
 
 function variantLabel(v: ShopMirrorSku): string {
   return (
@@ -183,12 +185,15 @@ export function GiftRuleDrawer({
             <p className="text-[10px] font-medium uppercase tracking-wide text-ink-subtle">
               {t("bundle.giftTriggerCurrent")}
             </p>
-            <h2
-              id="gift-rule-title"
-              className="truncate text-[15px] font-semibold text-ink"
-            >
-              {t("bundle.giftTitle")}
-            </h2>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <h2
+                id="gift-rule-title"
+                className="truncate text-[15px] font-semibold text-ink"
+              >
+                {t("bundle.giftTitle")}
+              </h2>
+              <BundleHelpBubble guideId="gift" />
+            </div>
             <p className="mt-0.5 truncate text-[12px] text-ink-muted">
               {triggerProduct.title || t("bundle.untitled")}
             </p>
@@ -293,9 +298,24 @@ export function GiftRuleDrawer({
           </label>
 
           <label className="block space-y-1">
-            <span className="text-[11px] text-ink-muted">
-              {t("bundle.giftLabel")}
-            </span>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-ink-muted">
+                {t("bundle.giftLabel")}
+              </span>
+              <BundleAiNameButton
+                kind="gift_label"
+                disabled={busy}
+                onError={(msg) => setError(msg)}
+                context={{
+                  triggerTitle: triggerProduct.title,
+                  giftTitle:
+                    giftCandidates.find((p) => p.thirdPlatformItemId === giftProductId)
+                      ?.title || "",
+                  minQty: Math.max(1, Number(minQty) || 1),
+                }}
+                onNamed={setLabel}
+              />
+            </div>
             <Input
               className="h-9 text-[13px]"
               value={label}

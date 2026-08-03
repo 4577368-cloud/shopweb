@@ -7,6 +7,7 @@ import { SameProductComboPanel } from "@/components/select/same-product-combo-pa
 import { GiftRuleDrawer } from "@/components/select/gift-rule-drawer";
 import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { BundleHelpBubble } from "@/components/bundle-hub/bundle-help-bubble";
 
 type OfferKind = "combo" | "gift";
 
@@ -33,12 +34,15 @@ export function OfferWizard({
   if (kind === "combo") {
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[13px] font-semibold text-ink">{t("bundleHub.offerCombo")}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] font-semibold text-ink">{t("bundleHub.offerCombo")}</p>
+        <div className="flex items-center gap-1.5">
+          <BundleHelpBubble guideId="combo" />
           <Button type="button" size="sm" variant="secondary" onClick={() => setKind(null)}>
             {t("bundleHub.back")}
           </Button>
         </div>
+      </div>
         <SameProductComboPanel
           shopName={shopName}
           productId={product.thirdPlatformItemId}
@@ -55,7 +59,10 @@ export function OfferWizard({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <p className="text-[12px] text-ink-muted">{t("bundleHub.offerPickHint")}</p>
+      <div className="flex items-center gap-1.5">
+        <p className="min-w-0 flex-1 text-[12px] text-ink-muted">{t("bundleHub.offerPickHint")}</p>
+        <BundleHelpBubble guideId="offer" />
+      </div>
       <div className="grid gap-2 sm:grid-cols-2">
         <button
           type="button"

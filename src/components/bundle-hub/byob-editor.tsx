@@ -10,6 +10,8 @@ import type { BundleCampaign, ByobSlot } from "@/lib/bundle/campaign-types";
 import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
 import { Loader2, Plus, Trash2 } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
+import { BundleHelpBubble } from "@/components/bundle-hub/bundle-help-bubble";
+import { BundleAiNameButton } from "@/components/bundle-hub/bundle-ai-name-button";
 
 function newSlot(role: ByobSlot["role"]): ByobSlot {
   return {
@@ -155,7 +157,12 @@ export function ByobEditor({
             : initial?.id,
         title: title.trim(),
         status,
-        rule: { kind: "byob", slots: normalized, label: title.trim() },
+        rule: {
+          kind: "byob",
+          schemaVersion: 1,
+          slots: normalized,
+          label: title.trim(),
+        },
       });
       onSaved(saved);
     } catch (err) {
@@ -167,18 +174,40 @@ export function ByobEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <p className="rounded-md border border-hairline bg-canvas/50 px-2.5 py-2 text-[11px] leading-relaxed text-ink">
-        {t("bundleHub.byobPublishHint")}
-      </p>
-      <p className="text-[11px] leading-relaxed text-ink-muted">
-        {t("bundleHub.byobHowTo")}
-      </p>
+      <div className="flex items-start gap-1.5">
+        <div className="min-w-0 flex-1 space-y-2">
+          <p className="rounded-md border border-hairline bg-canvas/50 px-2.5 py-2 text-[11px] leading-relaxed text-ink">
+            {t("bundleHub.byobPublishHint")}
+          </p>
+          <p className="text-[11px] leading-relaxed text-ink-muted">
+            {t("bundleHub.byobHowTo")}
+          </p>
+        </div>
+        <BundleHelpBubble guideId="byob" className="shrink-0" />
+      </div>
       <p className="rounded-md border border-hairline bg-canvas/50 px-2.5 py-2 text-[11px] leading-relaxed text-ink">
         {t("bundleHub.byobEffectExample")}
       </p>
 
       <label className="block space-y-1">
-        <span className="text-[11px] text-ink-muted">{t("bundleHub.fieldTitle")}</span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-ink-muted">{t("bundleHub.fieldTitle")}</span>
+          <BundleAiNameButton
+            kind="byob_title"
+            disabled={saving}
+            onError={(msg) => setError(msg)}
+            context={{
+              poolTitles: catalog
+                .filter((p) =>
+                  slots.some((s) => s.poolProductIds.includes(p.thirdPlatformItemId))
+                )
+                .map((p) => p.title)
+                .filter(Boolean)
+                .slice(0, 8),
+            }}
+            onNamed={setTitle}
+          />
+        </div>
         <Input value={title} onChange={(e) => setTitle(e.target.value)} disabled={saving} />
       </label>
 
@@ -210,7 +239,31 @@ export function ByobEditor({
             </div>
 
             <label className="mt-2 block space-y-1">
-              <span className="text-[11px] text-ink-muted">{t("bundleHub.slotTitle")}</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-ink-muted">{t("bundleHub.slotTitle")}</span>
+                <BundleAiNameButton
+                  kind="byob_slot"
+                  disabled={saving}
+                  onError={(msg) => setError(msg)}
+                  context={{
+                    slotRole: slot.role,
+                    poolTitles: catalog
+                      .filter((p) =>
+                        slot.poolProductIds.includes(p.thirdPlatformItemId)
+                      )
+                      .map((p) => p.title)
+                      .filter(Boolean)
+                      .slice(0, 6),
+                  }}
+                  onNamed={(name) =>
+                    setSlots((all) =>
+                      all.map((s) =>
+                        s.id === slot.id ? { ...s, title: name } : s
+                      )
+                    )
+                  }
+                />
+              </div>
               <Input
                 value={slot.title}
                 onChange={(e) =>

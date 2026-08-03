@@ -3935,6 +3935,13 @@ export const es: Dictionary = {
     title: "Bundles y ofertas",
     subtitle:
       "Kits fijos, mix & match, ofertas por producto y BYOB en un solo lugar.",
+    guideOpen: "Ver guía de uso",
+    guideClose: "Cerrar guía",
+    guideHow: "Cómo configurar",
+    guideScenes: "Escenarios de uso",
+    guideShopify: "Qué hacer en Shopify después de guardar",
+    aiName: "Nombre con IA",
+    aiNameFailed: "Falló el nombre con IA — reintente o escriba manualmente",
     create: "Nueva campaña",
     refresh: "Actualizar campañas",
     back: "Volver",

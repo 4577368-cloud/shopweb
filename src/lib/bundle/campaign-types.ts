@@ -32,23 +32,36 @@ export interface ByobPoolProduct {
   title?: string;
   /** Shopify variant id — optional; theme resolves first available if missing. */
   variantId?: string;
+  variantTitle?: string;
+  /** Absolute image URL for Theme Block cards. */
+  imageUrl?: string;
+  /** Integer cents for Liquid `| money`. */
+  price?: number;
+  compareAtPrice?: number;
+  available?: boolean;
 }
 
 export interface ByobSlot {
   id: string;
   role: "main" | "accessory" | "gift" | "other";
   title: string;
+  description?: string;
   min: number;
   max: number;
   poolProductIds: string[];
-  /** Enriched for Theme Block (`all_products[handle]`). */
+  /** Enriched for Theme Block (`all_products[handle]` + card fields). */
   poolProducts?: ByobPoolProduct[];
 }
 
 export interface ByobRule {
   kind: "byob";
+  /** Storefront contract version — Theme Block expects 1. */
+  schemaVersion?: number;
   slots: ByobSlot[];
   label?: string;
+  hint?: string;
+  status?: BundleCampaignStatus;
+  campaignId?: string;
 }
 
 export interface BundleCampaign {
