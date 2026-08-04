@@ -6,6 +6,8 @@ export interface DropshipPackageCreateInfo {
   lineName?: string;
   deliveryTime?: string;
   packageComment?: string;
+  /** Optional logistics fee (CNY or quote currency) from acceptance estimatedFee. */
+  packageAmountPre?: number;
   packageChoosedContent?: {
     currency?: string;
     couponId?: string;

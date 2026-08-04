@@ -1,6 +1,6 @@
 /**
  * Assemble DraftOrderPurchaseReq.packageCreateInfo for placeDropshipOrder:
- * logistics template declare/tax + packaging increments + Tangbuy lineId.
+ * logistics acceptance line (同源) → mall template lane → declare/tax + packaging.
  */
 import { api } from "@/lib/api";
 import {
@@ -22,19 +22,89 @@ export class PackageCreateInfoError extends Error {
   }
 }
 
-function parseNumericLineId(raw: unknown): number | null {
+export function parseNumericLineId(raw: unknown): number | null {
   if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
   if (typeof raw === "string") {
-    const n = Number(raw.trim());
-    if (Number.isFinite(n) && n > 0) return n;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    // Accept pure numeric or trailing numeric id
+    if (/^\d+$/.test(trimmed)) {
+      const n = Number(trimmed);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
   }
   return null;
 }
 
+/** Normalize Shopify GID vs bare id for acceptance join. */
+function variantIdKeys(raw: string): string[] {
+  const s = raw.trim();
+  if (!s) return [];
+  const keys = new Set<string>([s]);
+  const bare = s.includes("/") ? s.split("/").pop() : s;
+  if (bare) keys.add(bare);
+  if (/^\d+$/.test(s)) {
+    keys.add(`gid://shopify/ProductVariant/${s}`);
+  }
+  return [...keys];
+}
+
 /**
- * Resolve Tangbuy logistics lineId for the order destination.
- * Prefers mall gateway template lane matching countryCode.
+ * Prefer logistics acceptances (merchant-confirmed quote) — same source as logistics page.
  */
+export async function resolveLineFromAcceptances(opts: {
+  shopName: string;
+  variantIds: string[];
+}): Promise<{ lineId: number; lineName?: string; estimatedFee?: number } | null> {
+  const { shopName, variantIds } = opts;
+  if (!shopName.trim() || variantIds.length === 0) return null;
+  try {
+    const rows = await api.listLogisticsAcceptances(shopName);
+    const idSet = new Set<string>();
+    for (const v of variantIds) {
+      for (const k of variantIdKeys(v)) idSet.add(k);
+    }
+    const votes = new Map<
+      number,
+      { count: number; lineName?: string; estimatedFee?: number }
+    >();
+    for (const row of rows) {
+      const sku = row.thirdPlatformSkuId?.trim();
+      if (!sku) continue;
+      const match = variantIdKeys(sku).some((k) => idSet.has(k));
+      if (!match) continue;
+      const lineId = parseNumericLineId(row.recommendedLine?.lineCode);
+      if (lineId == null) continue;
+      const prev = votes.get(lineId) ?? { count: 0 };
+      votes.set(lineId, {
+        count: prev.count + 1,
+        lineName: row.recommendedLine?.lineName ?? prev.lineName,
+        estimatedFee:
+          typeof row.recommendedLine?.estimatedFee === "number"
+            ? row.recommendedLine.estimatedFee
+            : prev.estimatedFee,
+      });
+    }
+    let best: { lineId: number; lineName?: string; estimatedFee?: number } | null =
+      null;
+    let bestCount = 0;
+    for (const [lineId, meta] of votes) {
+      if (meta.count > bestCount) {
+        bestCount = meta.count;
+        best = {
+          lineId,
+          lineName: meta.lineName,
+          estimatedFee: meta.estimatedFee,
+        };
+      }
+    }
+    return best;
+  } catch {
+    return null;
+  }
+}
+
+/** Fallback: mall gateway template lane matching countryCode. */
 export async function resolveLogisticsLineId(opts: {
   countryCode?: string | null;
 }): Promise<{ lineId: number; lineName?: string } | null> {
@@ -43,8 +113,7 @@ export async function resolveLogisticsLineId(opts: {
   const match =
     (code
       ? lanes.find((l) => l.countryCode === code && l.lineId != null)
-      : null) ??
-    lanes.find((l) => l.lineId != null);
+      : null) ?? lanes.find((l) => l.lineId != null);
   if (!match?.lineId) return null;
   return { lineId: match.lineId, lineName: match.lineName };
 }
@@ -68,22 +137,36 @@ export async function buildPackageCreateInfoForOrder(opts: {
   }
 
   const countryCode =
-    order.destinationCountry?.code ||
-    order.recipient?.countryCode ||
-    "";
-  const line = await resolveLogisticsLineId({ countryCode });
-  const lineId = line?.lineId ?? null;
-  if (lineId == null) {
+    order.destinationCountry?.code || order.recipient?.countryCode || "";
+  const variantIds = (order.lineItems ?? [])
+    .map((it) => it.outerVariantId)
+    .filter((id): id is string => !!id?.trim());
+
+  const fromAccept = await resolveLineFromAcceptances({ shopName, variantIds });
+  const fromMall =
+    fromAccept == null
+      ? await resolveLogisticsLineId({ countryCode })
+      : null;
+  const line = fromAccept ?? fromMall;
+  if (line?.lineId == null) {
     throw new PackageCreateInfoError(
-      "logistics lineId required — configure Tangbuy template lane for destination",
+      "logistics lineId required — confirm a route on Logistics page or configure Tangbuy template lane",
       "no_line"
     );
   }
 
   const queryForm = buildPackageQueryFormFromTemplate(template, goodsAmount);
+  const packageAmountPre =
+    typeof fromAccept?.estimatedFee === "number" &&
+    Number.isFinite(fromAccept.estimatedFee) &&
+    fromAccept.estimatedFee > 0
+      ? fromAccept.estimatedFee
+      : undefined;
+
   return {
-    lineId,
-    lineName: line?.lineName,
+    lineId: line.lineId,
+    lineName: line.lineName,
+    packageAmountPre,
     packageChoosedContent: {
       currency: queryForm.currency || "USD",
       incrementList: packagingToIncrementList(template.packaging),
@@ -98,5 +181,3 @@ export async function buildPackageCreateInfoForOrder(opts: {
     },
   };
 }
-
-export { parseNumericLineId };
