@@ -46,7 +46,9 @@ export async function GET(request: Request) {
     headers.Authorization = authorization;
   } else {
     const token = cookieValue(request.headers.get("cookie"), "TANGBUY_TOKEN");
-    if (token) headers.Authorization = `Bearer ${token}`;
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
   }
 
   const upstream = await fetch(`${API_BASE}${path}`, {
