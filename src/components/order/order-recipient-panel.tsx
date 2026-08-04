@@ -137,7 +137,7 @@ export function OrderRecipientPanel({
         country: draft.country ?? null,
         countryCode: draft.countryCode ?? null,
       };
-      let next = { ...draft, incomplete: isRecipientIncomplete(draft) };
+      let next: OrderRecipient = { ...draft, incomplete: isRecipientIncomplete(draft) };
       if (shopName) {
         try {
           const saved = await api.updateOrderShippingAddress(
