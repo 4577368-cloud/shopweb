@@ -165,11 +165,7 @@ async function requestWithRetry<T>(
   // 401 on a protected endpoint → try one silent refresh, then retry.
   if (res.status === 401 && !retried && typeof window !== "undefined") {
     let refreshed = false;
-    if (strategy.kind === "session-token") {
-      refreshed = await strategy.refreshAfterUnauthorized();
-    } else {
-      refreshed = await refreshAccessCookie();
-    }
+    refreshed = await strategy.refreshAfterUnauthorized();
     if (refreshed) {
       return requestWithRetry<T>(path, init, true);
     }
