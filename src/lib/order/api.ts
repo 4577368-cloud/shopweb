@@ -106,7 +106,7 @@ export function mapHeaderLineItem(line: ShopOrderLineItem): OrderBindingLine {
 }
 
 export function mapShippingAddress(
-  a?: ShopOrderShippingAddress | null
+  a?: (ShopOrderShippingAddress | OrderRecipient) | null
 ): OrderRecipient | undefined {
   if (!a) return undefined;
   const recipient: OrderRecipient = {
