@@ -4,12 +4,14 @@
 // builds the backend install URL and navigates the top-level window (Shopify consent can't be framed).
 
 import { shopifyInstallUrl, shopifyLoginUrl } from "@/lib/api";
+import { sameOriginAuthedFetch } from "@/lib/auth/same-origin-authed-fetch";
 import { openExternal } from "@/host/adapters/external-link";
 import { readEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 
 /** Remembers the shop the user launched OAuth for, so /authorize can restore state after the redirect. */
 export const SHOP_STORAGE_KEY = "tangbuy.shopDomain";
 
+const SHOP_HANDLE_PATTERN = /^[a-z0-9][a-z0-9-]*$/i;
 export const SHOP_DOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i;
 
 /** Strip scheme/trailing slash/whitespace; allow store handle without `.myshopify.com`. */
@@ -23,7 +25,7 @@ export function normalizeShopDomain(input: string): string {
   if (!domain) return "";
 
   const host = domain.split("/")[0] ?? domain;
-  if (/^[a-z0-9][a-z0-9-]*$/.test(host)) {
+  if (SHOP_HANDLE_PATTERN.test(host)) {
     return `${host}.myshopify.com`;
   }
   return host;
@@ -44,6 +46,10 @@ export interface LaunchInstallResult {
   ok: boolean;
   /** Present when validation/config failed. Callers should translate via {@link resolveInstallError}. */
   errorCode?: InstallErrorCode;
+}
+
+interface InstallUrlResponse {
+  url?: string;
 }
 
 /**
@@ -68,10 +74,10 @@ export function rememberShopDomain(rawDomain: string): string | null {
  * Do not gate the click path on the client-inlined env — that produced false "not configured"
  * errors when the var was present for rewrites but the embedded top-nav threw.
  */
-export function launchShopifyInstall(
+export async function launchShopifyInstall(
   rawDomain: string,
   opts?: { preferNewTab?: boolean }
-): LaunchInstallResult {
+): Promise<LaunchInstallResult> {
   const shopDomain = normalizeShopDomain(rawDomain);
   if (!shopDomain) {
     return { ok: false, errorCode: "EMPTY_DOMAIN" };
@@ -81,10 +87,18 @@ export function launchShopifyInstall(
   }
   try {
     const mode = readEmbeddedMode();
-    const url = shopifyInstallUrl(shopDomain, {
+    let url = shopifyInstallUrl(shopDomain, {
       embedded: mode.isEmbedded,
       host: mode.host,
     });
+    if (!mode.isEmbedded) {
+      const q = new URLSearchParams({ shop: shopDomain });
+      const res = await sameOriginAuthedFetch(`/api/shopify/install-url?${q.toString()}`);
+      if (!res.ok) return { ok: false, errorCode: "NAVIGATION_FAILED" };
+      const data = (await res.json()) as InstallUrlResponse;
+      if (!data.url) return { ok: false, errorCode: "NAVIGATION_FAILED" };
+      url = data.url;
+    }
     if (typeof window !== "undefined") {
       window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);
       if (mode.isEmbedded) {
@@ -103,10 +117,18 @@ export function launchShopifyInstall(
     if (typeof window !== "undefined") {
       try {
         const mode = readEmbeddedMode();
-        const url = shopifyInstallUrl(shopDomain, {
+        let url = shopifyInstallUrl(shopDomain, {
           embedded: mode.isEmbedded,
           host: mode.host,
         });
+        if (!mode.isEmbedded) {
+          const q = new URLSearchParams({ shop: shopDomain });
+          const res = await sameOriginAuthedFetch(`/api/shopify/install-url?${q.toString()}`);
+          if (res.ok) {
+            const data = (await res.json()) as InstallUrlResponse;
+            if (data.url) url = data.url;
+          }
+        }
         window.open(url, "_blank", "noopener,noreferrer");
         return { ok: true };
       } catch {
@@ -149,7 +171,8 @@ export function launchShopifyLogin(
 ): LaunchInstallResult {
   const mode = readEmbeddedMode();
   if (mode.isEmbedded) {
-    return launchShopifyInstall(rawDomain, { preferNewTab: true });
+    void launchShopifyInstall(rawDomain, { preferNewTab: true });
+    return { ok: true };
   }
   const shopDomain = normalizeShopDomain(rawDomain);
   if (!shopDomain) {

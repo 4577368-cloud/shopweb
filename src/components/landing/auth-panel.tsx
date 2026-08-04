@@ -51,15 +51,15 @@ export function AuthPanel({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  const [shopHandle, setShopHandle] = useState(() => {
-    if (typeof window === "undefined") return "";
+  const [shopHandle, setShopHandle] = useState("");
+  useEffect(() => {
     try {
       const remembered = window.localStorage.getItem(SHOP_STORAGE_KEY);
-      return remembered ? shopHandleFromDomain(remembered) : "";
+      if (remembered) setShopHandle(shopHandleFromDomain(remembered));
     } catch {
-      return "";
+      // ignore localStorage failures
     }
-  });
+  }, []);
   const [emailStep, setEmailStep] = useState<EmailStep>("account");
   const [phase, setPhase] = useState<AuthPhase>("form");
   const [error, setError] = useState<string | null>(null);

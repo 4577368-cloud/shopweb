@@ -169,7 +169,7 @@ function AuthorizePageContent() {
           } catch {
             // fall through
           }
-          const result = launchShopifyInstall(raw, { preferNewTab: true });
+          const result = await launchShopifyInstall(raw, { preferNewTab: true });
           if (!result.ok) {
             setRedirecting(false);
             const msg = resolveInstallError(
@@ -186,18 +186,20 @@ function AuthorizePageContent() {
       setRedirecting(true);
       // Unauthenticated standalone: Login with Shopify (sets cookies + binds).
       // Authenticated: classic bind-shop OAuth via /install (JWT required).
-      const result =
+      void (async () => {
+        const result =
         userAuthStatus === "authenticated"
-          ? launchShopifyInstall(raw)
+          ? await launchShopifyInstall(raw)
           : launchShopifyLogin(raw, {
               returnTo: localePath(locale, "/authorize"),
             });
-      if (!result.ok) {
-        setRedirecting(false);
-        const msg = resolveInstallError(t, result.errorCode, t("install.launchError"));
-        setConnectError(msg);
-        showToast(msg);
-      }
+        if (!result.ok) {
+          setRedirecting(false);
+          const msg = resolveInstallError(t, result.errorCode, t("install.launchError"));
+          setConnectError(msg);
+          showToast(msg);
+        }
+      })();
     },
     [showToast, t, isEmbedded, hydrateAuthorizedShop, userAuthStatus, locale]
   );

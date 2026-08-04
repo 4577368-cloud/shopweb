@@ -2,12 +2,16 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   // Next 16 blocks /_next/* (incl. HMR) from non-origin hosts by default.
   // Opening http://127.0.0.1 while the server advertises localhost leaves the
   // login page as inert SSR HTML — tabs/buttons appear but never hydrate.
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   turbopack: {
     root: path.join(__dirname),
+  },
+  env: {
+    NEXT_PUBLIC_API_BASE: process.env.NEXT_PUBLIC_API_BASE,
   },
   async rewrites() {
     const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
