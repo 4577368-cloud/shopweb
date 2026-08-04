@@ -415,19 +415,20 @@ function formatLogisticsStrategy(
       .filter(Boolean)
       .slice(0, 4)
       .join(" / ") || t("launchSummary.marketsNotConfigured");
-  const speedMap: Record<string, string> = {
-    fast: t("launchSummary.speedFast"),
-    balanced: t("launchSummary.speedBalanced"),
-    economy: t("launchSummary.speedEconomy"),
-  };
   const packMap: Record<string, string> = {
+    MINIMAL: t("launchSummary.packMinimal"),
+    CARTON: t("launchSummary.packReinforced"),
     minimal: t("launchSummary.packMinimal"),
     standard: t("launchSummary.packStandard"),
     reinforced: t("launchSummary.packReinforced"),
   };
+  const declare =
+    template.declareConfig?.declareMode === 1
+      ? t("launchSummary.declareSelf")
+      : t("launchSummary.declareFuzzy");
   return {
     markets,
-    speed: speedMap[template.speedPreference] ?? template.speedPreference,
+    speed: declare,
     packaging: packMap[template.packaging] ?? template.packaging,
   };
 }

@@ -18,6 +18,7 @@ export interface DropshipPackageCreateInfo {
       declareMode?: number;
       registrationType?: number;
       tax?: number;
+      taxNo?: string;
     };
   };
 }

@@ -260,7 +260,30 @@ export interface VariantLogisticsDecision {
 }
 
 export type PackagingType = "MINIMAL" | "CARTON";
+/** @deprecated Removed from logistics template UI; estimate keeps balanced default. */
 export type LogisticsSpeedPreference = "ECONOMY" | "FAST" | "BALANCED";
+
+/** 0 fuzzy / 1 self — aligned with tang-plugin declareMode. */
+export type LogisticsDeclareMode = 0 | 1;
+
+/**
+ * Tax registration (lite subset of tang-plugin registrationType):
+ * 0 tax-exempt/self, 3 platform IOSS, 4 personal IOSS.
+ */
+export type LogisticsRegistrationType = 0 | 3 | 4;
+
+/** Customs / tax prefs stored on the shop logistics template. */
+export interface LogisticsDeclareConfig {
+  declareMode: LogisticsDeclareMode;
+  registrationType: LogisticsRegistrationType;
+  declareCurrency: string;
+  /** Absolute declared value; when null + fuzzy, use goods × fuzzyRatio. */
+  tax?: number | null;
+  /** Percent of goods value for fuzzy mode; minimum 40. */
+  fuzzyRatio: number;
+  /** Required when registrationType=4. */
+  taxNo?: string | null;
+}
 
 export interface MarketSelection {
   marketGroupId: string;
@@ -272,8 +295,8 @@ export interface LogisticsTemplate {
   id: string;
   shopName: string;
   packaging: PackagingType;
-  speedPreference: LogisticsSpeedPreference;
   markets: MarketSelection[];
+  declareConfig: LogisticsDeclareConfig;
   isActive: boolean;
   updatedAt?: string | null;
 }
@@ -281,16 +304,16 @@ export interface LogisticsTemplate {
 export interface LogisticsTemplateUpsert {
   shopName: string;
   packaging: PackagingType;
-  speedPreference: LogisticsSpeedPreference;
   markets: MarketSelection[];
+  declareConfig: LogisticsDeclareConfig;
 }
 
 /** Wire shape of GET/POST /api/plugin/logistics/template. */
 export interface LogisticsTemplateVO {
   shopName: string;
   packaging: PackagingType;
-  speedPreference: LogisticsSpeedPreference;
   markets: MarketSelection[];
+  declareConfig?: LogisticsDeclareConfig | null;
   /** True when nothing is stored yet and the backend answered with its default. */
   defaultTemplate: boolean;
   updatedAt?: string | null;

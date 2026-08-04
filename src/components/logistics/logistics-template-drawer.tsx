@@ -14,11 +14,18 @@ import {
   marketSelectionForCountry,
   singleCountryCodeFromMarkets,
 } from "@/components/logistics/market-multi-select";
+import {
+  createDefaultDeclareConfig,
+  MIN_FUZZY_DECLARE_RATIO,
+  normalizeDeclareConfig,
+} from "@/lib/logistics/default-template";
 import type {
+  LogisticsDeclareConfig,
+  LogisticsDeclareMode,
+  LogisticsRegistrationType,
   LogisticsTemplate,
   LogisticsTemplateUpsert,
   PackagingType,
-  LogisticsSpeedPreference,
 } from "@/lib/types";
 
 export function LogisticsTemplateDrawer({
@@ -56,34 +63,63 @@ export function LogisticsTemplateDrawer({
     [t]
   );
 
-  const speedOptions = useMemo(
+  const taxOptions = useMemo(
     () =>
       [
         {
-          value: "ECONOMY" as LogisticsSpeedPreference,
-          label: t("logisticsTemplate.speedEconomyLabel"),
-          hint: t("logisticsTemplate.speedEconomyHint"),
+          value: 0 as LogisticsRegistrationType,
+          label: t("logisticsTemplate.taxExemptLabel"),
+          hint: t("logisticsTemplate.taxExemptHint"),
         },
         {
-          value: "FAST" as LogisticsSpeedPreference,
-          label: t("logisticsTemplate.speedFastLabel"),
-          hint: t("logisticsTemplate.speedFastHint"),
+          value: 3 as LogisticsRegistrationType,
+          label: t("logisticsTemplate.taxPlatformIossLabel"),
+          hint: t("logisticsTemplate.taxPlatformIossHint"),
         },
         {
-          value: "BALANCED" as LogisticsSpeedPreference,
-          label: t("logisticsTemplate.speedBalancedLabel"),
-          hint: t("logisticsTemplate.speedBalancedHint"),
+          value: 4 as LogisticsRegistrationType,
+          label: t("logisticsTemplate.taxPersonalIossLabel"),
+          hint: t("logisticsTemplate.taxPersonalIossHint"),
         },
       ],
     [t]
+  );
+
+  const declareModeOptions = useMemo(
+    () =>
+      [
+        {
+          value: 0 as LogisticsDeclareMode,
+          label: t("logisticsTemplate.declareFuzzyLabel"),
+          hint: t("logisticsTemplate.declareFuzzyHint"),
+        },
+        {
+          value: 1 as LogisticsDeclareMode,
+          label: t("logisticsTemplate.declareSelfLabel"),
+          hint: t("logisticsTemplate.declareSelfHint"),
+        },
+      ],
+    [t]
+  );
+
+  const declareConfig: LogisticsDeclareConfig = useMemo(
+    () => normalizeDeclareConfig(formData.declareConfig),
+    [formData.declareConfig]
   );
 
   useEffect(() => {
     if (activeTemplate) {
       const single = singleCountryCodeFromMarkets(activeTemplate.markets);
       const normalized = single
-        ? { ...activeTemplate, markets: marketSelectionForCountry(single) }
-        : activeTemplate;
+        ? {
+            ...activeTemplate,
+            markets: marketSelectionForCountry(single),
+            declareConfig: normalizeDeclareConfig(activeTemplate.declareConfig),
+          }
+        : {
+            ...activeTemplate,
+            declareConfig: normalizeDeclareConfig(activeTemplate.declareConfig),
+          };
       setFormData(normalized);
       if (single) {
         const group = MARKET_GROUPS.find((g) =>
@@ -97,8 +133,8 @@ export function LogisticsTemplateDrawer({
       setFormData({
         shopName,
         packaging: "MINIMAL",
-        speedPreference: "BALANCED",
         markets: [],
+        declareConfig: createDefaultDeclareConfig(),
       });
       setSelectedGroupId(null);
     }
@@ -120,17 +156,40 @@ export function LogisticsTemplateDrawer({
     }));
   }, []);
 
+  const patchDeclare = useCallback((patch: Partial<LogisticsDeclareConfig>) => {
+    setFormData((prev) => ({
+      ...prev,
+      declareConfig: normalizeDeclareConfig({
+        ...createDefaultDeclareConfig(),
+        ...prev.declareConfig,
+        ...patch,
+      }),
+    }));
+  }, []);
+
   const handleSave = async () => {
     if (!shopName.trim()) {
       setError(t("logisticsTemplate.errNoShop"));
       return;
     }
-    if (!formData.packaging || !formData.speedPreference) {
-      setError(t("logisticsTemplate.errPackagingSpeed"));
+    if (!formData.packaging) {
+      setError(t("logisticsTemplate.errPackaging"));
       return;
     }
     if (!selectedCountry) {
       setError(t("logisticsTemplate.errNoCountry"));
+      return;
+    }
+    const declare = normalizeDeclareConfig(formData.declareConfig);
+    if (declare.registrationType === 4 && !declare.taxNo?.trim()) {
+      setError(t("logisticsTemplate.errTaxNo"));
+      return;
+    }
+    if (
+      declare.declareMode === 0 &&
+      declare.fuzzyRatio < MIN_FUZZY_DECLARE_RATIO
+    ) {
+      setError(t("logisticsTemplate.errFuzzyRatio"));
       return;
     }
 
@@ -141,8 +200,8 @@ export function LogisticsTemplateDrawer({
       const upsertData: LogisticsTemplateUpsert = {
         shopName,
         packaging: formData.packaging,
-        speedPreference: formData.speedPreference,
         markets: marketSelectionForCountry(selectedCountry),
+        declareConfig: declare,
       };
 
       await onSave(upsertData);
@@ -158,8 +217,8 @@ export function LogisticsTemplateDrawer({
     setFormData({
       shopName,
       packaging: "MINIMAL",
-      speedPreference: "BALANCED",
       markets: [],
+      declareConfig: createDefaultDeclareConfig(),
     });
     setSelectedGroupId(null);
     setError(null);
@@ -204,7 +263,7 @@ export function LogisticsTemplateDrawer({
         <div className="flex-1 overflow-y-auto px-4 py-4">
           <div className="space-y-4">
             <div>
-              <label className="block mb-2 text-xs font-medium text-ink">
+              <label className="mb-2 block text-xs font-medium text-ink">
                 {t("logisticsTemplate.countryLabel")}
                 <span className="ml-1 font-normal text-ink-subtle">
                   {t("logisticsTemplate.countryHint")}
@@ -242,13 +301,13 @@ export function LogisticsTemplateDrawer({
                           type="button"
                           onClick={() => selectCountry(country.code)}
                           className={cn(
-                            "rounded-[var(--radius-control)] border px-1.5 py-1.5 text-center text-[10px] font-medium transition-colors overflow-hidden truncate",
+                            "overflow-hidden truncate rounded-[var(--radius-control)] border px-1.5 py-1.5 text-center text-[10px] font-medium transition-colors",
                             isSelected
                               ? "border-brand bg-brand-soft text-brand-strong"
                               : "border-hairline bg-surface text-ink-subtle hover:border-hairline-strong"
                           )}
                         >
-                          {isSelected && <Check className="inline mr-0.5 h-2.5 w-2.5" />}
+                          {isSelected && <Check className="mr-0.5 inline h-2.5 w-2.5" />}
                           {countryDisplayName(country, locale)}
                         </button>
                       );
@@ -259,7 +318,7 @@ export function LogisticsTemplateDrawer({
             </div>
 
             <div>
-              <label className="block mb-2 text-xs font-medium text-ink">
+              <label className="mb-2 block text-xs font-medium text-ink">
                 {t("logisticsTemplate.packagingLabel")}
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -290,18 +349,18 @@ export function LogisticsTemplateDrawer({
             </div>
 
             <div>
-              <label className="block mb-2 text-xs font-medium text-ink">
-                {t("logisticsTemplate.speedLabel")}
+              <label className="mb-2 block text-xs font-medium text-ink">
+                {t("logisticsTemplate.taxLabel")}
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                {speedOptions.map((o) => (
+              <div className="grid grid-cols-1 gap-2">
+                {taxOptions.map((o) => (
                   <button
                     key={o.value}
                     type="button"
-                    onClick={() => setFormData((prev) => ({ ...prev, speedPreference: o.value }))}
+                    onClick={() => patchDeclare({ registrationType: o.value })}
                     className={cn(
                       "rounded-[var(--radius-control)] border px-3 py-2 text-left transition-colors",
-                      formData.speedPreference === o.value
+                      declareConfig.registrationType === o.value
                         ? "border-brand bg-brand-soft"
                         : "border-hairline bg-surface hover:border-hairline-strong"
                     )}
@@ -309,7 +368,56 @@ export function LogisticsTemplateDrawer({
                     <p
                       className={cn(
                         "text-xs font-semibold",
-                        formData.speedPreference === o.value ? "text-brand-strong" : "text-ink"
+                        declareConfig.registrationType === o.value
+                          ? "text-brand-strong"
+                          : "text-ink"
+                      )}
+                    >
+                      {o.label}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-ink-subtle">{o.hint}</p>
+                  </button>
+                ))}
+              </div>
+              {declareConfig.registrationType === 4 ? (
+                <div className="mt-2">
+                  <label className="mb-1 block text-[11px] text-ink-subtle">
+                    {t("logisticsTemplate.taxNoLabel")}
+                  </label>
+                  <input
+                    type="text"
+                    value={declareConfig.taxNo ?? ""}
+                    onChange={(e) => patchDeclare({ taxNo: e.target.value })}
+                    placeholder={t("logisticsTemplate.taxNoPlaceholder")}
+                    className="w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-2.5 py-1.5 text-xs text-ink outline-none focus:border-brand"
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            <div>
+              <label className="mb-2 block text-xs font-medium text-ink">
+                {t("logisticsTemplate.declareModeLabel")}
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {declareModeOptions.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => patchDeclare({ declareMode: o.value })}
+                    className={cn(
+                      "rounded-[var(--radius-control)] border px-3 py-2 text-left transition-colors",
+                      declareConfig.declareMode === o.value
+                        ? "border-brand bg-brand-soft"
+                        : "border-hairline bg-surface hover:border-hairline-strong"
+                    )}
+                  >
+                    <p
+                      className={cn(
+                        "text-xs font-semibold",
+                        declareConfig.declareMode === o.value
+                          ? "text-brand-strong"
+                          : "text-ink"
                       )}
                     >
                       {o.label}
@@ -319,6 +427,96 @@ export function LogisticsTemplateDrawer({
                 ))}
               </div>
             </div>
+
+            <div>
+              <label className="mb-2 block text-xs font-medium text-ink">
+                {t("logisticsTemplate.declareCurrencyLabel")}
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => patchDeclare({ declareCurrency: "USD" })}
+                  className={cn(
+                    "rounded-[var(--radius-control)] border px-3 py-1.5 text-xs font-semibold transition-colors",
+                    declareConfig.declareCurrency === "USD"
+                      ? "border-brand bg-brand-soft text-brand-strong"
+                      : "border-hairline bg-surface text-ink-subtle"
+                  )}
+                >
+                  USD
+                </button>
+              </div>
+            </div>
+
+            {declareConfig.declareMode === 0 ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-[11px] text-ink-subtle">
+                    {t("logisticsTemplate.fuzzyRatioLabel")}
+                  </label>
+                  <input
+                    type="number"
+                    min={MIN_FUZZY_DECLARE_RATIO}
+                    max={100}
+                    value={declareConfig.fuzzyRatio}
+                    onChange={(e) =>
+                      patchDeclare({
+                        fuzzyRatio: Number(e.target.value) || MIN_FUZZY_DECLARE_RATIO,
+                      })
+                    }
+                    className="w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-2.5 py-1.5 text-xs text-ink outline-none focus:border-brand"
+                  />
+                  <p className="mt-1 text-[10px] text-ink-subtle">
+                    {t("logisticsTemplate.fuzzyRatioHint")}
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] text-ink-subtle">
+                    {t("logisticsTemplate.declareTaxLabel")}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={declareConfig.tax ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value.trim();
+                      patchDeclare({
+                        tax: v === "" ? null : Number(v),
+                      });
+                    }}
+                    placeholder={t("logisticsTemplate.declareTaxPlaceholder")}
+                    className="w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-2.5 py-1.5 text-xs text-ink outline-none focus:border-brand"
+                  />
+                  <p className="mt-1 text-[10px] text-ink-subtle">
+                    {t("logisticsTemplate.declareTaxHint")}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="mb-1 block text-[11px] text-ink-subtle">
+                  {t("logisticsTemplate.declareTaxLabel")}
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={declareConfig.tax ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value.trim();
+                    patchDeclare({
+                      tax: v === "" ? null : Number(v),
+                    });
+                  }}
+                  placeholder={t("logisticsTemplate.declareTaxSelfPlaceholder")}
+                  className="w-full rounded-[var(--radius-control)] border border-hairline bg-surface px-2.5 py-1.5 text-xs text-ink outline-none focus:border-brand"
+                />
+                <p className="mt-1 text-[10px] text-ink-subtle">
+                  {t("logisticsTemplate.declareTaxSelfHint")}
+                </p>
+              </div>
+            )}
           </div>
 
           {error ? (

@@ -66,18 +66,16 @@ function ProgressRing({
   );
 }
 
-function speedPriorityLabel(
+function packagingPriorityLabel(
   t: ReturnType<typeof useT>,
-  pref: LogisticsTemplate["speedPreference"] | string | undefined
+  packaging: LogisticsTemplate["packaging"] | string | undefined
 ): string {
-  switch (pref) {
-    case "ECONOMY":
-      return t("logisticsUi.speedEconomyDays");
-    case "FAST":
-      return t("logisticsUi.speedFastDays");
-    case "BALANCED":
+  switch (packaging) {
+    case "CARTON":
+      return t("logisticsTemplate.packCartonLabel");
+    case "MINIMAL":
     default:
-      return t("logisticsUi.speedBalancedDays");
+      return t("logisticsTemplate.packMinimalLabel");
   }
 }
 
@@ -114,7 +112,7 @@ function StrategyCard({
       </p>
       <p className="mt-0.5 text-[10px] leading-snug text-ink-subtle">
         {activeTemplate
-          ? speedPriorityLabel(t, activeTemplate.speedPreference)
+          ? packagingPriorityLabel(t, activeTemplate.packaging)
           : t("logisticsUi.noTemplate")}
       </p>
     </button>
