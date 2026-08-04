@@ -10,6 +10,7 @@ import { readEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 
 /** Remembers the shop the user launched OAuth for, so /authorize can restore state after the redirect. */
 export const SHOP_STORAGE_KEY = "tangbuy.shopDomain";
+export const TANGBUY_TOKEN_HANDOFF_KEY = "tangbuy.shopifyTangbuyToken";
 
 const SHOP_HANDLE_PATTERN = /^[a-z0-9][a-z0-9-]*$/i;
 export const SHOP_DOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i;
@@ -101,6 +102,7 @@ export async function launchShopifyInstall(
     }
     if (typeof window !== "undefined") {
       window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);
+      rememberTangbuyTokenForEmbedded();
       if (mode.isEmbedded) {
         // Prefer a new tab: top-frame navigation is often blocked in Admin's
         // sandboxed iframe (surfaces as NAVIGATION_FAILED / "leave Admin frame").
@@ -136,6 +138,18 @@ export async function launchShopifyInstall(
       }
     }
     return { ok: false, errorCode: "NAVIGATION_FAILED" };
+  }
+}
+
+function rememberTangbuyTokenForEmbedded(): void {
+  if (typeof document === "undefined" || typeof window === "undefined") return;
+  const token = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("TANGBUY_TOKEN="))
+    ?.slice("TANGBUY_TOKEN=".length);
+  if (token) {
+    window.localStorage.setItem(TANGBUY_TOKEN_HANDOFF_KEY, decodeURIComponent(token));
   }
 }
 
