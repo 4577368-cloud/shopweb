@@ -11,6 +11,7 @@ import {
 } from "@/host/embedded/session-token-store";
 import { readEmbeddedMode } from "@/host/embedded/use-embedded-mode";
 import { openExternal } from "@/host/adapters/external-link";
+import { TANGBUY_TOKEN_HANDOFF_KEY } from "@/lib/shopify-install";
 
 export type SessionTokenExchangeResult =
   | { ok: true; shopDomain: string; shopName: string }
@@ -100,11 +101,16 @@ export async function exchangeSessionToken(
   }
 
   try {
+    const tangbuyToken =
+      typeof window === "undefined"
+        ? null
+        : window.localStorage.getItem(TANGBUY_TOKEN_HANDOFF_KEY);
     const res = await fetch("/api/shopify/session-token", {
       method: "POST",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
+        ...(tangbuyToken ? { "X-Tangbuy-Token": tangbuyToken } : {}),
       },
       credentials: "omit",
       body: JSON.stringify({ sessionToken }),

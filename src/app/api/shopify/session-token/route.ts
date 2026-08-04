@@ -58,8 +58,11 @@ export async function POST(request: Request) {
     .get("authorization")
     ?.replace(/^Bearer\s+/i, "")
     .trim();
+  const handoffToken = request.headers.get("x-tangbuy-token")?.trim();
   const tangbuyToken =
-    cookieToken || (authToken && !isShopifySessionToken(authToken) ? authToken : null);
+    handoffToken ||
+    cookieToken ||
+    (authToken && !isShopifySessionToken(authToken) ? authToken : null);
   if (tangbuyToken) headers["X-Tangbuy-Token"] = tangbuyToken;
 
   const upstream = await fetch(

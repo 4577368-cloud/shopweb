@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
 import { OnboardingProvider } from "@/context/onboarding-context";
 import { UserProvider } from "@/context/user-context";
 import { HostModeProvider } from "@/host/host-mode-provider";
@@ -10,13 +9,6 @@ import { ChatwootWidget } from "@/components/chatwoot/chatwoot-widget";
 import { APP_DESCRIPTION, APP_FULL_NAME, BRAND_FAVICON } from "@/lib/brand";
 import "./globals.css";
 import "./landing.css";
-
-const displayFont = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-brand",
-  weight: ["500", "600", "700"],
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: APP_FULL_NAME,
@@ -66,7 +58,7 @@ export default function RootLayout({
       // <html lang> 与注入的 class（如 `translated`），避免开发期 hydration mismatch 告警。
       // 真正的 lang 由 src/components/i18n/sync-html-lang.tsx 的 effect 在 hydration 后同步。
       suppressHydrationWarning
-      className={`${displayFont.variable} h-full antialiased`}
+      className="h-full antialiased"
     >
       <head>
         {/*

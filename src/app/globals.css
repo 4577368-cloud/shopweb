@@ -181,8 +181,8 @@ html[data-embedded="1"] [data-wb-left-rail] {
 
   --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue",
     Arial, sans-serif;
-  --font-display: var(--font-brand), "Plus Jakarta Sans", "Segoe UI",
-    "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-display: "Segoe UI", "PingFang SC", "Microsoft YaHei",
+    "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 

@@ -61,6 +61,7 @@ export function LocaleProvider({
   messages: Messages;
   children: ReactNode;
 }) {
+  console.log(process.env.NEXT_PUBLIC_API_BASE, 'NEXT_PUBLIC_API_BASE')
   const value = useMemo<LocaleContextValue>(() => {
     const t = (key: string, params?: Record<string, string | number>) => {
       const localized = resolve(messages, key);
