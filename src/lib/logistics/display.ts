@@ -626,16 +626,18 @@ export function formatTemplateMeta(
 ): string {
   if (!template) return t("logisticsDisplay.templateMeta.noTemplate");
   const packaging = packagingLabel(t, template.packaging);
-  const speed = speedLabel(t, template.speedPreference);
-  const ship = speedLabel(t, template.speedPreference);
+  const declare =
+    template.declareConfig?.declareMode === 1
+      ? t("logisticsDisplay.templateMeta.declareSelf")
+      : t("logisticsDisplay.templateMeta.declareFuzzy");
   const code = singleCountryCodeFromMarkets(template.markets);
   const markets = code
     ? localizedCountryLabel(code, locale ?? "zh")
     : t("logisticsDisplay.templateMeta.noMarket");
   return t("logisticsDisplay.templateMeta.summary", {
     packaging,
-    speed,
-    ship,
+    speed: declare,
+    ship: declare,
     markets,
   });
 }

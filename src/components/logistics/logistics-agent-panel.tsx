@@ -206,9 +206,6 @@ export function LogisticsAgentPanel({
 
   const savings = useMemo(() => {
     const tips: string[] = [];
-    if (activeTemplate?.speedPreference === "FAST") {
-      tips.push(t("logisticsAgent.tipFastToBalanced"));
-    }
     if (activeTemplate?.packaging === "CARTON") {
       tips.push(t("logisticsAgent.tipCartonToMinimal"));
     }

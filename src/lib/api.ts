@@ -1260,8 +1260,8 @@ export const api = {
       body: JSON.stringify({
         shopName: resolvedShop,
         packaging: body.packaging,
-        speedPreference: body.speedPreference,
         markets: body.markets,
+        declareConfig: body.declareConfig,
       }),
     });
     return logisticsTemplateFromVo(vo, resolvedShop);

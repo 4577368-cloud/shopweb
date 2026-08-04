@@ -64,6 +64,7 @@ import {
   packagingToIncrementList,
   resolveQuoteMarketCode,
 } from "@/lib/logistics/template-params";
+import { buildLogisticsTemplateScopeKey } from "@/lib/logistics/template-scope-key";
 import { resolveTangbuyCountryId } from "@/lib/logistics/tangbuy-country";
 import {
   peekLogisticsMirrorCache,
@@ -157,12 +158,7 @@ export function useLogisticsQuoteEstimate({
 
   const templateScopeKey = useMemo(() => {
     if (!activeTemplate) return "";
-    return [
-      activeTemplate.id,
-      activeTemplate.packaging,
-      activeTemplate.speedPreference,
-      JSON.stringify(activeTemplate.markets ?? []),
-    ].join("|");
+    return buildLogisticsTemplateScopeKey(activeTemplate);
   }, [activeTemplate]);
 
   useEffect(() => {

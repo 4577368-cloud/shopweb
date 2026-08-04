@@ -13,18 +13,16 @@ import type { LogisticsTemplate } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { selectableCardClassName } from "@/lib/ui/selectable-card-styles";
 
-function speedPriorityLabel(
+function packagingPriorityLabel(
   t: ReturnType<typeof useT>,
-  pref: LogisticsTemplate["speedPreference"] | string | undefined
+  packaging: LogisticsTemplate["packaging"] | string | undefined
 ): string {
-  switch (pref) {
-    case "ECONOMY":
-      return t("logisticsUi.speedEconomyDays");
-    case "FAST":
-      return t("logisticsUi.speedFastDays");
-    case "BALANCED":
+  switch (packaging) {
+    case "CARTON":
+      return t("logisticsTemplate.packCartonLabel");
+    case "MINIMAL":
     default:
-      return t("logisticsUi.speedBalancedDays");
+      return t("logisticsTemplate.packMinimalLabel");
   }
 }
 
@@ -115,7 +113,7 @@ export function LogisticsStrategyRailCard({
             {localizedCountryMarketLabel(marketCode, locale)}
           </span>
           {t("common.commaSeparator")}
-          {speedPriorityLabel(t, activeTemplate?.speedPreference)}
+          {packagingPriorityLabel(t, activeTemplate?.packaging)}
         </p>
         <p className="text-[11px] text-ink-subtle">
           {t("logisticsStrategyRail.summaryDesc")}
