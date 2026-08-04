@@ -34,7 +34,12 @@
 | BE Plugin | `gitlab.tangbuy.cc/guifeng/tang-source-plugin` | Feign + 本轮 uniOrder 加厚 / goods_status |
 | 参考仓（只读） | `tangbuy/backend/common/tang-plugin` | 老插件完整 uniOrder / Pay / payCb |
 
-请以推送后 `guifeng` 最新 commit 为准（首轮：FE `c1460f7`/`d6782d4`，BE `64f4342`/`d362c9c`；加厚轮：见后续 push 说明）。
+请以推送后 `guifeng` 最新 commit 为准：
+
+- FE：`24ecc23`（加厚 + 审计文档入库）
+- BE：`fb5af5f`（已推 GitLab；GitHub origin 仍可能因历史 yml 密钥拒推）
+
+首轮骨架：FE `c1460f7`/`d6782d4`，BE `64f4342`/`d362c9c`。
 
 **注意**：
 
