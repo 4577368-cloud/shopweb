@@ -1084,6 +1084,19 @@ export const api = {
       `/api/plugin/order/header/list?shopName=${encodeURIComponent(shop)}`
     ),
 
+  /** Supplement shipping recipient on draft order (local; not written back to Shopify). */
+  updateOrderShippingAddress: (
+    shop: string,
+    outerOrderId: string,
+    body: import("@/lib/types").ShopOrderShippingAddress
+  ) =>
+    request<import("@/lib/types").ShopOrderShippingAddress>(
+      `/api/plugin/order/header/shipping-address?shopName=${encodeURIComponent(
+        shop
+      )}&outerOrderId=${encodeURIComponent(outerOrderId)}`,
+      { method: "PUT", body: JSON.stringify(body) }
+    ),
+
   /**
    * 采购子单快照（可选）。未实现时前端忽略。
    */

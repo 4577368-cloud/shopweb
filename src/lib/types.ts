@@ -707,6 +707,24 @@ export interface ShopOrderLineItem {
 }
 
 /** Persisted Shopify order header (GET /api/plugin/order/header/list). Used by scan context. */
+export interface ShopOrderShippingAddress {
+  draftOrderId?: number | null;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  name?: string | null;
+  company?: string | null;
+  phone?: string | null;
+  address1?: string | null;
+  address2?: string | null;
+  city?: string | null;
+  province?: string | null;
+  zip?: string | null;
+  country?: string | null;
+  countryCode?: string | null;
+  incomplete?: boolean | null;
+}
+
 export interface ShopOrderHeader {
   outerOrderId: string;
   orderName?: string | null;
@@ -719,6 +737,8 @@ export interface ShopOrderHeader {
   draftOrderId?: number | null;
   /** Nested line items (B1); preferred over N+1 binding/lines. */
   lineItems?: ShopOrderLineItem[] | null;
+  /** Recipient — detail panel only; not shown in list by default. */
+  shippingAddress?: ShopOrderShippingAddress | null;
   /**
    * 采购子单快照（plugin 经 listOrderDetail 映射）。
    * 与采购系统 mapper 对齐；缺省时订单中心走 mock / 可选 snapshots 接口。

@@ -143,6 +143,19 @@ export function makeMockOrders(): OrderSummary[] {
       destinationCountry: dest,
       status: b.status,
       paymentStatus: b.paymentStatus ?? DEFAULT_PAYMENT[b.status],
+      recipient: {
+        name: b.status === "inTransit" ? "Alex Chen" : "Jordan Lee",
+        email: `buyer${b.id}@example.com`,
+        phone: b.status === "inTransit" ? "" : "+1 416-555-0199",
+        address1: "128 King St W",
+        address2: b.status === "inTransit" ? "" : "Suite 400",
+        city: dest.name === "加拿大" || dest.code === "CA" ? "Toronto" : "Sample City",
+        province: dest.code === "CA" ? "ON" : "",
+        zip: dest.code === "CA" ? "M5H 1J9" : "10001",
+        country: dest.name,
+        countryCode: dest.code,
+        incomplete: b.status === "inTransit",
+      },
       lineItems: [
         {
           title: b.title,

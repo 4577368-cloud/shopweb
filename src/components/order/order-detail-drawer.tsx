@@ -3,7 +3,7 @@
 // 订单详情抽屉（右侧滑出）。渲染设计稿 §2.3 字段矩阵 + 物流双轨 mini 进度条。
 // 商品明细在真实订单缺失时诚实占位（P0-8）；
 // A+ 批：待下单→下单 / 待支付→支付 按钮在头部按状态显示（替换原 disabled 重新下单）。
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useT } from "@/i18n/LocaleProvider";
 import { X, ExternalLink, Link2 } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
@@ -12,15 +12,21 @@ import type { OrderSummary } from "@/lib/order/types";
 import { StatusBadge } from "./status-badge";
 import { ProcurementStatusMeta } from "./procurement-status-meta";
 import { LogisticsTracksMini } from "./logistics-tracks-mini";
+import { OrderRecipientPanel } from "./order-recipient-panel";
 import { shopifyAdminUrl, FALLBACK_SHOP_DOMAIN } from "@/lib/order/shopify-admin-url";
+import { isRecipientIncomplete } from "@/lib/order/api";
+import type { OrderRecipient } from "@/lib/order/types";
 
 export interface OrderDetailDrawerProps {
   order: OrderSummary | null;
   shopDomain: string;
+  /** Short shop name for address save API (optional; mock falls back to localStorage). */
+  shopName?: string;
   onClose: () => void;
   onPlace?: (order: OrderSummary) => void;
   onOpenPayment?: (order: OrderSummary) => void;
   placingId?: string;
+  onRecipientSaved?: (orderId: string, recipient: OrderRecipient) => void;
 }
 
 function Field({ label, value }: { label: string; value?: string }) {
@@ -36,25 +42,30 @@ function Field({ label, value }: { label: string; value?: string }) {
 export function OrderDetailDrawer({
   order,
   shopDomain,
+  shopName = "",
   onClose,
   onPlace,
   onOpenPayment,
   placingId,
+  onRecipientSaved,
 }: OrderDetailDrawerProps) {
   const t = useT();
+  const [recipientOpen, setRecipientOpen] = useState(false);
 
-  // Esc 关闭
+  // Esc 关闭（收件人面板打开时由其自行处理 Esc）
   useEffect(() => {
-    if (!order) return;
+    if (!order || recipientOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [order, onClose]);
+  }, [order, onClose, recipientOpen]);
 
   if (!order) return null;
 
   const domain = shopDomain || FALLBACK_SHOP_DOMAIN;
   const lineItems = order.lineItems ?? [];
+  const recipientIncomplete =
+    order.recipient == null || isRecipientIncomplete(order.recipient);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
@@ -150,6 +161,20 @@ export function OrderDetailDrawer({
             <Field label={t("order.card.createdAt")} value={order.createdAt} />
             <Field label={t("order.table.amount")} value={order.productCost} />
             <Field label={t("order.columns.destination")} value={order.destinationCountry.name} />
+            <div className="flex items-baseline justify-between gap-3 py-1 text-[12px]">
+              <span className="shrink-0 text-ink-subtle">
+                {t("order.recipient.linkLabel")}
+              </span>
+              <button
+                type="button"
+                onClick={() => setRecipientOpen(true)}
+                className="truncate text-right text-[12px] font-medium text-link hover:text-link-hover hover:underline"
+              >
+                {recipientIncomplete
+                  ? t("order.recipient.linkIncomplete")
+                  : t("order.recipient.linkView")}
+              </button>
+            </div>
           </div>
 
           {/* 商品 */}
@@ -252,6 +277,16 @@ export function OrderDetailDrawer({
           </section>
         </div>
       </aside>
+
+      <OrderRecipientPanel
+        order={order}
+        shopName={shopName}
+        open={recipientOpen}
+        onClose={() => setRecipientOpen(false)}
+        onSaved={(recipient) => {
+          onRecipientSaved?.(order.id, recipient);
+        }}
+      />
     </div>
   );
 }

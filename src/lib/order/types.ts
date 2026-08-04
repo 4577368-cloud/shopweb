@@ -61,10 +61,29 @@ export interface OrderBindingLine {
 // 支付状态（表格列使用；mock 阶段填写，Phase 4 真实接口替换）
 export type PaymentStatus = "paid" | "unpaid" | "partial";
 
-// PII 隔离：列表仅持国家（code + 中文名），收件人详情只在 Shopify 端。
+// PII 隔离：列表仅持国家（code + 中文名）；收件人详情经文字链打开独立面板，可补全国际物流必填项。
 export interface DestinationCountry {
   code: string; // ISO 如 "US"
   name: string; // 中文名 "美国"
+}
+
+/** Shopify shipping / recipient — shown only in recipient panel (not list). */
+export interface OrderRecipient {
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  company?: string;
+  phone?: string;
+  address1?: string;
+  address2?: string;
+  city?: string;
+  province?: string;
+  zip?: string;
+  country?: string;
+  countryCode?: string;
+  /** Any intl-required field blank */
+  incomplete?: boolean;
 }
 
 // 物流双轨状态枚举（Phase 5 接真实轨迹时复用）
@@ -96,6 +115,9 @@ export interface OrderSummary {
   destinationCountry: DestinationCountry;
   status: OrderStatus;
   paymentStatus?: PaymentStatus; // 表格列用，备货前默认 unpaid，支付后 paid，部分补款 partial
+
+  /** Shopify 收件人；详情默认折叠，经文字链打开面板查看/补全 */
+  recipient?: OrderRecipient;
 
   // 通用可选字段（按状态填充）
   lineItems?: LineItem[];

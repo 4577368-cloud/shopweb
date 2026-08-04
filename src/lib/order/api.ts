@@ -6,12 +6,13 @@
 // 本地无后端 / 接口异常 / 返回空 时，自动回退 makeMockOrders()，保证本地测试不中断、不干扰开店流程。
 
 import { api } from "@/lib/api";
-import type { ShopOrderHeader, ShopOrderLineItem } from "@/lib/types";
+import type { ShopOrderHeader, ShopOrderLineItem, ShopOrderShippingAddress } from "@/lib/types";
 import { makeMockOrders } from "./mock";
 import type {
   LineItem,
   LinkedOffer,
   OrderBindingLine,
+  OrderRecipient,
   OrderStatus,
   OrderSummary,
   PaymentStatus,
@@ -104,22 +105,62 @@ export function mapHeaderLineItem(line: ShopOrderLineItem): OrderBindingLine {
   };
 }
 
+export function mapShippingAddress(
+  a?: ShopOrderShippingAddress | null
+): OrderRecipient | undefined {
+  if (!a) return undefined;
+  const recipient: OrderRecipient = {
+    email: a.email ?? undefined,
+    firstName: a.firstName ?? undefined,
+    lastName: a.lastName ?? undefined,
+    name: a.name ?? undefined,
+    company: a.company ?? undefined,
+    phone: a.phone ?? undefined,
+    address1: a.address1 ?? undefined,
+    address2: a.address2 ?? undefined,
+    city: a.city ?? undefined,
+    province: a.province ?? undefined,
+    zip: a.zip ?? undefined,
+    country: a.country ?? undefined,
+    countryCode: a.countryCode ?? undefined,
+    incomplete: a.incomplete ?? undefined,
+  };
+  if (recipient.incomplete === undefined) {
+    recipient.incomplete = isRecipientIncomplete(recipient);
+  }
+  return recipient;
+}
+
+export function isRecipientIncomplete(r: OrderRecipient): boolean {
+  const name =
+    r.name?.trim() ||
+    [r.firstName, r.lastName].filter(Boolean).join(" ").trim() ||
+    "";
+  return !name || !r.address1?.trim() || !r.city?.trim() || !r.countryCode?.trim() || !r.phone?.trim();
+}
+
 // 真实订单头 → 订单摘要。优先使用嵌套 lineItems（B1）；富字段仍可缺。
 export function mapShopOrderHeader(h: ShopOrderHeader): OrderSummary {
   const nestedLines = (h.lineItems ?? []).map((l) =>
     mapBindingLineToLineItem(mapHeaderLineItem(l), h.currency)
   );
+  const recipient = mapShippingAddress(h.shippingAddress);
+  const countryCode = (recipient?.countryCode || "").trim();
   const base: OrderSummary = {
     id: h.outerOrderId,
     shopOrderNo: h.orderName ?? h.outerOrderId,
     tangbuyOrderNo: "—",
     shopifyOrderId: h.outerOrderId,
     createdAt: h.platformCreatedAt ?? "",
-    destinationCountry: { code: "", name: "—" },
+    destinationCountry: {
+      code: countryCode,
+      name: recipient?.country?.trim() || countryCode || "—",
+    },
     status: deriveStatus(h.financialStatus, h.fulfillmentStatus),
     paymentStatus: derivePayment(h.financialStatus),
     productCost: formatMoney(h.totalPrice, h.currency),
     lineItems: nestedLines.length > 0 ? nestedLines : undefined,
+    recipient,
   };
   if (h.procurementLine && Object.keys(h.procurementLine).length > 0) {
     return applyProcurementSnapshot(base, h.procurementLine, {

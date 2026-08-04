@@ -563,10 +563,16 @@ function OrderCenterContent() {
       <OrderDetailDrawer
         order={drawerOrder}
         shopDomain={shopDomain}
+        shopName={shopName}
         onClose={() => setDrawerOrderId(undefined)}
         onPlace={handlePlace}
         onOpenPayment={handleOpenPayment}
         placingId={placingId}
+        onRecipientSaved={(orderId, recipient) => {
+          setRawOrders((prev) =>
+            prev.map((o) => (o.id === orderId ? { ...o, recipient } : o))
+          );
+        }}
       />
 
       <PaymentModal
