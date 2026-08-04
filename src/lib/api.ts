@@ -1094,7 +1094,11 @@ export const api = {
       `/api/plugin/order/header/shipping-address?shopName=${encodeURIComponent(
         shop
       )}&outerOrderId=${encodeURIComponent(outerOrderId)}`,
-      { method: "PUT", body: JSON.stringify(body) }
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
     ),
 
   /**
