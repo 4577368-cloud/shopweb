@@ -145,7 +145,10 @@ export function OrderRecipientPanel({
             order.shopifyOrderId || order.id,
             body
           );
-          next = mapShippingAddress(saved) ?? next;
+          next = {
+            ...(mapShippingAddress(saved) ?? next),
+            incomplete: isRecipientIncomplete(mapShippingAddress(saved) ?? next),
+          };
         } catch {
           // Backend may be unavailable / draft missing — keep local supplement.
           saveLocalSupplement(order.id, next);

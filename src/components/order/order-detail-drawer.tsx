@@ -101,6 +101,13 @@ export function OrderDetailDrawer({
               <StatusBadge status={order.status} />
               <ProcurementStatusMeta order={order} />
             </div>
+            {(order.exceptionTag || order.procurementExceptionTag) && (
+              <span className="inline-flex items-center rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-medium text-warning">
+                {t(
+                  `order.procurement.exception.${order.exceptionTag || order.procurementExceptionTag}`
+                )}
+              </span>
+            )}
             {order.paymentStatus && (
               <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-ink-muted">
                 {t(`order.paymentStatus.${order.paymentStatus}`)}
@@ -141,6 +148,10 @@ export function OrderDetailDrawer({
           <div className="rounded-[var(--radius-card)] border border-hairline bg-muted px-3 py-1.5">
             <Field label={t("order.drawer.tangbuyNo")} value={order.tangbuyOrderNo} />
             <Field
+              label={t("order.drawer.tradeNo")}
+              value={order.tradeNo && order.tradeNo !== "—" ? order.tradeNo : undefined}
+            />
+            <Field
               label={t("order.columns.supplierOrderNo")}
               value={
                 order.supplierOrderNo && order.supplierOrderNo !== "—"
@@ -160,6 +171,10 @@ export function OrderDetailDrawer({
             <Field label={t("order.card.carrier")} value={order.carrier} />
             <Field label={t("order.card.createdAt")} value={order.createdAt} />
             <Field label={t("order.table.amount")} value={order.productCost} />
+            <Field
+              label={t("order.card.payableAmount")}
+              value={order.payableAmount}
+            />
             <Field label={t("order.columns.destination")} value={order.destinationCountry.name} />
             <div className="flex items-baseline justify-between gap-3 py-1 text-[12px]">
               <span className="shrink-0 text-ink-subtle">
@@ -255,13 +270,18 @@ export function OrderDetailDrawer({
             )}
           </section>
 
-          {/* 物流进度 */}
+          {/* 物流进度 — 无真实轨迹时诚实空态，不伪造进度 */}
           <section>
             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-subtle">
               {t("order.drawer.sectionLogistics")}
             </p>
             <div className="rounded-[var(--radius-card)] border border-hairline bg-surface px-3 py-2.5">
               <LogisticsTracksMini track={order.track} />
+              {!order.track && (
+                <p className="mt-2 text-[10px] leading-relaxed text-ink-subtle">
+                  {t("order.drawer.timelinePending")}
+                </p>
+              )}
             </div>
           </section>
 

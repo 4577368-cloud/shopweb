@@ -39,7 +39,7 @@ function norm(v: string | null | undefined): string {
 }
 
 // Shopify financial_status + fulfillment_status → 我们的内部状态机。
-// 这是启发式映射：真实权威状态以后端内部订单系统为准（Phase 4/5 完善）。
+// 仅在尚无 draft / orderStatus 时作为启发式回退；权威状态以后端 draft 映射为准。
 export function deriveStatus(
   financialStatus?: string | null,
   fulfillmentStatus?: string | null
@@ -59,6 +59,22 @@ export function deriveStatus(
     return "pendingOrder";
   }
   return "pendingOrder";
+}
+
+const ORDER_STATUS_SET = new Set<OrderStatus>([
+  "pendingOrder",
+  "pendingSupplement",
+  "pendingPayment",
+  "preparing",
+  "pendingShipment",
+  "inTransit",
+  "delivered",
+  "canceled",
+]);
+
+export function coerceOrderStatus(raw?: string | null): OrderStatus | null {
+  if (!raw) return null;
+  return ORDER_STATUS_SET.has(raw as OrderStatus) ? (raw as OrderStatus) : null;
 }
 
 export function derivePayment(
@@ -146,26 +162,58 @@ export function mapShopOrderHeader(h: ShopOrderHeader): OrderSummary {
   );
   const recipient = mapShippingAddress(h.shippingAddress);
   const countryCode = (recipient?.countryCode || "").trim();
+  const fromApi = coerceOrderStatus(h.orderStatus ?? null);
+  const status =
+    fromApi ?? deriveStatus(h.financialStatus, h.fulfillmentStatus);
+  const tangbuyNo =
+    (h.tangbuyOrderNo && h.tangbuyOrderNo.trim()) ||
+    (h.tradeNo && h.tradeNo.trim()) ||
+    "—";
   const base: OrderSummary = {
     id: h.outerOrderId,
     shopOrderNo: h.orderName ?? h.outerOrderId,
-    tangbuyOrderNo: "—",
+    tangbuyOrderNo: tangbuyNo,
     shopifyOrderId: h.outerOrderId,
     createdAt: h.platformCreatedAt ?? "",
     destinationCountry: {
       code: countryCode,
       name: recipient?.country?.trim() || countryCode || "—",
     },
-    status: deriveStatus(h.financialStatus, h.fulfillmentStatus),
-    paymentStatus: derivePayment(h.financialStatus),
+    status,
+    paymentStatus:
+      status === "pendingPayment"
+        ? "unpaid"
+        : status === "pendingOrder"
+          ? derivePayment(h.financialStatus)
+          : status === "canceled"
+            ? derivePayment(h.financialStatus)
+            : "paid",
     productCost: formatMoney(h.totalPrice, h.currency),
     lineItems: nestedLines.length > 0 ? nestedLines : undefined,
     recipient,
+    tradeNo: h.tradeNo?.trim() || undefined,
+    draftStatus: h.draftStatus ?? undefined,
+    exceptionTag: h.exceptionTag?.trim() || undefined,
+    procurementExceptionTag:
+      h.exceptionTag?.trim() || undefined,
+    procurementLineStatus: h.goodsStatus ?? undefined,
   };
   if (h.procurementLine && Object.keys(h.procurementLine).length > 0) {
-    return applyProcurementSnapshot(base, h.procurementLine, {
+    // Draft/orderStatus from list API wins over procurement snapshot heuristics.
+    const merged = applyProcurementSnapshot(base, h.procurementLine, {
       shopifyFinancialStatus: h.financialStatus,
     });
+    if (fromApi) {
+      return {
+        ...merged,
+        status: fromApi,
+        tradeNo: base.tradeNo ?? merged.tradeNo,
+        exceptionTag: base.exceptionTag ?? merged.exceptionTag,
+        procurementExceptionTag:
+          base.procurementExceptionTag ?? merged.procurementExceptionTag,
+      };
+    }
+    return merged;
   }
   return base;
 }

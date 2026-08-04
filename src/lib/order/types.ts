@@ -138,6 +138,12 @@ export interface OrderSummary {
   // 待支付
   payableAmount?: string;
   payMethod?: string;
+  /** Tangbuy pay tradeNo — opens PaymentModal / channelList. */
+  tradeNo?: string;
+  /** DraftOrderItemEnum code when draft domain exists. */
+  draftStatus?: number;
+  /** Header-level exception badge (warehouse / refund / freeze). */
+  exceptionTag?: string;
 
   // 备货中
   expectedShipAt?: string;

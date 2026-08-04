@@ -17,10 +17,13 @@ import { makeMockOrders } from "@/lib/order/mock";
 import {
   fetchOrders,
   invalidateOrderHeadersCache,
+  isRecipientIncomplete,
   parseCreatedAt,
   placeDropshipOrder,
   type OrderSource,
 } from "@/lib/order/api";
+import { buildPackageCreateInfoForOrder, PackageCreateInfoError } from "@/lib/order/build-package-create-info";
+import { ApiError } from "@/lib/api";
 import { MetricSummaryCards, type MetricSummaryItem, type MetricTone } from "@/components/workbench/metric-summary-cards";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Button } from "@/components/ui/button";
@@ -42,7 +45,6 @@ import {
   setOrderInternal,
   generateTangbuyOrderNo,
   generateSupplierOrderNo,
-  type PaymentChannel,
 } from "@/lib/order/mock-store";
 import { deriveAmountUsd } from "@/lib/order/payment";
 import { billingApi } from "@/lib/billing/api";
@@ -81,6 +83,7 @@ function OrderCenterContent() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   // A+ 批：跑通下单/支付流程
   const [placingId, setPlacingId] = useState<string | undefined>();
+  const [placeError, setPlaceError] = useState<string | null>(null);
   const [paymentOrderId, setPaymentOrderId] = useState<string | undefined>();
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [balanceCny, setBalanceCnyState] = useState<number>(() => getBalanceCny());
@@ -158,10 +161,12 @@ function OrderCenterContent() {
     [locale, router]
   );
 
-  // 代发下单：优先调 plugin purchaseOrder；失败时回退 mock（本地无后端联调）
+  // 代发下单：组装 packageCreateInfo + 地址门禁；失败诚实提示，不再静默 mock 当真成功
   const handlePlace = useCallback(
     async (order: OrderSummary) => {
       if (order.status !== "pendingOrder") return;
+      setPlaceError(null);
+
       const unbound = (order.lineItems ?? []).some((it) => !it.linkedOffer);
       if ((order.lineItems?.length ?? 0) > 0 && unbound) {
         const first = order.lineItems!.find((it) => !it.linkedOffer);
@@ -169,133 +174,116 @@ function OrderCenterContent() {
         return;
       }
 
+      if (!order.recipient || isRecipientIncomplete(order.recipient)) {
+        setDrawerOrderId(order.id);
+        setPlaceError(t("order.action.needAddress"));
+        return;
+      }
+
+      if (!shopName) {
+        setPlaceError(t("order.action.placeFailed"));
+        return;
+      }
+
       setPlacingId(order.id);
       const amountUsd = deriveAmountUsd(order);
       try {
-        if (shopName) {
-          const res = await placeDropshipOrder({
-            shopName,
-            outerOrderId: order.shopifyOrderId || order.id,
-            orderType: 1,
-          });
-          const tangbuyNo = res.tangbuyOrderNo || res.tradeNo || generateTangbuyOrderNo(order.id);
-          const supplierNo = res.lineNos?.[0] || generateSupplierOrderNo(order.id);
-          setOrderInternal(order.id, {
-            tangbuyOrderNo: tangbuyNo,
-            supplierOrderNo: supplierNo,
-            placedAt: new Date().toISOString(),
-            amountUsd:
-              res.payableAmountCny != null ? Number(res.payableAmountCny) : amountUsd,
-            paymentStatus: "unpaid",
-          });
-          setRawOrders((prev) =>
-            prev.map((o) =>
-              o.id === order.id
-                ? {
-                    ...o,
-                    status: "pendingPayment",
-                    tangbuyOrderNo: tangbuyNo,
-                    supplierOrderNo: supplierNo,
-                    payableAmount:
-                      res.payableAmountCny != null
-                        ? `CNY ${Number(res.payableAmountCny).toFixed(2)}`
-                        : `USD ${amountUsd.toFixed(2)}`,
-                    payMethod: "—",
-                  }
-                : o
-            )
-          );
-          invalidateOrderHeadersCache(shopName);
-          refreshInternal();
-          return;
+        const packageCreateInfo = await buildPackageCreateInfoForOrder({
+          shopName,
+          order,
+          goodsAmount: amountUsd,
+        });
+        const res = await placeDropshipOrder({
+          shopName,
+          outerOrderId: order.shopifyOrderId || order.id,
+          orderType: 1,
+          packageCreateInfo,
+        });
+        const tradeNo = res.tradeNo?.trim() || "";
+        const tangbuyNo =
+          res.tangbuyOrderNo || tradeNo || generateTangbuyOrderNo(order.id);
+        const supplierNo = res.lineNos?.[0] || generateSupplierOrderNo(order.id);
+        setOrderInternal(order.id, {
+          tangbuyOrderNo: tangbuyNo,
+          supplierOrderNo: supplierNo,
+          placedAt: new Date().toISOString(),
+          amountUsd:
+            res.payableAmountCny != null ? Number(res.payableAmountCny) : amountUsd,
+          paymentStatus: "unpaid",
+        });
+        setRawOrders((prev) =>
+          prev.map((o) =>
+            o.id === order.id
+              ? {
+                  ...o,
+                  status: "pendingPayment",
+                  tangbuyOrderNo: tangbuyNo,
+                  tradeNo: tradeNo || o.tradeNo,
+                  supplierOrderNo: supplierNo,
+                  payableAmount:
+                    res.payableAmountCny != null
+                      ? `CNY ${Number(res.payableAmountCny).toFixed(2)}`
+                      : `USD ${amountUsd.toFixed(2)}`,
+                  payMethod: "—",
+                  paymentStatus: "unpaid",
+                }
+              : o
+          )
+        );
+        invalidateOrderHeadersCache(shopName);
+        refreshInternal();
+        // Prefer authoritative list refresh when real backend is available
+        if (source === "real") {
+          load();
         }
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.warn("[order] placeDropshipOrder failed, fallback mock:", err);
+        console.warn("[order] placeDropshipOrder failed:", err);
+        let msg = t("order.action.placeFailed");
+        if (err instanceof PackageCreateInfoError) {
+          msg =
+            err.code === "no_line"
+              ? t("order.action.needLogisticsLine")
+              : t("order.action.placeFailed");
+        } else if (err instanceof ApiError) {
+          const m = err.message?.trim();
+          if (m?.toLowerCase().includes("shipping address")) {
+            msg = t("order.action.needAddress");
+            setDrawerOrderId(order.id);
+          } else if (m?.toLowerCase().includes("lineid")) {
+            msg = t("order.action.needLogisticsLine");
+          } else if (m) {
+            msg = m;
+          }
+        }
+        setPlaceError(msg);
+      } finally {
+        setPlacingId(undefined);
       }
-
-      setOrderInternal(order.id, {
-        tangbuyOrderNo: generateTangbuyOrderNo(order.id),
-        supplierOrderNo: generateSupplierOrderNo(order.id),
-        placedAt: new Date().toISOString(),
-        amountUsd,
-        paymentStatus: "unpaid",
-      });
-      setRawOrders((prev) =>
-        prev.map((o) =>
-          o.id === order.id
-            ? {
-                ...o,
-                status: "pendingPayment",
-                tangbuyOrderNo: generateTangbuyOrderNo(order.id),
-                supplierOrderNo: generateSupplierOrderNo(order.id),
-                payableAmount: `USD ${amountUsd.toFixed(2)}`,
-                payMethod: "—",
-              }
-            : o
-        )
-      );
-      refreshInternal();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shopName, handleNeedBindSource]
+    [shopName, handleNeedBindSource, t, source, load]
   );
-
-  useEffect(() => {
-    if (!placingId) return;
-    const t = setTimeout(() => setPlacingId(undefined), 500);
-    return () => clearTimeout(t);
-  }, [placingId]);
 
   // A+ 批：打开支付弹窗
   const handleOpenPayment = useCallback((order: OrderSummary) => {
     if (order.status !== "pendingPayment") return;
+    if (!order.tradeNo?.trim()) {
+      setPlaceError(t("order.payment.missingTradeNo"));
+      return;
+    }
     setPaymentOrderId(order.id);
-  }, []);
+  }, [t]);
 
-  // A+ 批：支付成功 → pendingPayment 转 preparing
-  // 余额通道：modal 已调用后端 /billing/consume/balance 扣减，并传回 newBalanceCny（元）；
-  // PayPal/Ulimit：mock 流程，不真扣（P3.2 接入支付网关）
+  // 支付提交成功 → 刷新列表（信 payCb / draft 状态），不本地硬切 preparing
   const handlePaid = useCallback(
-    (channel: PaymentChannel, feeUsd: number, newBalanceCny?: number) => {
-      if (!paymentOrderId) return;
-      const order = rawOrders.find((o) => o.id === paymentOrderId);
-      if (!order) return;
-
-      // 余额通道：用后端返回的最新余额覆盖本地 state（后端已扣，无需再本地扣）
-      if (channel === "balance" && newBalanceCny != null) {
-        persistBalanceCny(newBalanceCny);
-        setBalanceCnyState(newBalanceCny);
-      }
-      setOrderInternal(paymentOrderId, {
-        paidAt: new Date().toISOString(),
-        paymentChannel: channel,
-        feeUsd,
-        paymentStatus: "paid",
-      });
-      setRawOrders((prev) =>
-        prev.map((o) =>
-          o.id === paymentOrderId
-            ? {
-                ...o,
-                status: "preparing",
-                paymentStatus: "paid",
-                payMethod:
-                  channel === "balance"
-                    ? t("order.payMethodBalance")
-                    : channel === "paypal"
-                    ? "PayPal"
-                    : "Ulimit",
-                payFee: `USD ${feeUsd.toFixed(2)}`,
-                expectedShipAt: todayPlus(1),
-              }
-            : o
-        )
-      );
-      refreshInternal();
+    (_channel: string) => {
       setPaymentOrderId(undefined);
+      if (shopName) invalidateOrderHeadersCache(shopName);
+      load();
+      refreshInternal();
     },
-    [paymentOrderId, rawOrders]
+    [shopName, load]
   );
 
   const paymentOrder = useMemo(
@@ -523,6 +511,22 @@ function OrderCenterContent() {
               />
             </div>
 
+            {placeError ? (
+              <div className="mb-3 flex items-start justify-between gap-3 rounded-[var(--radius-card)] border border-destructive/30 bg-destructive-soft px-3 py-2 text-[12px] text-destructive">
+                <p className="min-w-0 flex-1">{placeError}</p>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 shrink-0 px-0"
+                  title={t("order.drawer.close")}
+                  aria-label={t("order.drawer.close")}
+                  onClick={() => setPlaceError(null)}
+                >
+                  ×
+                </Button>
+              </div>
+            ) : null}
+
             {loadError === "backend_unavailable" ? (
               <div className="flex flex-col items-center justify-center gap-3 rounded-[var(--radius-card)] border border-hairline bg-surface px-6 py-12 text-center">
                 <p className="text-sm font-medium text-ink">
@@ -578,7 +582,6 @@ function OrderCenterContent() {
       <PaymentModal
         open={!!paymentOrderId}
         order={paymentOrder}
-        balanceCny={balanceCny}
         onClose={() => setPaymentOrderId(undefined)}
         onPaid={handlePaid}
       />
@@ -595,15 +598,6 @@ function OrderCenterContent() {
       />
     </WorkbenchShell>
   );
-}
-
-function todayPlus(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
 }
 
 export default function OrderCenterPage() {

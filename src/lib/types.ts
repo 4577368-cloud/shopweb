@@ -758,6 +758,14 @@ export interface ShopOrderHeader {
   platformCreatedAt?: string | null;
   /** Linked t_draft_order.id when draft domain is populated. */
   draftOrderId?: number | null;
+  /** DraftOrderItemEnum code from plugin. */
+  draftStatus?: number | null;
+  /** Authoritative FE tab when draft exists (pendingOrder / pendingPayment / …). */
+  orderStatus?: string | null;
+  tradeNo?: string | null;
+  tangbuyOrderNo?: string | null;
+  exceptionTag?: string | null;
+  goodsStatus?: number | null;
   /** Nested line items (B1); preferred over N+1 binding/lines. */
   lineItems?: ShopOrderLineItem[] | null;
   /** Recipient — detail panel only; not shown in list by default. */
