@@ -3398,7 +3398,7 @@ export const fr: Dictionary = {
     examplePrice: "Set price to 9.9",
     exampleRematch: "Re-search unlinked",
     exampleTranslate: "Translate this product title to English",
-    exampleTranslateAll: "Translate all product titles to English",
+    exampleTranslateAll: "Translate titles on this page to English",
     filterAll: "All",
     filterNewArrivals: "New arrivals",
     filterBundled: "Bundled",
