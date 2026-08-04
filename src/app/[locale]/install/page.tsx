@@ -118,7 +118,7 @@ function InstallPageContent() {
         } catch {
           // fall through to OAuth tab
         }
-        const result = launchShopifyInstall(raw, { preferNewTab: true });
+        const result = await launchShopifyInstall(raw, { preferNewTab: true });
         if (!result.ok) {
           setRedirecting(false);
           const msg = resolveInstallError(
@@ -133,13 +133,15 @@ function InstallPageContent() {
       return;
     }
 
-    const result = launchShopifyInstall(raw);
-    if (!result.ok) {
-      setRedirecting(false);
-      const msg = resolveInstallError(t, result.errorCode, t("install.launchError"));
-      setError(msg);
-      showToast(msg);
-    }
+    void (async () => {
+      const result = await launchShopifyInstall(raw);
+      if (!result.ok) {
+        setRedirecting(false);
+        const msg = resolveInstallError(t, result.errorCode, t("install.launchError"));
+        setError(msg);
+        showToast(msg);
+      }
+    })();
   };
 
   const connect = () => connectWithDomain(handle);

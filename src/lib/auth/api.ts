@@ -23,7 +23,7 @@ import type {
 /** Auth endpoints live under /api/plugin/auth, so they use the same-origin path. */
 const AUTH_BASE = "/api/plugin/auth";
 const TANGBUY_GATEWAY_BASE = (
-  process.env.NEXT_PUBLIC_TANGBUY_GATEWAY_BASE_URL ?? "https://tangbuy.cc/gateway"
+  process.env.NEXT_PUBLIC_TANGBUY_GATEWAY_BASE_URL ?? "https://www.tangbuy.cc/gateway"
 ).replace(/\/+$/, "");
 const TOKEN_COOKIE = "TANGBUY_TOKEN";
 const REFRESH_COOKIE = "TANGBUY_REFRESHTOKEN";
@@ -146,7 +146,19 @@ async function tangbuyRequest<T>(
   init?: RequestInit,
   token?: string | null
 ): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    currency: "CNY",
+    device: "pc",
+    lang: "cn",
+    "tang-request-device": "web",
+    "tang-request-render": "csr",
+    "tang-request-rewrite": "true",
+    "x-request-platform": "[]",
+    "x-request-store": "[]",
+    "x-timezone": "8",
+    "x-timezone-id": "Asia/Shanghai",
+  };
   if (token) headers.Authorization = `Bearer ${token}`;
   const initHeaders = init?.headers;
   if (initHeaders instanceof Headers) {

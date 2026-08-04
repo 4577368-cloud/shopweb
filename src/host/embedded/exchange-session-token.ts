@@ -100,7 +100,7 @@ export async function exchangeSessionToken(
   }
 
   try {
-    const res = await fetch("/api/plugin/shopify/auth/session-token", {
+    const res = await fetch("/api/shopify/session-token", {
       method: "POST",
       headers: {
         Accept: "application/json",
