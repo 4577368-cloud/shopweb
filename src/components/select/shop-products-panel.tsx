@@ -179,6 +179,7 @@ import {
 } from "@/lib/product-source-identity";
 import { useBatchLinkQueue } from "@/hooks/use-batch-link-queue";
 import { usePublishLinkReveal } from "@/hooks/use-publish-link-reveal";
+import { useProductSourceIdentityVersion } from "@/hooks/use-product-source-identity-version";
 import {
   readPublishDisplaySnapshot,
   readPublishRevealQueue,
@@ -1630,7 +1631,11 @@ function ShopProductCard({
       setTrayOpen(true);
     }
     if (state === "done") {
+      // Drop leftover tray candidates so primary「确认」is unambiguously ack
+      // (PENDING → ACTIVE), not a re-confirm of a stale/wrong top candidate.
       setTrayOpen(false);
+      setResult(null);
+      setCurrentIdx(0);
     }
   }, [batchLinkDrive]);
 
@@ -1697,9 +1702,13 @@ function ShopProductCard({
     isAlreadySourcedProduct(binding, shopName, item.thirdPlatformItemId);
   const fromManual = isManualImageBinding(binding);
 
+  const sourceIdentityVersion = useProductSourceIdentityVersion(
+    shopName,
+    item.thirdPlatformItemId
+  );
   const storedSourceIdentity = useMemo(
     () => readProductSourceIdentity(shopName, item.thirdPlatformItemId),
-    [shopName, item.thirdPlatformItemId]
+    [shopName, item.thirdPlatformItemId, sourceIdentityVersion]
   );
   const boundSourceIdentity = binding?.sourceIdentity ?? storedSourceIdentity;
 
@@ -2410,15 +2419,18 @@ function ShopProductCard({
       : null;
   const detailUrl = sourceDetailUrl;
 
+  // PENDING: primary means ack. Rebind only when the tray is open on a different candidate.
+  const pendingRebind = cardState === "pending" && trayOpen && Boolean(current) && isRebind;
+
   const primaryLabel =
     cardState === "unbound" && !current
       ? t("shopProducts.findCandidates")
-      : current && !isBoundHere
-        ? isRebind
-          ? t("shopProducts.rebind")
-          : t("shopProducts.confirm")
-        : cardState === "pending"
-          ? t("shopProducts.confirm")
+      : cardState === "pending" && !pendingRebind
+        ? t("shopProducts.confirm")
+        : current && !isBoundHere
+          ? isRebind
+            ? t("shopProducts.rebind")
+            : t("shopProducts.confirm")
           : null;
 
   const onPrimary = () => {
@@ -2426,12 +2438,16 @@ function ShopProductCard({
       void openOrRunSearch(true);
       return;
     }
-    if (current && !isBoundHere) {
-      void confirmMatch(current);
+    if (cardState === "pending") {
+      if (pendingRebind && current) {
+        void confirmMatch(current);
+        return;
+      }
+      void ackBinding();
       return;
     }
-    if (cardState === "pending") {
-      void ackBinding();
+    if (current && !isBoundHere) {
+      void confirmMatch(current);
     }
   };
 

@@ -781,7 +781,10 @@ export const api = {
 
   /** "确认无误": promote a product's PENDING (AI-suggested) image binding to ACTIVE. */
   ackImageBinding: (shop: string, thirdPlatformItemId: string) => {
-    const params = new URLSearchParams({ shopName: shop, thirdPlatformItemId });
+    const params = new URLSearchParams({
+      shopName: normalizeShopApiName(shop),
+      thirdPlatformItemId,
+    });
     return request<void>(`/api/plugin/match/image-search/ack?${params.toString()}`, {
       method: "POST",
     });
@@ -809,7 +812,10 @@ export const api = {
 
   /** "取消关联": soft-unbind a product's image binding (PENDING or ACTIVE). */
   unbindImageBinding: (shop: string, thirdPlatformItemId: string) => {
-    const params = new URLSearchParams({ shopName: shop, thirdPlatformItemId });
+    const params = new URLSearchParams({
+      shopName: normalizeShopApiName(shop),
+      thirdPlatformItemId,
+    });
     return request<void>(`/api/plugin/match/image-search/unbind?${params.toString()}`, {
       method: "POST",
     });
