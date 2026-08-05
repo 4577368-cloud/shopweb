@@ -167,7 +167,6 @@ function SelectContent() {
     enqueueUnboundMatch,
   } = useProductsBatchLink({
     setTab,
-    setShopFilter,
     showToast,
     t,
     newArrivalStats,

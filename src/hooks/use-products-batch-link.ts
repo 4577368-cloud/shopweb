@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ShopFilter } from "@/components/select/shop-products-panel";
 import type { BatchLinkProgress, BatchLinkRequest } from "@/lib/batch-link/types";
 import type { ProductsPageTab } from "@/lib/products/page-constants";
 import type { NewArrivalStats } from "@/lib/shop-product-mirror-baseline";
@@ -13,7 +12,6 @@ type TranslateFn = (
 
 export interface UseProductsBatchLinkParams {
   setTab: (tab: ProductsPageTab) => void;
-  setShopFilter: (filter: ShopFilter) => void;
   showToast: (message: string) => void;
   t: TranslateFn;
   newArrivalStats: NewArrivalStats;
@@ -21,7 +19,6 @@ export interface UseProductsBatchLinkParams {
 
 export function useProductsBatchLink({
   setTab,
-  setShopFilter,
   showToast,
   t,
   newArrivalStats,
@@ -74,7 +71,7 @@ export function useProductsBatchLink({
         return;
       }
       setTab("shop");
-      setShopFilter("all");
+      // Keep the merchant's current filter + page; scope is already pageLinkableScope.ids.
       fireBatchLink(source, pageLinkableScope.ids);
     },
     [
@@ -82,7 +79,6 @@ export function useProductsBatchLink({
       fireBatchLink,
       pageLinkableScope.ids,
       setTab,
-      setShopFilter,
       showToast,
       t,
     ]
@@ -105,14 +101,13 @@ export function useProductsBatchLink({
       return;
     }
     setTab("shop");
-    setShopFilter("all");
+    // Keep current filter/page — only link the scoped new-arrival ids.
     fireBatchLink("manual", newLinkableIds);
   }, [
     batchLinkActive,
     fireBatchLink,
     newLinkableIds,
     setTab,
-    setShopFilter,
     showToast,
     t,
   ]);

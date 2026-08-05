@@ -770,6 +770,8 @@ export function ShopProductsPanel({
     [onActivity]
   );
 
+  // Soft follow: only nudge scroll when the card is mounted on the current list.
+  // If the merchant paginated away, skip — don't yank them back.
   const scrollToBatchLinkProduct = useCallback(
     (productId: string) => {
       onProductFocus?.(productId);
@@ -784,7 +786,7 @@ export function ShopProductsPanel({
         const inView =
           rect.top >= topInset && rect.bottom <= window.innerHeight - bottomInset;
         if (inView) return;
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
       });
     },
     [onProductFocus]
@@ -901,7 +903,7 @@ export function ShopProductsPanel({
           ? preflight.readyProducts.slice(0, SHOP_PRODUCTS_PAGE_SIZE)
           : preflight.readyProducts;
 
-      setFilter("all");
+      // Do not force filter=all / page=1 — merchant stays on the list they started from.
       if (source === "manual") {
         showToast(
           t("shopProducts.toastBatchLinkStart", {
@@ -920,7 +922,6 @@ export function ShopProductsPanel({
       bindings,
       onBatchLinkFinished,
       pendingNewAnalysisIds,
-      setFilter,
       shopName,
       showToast,
       startBatchLink,
@@ -1482,7 +1483,7 @@ export function ShopProductsPanel({
             size="sm"
             className="h-8"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1 || linkingLocked}
+            disabled={page <= 1}
             title={t("shopProducts.prevPage")}
             aria-label={t("shopProducts.prevPage")}
           >
@@ -1496,7 +1497,7 @@ export function ShopProductsPanel({
             size="sm"
             className="h-8"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages || linkingLocked}
+            disabled={page >= totalPages}
             title={t("shopProducts.nextPage")}
             aria-label={t("shopProducts.nextPage")}
           >
