@@ -205,6 +205,7 @@ function SelectContent() {
     shopName,
     shopMirrorKey,
     isAuthorized,
+    sessionPending,
     scanDone,
     scanStats,
     loadSummary,

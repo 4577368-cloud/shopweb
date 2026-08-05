@@ -47,8 +47,8 @@ export const cookieAuthStrategy: AuthStrategy = {
     };
   },
   async refreshAfterUnauthorized() {
-    // UserProvider owns /auth/refresh via registerRefreshHandler in api.ts.
-    return false;
+    const { refreshAccessCookie } = await import("@/lib/api");
+    return refreshAccessCookie();
   },
 };
 

@@ -29,6 +29,8 @@ export interface UseProductsEntryParams {
   shopName: string;
   shopMirrorKey: string;
   isAuthorized: boolean;
+  /** True while user/shop auth is still restoring after refresh. */
+  sessionPending?: boolean;
   scanDone: boolean;
   scanStats: ScanSummaryStats;
   loadSummary: LoadSummaryFn;
@@ -44,6 +46,7 @@ export function useProductsEntry({
   shopName,
   shopMirrorKey,
   isAuthorized,
+  sessionPending = false,
   scanDone,
   scanStats,
   loadSummary,
@@ -105,7 +108,8 @@ export function useProductsEntry({
   }, [shopMirrorKey, startScan]);
 
   useEffect(() => {
-    if (!isAuthorized) return;
+    // Wait for auth hydrate — otherwise hard refresh races and sticky-fails as 未授权/400.
+    if (sessionPending || !isAuthorized) return;
     if (startedForShopRef.current === shopName) return;
     startedForShopRef.current = shopName;
     finishedRef.current = false;
@@ -127,6 +131,7 @@ export function useProductsEntry({
       await startScan();
     })();
   }, [
+    sessionPending,
     isAuthorized,
     shopName,
     shopMirrorKey,
@@ -146,12 +151,12 @@ export function useProductsEntry({
   }, [phase, scanDone, finishToResult]);
 
   useEffect(() => {
-    if (phase !== "result" || !isAuthorized) return;
+    if (sessionPending || phase !== "result" || !isAuthorized) return;
     setScanHandoff(consumeScanHandoff(shopName));
-  }, [phase, isAuthorized, shopName]);
+  }, [sessionPending, phase, isAuthorized, shopName]);
 
   useEffect(() => {
-    if (phase !== "result" || !isAuthorized) return;
+    if (sessionPending || phase !== "result" || !isAuthorized) return;
     const onVisible = () => {
       if (document.visibilityState === "visible") {
         void loadSummary({ silent: true });
@@ -159,7 +164,7 @@ export function useProductsEntry({
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [phase, isAuthorized, loadSummary]);
+  }, [sessionPending, phase, isAuthorized, loadSummary]);
 
   return {
     phase,

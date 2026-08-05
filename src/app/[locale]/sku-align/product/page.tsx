@@ -177,7 +177,8 @@ function SkuAlignProductContent() {
   );
 
   useEffect(() => {
-    if (!isAuthorized || !productId) return;
+    // Wait for auth hydrate — otherwise hard refresh sticky-fails as 未授权/400.
+    if (sessionPending || !isAuthorized || !productId) return;
     markScanned("sku-align", scanShopKey);
 
     const loadKey = `${shopName}::${productId}`;
@@ -198,7 +199,7 @@ function SkuAlignProductContent() {
 
     loadedForRef.current = loadKey;
     void load();
-  }, [isAuthorized, productId, load, shopName]);
+  }, [sessionPending, isAuthorized, productId, load, shopName, scanShopKey]);
 
   /** External navigation (different product / deep link) — re-read tab from URL once. */
   useEffect(() => {

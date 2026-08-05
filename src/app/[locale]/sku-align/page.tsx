@@ -143,6 +143,7 @@ function SkuAlignContent() {
     shopName,
     scanShopKey,
     isAuthorized,
+    sessionPending,
     searchParams,
     router,
     load,

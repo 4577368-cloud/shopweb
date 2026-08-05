@@ -36,6 +36,8 @@ export interface UseSkuAlignEntryParams {
   shopName: string;
   scanShopKey: string;
   isAuthorized: boolean;
+  /** True while user/shop auth is still restoring after refresh. */
+  sessionPending?: boolean;
   searchParams: ReadonlyURLSearchParams;
   router: AppRouterInstance;
   load: (opts?: { silent?: boolean; skipCache?: boolean }) => Promise<void>;
@@ -52,6 +54,7 @@ export function useSkuAlignEntry({
   shopName,
   scanShopKey,
   isAuthorized,
+  sessionPending = false,
   searchParams,
   router,
   load,
@@ -109,7 +112,8 @@ export function useSkuAlignEntry({
   ]);
 
   useEffect(() => {
-    if (!isAuthorized) return;
+    // Wait for auth hydrate — hard refresh otherwise races and sticky-fails.
+    if (sessionPending || !isAuthorized) return;
     if (startedForShopRef.current === shopName) return;
     startedForShopRef.current = shopName;
 
@@ -180,6 +184,7 @@ export function useSkuAlignEntry({
       void startScan();
     }
   }, [
+    sessionPending,
     isAuthorized,
     shopName,
     scanShopKey,
