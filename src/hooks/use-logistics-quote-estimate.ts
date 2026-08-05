@@ -761,7 +761,7 @@ export function useLogisticsQuoteEstimate({
     profile: ProductLogisticsProfile
   ) => {
     if (!shopName?.trim()) {
-      showToast(t("logistics.tokenMissing"));
+      showToast(t("logistics.authNeeded"));
       return;
     }
     setIngestingProductId(productId);
