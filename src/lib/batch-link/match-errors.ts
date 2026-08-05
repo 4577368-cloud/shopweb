@@ -24,9 +24,16 @@ export function extractBackendErrorMessage(err: unknown): string {
     if (colonIdx >= 0 && raw.startsWith("请求失败")) {
       raw = raw.slice(colonIdx + 1).trim();
     }
+    // Tomcat / gateway HTML error pages — never surface markup to the UI.
+    if (/<!doctype html|<html[\s>]|HTTP Status \d+/i.test(raw)) {
+      return "";
+    }
     return raw;
   }
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error) {
+    if (/<!doctype html|<html[\s>]/i.test(err.message)) return "";
+    return err.message;
+  }
   return "";
 }
 

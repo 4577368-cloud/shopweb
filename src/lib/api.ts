@@ -796,20 +796,15 @@ export const api = {
     ),
 
   /** "确认无误": promote a product's PENDING (AI-suggested) image binding to ACTIVE. */
-  ackImageBinding: (shop: string, thirdPlatformItemId: string) => {
-    const shopName = normalizeShopApiName(shop);
-    const params = new URLSearchParams({
-      shopName,
-      thirdPlatformItemId,
-    });
-    // Query + form body: some gateways drop POST query strings; Spring binds either.
-    const body = params.toString();
-    return request<void>(`/api/plugin/match/image-search/ack?${body}`, {
+  ackImageBinding: (shop: string, thirdPlatformItemId: string) =>
+    request<void>("/api/plugin/match/image-search/ack", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    });
-  },
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        shopName: normalizeShopApiName(shop),
+        thirdPlatformItemId,
+      }),
+    }),
 
   /** Batch-acknowledge multiple pending image bindings via real single-ack endpoint. */
   batchAckImageBindings: async (shop: string, thirdPlatformItemIds: string[]) => {
@@ -832,19 +827,15 @@ export const api = {
   },
 
   /** "取消关联": soft-unbind a product's image binding (PENDING or ACTIVE). */
-  unbindImageBinding: (shop: string, thirdPlatformItemId: string) => {
-    const shopName = normalizeShopApiName(shop);
-    const params = new URLSearchParams({
-      shopName,
-      thirdPlatformItemId,
-    });
-    const body = params.toString();
-    return request<void>(`/api/plugin/match/image-search/unbind?${body}`, {
+  unbindImageBinding: (shop: string, thirdPlatformItemId: string) =>
+    request<void>("/api/plugin/match/image-search/unbind", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    });
-  },
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        shopName: normalizeShopApiName(shop),
+        thirdPlatformItemId,
+      }),
+    }),
 
   /** Start (or return) the server-side image-auto-match queue for a shop or scoped products. */
   startMatchQueue: (
