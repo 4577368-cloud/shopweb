@@ -76,6 +76,31 @@ function coerceProductCommandDraft(
     next = { ...next, targetScope: "current" };
   }
 
+  // LLM often puts「加1」into params.price=1 — rewrite to priceDelta when text is relative.
+  const adjust = parseListingPriceAdjust(text);
+  if (adjust) {
+    if (next.intent === "update_listing_price") {
+      next = {
+        ...next,
+        params: {
+          ...next.params,
+          price: undefined,
+          priceDelta: adjust.delta,
+          currency: adjust.currency ?? next.params.currency,
+        },
+      };
+    } else if (next.intent === "batch_update_listing_price") {
+      next = {
+        ...next,
+        params: {
+          ...next.params,
+          batchPriceFixed: undefined,
+          batchPriceDelta: adjust.delta,
+        },
+      };
+    }
+  }
+
   return next;
 }
 
