@@ -1,4 +1,5 @@
 import { isLikelySkuSpecLabel } from "@/lib/batch-link/source-display-title";
+import { touchShopProductActivity } from "@/lib/batch-link/shop-product-activity";
 import { resolveIdentityWithPreferredPool } from "@/lib/tangbuy/preferred-pool";
 import {
   mergeIdentityIntoBinding,
@@ -180,6 +181,7 @@ export async function finalizeManualMatchBinding(
     skipPoolIngest: false,
   });
   writeProductSourceIdentity(shopName, thirdPlatformItemId, identity);
+  touchShopProductActivity(shopName, thirdPlatformItemId);
   return mergeIdentityIntoBinding(
     withManualMatchBindingMeta(view, req.offerTitle),
     identity

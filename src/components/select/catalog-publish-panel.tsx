@@ -41,6 +41,12 @@ import type {
   SavedCatalogSearch,
 } from "@/lib/catalog-sourcing-types";
 import { markCatalogPublished } from "@/lib/batch-link/publish-source";
+import {
+  markCatalogCandidateLinked,
+  markCatalogCandidatePublished,
+  resolveCatalogCardHydration,
+} from "@/lib/batch-link/catalog-card-hydration";
+import { touchShopProductActivity } from "@/lib/batch-link/shop-product-activity";
 import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
 import type { CatalogRecommendation, PricingTemplate } from "@/lib/types";
 
@@ -148,6 +154,55 @@ export function CatalogPublishPanel({
     },
     [shopName, locale]
   );
+
+  // Hydrate 已上架 / 已关联 from bindings + local markers after each page load.
+  useEffect(() => {
+    if (!shopName.trim() || recommendations.length === 0) return;
+    let cancelled = false;
+    void api
+      .listImageBindings(shopName)
+      .catch(() => [])
+      .then((bindings) => {
+        if (cancelled) return;
+        setPublishState((prev) => {
+          const next = { ...prev };
+          let changed = false;
+          for (const item of recommendations) {
+            const current = next[item.candidateId];
+            if (current?.loading) continue;
+            if (current?.result?.publishStatus === "PUBLISHED" && current.linked) {
+              continue;
+            }
+            const hydration = resolveCatalogCardHydration(
+              shopName,
+              item,
+              bindings
+            );
+            if (!hydration.published && !hydration.linked) continue;
+            const patch: PublishCellState = {
+              loading: false,
+              linked: hydration.linked || hydration.published,
+              error: current?.error,
+              result: hydration.published
+                ? {
+                    status: "ok",
+                    publishStatus: "PUBLISHED",
+                    candidateId: item.candidateId,
+                    shopifyProductId: current?.result?.shopifyProductId,
+                    message: current?.result?.message,
+                  }
+                : current?.result,
+            };
+            next[item.candidateId] = patch;
+            changed = true;
+          }
+          return changed ? next : prev;
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shopName, recommendations]);
 
   const loadAll = useCallback(
     async (opts?: { showSkeleton?: boolean; filters?: CatalogFilterState }) => {
@@ -390,6 +445,8 @@ export function CatalogPublishPanel({
           {
             onPublished: (productId, catalogItem) => {
               markCatalogPublished(shopName, productId);
+              markCatalogCandidatePublished(shopName, catalogItem.candidateId);
+              touchShopProductActivity(shopName, productId);
               queuePublishReveal(shopName, productId, catalogItem);
               onPublished?.(productId);
               onActivity?.();
@@ -421,9 +478,11 @@ export function CatalogPublishPanel({
       }));
       onActivity?.();
       if (result.publishStatus === "PUBLISHED") {
+        markCatalogCandidatePublished(shopName, item.candidateId);
         if (result.shopifyProductId?.trim()) {
           const productId = result.shopifyProductId.trim();
           markCatalogPublished(shopName, productId);
+          touchShopProductActivity(shopName, productId);
           queuePublishReveal(shopName, productId, item);
           onPublished?.(productId);
         }
@@ -574,6 +633,18 @@ export function CatalogPublishPanel({
         onClose={() => setLinkItem(null)}
         showToast={showToast}
         onLinked={(thirdPlatformItemId) => {
+          if (linkItem) {
+            markCatalogCandidateLinked(shopName, linkItem.candidateId);
+            setPublishState((prev) => ({
+              ...prev,
+              [linkItem.candidateId]: {
+                ...prev[linkItem.candidateId],
+                loading: false,
+                linked: true,
+              },
+            }));
+          }
+          touchShopProductActivity(shopName, thirdPlatformItemId);
           setLinkItem(null);
           onActivity?.();
           onBindingLinked?.(thirdPlatformItemId);

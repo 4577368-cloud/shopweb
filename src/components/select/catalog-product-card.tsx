@@ -15,6 +15,8 @@ export interface PublishCellState {
   loading: boolean;
   result?: PublishResult;
   error?: string;
+  /** Mall source already linked to an existing shop product (关联). */
+  linked?: boolean;
 }
 
 function money(value?: number | null, currency?: string | null): string {
@@ -61,6 +63,7 @@ export function CatalogProductCard({
   const result = state?.result;
   const published = result?.publishStatus === "PUBLISHED";
   const publishing = state?.loading || result?.publishStatus === "PUBLISHING";
+  const linked = Boolean(state?.linked) || published;
   const [imgError, setImgError] = useState(false);
 
   return (
@@ -169,15 +172,17 @@ export function CatalogProductCard({
           size="sm"
           variant="secondary"
           className="min-w-0 flex-1"
-          disabled={publishing || !isMallGatewayConfigured()}
+          disabled={publishing || linked || !isMallGatewayConfigured()}
           title={
-            !isMallGatewayConfigured()
-              ? t("catalogCard.mallUnavailable")
-              : t("catalogCard.linkToLiveTitle")
+            linked
+              ? t("catalogCard.linkedBtn")
+              : !isMallGatewayConfigured()
+                ? t("catalogCard.mallUnavailable")
+                : t("catalogCard.linkToLiveTitle")
           }
           onClick={onLink}
         >
-          {t("catalogCard.linkBtn")}
+          {linked ? t("catalogCard.linkedBtn") : t("catalogCard.linkBtn")}
         </Button>
       </div>
         {state?.error ? (

@@ -186,6 +186,10 @@ import {
   readPublishDisplaySnapshot,
   readPublishRevealQueue,
 } from "@/lib/batch-link/publish-reveal";
+import {
+  readShopProductActivity,
+  shopProductActivityScore,
+} from "@/lib/batch-link/shop-product-activity";
 import { isInternalGoodsId, resolveSourceDetailHref, candidateMatchesBoundSource } from "@/lib/catalog-product-resolve";
 
 export interface AgentIntentRequest {
@@ -624,6 +628,14 @@ export function ShopProductsPanel({
   const [page, setPage] = useState(1);
   /** Bindings read still in flight — cards must not claim "unlinked" yet. */
   const [bindingsPending, setBindingsPending] = useState(false);
+  const [activityVersion, setActivityVersion] = useState(0);
+
+  useEffect(() => {
+    const onActivity = () => setActivityVersion((v) => v + 1);
+    window.addEventListener("shop-product-activity-updated", onActivity);
+    return () =>
+      window.removeEventListener("shop-product-activity-updated", onActivity);
+  }, []);
 
   const load = useCallback(async (opts?: { silent?: boolean; retryPoolBackfill?: boolean; force?: boolean }): Promise<ShopMirrorProduct[] | null> => {
     const silent = opts?.silent ?? false;
@@ -1110,8 +1122,21 @@ export function ShopProductsPanel({
       );
     }
 
-    // Newest-joined first: mirror id desc, then updatedAt desc.
+    // Newest activity first (catalog publish / mall→shop link), then mirror id.
+    const activity = readShopProductActivity(shopName);
     result = [...result].sort((a, b) => {
+      const aResolved = readProductSourceIdentity(
+        shopName,
+        a.thirdPlatformItemId
+      )?.resolvedAt;
+      const bResolved = readProductSourceIdentity(
+        shopName,
+        b.thirdPlatformItemId
+      )?.resolvedAt;
+      const actDiff =
+        shopProductActivityScore(activity, b.thirdPlatformItemId, bResolved) -
+        shopProductActivityScore(activity, a.thirdPlatformItemId, aResolved);
+      if (actDiff !== 0) return actDiff;
       const idDiff = (b.id ?? 0) - (a.id ?? 0);
       if (idDiff !== 0) return idDiff;
       const aAt = a.updatedAt ? Date.parse(a.updatedAt) : 0;
@@ -1130,6 +1155,7 @@ export function ShopProductsPanel({
     catalogScope,
     bindings,
     shopName,
+    activityVersion,
   ]);
 
   // Rail「重搜候选」signal ref — effect runs after pageLinkableProducts (page-scoped).

@@ -6,6 +6,8 @@ import {
 } from "@/lib/ai-field-edit-feedback";
 import { api, readableError } from "@/lib/api";
 import { markCatalogPublished } from "@/lib/batch-link/publish-source";
+import { markCatalogCandidatePublished } from "@/lib/batch-link/catalog-card-hydration";
+import { touchShopProductActivity } from "@/lib/batch-link/shop-product-activity";
 import { queuePublishReveal } from "@/lib/batch-link/publish-reveal";
 import { PRICING_TEMPLATE_REQUIRED } from "@/lib/listing-pricing";
 import { resolveTitleCopyStyle } from "@/lib/products/resolve-title-copy-style";
@@ -706,6 +708,11 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
           {
             onPublished: (productId, catalogItem) => {
               markCatalogPublished(ctx.shopName, productId);
+              markCatalogCandidatePublished(
+                ctx.shopName,
+                catalogItem.candidateId
+              );
+              touchShopProductActivity(ctx.shopName, productId);
               queuePublishReveal(ctx.shopName, productId, catalogItem);
               void ctx.loadSummary({ silent: true, force: true }).then(() => {
                 ctx.bumpMirrorRefresh();
@@ -733,6 +740,11 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
       ) {
         const productId = outcome.result.shopifyProductId.trim();
         markCatalogPublished(ctx.shopName, productId);
+        markCatalogCandidatePublished(
+          ctx.shopName,
+          outcome.catalogItem.candidateId
+        );
+        touchShopProductActivity(ctx.shopName, productId);
         queuePublishReveal(ctx.shopName, productId, outcome.catalogItem);
       }
       await ctx.loadSummary({ silent: true, force: true });

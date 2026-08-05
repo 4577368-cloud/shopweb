@@ -158,9 +158,19 @@ export function CatalogLinkDrawer({
 
   const filteredProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter((p) => (p.title ?? "").toLowerCase().includes(q));
-  }, [products, query]);
+    const list = q
+      ? products.filter((p) => (p.title ?? "").toLowerCase().includes(q))
+      : products;
+    // Unbound first — 关联 is meant for attaching mall source to existing live products.
+    return [...list].sort((a, b) => {
+      const boundA = bindings[a.thirdPlatformItemId]?.bound ? 1 : 0;
+      const boundB = bindings[b.thirdPlatformItemId]?.bound ? 1 : 0;
+      if (boundA !== boundB) return boundA - boundB;
+      const idDiff = (b.id ?? 0) - (a.id ?? 0);
+      if (idDiff !== 0) return idDiff;
+      return (b.title ?? "").localeCompare(a.title ?? "");
+    });
+  }, [products, query, bindings]);
 
   const skuRows = useMemo(
     () => (detail ? mapItemGetToSourceSkuMatrix(detail) : []),
