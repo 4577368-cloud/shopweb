@@ -8,6 +8,7 @@ import { Field, Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { CURRENCY_OPTIONS } from "@/lib/catalog-sourcing-types";
 import { calculateSalePrice } from "@/lib/price-calculator";
+import { api } from "@/lib/api";
 import type { PricingTemplate } from "@/lib/types";
 import { useT } from "@/i18n/LocaleProvider";
 
@@ -43,9 +44,9 @@ function toForm(t: PricingTemplate): TemplateForm {
   };
 }
 
-/** Matches backend PricingTemplateService system default — used when template not loaded yet. */
+/** Matches backend offline FX fallback when template not loaded yet. */
 const FALLBACK_FORM: TemplateForm = {
-  exchangeRate: "7.2",
+  exchangeRate: "6.761905",
   multiplier: "2",
   addend: "0",
   roundingStrategy: "HALF_UP",
@@ -149,7 +150,7 @@ function PricingCalculationBreakdown({
   );
 }
 
-/** Side panel editor. Target currency only — procurement FX is always via exchangeRate. */
+/** Side panel editor. FX is Tangbuy system rate (read-only); merchants edit margin rules only. */
 export function PricingTemplateDrawer({
   open,
   template,
@@ -164,12 +165,41 @@ export function PricingTemplateDrawer({
   const t = useT();
   const [form, setForm] = useState<TemplateForm | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fxLoading, setFxLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setForm(template ? toForm(template) : FALLBACK_FORM);
     setFormError(null);
   }, [open, template]);
+
+  // When target currency changes, refresh system FX from pay BFF.
+  useEffect(() => {
+    if (!open || !form?.targetCurrency) return;
+    let alive = true;
+    const currency = form.targetCurrency;
+    setFxLoading(true);
+    api
+      .getSystemExchangeRate(currency)
+      .then((rate) => {
+        if (!alive) return;
+        setForm((prev) =>
+          prev && prev.targetCurrency === currency
+            ? { ...prev, exchangeRate: String(rate) }
+            : prev
+        );
+      })
+      .catch(() => {
+        /* keep template overlay / fallback */
+      })
+      .finally(() => {
+        if (alive) setFxLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only refetch on currency change
+  }, [open, form?.targetCurrency]);
 
   const breakdown = useMemo(() => {
     if (!form) return null;
@@ -294,13 +324,21 @@ export function PricingTemplateDrawer({
                 </Select>
               </Field>
               <Field label={t("pricingDrawer.exchangeRate")}>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={form.exchangeRate}
-                  onChange={(e) => patch({ exchangeRate: e.target.value })}
-                  disabled={saving}
-                />
+                <div className="relative">
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    value={form.exchangeRate}
+                    readOnly
+                    disabled={saving || fxLoading}
+                    className="bg-surface-muted pr-8"
+                    title={t("pricingDrawer.rateSystemOnly")}
+                    aria-readonly="true"
+                  />
+                  {fxLoading ? (
+                    <Loader2 className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-ink-subtle" />
+                  ) : null}
+                </div>
                 <p className="mt-1 text-[10px] leading-relaxed text-ink-subtle">
                   {t("pricingDrawer.rateHint")}
                 </p>
@@ -368,7 +406,7 @@ export function PricingTemplateDrawer({
         </div>
 
         <footer className="flex items-center gap-2 border-t border-hairline px-4 py-3">
-          <Button onClick={handleSave} disabled={saving || clearing || !form}>
+          <Button onClick={handleSave} disabled={saving || clearing || !form || fxLoading}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {saving ? t("pricingDrawer.saving") : t("pricingDrawer.save")}
           </Button>

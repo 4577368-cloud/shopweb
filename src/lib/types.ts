@@ -434,6 +434,7 @@ export interface PricingTemplate {
   shopName?: string | null;
   sourceCurrency: string;
   targetCurrency: string;
+  /** Always Tangbuy system FX for targetCurrency (CNY per 1 target). */
   exchangeRate: number;
   multiplier: number;
   addend: number;
@@ -441,13 +442,16 @@ export interface PricingTemplate {
   decimals: number;
   /** true 表示尚未保存、返回的是系统默认值 */
   isDefault: boolean;
+  /** SYSTEM = FX from Tangbuy pay, not merchant-editable. */
+  exchangeRateSource?: "SYSTEM" | string | null;
   updatedAt?: string | null;
 }
 
-/** POST /api/plugin/pricing/template 请求体；仅 shopName + exchangeRate 必填。 */
+/** POST /api/plugin/pricing/template — exchangeRate optional/ignored; server uses system FX. */
 export interface PricingTemplateUpsert {
   shopName: string;
-  exchangeRate: number;
+  /** Ignored by server; kept for compat. */
+  exchangeRate?: number;
   multiplier?: number;
   addend?: number;
   roundingStrategy?: string;
