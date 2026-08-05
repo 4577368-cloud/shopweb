@@ -124,9 +124,7 @@ import {
 } from "@/lib/batch-link/preflight";
 import { confirmCandidateBinding } from "@/lib/batch-link/confirm-binding";
 import {
-  ackAutoLinkedBinding,
   autoAckHighConfidencePendingBindings,
-  isHighConfidencePendingBinding,
 } from "@/lib/batch-link/auto-ack-binding";
 import { classifyMatchConfidence } from "@/lib/batch-link/confidence";
 import {
@@ -965,12 +963,10 @@ export function ShopProductsPanel({
       const b = bindings[p.thirdPlatformItemId];
       if (isAlreadySourcedProduct(b, shopName, p.thirdPlatformItemId)) {
         if (!b?.bound) return null;
-        if (b.bindStatus !== "PENDING") return "confirmed";
-        return isHighConfidencePendingBinding(b) ? "confirmed" : "pending";
+        return b.bindStatus === "PENDING" ? "pending" : "confirmed";
       }
       if (!b?.bound) return null;
-      if (b.bindStatus !== "PENDING") return "confirmed";
-      return isHighConfidencePendingBinding(b) ? "confirmed" : "pending";
+      return b.bindStatus === "PENDING" ? "pending" : "confirmed";
     },
     [bindings, shopName]
   );
@@ -980,7 +976,6 @@ export function ShopProductsPanel({
     for (const p of products) {
       const b = bindings[p.thirdPlatformItemId];
       if (!b?.bound || b.bindStatus !== "PENDING") continue;
-      if (isHighConfidencePendingBinding(b)) continue;
       n += 1;
     }
     return n;
@@ -1682,41 +1677,8 @@ function ShopProductCard({
   const boundOfferId =
     binding?.bound && binding.tangbuyProductId ? binding.tangbuyProductId : null;
   const bindPending = Boolean(binding?.bound) && binding?.bindStatus === "PENDING";
-  const [autoAcking, setAutoAcking] = useState(false);
 
-  // High-confidence auto-links: silently promote PENDING → ACTIVE (no extra tap).
-  useEffect(() => {
-    if (!bindPending || !binding?.bound || autoAcking || acking) return;
-    if (!isHighConfidencePendingBinding(binding)) return;
-    let cancelled = false;
-    setAutoAcking(true);
-    void (async () => {
-      try {
-        const acked = await ackAutoLinkedBinding(
-          shopName,
-          item.thirdPlatformItemId,
-          binding
-        );
-        if (!cancelled) onBound(item.thirdPlatformItemId, acked);
-      } finally {
-        if (!cancelled) setAutoAcking(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    acking,
-    autoAcking,
-    bindPending,
-    binding,
-    item.thirdPlatformItemId,
-    onBound,
-    shopName,
-  ]);
-
-  const needsManualAck =
-    bindPending && binding && !isHighConfidencePendingBinding(binding);
+  const needsManualAck = bindPending;
 
   useEffect(() => {
     const justOpened = trayOpen && !prevTrayOpenRef.current;
@@ -2917,7 +2879,6 @@ function ShopProductCard({
               disabled={
                 cardActionsLocked ||
                 searching ||
-                autoAcking ||
                 (cardState === "unbound" && !hasImage && !current) ||
                 confirmingId != null ||
                 acking ||

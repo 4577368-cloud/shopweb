@@ -84,9 +84,15 @@ export function formatBatchLinkSummary(progress: BatchLinkProgress): string {
   if (progress.total <= 0) return "暂无可关联的未匹配商品";
   const parts = [`已完成 ${progress.processed}/${progress.total} 个商品图搜关联`];
   const detail: string[] = [];
-  if (progress.linked > 0) detail.push(`${progress.linked} 个已自动关联`);
-  const manual = progress.needsReview + progress.failed;
-  if (manual > 0) detail.push(`${manual} 个需手动处理`);
+  if (progress.linked > 0) {
+    detail.push(`${progress.linked} 个已自动关联（待确认）`);
+  }
+  if (progress.needsReview > 0) {
+    detail.push(`${progress.needsReview} 个需复核`);
+  }
+  if (progress.failed > 0) {
+    detail.push(`${progress.failed} 个失败`);
+  }
   if (detail.length > 0) parts.push(`其中 ${detail.join("，")}`);
   return parts.join("，");
 }

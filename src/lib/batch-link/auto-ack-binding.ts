@@ -1,18 +1,18 @@
-import { normalizeMatchScore } from "@/lib/agents/products/match-rank";
 import { api } from "@/lib/api";
-import { HIGH_MATCH_THRESHOLD } from "@/data/mock";
 import type { ImageBindingView } from "@/lib/types";
 
-/** PENDING auto-link with title/image score at or above high-match threshold. */
+/**
+ * @deprecated High-score PENDING rows are no longer auto-acked.
+ * All AI auto-links stay PENDING until the merchant confirms (single or batch).
+ * Kept as a always-false helper so call sites compile during migration.
+ */
 export function isHighConfidencePendingBinding(
-  binding: ImageBindingView
+  _binding: ImageBindingView
 ): boolean {
-  if (!binding.bound || binding.bindStatus !== "PENDING") return false;
-  const score = normalizeMatchScore(binding.matchScore);
-  return score != null && score >= HIGH_MATCH_THRESHOLD;
+  return false;
 }
 
-/** Promote a freshly auto-linked row from PENDING → ACTIVE (fail-open). */
+/** Promote a PENDING binding to ACTIVE (single-card confirm). Fail-open. */
 export async function ackAutoLinkedBinding(
   shopName: string,
   itemId: string,
@@ -27,29 +27,13 @@ export async function ackAutoLinkedBinding(
   }
 }
 
-/** Silent sweep for server-queue / legacy high-match rows still awaiting ack. */
+/**
+ * No-op: do not silently promote high-match PENDING rows.
+ * Merchants confirm via「确认无误」or「批量确认」.
+ */
 export async function autoAckHighConfidencePendingBindings(
-  shopName: string,
+  _shopName: string,
   bindings: Record<string, ImageBindingView>
 ): Promise<Record<string, ImageBindingView>> {
-  const ids = Object.entries(bindings)
-    .filter(([, b]) => isHighConfidencePendingBinding(b))
-    .map(([id]) => id);
-  if (ids.length === 0) return bindings;
-
-  const next = { ...bindings };
-  try {
-    const result = await api.batchAckImageBindings(shopName, ids);
-    for (const id of ids) {
-      if (!result.failed.includes(id)) {
-        const prev = next[id];
-        if (prev?.bound) {
-          next[id] = { ...prev, bindStatus: "ACTIVE" };
-        }
-      }
-    }
-  } catch {
-    // Fail-open — user can still batch-ack manually.
-  }
-  return next;
+  return bindings;
 }

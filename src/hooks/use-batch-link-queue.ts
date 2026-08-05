@@ -3,10 +3,10 @@
 import { useCallback, useRef, useState } from "react";
 import type { Locale } from "@/i18n/config";
 import { classifyMatchConfidence } from "@/lib/batch-link/confidence";
-import { ackAutoLinkedBinding } from "@/lib/batch-link/auto-ack-binding";
 import { resolveCandidateConfidence } from "@/lib/batch-link/candidate-confidence";
 import { confirmCandidateBinding } from "@/lib/batch-link/confirm-binding";
 import {
+  isGatewayBusyError,
   isOfferNotFoundError,
   mapImageMatchConfirmError,
   userFacingImageSearchMessage,
@@ -27,7 +27,7 @@ const CANDIDATES_READY_MS = 650;
 const SELECT_PRESSED_MS = 220;
 const DONE_FLASH_MS = 480;
 const SCROLL_SETTLE_MS = 200;
-const AUTO_BIND_CANDIDATE_LIMIT = 3;
+const AUTO_BIND_CANDIDATE_LIMIT = 5;
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -236,6 +236,18 @@ export function useBatchLinkQueue({
           searchResult = { ...pipeline.result, items: reranked.orderedCandidates };
         }
 
+        // Keep SKU-probe rejects at the tail so we still have bindable candidates.
+        if (pipeline.result && pipeline.rankedItems.length > 0 && rankedItems.length < pipeline.rankedItems.length) {
+          const kept = new Set(
+            rankedItems.map((c) => `${c.productId ?? ""}:${c.skuId ?? ""}`)
+          );
+          const rejected = pipeline.rankedItems.filter(
+            (c) => !kept.has(`${c.productId ?? ""}:${c.skuId ?? ""}`)
+          );
+          rankedItems = [...rankedItems, ...rejected];
+          searchResult = { ...pipeline.result, items: rankedItems };
+        }
+
         const confidencePatch = rankedItems.length
           ? confidenceDrivePatch({
               ...pipeline,
@@ -258,24 +270,7 @@ export function useBatchLinkQueue({
           continue;
         }
 
-        const tier = classifyMatchConfidence(pipeline.topScore);
-        if (tier === "none") {
-          setCardState(id, "needs_review", {
-            productTitle: title,
-            ...confidencePatch,
-            searchResult: searchResult,
-            matchScores: pipeline.matchScores,
-            imageScores: pipeline.imageScores,
-            highlightTopCandidate: true,
-          });
-          bumpProcessed(
-            product,
-            "needs_review",
-            `${title}：匹配偏低，请确认货源`
-          );
-          continue;
-        }
-
+        // Auto-bind any candidate as PENDING — merchant confirms later (single/batch).
         setCardState(id, "candidates_ready", {
           productTitle: title,
           ...confidencePatch,
@@ -287,24 +282,6 @@ export function useBatchLinkQueue({
         await sleep(CANDIDATES_READY_MS);
         if (runId !== runIdRef.current) break;
 
-        if (tier === "medium" || tier === "low") {
-          setCardState(id, "needs_review", {
-            productTitle: title,
-            ...confidencePatch,
-            searchResult: searchResult,
-            matchScores: pipeline.matchScores,
-            imageScores: pipeline.imageScores,
-            highlightTopCandidate: true,
-          });
-          bumpProcessed(
-            product,
-            "needs_review",
-            `${title}：${tier === "low" ? "低匹配" : "中匹配"}，待确认货源`
-          );
-          continue;
-        }
-
-        // High confidence — auto select top candidate (same as「选用」).
         const candidatesToTry = rankedItems.slice(0, AUTO_BIND_CANDIDATE_LIMIT);
         setCardState(id, "auto_selecting", {
           productTitle: title,
@@ -346,8 +323,8 @@ export function useBatchLinkQueue({
                 locale,
               }
             );
-            const acked = await ackAutoLinkedBinding(shopName, id, view);
-            onBound(id, acked);
+            // Leave PENDING — do not silent-ack.
+            onBound(id, view);
             setCardState(id, "done", {
               productTitle: title,
               ...confidencePatch,
@@ -360,14 +337,14 @@ export function useBatchLinkQueue({
             });
             const suffix =
               i > 0 ? `（已跳过 ${i} 个失效货源）` : "";
-            bumpProcessed(product, "linked", `${title}：已自动关联并确认${suffix}`);
+            bumpProcessed(product, "linked", `${title}：已自动关联，待确认${suffix}`);
             await sleep(DONE_FLASH_MS);
             patchCard(id, { doneFlash: false });
             bound = true;
             break;
           } catch (err) {
             lastErr = err;
-            if (!isOfferNotFoundError(err)) break;
+            if (!isOfferNotFoundError(err) && !isGatewayBusyError(err)) break;
           }
         }
 
