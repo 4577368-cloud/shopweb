@@ -509,7 +509,10 @@ export function planProductCommand(
     }
     case "update_listing_price": {
       const price = draft.params.price;
+      const priceDelta = draft.params.priceDelta;
       const currency = resolveCurrency(draft, ctx);
+      const hasDelta =
+        priceDelta != null && Number.isFinite(priceDelta) && priceDelta !== 0;
       if (!productId) {
         return {
           draft,
@@ -518,6 +521,47 @@ export function planProductCommand(
           detailLines: [],
           executable: false,
           clarify: t("agentProducts.clarifySelectForPrice"),
+        };
+      }
+      if (hasDelta) {
+        const shopPrice = ctx.focusProduct?.shopPrice ?? null;
+        const signed =
+          priceDelta! > 0
+            ? `+${priceDelta!.toFixed(2)}`
+            : priceDelta!.toFixed(2);
+        const detailLines = [
+          t("agentProducts.detailPriceDelta", {
+            currency,
+            delta: signed,
+          }),
+        ];
+        if (shopPrice != null && Number.isFinite(shopPrice)) {
+          const next = Math.round((shopPrice + priceDelta!) * 100) / 100;
+          detailLines.push(
+            t("agentProducts.detailPriceDeltaPreview", {
+              currency,
+              before: shopPrice.toFixed(2),
+              after: next.toFixed(2),
+            })
+          );
+        }
+        detailLines.push(t("agentProducts.detailPriceDeltaScope"));
+        return {
+          draft: {
+            ...draft,
+            productId,
+            confirmationRequired: true,
+            params: {
+              ...draft.params,
+              price: undefined,
+              priceDelta,
+              currency,
+            },
+          },
+          operation: t("agentProducts.opAdjustPrice"),
+          targetLabel: focusTitle,
+          detailLines,
+          executable: true,
         };
       }
       if (price == null || !Number.isFinite(price) || price <= 0) {
@@ -545,7 +589,7 @@ export function planProductCommand(
           ...draft,
           productId,
           confirmationRequired: true,
-          params: { ...draft.params, price, currency },
+          params: { ...draft.params, price, currency, priceDelta: undefined },
         },
         operation: t("agentProducts.opUpdatePrice"),
         targetLabel: focusTitle,
@@ -714,8 +758,9 @@ export function planProductCommand(
     case "batch_update_listing_price": {
       const multiplier = draft.params.batchPriceMultiplier;
       const fixedPrice = draft.params.batchPriceFixed;
+      const priceDelta = draft.params.batchPriceDelta;
 
-      if (!multiplier && !fixedPrice) {
+      if (!multiplier && !fixedPrice && (priceDelta == null || priceDelta === 0)) {
         return {
           draft,
           operation: t("agentProducts.opBatchUpdatePrice"),
@@ -751,7 +796,13 @@ export function planProductCommand(
           count: totalCount,
         })
       );
-      if (multiplier) {
+      if (priceDelta != null && priceDelta !== 0) {
+        const signed =
+          priceDelta > 0 ? `+${priceDelta.toFixed(2)}` : priceDelta.toFixed(2);
+        detailLines.push(
+          t("agentProducts.detailPricingDelta", { delta: signed })
+        );
+      } else if (multiplier) {
         detailLines.push(
           t("agentProducts.detailPricingMultiplier", { multiplier })
         );
@@ -1004,14 +1055,23 @@ export function resolveCommandExecution(
       };
     case "update_listing_price": {
       const price = draft.params.price;
+      const priceDelta = draft.params.priceDelta;
       const currency = draft.params.currency ?? "USD";
-      if (!productId || price == null) return null;
+      if (!productId) return null;
+      if (
+        (priceDelta == null || priceDelta === 0) &&
+        (price == null || !Number.isFinite(price))
+      ) {
+        return null;
+      }
       const variantScope = draft.params.priceScope ?? "one";
       return {
         type: "listing_price_update",
         productId,
         productTitle: plan.targetLabel,
         price,
+        priceDelta:
+          priceDelta != null && priceDelta !== 0 ? priceDelta : undefined,
         currency,
         variantScope,
         variantSkuId: draft.params.variantSkuId,
@@ -1056,6 +1116,7 @@ export function resolveCommandExecution(
         totalCount: productIds.length,
         batchPriceMultiplier: draft.params.batchPriceMultiplier,
         batchPriceFixed: draft.params.batchPriceFixed,
+        batchPriceDelta: draft.params.batchPriceDelta,
         filterLabel: plan.targetLabel,
       };
     }

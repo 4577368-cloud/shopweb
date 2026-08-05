@@ -131,6 +131,45 @@ function buildVariantPayload(
   return [{ thirdPlatformSkuId: target.thirdPlatformSkuId, price }];
 }
 
+function buildVariantDeltaPayload(
+  detail: ShopProductDetail,
+  delta: number,
+  target: ListingPriceWriteTarget
+): { thirdPlatformSkuId: string; price: number }[] | null {
+  const rows = (detail.variants ?? []).filter((v) => v.thirdPlatformSkuId);
+  if (!rows.length) return null;
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  if (target.scope === "all") {
+    const out: { thirdPlatformSkuId: string; price: number }[] = [];
+    for (const v of rows) {
+      const base = v.price;
+      if (base == null || !Number.isFinite(base)) {
+        throw new Error("部分变体缺少售价，无法按差额调价");
+      }
+      const next = round2(base + delta);
+      if (next <= 0) {
+        throw new Error(`调价后售价须大于 0（变体现价 ${base.toFixed(2)}）`);
+      }
+      out.push({ thirdPlatformSkuId: v.thirdPlatformSkuId!, price: next });
+    }
+    return out;
+  }
+
+  const row = rows.find((v) => v.thirdPlatformSkuId === target.thirdPlatformSkuId);
+  if (!row) return null;
+  const base = row.price;
+  if (base == null || !Number.isFinite(base)) {
+    throw new Error("该变体缺少售价，无法按差额调价");
+  }
+  const next = round2(base + delta);
+  if (next <= 0) {
+    throw new Error(`调价后售价须大于 0（现价 ${base.toFixed(2)}）`);
+  }
+  return [{ thirdPlatformSkuId: target.thirdPlatformSkuId, price: next }];
+}
+
 /**
  * Write Shopify listing price for all variants or one selected variant.
  */
@@ -186,6 +225,73 @@ export async function writeShopListingPrice(
   return {
     detail: saved,
     previousPrice,
+    variantScope: target.scope,
+    variantSkuId:
+      target.scope === "one" ? target.thirdPlatformSkuId : undefined,
+  };
+}
+
+/**
+ * Add/subtract from current listing price(s). Scope "all" adjusts each variant
+ * independently (15–16 +1 → 16–17), not flatten to a single price.
+ */
+export async function writeShopListingPriceDelta(
+  shopName: string,
+  productId: string,
+  delta: number,
+  target: ListingPriceWriteTarget,
+  signal?: AbortSignal
+): Promise<{
+  detail: ShopProductDetail;
+  previousPrice: number | null;
+  nextPrice: number | null;
+  variantScope: ListingPriceScope;
+  variantSkuId?: string;
+}> {
+  if (!Number.isFinite(delta) || delta === 0) {
+    throw new Error("调价差额无效");
+  }
+  const detail = await api.getShopProductDetail(shopName, productId, signal);
+  const previousPrice = variantPriceBefore(detail, target);
+  const variants = buildVariantDeltaPayload(detail, delta, target);
+  if (!variants?.length) {
+    throw new Error("该商品无可用变体，无法修改售价");
+  }
+
+  const defaultVariantPrice = variants[0]!.price;
+  const payload = {
+    itemId: productId,
+    variants,
+    defaultVariantPrice,
+    expectedUpdatedAt: detail.updatedAt,
+  };
+
+  let saved: ShopProductDetail;
+  try {
+    saved = await api.updateShopProduct(shopName, payload, signal);
+  } catch (err) {
+    if (!isProductConflict(err)) throw err;
+    saved = await api.updateShopProduct(
+      shopName,
+      {
+        ...payload,
+        force: true,
+        expectedUpdatedAt: undefined,
+      },
+      signal
+    );
+  }
+
+  const nextExtrema = listingExtremaFromDetail(saved);
+  const nextPrice =
+    target.scope === "one"
+      ? variants[0]?.price ?? null
+      : nextExtrema.minPrice;
+
+  return {
+    detail: saved,
+    previousPrice,
+    nextPrice,
     variantScope: target.scope,
     variantSkuId:
       target.scope === "one" ? target.thirdPlatformSkuId : undefined,

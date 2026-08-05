@@ -11,6 +11,7 @@ import {
   formatVariantLabel,
   resolveVariantByLabelHint,
 } from "@/lib/agents/products/resolve-variant-target";
+import { applyPriceDelta } from "@/lib/agents/products/listing-price-adjust";
 import { api, readableError } from "@/lib/api";
 import { useT } from "@/i18n/LocaleProvider";
 import type { ShopMirrorSku, ShopProductDetail } from "@/lib/types";
@@ -42,7 +43,16 @@ export function ListingPriceConfirmCard({
   const t = useT();
   const productId = plan.draft.productId ?? plan.draft.params.productId;
   const price = plan.draft.params.price;
+  const priceDelta = plan.draft.params.priceDelta;
+  const isDelta =
+    priceDelta != null && Number.isFinite(priceDelta) && priceDelta !== 0;
   const currency = plan.draft.params.currency ?? "USD";
+  const signedDelta =
+    isDelta && priceDelta != null
+      ? priceDelta > 0
+        ? `+${priceDelta.toFixed(2)}`
+        : priceDelta.toFixed(2)
+      : null;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +80,17 @@ export function ListingPriceConfirmCard({
         if (rows.length <= 1) {
           setScope("one");
           setSelectedSkuId(rows[0]?.thirdPlatformSkuId ?? null);
+          return;
+        }
+
+        // 「价格加1」默认每个规格各自加减，避免 15–16 被压成同一价。
+        if (
+          isDelta &&
+          draft.priceScope == null &&
+          !draft.variantSkuId &&
+          !draft.variantLabelHint
+        ) {
+          setScope("all");
           return;
         }
 
@@ -119,24 +140,33 @@ export function ListingPriceConfirmCard({
     return () => {
       cancelled = true;
     };
-  }, [shopName, productId, plan.draft.params, t]);
+  }, [shopName, productId, plan.draft.params, t, isDelta]);
 
   const canConfirm = useMemo(() => {
-    if (price == null || !productId) return false;
+    if (!productId) return false;
+    if (!isDelta && price == null) return false;
     if (!multi) return Boolean(selectedSkuId);
     if (scope === "all") return true;
     if (scope === "one") return Boolean(selectedSkuId);
     return false;
-  }, [price, productId, multi, scope, selectedSkuId]);
+  }, [price, isDelta, productId, multi, scope, selectedSkuId]);
+
+  const resolveNextPrice = (current: number | null | undefined): number | null => {
+    if (current == null || !Number.isFinite(current)) return null;
+    if (isDelta && priceDelta != null) return applyPriceDelta(current, priceDelta);
+    if (price != null) return price;
+    return null;
+  };
 
   const handleConfirm = () => {
-    if (!canConfirm || price == null || !productId) return;
+    if (!canConfirm || !productId) return;
     const variantScope: ListingPriceScope = scope === "all" ? "all" : "one";
     onConfirm({
       type: "listing_price_update",
       productId,
       productTitle: plan.targetLabel,
-      price,
+      price: isDelta ? undefined : price,
+      priceDelta: isDelta ? priceDelta : undefined,
       currency,
       variantScope,
       variantSkuId:
@@ -158,9 +188,13 @@ export function ListingPriceConfirmCard({
           <dd className="min-w-0 font-medium">{plan.targetLabel}</dd>
         </div>
         <div className="flex gap-2">
-          <dt className="shrink-0 text-amber-800/80">{t("commandUi.newPrice")}</dt>
+          <dt className="shrink-0 text-amber-800/80">
+            {isDelta ? t("commandUi.priceDelta") : t("commandUi.newPrice")}
+          </dt>
           <dd className="min-w-0 font-medium tabular-nums">
-            {currency} {price?.toFixed(2)}
+            {isDelta
+              ? `${currency} ${signedDelta}`
+              : `${currency} ${price?.toFixed(2)}`}
           </dd>
         </div>
       </dl>
@@ -231,7 +265,7 @@ export function ListingPriceConfirmCard({
                     key={v.thirdPlatformSkuId}
                     variant={v}
                     currency={detail?.currency ?? currency}
-                    nextPrice={price ?? 0}
+                    nextPrice={resolveNextPrice(v.price)}
                     scope={scope}
                     selected={selectedSkuId === v.thirdPlatformSkuId}
                     onSelect={() => {
@@ -252,7 +286,10 @@ export function ListingPriceConfirmCard({
           {t("commandUi.singleVariantSummary", {
             label: formatVariantLabel(variants[0]!),
             current: formatMoney(variants[0]!.price, detail?.currency ?? currency),
-            next: formatMoney(price, currency),
+            next: formatMoney(
+              resolveNextPrice(variants[0]!.price),
+              currency
+            ),
           })}
         </p>
       ) : (
@@ -293,7 +330,7 @@ function VariantRow({
 }: {
   variant: ShopMirrorSku;
   currency?: string | null;
-  nextPrice: number;
+  nextPrice: number | null;
   scope: ListingPriceScope | null;
   selected: boolean;
   onSelect: () => void;

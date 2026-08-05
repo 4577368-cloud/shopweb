@@ -35,6 +35,8 @@ export interface ProductCommandParams {
   productTitleHint?: string;
   /** Shopify listing / variant price — never procurement cost */
   price?: number;
+  /** Relative adjust: add/subtract from current listing price(s), e.g. +1 or -2 */
+  priceDelta?: number;
   currency?: string;
   /** Multi-variant: all SKUs vs one SKU — chosen in confirm UI if unset */
   priceScope?: ListingPriceScope;
@@ -67,6 +69,8 @@ export interface ProductCommandParams {
   batchPriceMultiplier?: number;
   /** Batch price: fixed target price */
   batchPriceFixed?: number;
+  /** Batch price: add/subtract from each product's current listing price(s) */
+  batchPriceDelta?: number;
   /** Discover tab — dual-source search keywords */
   sourcingKeywords?: string;
   sourcingSourceFilter?: "all" | "tangbuy" | "1688";
@@ -119,7 +123,10 @@ export type ProductCommandExecution =
       type: "listing_price_update";
       productId: string;
       productTitle: string;
-      price: number;
+      /** Absolute target; omit when applying {@link priceDelta}. */
+      price?: number;
+      /** Relative adjust applied per selected variant(s). */
+      priceDelta?: number;
       currency: string;
       variantScope: ListingPriceScope;
       variantSkuId?: string;
@@ -149,6 +156,7 @@ export type ProductCommandExecution =
       totalCount: number;
       batchPriceMultiplier?: number;
       batchPriceFixed?: number;
+      batchPriceDelta?: number;
       filterLabel: string;
     }
   | {

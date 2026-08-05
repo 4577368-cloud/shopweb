@@ -8,6 +8,7 @@ import {
   parseProductCommandDraft,
   type CommandClassifyContext,
 } from "@/lib/agents/products/classify-command";
+import { parseListingPriceAdjust } from "@/lib/agents/products/listing-price-adjust";
 import { refersToCurrentProductForCopy } from "@/lib/agents/products/resolve-product-target";
 import { PRODUCTS_SHORT_INPUT_MAX } from "@/lib/agents/products/classify-intent";
 import type {

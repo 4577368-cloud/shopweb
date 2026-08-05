@@ -21,7 +21,7 @@ import {
   writeShopProductStatus,
   type ShopifyListingStatusTarget,
 } from "@/lib/shop-product-status";
-import { mergeListingPriceRow, writeShopListingPrice } from "@/lib/shop-product-write";
+import { mergeListingPriceRow, writeShopListingPrice, writeShopListingPriceDelta, listingExtremaFromDetail } from "@/lib/shop-product-write";
 import {
   isAbortError,
   throwIfAborted,
@@ -42,7 +42,8 @@ export function applyLocalProductStatus(
 
 export async function executeListingPriceUpdate(ctx: ProductsCommandRuntime, req: {
       productId: string;
-      price: number;
+      price?: number;
+      priceDelta?: number;
       currency: string;
       variantScope: "all" | "one";
       variantSkuId?: string;
@@ -54,6 +55,76 @@ export async function executeListingPriceUpdate(ctx: ProductsCommandRuntime, req
               scope: "one",
               thirdPlatformSkuId: req.variantSkuId!,
             } as const);
+
+      const isDelta =
+        req.priceDelta != null &&
+        Number.isFinite(req.priceDelta) &&
+        req.priceDelta !== 0;
+
+      if (isDelta) {
+        const { detail, previousPrice, nextPrice, variantScope } =
+          await writeShopListingPriceDelta(
+            ctx.shopName,
+            req.productId,
+            req.priceDelta!,
+            target
+          );
+        const currency = req.currency || detail.currency || "USD";
+        const extrema = listingExtremaFromDetail(detail);
+        const displayNext =
+          nextPrice ?? extrema.minPrice ?? previousPrice ?? 0;
+        const editRecord: AiFieldEditRecord = {
+          productId: req.productId,
+          field: "listingPrice",
+          previousValue: previousPrice,
+          nextValue: displayNext,
+          previousDisplay: formatListingMoney(previousPrice, currency),
+          nextDisplay: formatListingMoney(displayNext, currency),
+          currency,
+          createdAt: Date.now(),
+        };
+        const editsWithCurrent = {
+          ...ctx.aiFieldEditsRef.current,
+          [aiFieldEditKey(req.productId, "listingPrice")]: editRecord,
+        };
+        ctx.aiFieldEditsRef.current = editsWithCurrent;
+        ctx.setAiFieldEdits(editsWithCurrent);
+
+        await ctx.loadSummary();
+        ctx.setShopProducts((prev) =>
+          applyListingEditsToProducts(
+            prev.map((p) =>
+              p.thirdPlatformItemId === req.productId
+                ? {
+                    ...p,
+                    minPrice: extrema.minPrice ?? p.minPrice,
+                    maxPrice: extrema.maxPrice ?? p.maxPrice,
+                    currency: detail.currency ?? p.currency,
+                  }
+                : p
+            ),
+            editsWithCurrent
+          )
+        );
+        ctx.bumpMirrorRefresh();
+        const signed =
+          req.priceDelta! > 0
+            ? `+${req.priceDelta!.toFixed(2)}`
+            : req.priceDelta!.toFixed(2);
+        ctx.showToast(
+          ctx.t("productsPage.toastPriceAdjusted", {
+            title: detail.title ?? ctx.t("productsPage.productFallback"),
+            delta: signed,
+            currency,
+          })
+        );
+        return;
+      }
+
+      if (req.price == null || !Number.isFinite(req.price)) {
+        throw new Error(ctx.t("productsPreview.errCannotCalcPrice"));
+      }
+
       const { detail, previousPrice, variantScope } = await writeShopListingPrice(
         ctx.shopName,
         req.productId,
@@ -86,7 +157,7 @@ export async function executeListingPriceUpdate(ctx: ProductsCommandRuntime, req
               ? mergeListingPriceRow(
                   p,
                   detail,
-                  req.price,
+                  req.price!,
                   previousPrice,
                   variantScope
                 )
@@ -298,42 +369,63 @@ export async function executeBatchListingPriceUpdate(ctx: ProductsCommandRuntime
       productIds: string[];
       batchPriceMultiplier?: number;
       batchPriceFixed?: number;
+      batchPriceDelta?: number;
       signal?: AbortSignal;
       onProgress?: (current: number, total: number, success: number, failed: number) => void;
     }) {
-      const { productIds, batchPriceMultiplier, batchPriceFixed, onProgress, signal } = req;
+      const {
+        productIds,
+        batchPriceMultiplier,
+        batchPriceFixed,
+        batchPriceDelta,
+        onProgress,
+        signal,
+      } = req;
       const total = productIds.length;
       let success = 0;
       let failed = 0;
       let aborted = false;
+      const isDelta =
+        batchPriceDelta != null &&
+        Number.isFinite(batchPriceDelta) &&
+        batchPriceDelta !== 0;
 
       for (let i = 0; i < total; i++) {
         throwIfAborted(signal);
         const productId = productIds[i];
         try {
-          const detail = await api.getShopProductDetail(
-            ctx.shopName,
-            productId,
-            signal
-          );
-          let targetPrice = 0;
-
-          if (batchPriceFixed) {
-            targetPrice = batchPriceFixed;
-          } else if (batchPriceMultiplier && detail.minPrice != null) {
-            targetPrice = detail.minPrice * batchPriceMultiplier;
+          if (isDelta) {
+            await writeShopListingPriceDelta(
+              ctx.shopName,
+              productId,
+              batchPriceDelta!,
+              { scope: "all" },
+              signal
+            );
           } else {
-            throw new Error(ctx.t("productsPreview.errCannotCalcPrice"));
-          }
+            const detail = await api.getShopProductDetail(
+              ctx.shopName,
+              productId,
+              signal
+            );
+            let targetPrice = 0;
 
-          const target = { scope: "all" } as const;
-          await writeShopListingPrice(
-            ctx.shopName,
-            productId,
-            targetPrice,
-            target,
-            signal
-          );
+            if (batchPriceFixed) {
+              targetPrice = batchPriceFixed;
+            } else if (batchPriceMultiplier && detail.minPrice != null) {
+              targetPrice = detail.minPrice * batchPriceMultiplier;
+            } else {
+              throw new Error(ctx.t("productsPreview.errCannotCalcPrice"));
+            }
+
+            await writeShopListingPrice(
+              ctx.shopName,
+              productId,
+              targetPrice,
+              { scope: "all" },
+              signal
+            );
+          }
           success++;
         } catch (err) {
           if (isAbortError(err) || signal?.aborted) {
@@ -360,11 +452,18 @@ export async function executeBatchListingPriceUpdate(ctx: ProductsCommandRuntime
       ctx.bumpMirrorRefresh();
       await ctx.loadSummary();
 
-      const modeLabel = batchPriceFixed
-        ? ctx.t("productsPage.priceModeFixed", { price: batchPriceFixed })
-        : ctx.t("productsPage.priceModeMultiplier", {
-            multiplier: batchPriceMultiplier ?? 1,
-          });
+      const modeLabel = isDelta
+        ? ctx.t("productsPage.priceModeDelta", {
+            delta:
+              batchPriceDelta! > 0
+                ? `+${batchPriceDelta!.toFixed(2)}`
+                : batchPriceDelta!.toFixed(2),
+          })
+        : batchPriceFixed
+          ? ctx.t("productsPage.priceModeFixed", { price: batchPriceFixed })
+          : ctx.t("productsPage.priceModeMultiplier", {
+              multiplier: batchPriceMultiplier ?? 1,
+            });
       ctx.showToast(
         ctx.t("productsPage.toastBatchPriceDone", {
           mode: modeLabel,
@@ -466,7 +565,8 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
     update_listing_price: async (payload: Record<string, unknown>) => {
       const p = payload as {
         productId: string;
-        price: number;
+        price?: number;
+        priceDelta?: number;
         currency: string;
         variantScope: "all" | "one";
         variantSkuId?: string;
@@ -474,6 +574,7 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
       await executeListingPriceUpdate(ctx, {
         productId: p.productId,
         price: p.price,
+        priceDelta: p.priceDelta,
         currency: p.currency,
         variantScope: p.variantScope,
         variantSkuId: p.variantSkuId,
@@ -527,6 +628,7 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
         productIds: string[];
         batchPriceMultiplier?: number;
         batchPriceFixed?: number;
+        batchPriceDelta?: number;
         totalCount: number;
         signal?: AbortSignal;
         onProgress?: (current: number, total: number, success: number, failed: number) => void;
@@ -535,6 +637,7 @@ export function createProductsCommandExecutors(ctx: ProductsCommandRuntime) {
         productIds: p.productIds,
         batchPriceMultiplier: p.batchPriceMultiplier,
         batchPriceFixed: p.batchPriceFixed,
+        batchPriceDelta: p.batchPriceDelta,
         signal: p.signal,
         onProgress: p.onProgress,
       });

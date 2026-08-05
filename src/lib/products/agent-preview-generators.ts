@@ -200,6 +200,7 @@ export function createProductsPreviewGenerators({
         const productIds = plan.draft.params.batchProductIds ?? [];
         const multiplier = plan.draft.params.batchPriceMultiplier;
         const fixedPrice = plan.draft.params.batchPriceFixed;
+        const priceDelta = plan.draft.params.batchPriceDelta;
         const totalCount = productIds.length;
 
         if (totalCount === 0) {
@@ -217,7 +218,9 @@ export function createProductsPreviewGenerators({
             const currentPrice = detail.minPrice ?? 0;
             let newPrice = 0;
 
-            if (fixedPrice) {
+            if (priceDelta != null && priceDelta !== 0) {
+              newPrice = Math.round((currentPrice + priceDelta) * 100) / 100;
+            } else if (fixedPrice) {
               newPrice = fixedPrice;
             } else if (multiplier && detail.minPrice != null) {
               newPrice = detail.minPrice * multiplier;
@@ -245,9 +248,17 @@ export function createProductsPreviewGenerators({
           }
         }
 
-        const modeLabel = fixedPrice
-          ? t("productsPreview.priceModeFixed", { price: fixedPrice })
-          : t("productsPreview.priceModeMultiplier", { multiplier });
+        const modeLabel =
+          priceDelta != null && priceDelta !== 0
+            ? t("productsPreview.priceModeDelta", {
+                delta:
+                  priceDelta > 0
+                    ? `+${priceDelta.toFixed(2)}`
+                    : priceDelta.toFixed(2),
+              })
+            : fixedPrice
+              ? t("productsPreview.priceModeFixed", { price: fixedPrice })
+              : t("productsPreview.priceModeMultiplier", { multiplier });
 
         const extraNote =
           sampleCount < totalCount
@@ -282,6 +293,7 @@ export function createProductsPreviewGenerators({
             productIds,
             batchPriceMultiplier: multiplier,
             batchPriceFixed: fixedPrice,
+            batchPriceDelta: priceDelta,
             totalCount,
           },
         };

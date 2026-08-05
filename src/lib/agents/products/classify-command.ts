@@ -12,6 +12,7 @@ import {
 } from "@/lib/agents/products/command-schema";
 import { extractProductTitleHint, refersToCurrentProduct, refersToCurrentProductForCopy } from "@/lib/agents/products/resolve-product-target";
 import { extractListingPriceScopeHints } from "@/lib/agents/products/resolve-variant-target";
+import { parseListingPriceAdjust } from "@/lib/agents/products/listing-price-adjust";
 import { parseTargetLangFromText } from "@/lib/translate/lang-codes";
 import { detectTitleLocalizationStyle } from "@/lib/translate/localize-product-title";
 
@@ -93,7 +94,7 @@ function pageScopedBatchFilter(
 
 function tryListingPriceCommand(text: string): ProductCommandDraft | null {
   if (
-    !/(售价|卖价|上架价|listing|shopify.*价|改成|改为|设为|改价|调价|定价|价格)/i.test(
+    !/(售价|卖价|上架价|listing|shopify.*价|改成|改为|设为|改价|调价|定价|价格|加价|减价|涨价|降价)/i.test(
       text
     )
   ) {
@@ -103,11 +104,12 @@ function tryListingPriceCommand(text: string): ProductCommandDraft | null {
   if (/(汇率|费率|策略|模板|配置|设置|定价策略|定价模板|默认|全局)/i.test(text)) {
     return null;
   }
+  const adjust = parseListingPriceAdjust(text);
   const isBatch = refersToBatch(text);
   if (isBatch) {
     const multiplierMatch = text.match(/采购价(?:的)?\s*(\d+(?:\.\d+)?)\s*倍/i);
-    const fixedMatch = parseListingPrice(text);
-    if (!multiplierMatch && !fixedMatch) return null;
+    const fixedMatch = adjust ? null : parseListingPrice(text);
+    if (!multiplierMatch && !fixedMatch && !adjust) return null;
     const batchFilter = pageScopedBatchFilter(detectBatchFilter(text));
     const batchLimit = detectBatchLimit(text);
     return draft(
@@ -117,9 +119,29 @@ function tryListingPriceCommand(text: string): ProductCommandDraft | null {
         ...(batchLimit ? { batchLimit } : {}),
         batchPriceMultiplier: multiplierMatch ? Number(multiplierMatch[1]) : undefined,
         batchPriceFixed: fixedMatch?.price,
+        batchPriceDelta: adjust?.delta,
       },
       {
         targetScope: "all",
+        confirmationRequired: true,
+      }
+    );
+  }
+  if (adjust) {
+    const productTitleHint = refersToCurrentProduct(text)
+      ? undefined
+      : extractProductTitleHint(text) ?? undefined;
+    const scopeHints = extractListingPriceScopeHints(text);
+    return draft(
+      "update_listing_price",
+      {
+        priceDelta: adjust.delta,
+        currency: adjust.currency,
+        productTitleHint,
+        ...scopeHints,
+      },
+      {
+        targetScope: productTitleHint ? "explicit" : "current",
         confirmationRequired: true,
       }
     );
@@ -724,6 +746,25 @@ export function parseProductCommandDraft(raw: string): ProductCommandDraft | nul
       if (!Number.isFinite(n) || n <= 0) return null;
       params.price = n;
     }
+    if (params.priceDelta != null) {
+      const n = Number(params.priceDelta);
+      if (!Number.isFinite(n) || n === 0) {
+        delete params.priceDelta;
+      } else {
+        params.priceDelta = n;
+        // Relative adjust wins over a mistaken absolute price (e.g. LLM sets price=1 for「加1」).
+        delete params.price;
+      }
+    }
+    if (params.batchPriceDelta != null) {
+      const n = Number(params.batchPriceDelta);
+      if (!Number.isFinite(n) || n === 0) {
+        delete params.batchPriceDelta;
+      } else {
+        params.batchPriceDelta = n;
+        delete params.batchPriceFixed;
+      }
+    }
     if (params.currency) {
       params.currency = normalizeCurrency(String(params.currency)) ?? String(params.currency).toUpperCase();
     }
@@ -817,7 +858,10 @@ ${langBlock}
 [Intent rules]
 1. Understand what the user wants (change price? translate copy? open settings? view products?) before mapping.
 2. Distinguish "change listing price" vs "open pricing settings":
-   - "Set this product price to 9.9" → update_listing_price
+   - "Set this product price to 9.9" / 「售价改成 9.9」→ update_listing_price with params.price=9.9
+   - "Add 1 to the price" / 「把商品价格加1」/ 「售价减2」→ update_listing_price with params.priceDelta=+1 or -2 (NOT params.price=1)
+   - Relative vs absolute: 加/增加/上调/涨价/+N = priceDelta; 改成/改为/设为/改价为 = absolute price
+   - Batch: 「本页价格都加1」→ batch_update_listing_price with batchPriceDelta; 「统一改成9.9」→ batchPriceFixed
    - "Change exchange rate to 7.2" / "configure pricing" → open_pricing_editor
 3. Product copy / translation (NOT listing price unless 售价/卖价/金额数字):
    - Synonyms for translate: 翻译/译/翻, and when a target language is named: 修改为/改成/改为/调整为/翻译为/翻译成/成为/成/为/到 + language
@@ -844,7 +888,8 @@ ${langBlock}
 [Output format]
 - JSON only: {"intent":"...","targetScope":"current|explicit|none|all","productId":null,"params":{},"confirmationRequired":false}
 - intent must be one of the commands above
-- update_listing_price: extract price + currency; confirmationRequired=true
+- update_listing_price: params.price (absolute) OR params.priceDelta (relative add/subtract); currency optional; confirmationRequired=true
+  Never put a relative "加1/减2" amount into params.price — use priceDelta instead.
 - open_filter: params.shopFilter = all|pending|confirmed|unbound|new_arrivals
 - explain_product_match: params.matchExplain = reason|risk
 - update_product_copy / batch_update_product_copy:
