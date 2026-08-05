@@ -113,7 +113,6 @@ export function buildPricingContext(
   const configured = !needsPricingSetup(template);
   const baseParams = {
     currency: template.targetCurrency,
-    rate: template.exchangeRate,
     multiplier: template.multiplier,
   };
   return {
@@ -154,11 +153,9 @@ export function buildPurchaseDisplayContext(
   const summaryLine = ctx.fromPricingTemplate
     ? t("productsPricing.purchaseFromTemplate", {
         currency: ctx.currency,
-        rate: ctx.exchangeRate,
       })
     : t("productsPricing.purchaseDefault", {
         currency: ctx.currency,
-        rate: ctx.exchangeRate,
       });
   return {
     currency: ctx.currency,

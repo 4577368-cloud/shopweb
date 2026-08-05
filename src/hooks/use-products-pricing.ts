@@ -17,7 +17,8 @@ type TranslateFn = (
 ) => string;
 
 export interface PricingTemplateSavePayload {
-  exchangeRate: number;
+  /** Optional — server ignores and applies Tangbuy system FX. */
+  exchangeRate?: number;
   multiplier: number;
   addend: number;
   roundingStrategy: string;

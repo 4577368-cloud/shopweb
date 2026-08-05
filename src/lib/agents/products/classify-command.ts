@@ -882,7 +882,7 @@ ${langBlock}
    - "Add 1 to the price" / 「把商品价格加1」/ 「售价减2」→ update_listing_price with params.priceDelta=+1 or -2 (NOT params.price=1)
    - Relative vs absolute: 加/增加/上调/涨价/+N = priceDelta; 改成/改为/设为/改价为 = absolute price
    - Batch: 「本页价格都加1」→ batch_update_listing_price with batchPriceDelta; 「统一改成9.9」→ batchPriceFixed
-   - "Change exchange rate to 7.2" / "configure pricing" → open_pricing_editor
+   - "Change exchange rate to 7.2" / "configure pricing" → open_pricing_editor (FX is system-managed; open editor for multiplier/currency)
 3. Product copy / translation (NOT listing price unless 售价/卖价/金额数字):
    - Synonyms for translate: 翻译/译/翻, and when a target language is named: 修改为/改成/改为/调整为/翻译为/翻译成/成为/成/为/到 + language
    - Language names → params.copyTargetLang: 英文/英语→en, 日文/日语/日本语→ja, 韩文/韩语→ko, 中文/中文简体/简体→zh, English→en, etc.

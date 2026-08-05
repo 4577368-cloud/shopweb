@@ -1,17 +1,19 @@
 /**
  * Purchase-cost display for「我的 Shopify」tab only.
  *
- * Converts CNY procurement cost → shop display currency.
- * When a non-default pricing template is configured, uses the same FX as listing
- * pricing (no multiplier, no addend). Otherwise falls back to shop-currency defaults.
+ * Converts CNY procurement cost → display currency using Tangbuy system FX
+ * (via pricing template when present). Merchants never edit or see the rate.
  */
 
+import { currencyForUiLocale } from "@/lib/locale-currency";
 import type { PricingTemplate } from "@/lib/types";
 
-/** CNY per 1 unit of display currency (÷ only). Not used for listing sale price. */
+/** Offline fallbacks: CNY per 1 display unit (÷ only). */
 export const DEFAULT_PURCHASE_FX = {
-  USD: 6.45,
+  CNY: 1,
+  USD: 6.761905,
   EUR: 7.34,
+  GBP: 8.5,
 } as const;
 
 export const DEFAULT_PURCHASE_CURRENCY_FALLBACK = "USD";
@@ -19,7 +21,7 @@ export const DEFAULT_PURCHASE_CURRENCY_FALLBACK = "USD";
 export interface PurchaseCostDisplayContext {
   currency: string;
   exchangeRate: number;
-  /** True when FX comes from the saved pricing template (not shop default). */
+  /** True when FX comes from the saved pricing template (system-filled). */
   fromPricingTemplate: boolean;
 }
 
@@ -28,18 +30,27 @@ export function normalizeCurrencyCode(raw?: string | null): string | null {
   return cur || null;
 }
 
-/** Resolve display currency from Shopify product / shop currency. */
-export function resolvePurchaseDisplayCurrency(shopCurrency?: string | null): string {
+/** Resolve display currency: UI locale → Shopify shop → USD. */
+export function resolvePurchaseDisplayCurrency(
+  shopCurrency?: string | null,
+  uiLocale?: string | null
+): string {
+  if (uiLocale) {
+    return currencyForUiLocale(uiLocale);
+  }
   const cur = normalizeCurrencyCode(shopCurrency);
-  if (cur === "USD") return "USD";
-  if (cur === "EUR") return "EUR";
+  if (cur === "USD" || cur === "EUR" || cur === "GBP" || cur === "CNY") {
+    return cur;
+  }
   return DEFAULT_PURCHASE_CURRENCY_FALLBACK;
 }
 
 /** Default FX for purchase-cost display (never applies multiplier/addend). */
 export function resolvePurchaseDisplayFxRate(currency: string): number {
   const cur = currency.toUpperCase();
-  if (cur === "EUR") return DEFAULT_PURCHASE_FX.EUR;
+  if (cur in DEFAULT_PURCHASE_FX) {
+    return DEFAULT_PURCHASE_FX[cur as keyof typeof DEFAULT_PURCHASE_FX];
+  }
   return DEFAULT_PURCHASE_FX.USD;
 }
 
@@ -56,19 +67,29 @@ export function isEffectivePricingTemplate(
 
 export function resolvePurchaseCostDisplayContext(
   shopCurrency?: string | null,
-  pricingTemplate?: PricingTemplate | null
+  pricingTemplate?: PricingTemplate | null,
+  uiLocale?: string | null
 ): PurchaseCostDisplayContext {
+  const localeCurrency = uiLocale ? currencyForUiLocale(uiLocale) : null;
+
   if (isEffectivePricingTemplate(pricingTemplate)) {
     const currency =
+      localeCurrency ??
       normalizeCurrencyCode(pricingTemplate.targetCurrency) ??
-      resolvePurchaseDisplayCurrency(shopCurrency);
+      resolvePurchaseDisplayCurrency(shopCurrency, uiLocale);
+    // Prefer live system rate on the template when currencies align.
+    const rate =
+      normalizeCurrencyCode(pricingTemplate.targetCurrency) === currency
+        ? pricingTemplate.exchangeRate
+        : resolvePurchaseDisplayFxRate(currency);
     return {
       currency,
-      exchangeRate: pricingTemplate.exchangeRate,
+      exchangeRate: rate,
       fromPricingTemplate: true,
     };
   }
-  const currency = resolvePurchaseDisplayCurrency(shopCurrency);
+
+  const currency = resolvePurchaseDisplayCurrency(shopCurrency, uiLocale);
   return {
     currency,
     exchangeRate: resolvePurchaseDisplayFxRate(currency),
@@ -109,9 +130,14 @@ export function formatShopListingPrice(
 export function formatSourceCostInShopCurrency(
   costCny: number | null | undefined,
   shopCurrency?: string | null,
-  pricingTemplate?: PricingTemplate | null
+  pricingTemplate?: PricingTemplate | null,
+  uiLocale?: string | null
 ): string | null {
-  const ctx = resolvePurchaseCostDisplayContext(shopCurrency, pricingTemplate);
+  const ctx = resolvePurchaseCostDisplayContext(
+    shopCurrency,
+    pricingTemplate,
+    uiLocale
+  );
   const inTarget = costInPurchaseDisplayCurrency(costCny, ctx);
   if (inTarget == null) return null;
   return formatPurchaseCostMoney(inTarget, ctx.currency);

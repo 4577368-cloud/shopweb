@@ -3212,6 +3212,9 @@ export const es: Dictionary = {
     errMultiplier: "Introduzca un multiplicador válido > 0",
     errRate: "Tipo de cambio del sistema no disponible — reintente o cambie la moneda",
     exchangeRate: "Tipo de cambio (sistema)",
+    convertStep: "→ {{converted}} {{currency}}",
+    currencyHint: "Defaults follow UI language; FX is system-managed.",
+    previewLoading: "…",
     fxStep: "÷ {{rate}} → {{converted}}",
     loading: "Cargando plantilla…",
     multiplier: "Multiplicador de margen",
@@ -3555,8 +3558,8 @@ export const es: Dictionary = {
 
   productsPricing: {
     summaryMissing: "Plantilla de precios aún no cargada",
-    summaryConfigured: "{{currency}} · tasa {{rate}} · ×{{multiplier}}",
-    summaryConfiguredAddend: "{{currency}} · tasa {{rate}} · ×{{multiplier}} · +{{addend}}",
+    summaryConfigured: "{{currency}} · ×{{multiplier}}",
+    summaryConfiguredAddend: "{{currency}} · ×{{multiplier}} · +{{addend}}",
     summaryDefault: "Tarificación no configurada (predeterminado del sistema)",
     purchaseFromTemplate: "Visualización compra: {{currency}} · tasa {{rate}} (coincide con tarificación; sin margen multiplicador)",
     purchaseDefault: "Visualización compra: {{currency}} · tasa predeterminada {{rate}} (sin margen multiplicador)",

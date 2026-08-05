@@ -3213,6 +3213,9 @@ export const fr: Dictionary = {
     errMultiplier: "Entrez un multiplicateur valide > 0",
     errRate: "Taux système indisponible — réessayez ou changez de devise",
     exchangeRate: "Taux de change (système)",
+    convertStep: "→ {{converted}} {{currency}}",
+    currencyHint: "Defaults follow UI language; FX is system-managed.",
+    previewLoading: "…",
     fxStep: "÷ {{rate}} → {{converted}}",
     loading: "Chargement du modèle…",
     multiplier: "Multiplicateur de marge",
@@ -3556,8 +3559,8 @@ export const fr: Dictionary = {
 
   productsPricing: {
     summaryMissing: "Modèle de prix pas encore chargé",
-    summaryConfigured: "{{currency}} · taux {{rate}} · ×{{multiplier}}",
-    summaryConfiguredAddend: "{{currency}} · taux {{rate}} · ×{{multiplier}} · +{{addend}}",
+    summaryConfigured: "{{currency}} · ×{{multiplier}}",
+    summaryConfiguredAddend: "{{currency}} · ×{{multiplier}} · +{{addend}}",
     summaryDefault: "Tarification non configurée (défaut système)",
     purchaseFromTemplate: "Affichage achat : {{currency}} · taux {{rate}} (aligné sur la tarification ; sans marge multiplicateur)",
     purchaseDefault: "Affichage achat : {{currency}} · taux par défaut {{rate}} (sans marge multiplicateur)",

@@ -9,8 +9,9 @@ import { Select } from "@/components/ui/select";
 import { CURRENCY_OPTIONS } from "@/lib/catalog-sourcing-types";
 import { calculateSalePrice } from "@/lib/price-calculator";
 import { api } from "@/lib/api";
+import { currencyForUiLocale } from "@/lib/locale-currency";
 import type { PricingTemplate } from "@/lib/types";
-import { useT } from "@/i18n/LocaleProvider";
+import { useLocale, useT } from "@/i18n/LocaleProvider";
 
 function roundingOptions(t: ReturnType<typeof useT>) {
   return [
@@ -24,7 +25,16 @@ function roundingOptions(t: ReturnType<typeof useT>) {
 /** Sample procurement amount used only for the calculation breakdown preview. */
 const SAMPLE_COST = 33;
 
+/** Offline FX fallback (CNY per 1 target) — never shown; only for preview math. */
+const FALLBACK_SYSTEM_RATE: Record<string, number> = {
+  CNY: 1,
+  USD: 6.761905,
+  EUR: 7.34,
+  GBP: 8.5,
+};
+
 interface TemplateForm {
+  /** Hidden system FX used only for preview / save compat. */
   exchangeRate: string;
   multiplier: string;
   addend: string;
@@ -44,15 +54,18 @@ function toForm(t: PricingTemplate): TemplateForm {
   };
 }
 
-/** Matches backend offline FX fallback when template not loaded yet. */
-const FALLBACK_FORM: TemplateForm = {
-  exchangeRate: "6.761905",
-  multiplier: "2",
-  addend: "0",
-  roundingStrategy: "HALF_UP",
-  decimals: "2",
-  targetCurrency: "USD",
-};
+function fallbackForm(locale: string): TemplateForm {
+  const target = currencyForUiLocale(locale);
+  const rate = FALLBACK_SYSTEM_RATE[target] ?? FALLBACK_SYSTEM_RATE.USD;
+  return {
+    exchangeRate: String(rate),
+    multiplier: "2",
+    addend: "0",
+    roundingStrategy: "HALF_UP",
+    decimals: "2",
+    targetCurrency: target,
+  };
+}
 
 export interface PricingTemplateDrawerProps {
   open: boolean;
@@ -61,19 +74,17 @@ export interface PricingTemplateDrawerProps {
   error: string | null;
   onClose: () => void;
   onSave: (payload: {
-    exchangeRate: number;
+    /** Optional — server ignores and applies system FX. */
+    exchangeRate?: number;
     multiplier: number;
     addend: number;
     roundingStrategy: string;
     decimals: number;
-    /** Always persisted as CNY — procurement currency is not user-editable. */
     sourceCurrency: string;
     targetCurrency: string;
   }) => void;
-  /** Soft-reset to system default so first-time setup can be experienced again. */
   onClear?: () => void;
   clearing?: boolean;
-  /** Highlight the drawer for AI action feedback */
   highlighted?: boolean;
 }
 
@@ -113,12 +124,10 @@ function PricingCalculationBreakdown({
         </li>
         <li>
           <span className="text-ink-subtle">2. </span>
-          {t("pricingDrawer.fxStep", {
-            cost: cost.toFixed(2),
-            rate,
+          {t("pricingDrawer.convertStep", {
             converted: converted.toFixed(2),
-          })}{" "}
-          <span className="font-medium text-ink">{targetCurrency}</span>
+            currency: targetCurrency,
+          })}
         </li>
         <li>
           <span className="text-ink-subtle">3. </span>
@@ -150,7 +159,10 @@ function PricingCalculationBreakdown({
   );
 }
 
-/** Side panel editor. FX is Tangbuy system rate (read-only); merchants edit margin rules only. */
+/**
+ * Pricing template editor — merchants set margin rules only.
+ * System FX is applied under the hood (never shown or edited).
+ */
 export function PricingTemplateDrawer({
   open,
   template,
@@ -163,17 +175,22 @@ export function PricingTemplateDrawer({
   highlighted = false,
 }: PricingTemplateDrawerProps) {
   const t = useT();
+  const locale = useLocale();
   const [form, setForm] = useState<TemplateForm | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [fxLoading, setFxLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setForm(template ? toForm(template) : FALLBACK_FORM);
+    if (template) {
+      setForm(toForm(template));
+    } else {
+      setForm(fallbackForm(locale));
+    }
     setFormError(null);
-  }, [open, template]);
+  }, [open, template, locale]);
 
-  // When target currency changes, refresh system FX from pay BFF.
+  // Silently refresh system FX for preview math when target currency changes.
   useEffect(() => {
     if (!open || !form?.targetCurrency) return;
     let alive = true;
@@ -190,7 +207,7 @@ export function PricingTemplateDrawer({
         );
       })
       .catch(() => {
-        /* keep template overlay / fallback */
+        /* keep template / locale fallback */
       })
       .finally(() => {
         if (alive) setFxLoading(false);
@@ -233,16 +250,11 @@ export function PricingTemplateDrawer({
   };
 
   const handleSave = () => {
-    if (!form || saving) return;
-    const exchangeRate = Number(form.exchangeRate);
+    if (!form || saving || fxLoading) return;
     const multiplier = Number(form.multiplier);
     const addend = Number(form.addend);
     const decimals = Number.parseInt(form.decimals, 10);
 
-    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
-      setFormError(t("pricingDrawer.errRate"));
-      return;
-    }
     if (!Number.isFinite(multiplier) || multiplier <= 0) {
       setFormError(t("pricingDrawer.errMultiplier"));
       return;
@@ -257,7 +269,6 @@ export function PricingTemplateDrawer({
     }
 
     onSave({
-      exchangeRate,
       multiplier,
       addend,
       roundingStrategy: form.roundingStrategy,
@@ -281,7 +292,9 @@ export function PricingTemplateDrawer({
         aria-label={t("pricingDrawer.closeAria")}
         onClick={onClose}
       />
-      <aside className={`relative z-10 flex h-full w-full max-w-md flex-col border-l border-hairline bg-surface shadow-xl transition-all duration-500 ${highlighted ? "ring-2 ring-emerald-400/60" : ""}`}>
+      <aside
+        className={`relative z-10 flex h-full w-full max-w-md flex-col border-l border-hairline bg-surface shadow-xl transition-all duration-500 ${highlighted ? "ring-2 ring-emerald-400/60" : ""}`}
+      >
         <header className="flex items-center justify-between border-b border-hairline px-4 py-3">
           <div>
             <h2 className="text-sm font-semibold text-ink">{t("pricingDrawer.title")}</h2>
@@ -322,25 +335,8 @@ export function PricingTemplateDrawer({
                     </option>
                   ))}
                 </Select>
-              </Field>
-              <Field label={t("pricingDrawer.exchangeRate")}>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    value={form.exchangeRate}
-                    readOnly
-                    disabled={saving || fxLoading}
-                    className="bg-surface-muted pr-8"
-                    title={t("pricingDrawer.rateSystemOnly")}
-                    aria-readonly="true"
-                  />
-                  {fxLoading ? (
-                    <Loader2 className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-ink-subtle" />
-                  ) : null}
-                </div>
                 <p className="mt-1 text-[10px] leading-relaxed text-ink-subtle">
-                  {t("pricingDrawer.rateHint")}
+                  {t("pricingDrawer.currencyHint")}
                 </p>
               </Field>
               <Field label={t("pricingDrawer.multiplier")}>
@@ -398,6 +394,11 @@ export function PricingTemplateDrawer({
               targetCurrency={breakdown.target}
               roundingLabel={roundingLabel}
             />
+          ) : fxLoading ? (
+            <p className="mt-4 flex items-center gap-2 text-[11px] text-ink-subtle">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {t("pricingDrawer.previewLoading")}
+            </p>
           ) : null}
 
           {(formError || error) && (

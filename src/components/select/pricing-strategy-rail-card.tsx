@@ -105,9 +105,6 @@ export function PricingStrategyRailCard({
           {t("pricingRail.targetCurrency")}{" "}
           <span className="font-medium text-ink">{template.targetCurrency}</span>
           {t("common.commaSeparator")}
-          {t("pricingRail.exchangeRate")}{" "}
-          <span className="font-medium text-ink">{template.exchangeRate}</span>
-          {t("common.commaSeparator")}
           {t("pricingRail.multiplier")} ×{template.multiplier}
           {template.addend
             ? `${t("common.commaSeparator")}${t("pricingRail.addend")} +${template.addend}`

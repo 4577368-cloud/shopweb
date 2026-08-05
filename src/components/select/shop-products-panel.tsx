@@ -375,9 +375,14 @@ function formatPurchaseCostLabel(
   costCny: number | null,
   shopCurrency: string | null | undefined,
   fallbackRaw?: string | null,
-  pricingTemplate?: PricingTemplate | null
+  pricingTemplate?: PricingTemplate | null,
+  uiLocale?: string | null
 ): string {
-  const ctx = resolvePurchaseCostDisplayContext(shopCurrency, pricingTemplate);
+  const ctx = resolvePurchaseCostDisplayContext(
+    shopCurrency,
+    pricingTemplate,
+    uiLocale
+  );
   const inTarget = costInPurchaseDisplayCurrency(costCny, ctx);
   if (inTarget != null) {
     return t("shopProducts.purchaseCost", {
@@ -2235,7 +2240,7 @@ function ShopProductCard({
     parseGatewayPrice((offerPriceText(offer) ?? "").replace(/¥/g, ""));
 
   const formatOfferCost = (cny: number | null, fallbackRaw?: string | null) =>
-    formatPurchaseCostLabel(t, cny, shopCurrency, fallbackRaw, pricingTemplate);
+    formatPurchaseCostLabel(t, cny, shopCurrency, fallbackRaw, pricingTemplate, locale);
 
   const reco =
     rightMode === "candidate" && current
