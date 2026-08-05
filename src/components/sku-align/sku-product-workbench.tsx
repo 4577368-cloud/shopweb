@@ -564,7 +564,12 @@ export function SkuProductWorkbench({
           primaryImageUrl: product.imageUrl,
         },
         5,
-        { locale, variantImages: product.variants }
+        {
+          locale,
+          variantImages: product.variants,
+          // Supplement must find alternate sources even for Tangbuy-listed products.
+          allowSupplierSwapSearch: true,
+        }
       );
       if (pipeline.error) {
         setSearchError(pipeline.error);
@@ -818,7 +823,12 @@ export function SkuProductWorkbench({
           primaryImageUrl: product.imageUrl,
         },
         6,
-        { locale, variantImages: product.variants }
+        {
+          locale,
+          variantImages: product.variants,
+          // Replace-primary must search even for Tangbuy-listed products.
+          allowSupplierSwapSearch: true,
+        }
       );
       if (pipeline.error) {
         setReplaceSearchError(pipeline.error);
