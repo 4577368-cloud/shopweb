@@ -6,24 +6,27 @@ import {
 } from "@/lib/logistics/template-params";
 import { resolveTangbuyCountryId } from "@/lib/logistics/tangbuy-country";
 import { toTangbuyPostLimitType } from "@/lib/logistics/postal-limit-map";
-import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
+import {
+  isMallGatewayConfigured,
+  readTangbuyUserToken,
+  resolveBrowserMallGatewayBaseUrl,
+} from "@/lib/tangbuy-mall-gateway";
 
 const ESTIMATE_PATH = "/gateway/plugin/logistic/estimateSkuSaleFeePrice";
 
 function gatewayBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_TANGBUY_MALL_GATEWAY_BASE_URL ?? "https://tangbuy.cc"
-  ).replace(/\/+$/, "");
+  return resolveBrowserMallGatewayBaseUrl();
 }
 
-function gatewayToken(): string {
-  const token = process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim();
-  if (!token) {
-    throw new Error(
-      "线路报价需在 .env.local 配置 NEXT_PUBLIC_TANGBUY_MALL_TOKEN（与 Render 上 TANG_PLUGIN_TANGBUY_MALL_TOKEN 相同；Render 无法访问 tangbuy.cc，须由浏览器直连）"
-    );
-  }
-  return token;
+/** Prefer shared mall token; fall back to login JWT (same as itemGet). */
+function resolveEstimateBearer(): string {
+  const shared = process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim();
+  if (shared) return shared;
+  const user = readTangbuyUserToken()?.trim();
+  if (user) return user;
+  throw new Error(
+    "线路报价需要商城访问凭证：请登录 Tangbuy，或配置 NEXT_PUBLIC_TANGBUY_MALL_TOKEN（Render 无法访问 tangbuy.cc，须由浏览器直连）"
+  );
 }
 
 async function buildTangbuyEstimateBody(body: LogisticsEstimateRequest) {
@@ -83,7 +86,7 @@ export async function estimateLogisticsFromBrowser(
   }
   if (!isMallGatewayConfigured()) {
     throw new Error(
-      "线路报价需在 .env.local 配置 NEXT_PUBLIC_TANGBUY_MALL_TOKEN（Render 无法访问 tangbuy.cc，须浏览器直连网关）"
+      "线路报价需要商城访问凭证：请登录 Tangbuy，或配置 NEXT_PUBLIC_TANGBUY_MALL_TOKEN（Render 无法访问 tangbuy.cc，须由浏览器直连）"
     );
   }
   if (!body.variants?.length) {
@@ -98,7 +101,7 @@ export async function estimateLogisticsFromBrowser(
     signal,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${gatewayToken()}`,
+      Authorization: `Bearer ${resolveEstimateBearer()}`,
       Origin: "https://dropshipping.tangbuy.cc",
       Referer: "https://dropshipping.tangbuy.cc/",
       currency: body.quoteCurrency?.trim().toUpperCase() || "USD",
