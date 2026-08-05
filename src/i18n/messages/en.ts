@@ -1150,6 +1150,8 @@ export const en = {
     errInvalidDomain: "Enter a valid shop domain, e.g. your-store.myshopify.com",
     errApiBaseUnconfigured: "Service configuration error. Please contact your administrator to check the API address.",
     errApiBaseMissing: "Service address not configured. Please contact your administrator.",
+    errAuthRequired: "Sign in first, or use Login with Shopify to connect this store.",
+    errInstallUrlFailed: "Could not start Shopify authorization. Refresh and try again.",
     errNavigationFailed: "Could not open Shopify authorization. Allow this app to leave the Admin frame, or try again.",
     redirectingToShopify: "Redirecting to Shopify…",
     shopFromAppHint: "Complete authorization on Shopify, then you'll return here automatically.",

@@ -41,6 +41,8 @@ export type InstallErrorCode =
   | "INVALID_DOMAIN"
   | "API_BASE_UNCONFIGURED"
   | "API_BASE_MISSING"
+  | "AUTH_REQUIRED"
+  | "INSTALL_URL_FAILED"
   | "NAVIGATION_FAILED";
 
 export interface LaunchInstallResult {
@@ -88,22 +90,37 @@ export async function launchShopifyInstall(
   }
   try {
     const mode = readEmbeddedMode();
+    // Top-level pages without Admin ?host= / ?embedded= must never take the
+    // iframe breakout path — sticky sessionStorage used to flip this wrongly
+    // and surface "leave the Admin frame" on source.tangbuy.cc.
+    const forceStandalone = isTopLevelStandaloneSurface();
+    const embedded = mode.isEmbedded && !forceStandalone;
     let url = shopifyInstallUrl(shopDomain, {
-      embedded: mode.isEmbedded,
-      host: mode.host,
+      embedded,
+      host: embedded ? mode.host : undefined,
     });
-    if (!mode.isEmbedded) {
+    if (!embedded) {
       const q = new URLSearchParams({ shop: shopDomain });
-      const res = await sameOriginAuthedFetch(`/api/shopify/install-url?${q.toString()}`);
-      if (!res.ok) return { ok: false, errorCode: "NAVIGATION_FAILED" };
-      const data = (await res.json()) as InstallUrlResponse;
-      if (!data.url) return { ok: false, errorCode: "NAVIGATION_FAILED" };
-      url = data.url;
+      const res = await sameOriginAuthedFetch(
+        `/api/shopify/install-url?${q.toString()}`
+      );
+      if (res.ok) {
+        const data = (await res.json()) as InstallUrlResponse;
+        if (data.url) {
+          url = data.url;
+        }
+      } else if (res.status === 401 || res.status === 403) {
+        return { ok: false, errorCode: "AUTH_REQUIRED" };
+      } else {
+        // Fall back to same-origin plugin install (browser follows 302 to Shopify).
+        // Do not map BFF failures to the Admin-frame copy.
+        url = shopifyInstallUrl(shopDomain, { embedded: false });
+      }
     }
     if (typeof window !== "undefined") {
       window.localStorage.setItem(SHOP_STORAGE_KEY, shopDomain);
       rememberTangbuyTokenForEmbedded();
-      if (mode.isEmbedded) {
+      if (embedded) {
         // Prefer a new tab: top-frame navigation is often blocked in Admin's
         // sandboxed iframe (surfaces as NAVIGATION_FAILED / "leave Admin frame").
         openExternal(url, { newTab: opts?.preferNewTab !== false });
@@ -118,27 +135,32 @@ export async function launchShopifyInstall(
     }
     if (typeof window !== "undefined") {
       try {
-        const mode = readEmbeddedMode();
-        let url = shopifyInstallUrl(shopDomain, {
-          embedded: mode.isEmbedded,
-          host: mode.host,
-        });
-        if (!mode.isEmbedded) {
-          const q = new URLSearchParams({ shop: shopDomain });
-          const res = await sameOriginAuthedFetch(`/api/shopify/install-url?${q.toString()}`);
-          if (res.ok) {
-            const data = (await res.json()) as InstallUrlResponse;
-            if (data.url) url = data.url;
-          }
-        }
-        window.open(url, "_blank", "noopener,noreferrer");
+        const url = shopifyInstallUrl(shopDomain, { embedded: false });
+        window.location.assign(url);
         return { ok: true };
       } catch {
         // fall through
       }
     }
-    return { ok: false, errorCode: "NAVIGATION_FAILED" };
+    return { ok: false, errorCode: "INSTALL_URL_FAILED" };
   }
+}
+
+/** True when this document is a top-level standalone surface (not Admin iframe). */
+export function isTopLevelStandaloneSurface(): boolean {
+  if (typeof window === "undefined") return true;
+  const q = new URLSearchParams(window.location.search);
+  const host = (q.get("host") ?? "").trim();
+  const emb = q.get("embedded");
+  const adminQuery =
+    Boolean(host) || emb === "1" || emb === "true";
+  if (adminQuery) return false;
+  try {
+    if (window.self !== window.top) return false;
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 function rememberTangbuyTokenForEmbedded(): void {
@@ -184,7 +206,7 @@ export function launchShopifyLogin(
   opts?: { returnTo?: string }
 ): LaunchInstallResult {
   const mode = readEmbeddedMode();
-  if (mode.isEmbedded) {
+  if (mode.isEmbedded && !isTopLevelStandaloneSurface()) {
     void launchShopifyInstall(rawDomain, { preferNewTab: true });
     return { ok: true };
   }
@@ -230,6 +252,10 @@ export function resolveInstallError(
       return t("install.errApiBaseUnconfigured");
     case "API_BASE_MISSING":
       return t("install.errApiBaseMissing");
+    case "AUTH_REQUIRED":
+      return t("install.errAuthRequired");
+    case "INSTALL_URL_FAILED":
+      return t("install.errInstallUrlFailed");
     case "NAVIGATION_FAILED":
       return t("install.errNavigationFailed");
     default:

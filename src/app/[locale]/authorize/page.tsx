@@ -139,8 +139,18 @@ function AuthorizePageContent() {
   const connectWithDomain = useCallback(
     (raw: string) => {
       setConnectError(null);
+      // Only treat as Admin embed when URL carries host/embedded — never sticky alone.
+      const adminQuery =
+        typeof window !== "undefined" &&
+        (() => {
+          const q = new URLSearchParams(window.location.search);
+          const host = (q.get("host") ?? "").trim();
+          const emb = q.get("embedded");
+          return Boolean(host) || emb === "1" || emb === "true";
+        })();
+      const useEmbeddedConnect = isEmbedded && adminQuery;
       // Embedded: try session→offline link first (app often already installed).
-      if (isEmbedded) {
+      if (useEmbeddedConnect) {
         setRedirecting(true);
         void (async () => {
           try {
@@ -193,6 +203,12 @@ function AuthorizePageContent() {
           : launchShopifyLogin(raw, {
               returnTo: localePath(locale, "/authorize"),
             });
+        if (!result.ok && result.errorCode === "AUTH_REQUIRED") {
+          const login = launchShopifyLogin(raw, {
+            returnTo: localePath(locale, "/authorize"),
+          });
+          if (login.ok) return;
+        }
         if (!result.ok) {
           setRedirecting(false);
           const msg = resolveInstallError(t, result.errorCode, t("install.launchError"));
