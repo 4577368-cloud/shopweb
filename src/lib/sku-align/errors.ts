@@ -51,5 +51,9 @@ export function mapSkuAlignError(err: unknown, t?: TranslateFn): string {
   if (raw.startsWith("SUPPLEMENT_SAME_AS_PRIMARY")) {
     return t?.("skuBinding.errSupplementSame") ?? "SUPPLEMENT_SAME_AS_PRIMARY";
   }
+  // Prefer concrete backend message over a generic "save failed".
+  if (raw && !/^Request failed \(\d+\)/.test(raw) && !/^SAVE_FAILED$/i.test(raw)) {
+    return raw;
+  }
   return t?.("skuBinding.errSaveFailed") ?? "SAVE_FAILED";
 }
