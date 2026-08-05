@@ -38,17 +38,32 @@ export function BundleAiNameButton({
     if (busy || disabled) return;
     setBusy(true);
     try {
+      // Same auth as plugin /api calls — cookie-only fetch misses TANGBUY_TOKEN /
+      // embedded Bearer and the BFF returns bare "Unauthorized".
+      const { resolveAuthStrategyFromLocation } = await import(
+        "@/host/adapters/auth-transport"
+      );
+      const strategy = resolveAuthStrategyFromLocation();
+      const auth = await strategy.prepareRequest();
       const res = await fetch("/api/agents/bundle/name", {
         method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        credentials: auth.credentials,
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...auth.headers,
+        },
         body: JSON.stringify({ kind, locale, context }),
       });
       const data = (await res.json().catch(() => null)) as
         | { name?: string; error?: string }
         | null;
       if (!res.ok || !data?.name?.trim()) {
-        throw new Error(data?.error || t("bundleHub.aiNameFailed"));
+        const raw = data?.error?.trim() || "";
+        if (res.status === 401 || /unauthorized/i.test(raw)) {
+          throw new Error(t("bundleHub.aiNameUnauthorized"));
+        }
+        throw new Error(raw || t("bundleHub.aiNameFailed"));
       }
       onNamed(data.name.trim());
     } catch (err) {

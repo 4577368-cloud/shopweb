@@ -4726,6 +4726,7 @@ export const zh: Dictionary = {
     guideShopify: "配置后还要在 Shopify 做什么",
     aiName: "AI 一键起名",
     aiNameFailed: "AI 起名失败，请稍后重试或手动填写",
+    aiNameUnauthorized: "AI 起名未通过登录校验（不影响下方「创建套装到 Shopify」；可手动改标题后继续）",
     create: "新建活动",
     refresh: "刷新活动列表",
     back: "返回",

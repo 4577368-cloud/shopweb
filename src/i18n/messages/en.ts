@@ -4754,6 +4754,8 @@ export const en = {
     guideShopify: "What to finish in Shopify after saving",
     aiName: "AI name",
     aiNameFailed: "AI naming failed — try again or type manually",
+    aiNameUnauthorized:
+      "AI naming needs a valid login (does not block Create kit on Shopify — type a title and continue)",
     create: "New campaign",
     refresh: "Refresh campaigns",
     back: "Back",

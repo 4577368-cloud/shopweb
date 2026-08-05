@@ -4749,6 +4749,8 @@ export const fr: Dictionary = {
     guideShopify: "À faire dans Shopify après l'enregistrement",
     aiName: "Nom IA",
     aiNameFailed: "Échec du nom IA — réessayez ou saisissez manuellement",
+    aiNameUnauthorized:
+      "Le nom IA exige une session (n’empêche pas Créer le kit sur Shopify — saisissez le titre et continuez)",
     create: "Nouvelle campagne",    refresh: "Actualiser les campagnes",
     back: "Retour",
     cancel: "Annuler",

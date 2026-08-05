@@ -4748,6 +4748,8 @@ export const es: Dictionary = {
     guideShopify: "Qué hacer en Shopify después de guardar",
     aiName: "Nombre con IA",
     aiNameFailed: "Falló el nombre con IA — reintente o escriba manualmente",
+    aiNameUnauthorized:
+      "El nombre con IA requiere sesión (no bloquea Crear kit en Shopify — escriba el título y continúe)",
     create: "Nueva campaña",
     refresh: "Actualizar campañas",
     back: "Volver",
