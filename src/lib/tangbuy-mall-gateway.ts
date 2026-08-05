@@ -26,7 +26,7 @@ interface GatewayResponse {
   msg?: string;
 }
 
-/** True when the browser should call tangbuy.cc directly (Render backend cannot reach it). */
+/** True when a shared browser mall token is inlined (legacy). Prefer login JWT or plugin. */
 export function isMallGatewayConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim());
 }
@@ -242,42 +242,109 @@ export function buildTangbuyProductUrl(
   return `https://www.tangbuy.cc/product?dataSource=${encodeURIComponent(dataSource)}&id=${encodeURIComponent(id)}`;
 }
 
-/** GET itemGet — prefer plugin (publish mall token), then browser gateway if configured. */
-export async function fetchItemDetail(
-  productUrl: string
+/** Standalone login JWT — same class of portal token used by mall gateway. */
+function readTangbuyUserToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const prefix = "TANGBUY_TOKEN=";
+  const raw = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+    ?.slice(prefix.length);
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+async function fetchItemGetWithBearer(
+  productUrl: string,
+  bearer: string
 ): Promise<ItemGetProduct | null> {
+  const endpoint = `${gatewayBaseUrl()}${ITEM_GET_PATH}?url=${encodeURIComponent(productUrl)}`;
+  const res = await fetch(endpoint, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${bearer}`,
+      currency: "USD",
+      device: "pc",
+      lang: "cn",
+      "tang-request-device": "web",
+    },
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as ItemGetResponse;
+  if (data.code != null && data.code !== 200) return null;
+  return data.data?.item ?? null;
+}
+
+function describeFetchError(err: unknown): string {
+  if (err && typeof err === "object" && "message" in err) {
+    const msg = String((err as { message?: unknown }).message ?? "").trim();
+    if (msg) return msg;
+  }
+  if (err instanceof Error && err.message.trim()) return err.message.trim();
+  return "itemGet 请求失败";
+}
+
+/**
+ * GET itemGet with fallbacks:
+ * 1) plugin (server mall token, same as catalog publish)
+ * 2) logged-in user TANGBUY_TOKEN (standalone portal JWT)
+ * 3) shared NEXT_PUBLIC_TANGBUY_MALL_TOKEN
+ */
+export async function fetchItemDetailDetailed(
+  productUrl: string
+): Promise<{ item: ItemGetProduct | null; error: string | null }> {
   const url = productUrl.trim();
-  if (!url) return null;
+  if (!url) return { item: null, error: "缺少货源链接" };
+
+  let lastError: string | null = null;
 
   try {
     const { api } = await import("@/lib/api");
     const res = await api.getSkuItemGet(url);
-    if (res?.item) return res.item;
-  } catch {
-    // Fall through to browser-direct when plugin is down or mall token missing on server.
+    if (res?.item) return { item: res.item, error: null };
+    lastError = "plugin itemGet 未返回商品详情";
+  } catch (err) {
+    lastError = describeFetchError(err);
   }
 
-  if (!isMallGatewayConfigured()) return null;
-
-  const endpoint = `${gatewayBaseUrl()}${ITEM_GET_PATH}?url=${encodeURIComponent(url)}`;
-  try {
-    const res = await fetch(endpoint, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${gatewayToken()}`,
-        currency: "USD",
-        device: "pc",
-        lang: "cn",
-        "tang-request-device": "web",
-      },
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as ItemGetResponse;
-    if (data.code != null && data.code !== 200) return null;
-    return data.data?.item ?? null;
-  } catch {
-    return null;
+  const userToken = readTangbuyUserToken();
+  if (userToken) {
+    try {
+      const item = await fetchItemGetWithBearer(url, userToken);
+      if (item) return { item, error: null };
+      lastError = lastError ?? "登录态 itemGet 未返回商品详情";
+    } catch (err) {
+      lastError = describeFetchError(err);
+    }
   }
+
+  if (isMallGatewayConfigured()) {
+    try {
+      const item = await fetchItemGetWithBearer(url, gatewayToken());
+      if (item) return { item, error: null };
+      lastError = lastError ?? "itemGet 未返回商品详情";
+    } catch (err) {
+      lastError = describeFetchError(err);
+    }
+  }
+
+  return {
+    item: null,
+    error: lastError ?? "商城货源暂不可用，无法加载 itemGet 规格表",
+  };
+}
+
+/** GET itemGet — prefer plugin, then login JWT, then shared mall token. */
+export async function fetchItemDetail(
+  productUrl: string
+): Promise<ItemGetProduct | null> {
+  const { item } = await fetchItemDetailDetailed(productUrl);
+  return item;
 }
 
 function mergeImageUrls(...groups: Array<string[] | null | undefined>): string[] {

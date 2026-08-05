@@ -1,7 +1,8 @@
 import {
   buildTangbuyProductUrl,
-  fetchItemDetail,
+  fetchItemDetailDetailed,
   isMallGatewayConfigured,
+  type ItemGetProduct,
 } from "@/lib/tangbuy-mall-gateway";
 import { parseGatewayPrice } from "@/lib/agents/products/match-rank";
 import { formatSourceCostInShopCurrency } from "@/lib/purchase-cost-display";
@@ -192,7 +193,7 @@ function resolveProcurementPrice(
 
 /** Map itemGet.productSkus → SourceSkuRow[]. Skips rows without skuId or spec. */
 export function mapItemGetToSourceSkuMatrix(
-  detail: NonNullable<Awaited<ReturnType<typeof fetchItemDetail>>>
+  detail: ItemGetProduct
 ): SourceSkuRow[] {
   const skus = detail.productSkus;
   if (!skus?.length) return [];
@@ -432,16 +433,18 @@ export async function fetchSourceSkuMatrixResult(
   detailUrl: string
 ): Promise<SourceSkuMatrixFetchResult> {
   try {
-    const detail = await fetchItemDetail(detailUrl);
-    if (!detail) {
+    const { item, error } = await fetchItemDetailDetailed(detailUrl);
+    if (!item) {
       return {
         rows: [],
-        error: isMallGatewayConfigured()
-          ? "itemGet 未返回商品详情"
-          : "商城货源暂不可用，无法加载 itemGet 规格表",
+        error:
+          error ??
+          (isMallGatewayConfigured()
+            ? "itemGet 未返回商品详情"
+            : "商城货源暂不可用，无法加载 itemGet 规格表"),
       };
     }
-    const rows = mapItemGetToSourceSkuMatrix(detail);
+    const rows = mapItemGetToSourceSkuMatrix(item);
     if (!rows.length) {
       return { rows: [], error: "itemGet 未返回可用 SKU 规格" };
     }
