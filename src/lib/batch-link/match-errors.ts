@@ -4,8 +4,22 @@ import { ApiError } from "@/lib/api";
 export function extractBackendErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 0) return err.message;
-    const body = err.body as { message?: string } | undefined;
-    let raw = body?.message ?? err.message;
+    const body = err.body as
+      | { message?: string; error?: string; detail?: string; code?: string }
+      | string
+      | undefined;
+    let raw = "";
+    if (typeof body === "string") {
+      raw = body;
+    } else if (body && typeof body === "object") {
+      raw =
+        (typeof body.message === "string" && body.message.trim()) ||
+        (typeof body.detail === "string" && body.detail.trim()) ||
+        (typeof body.error === "string" && body.error.trim()) ||
+        (typeof body.code === "string" && body.code.trim()) ||
+        "";
+    }
+    if (!raw) raw = err.message;
     const colonIdx = raw.indexOf("：");
     if (colonIdx >= 0 && raw.startsWith("请求失败")) {
       raw = raw.slice(colonIdx + 1).trim();

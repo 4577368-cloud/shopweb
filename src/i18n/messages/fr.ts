@@ -3892,6 +3892,7 @@ export const fr: Dictionary = {
     toastRebound: "Source rebound",
     toastRejected: "Rejected — rematching…",
     toastUnbound: "Unlinked",
+    unbindFailed: "Failed to unlink",
     topPick: "Top pick",
     zoomProductImage: "Zoom product image",
     zoomSourceImage: "Zoom source image",

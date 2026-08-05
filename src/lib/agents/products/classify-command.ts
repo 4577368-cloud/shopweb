@@ -179,10 +179,10 @@ function detectCopyField(text: string): "title" | "description" | "all" {
 }
 
 const TITLE_CHANGE_TO_LANG =
-  /(?:修改|改|调整|翻译)(?:为|成|到)|改成|改为|调整为|翻译为|翻译成|译成|译为/i;
+  /(?:修改|改|调整|翻译)(?:为|成|到)|改成|改为|调整为|翻译为|翻译成|译成|译为|\bto\b|\binto\b|\bas\b|→|->|=>/i;
 
 const COPY_SUBJECT =
-  /(?:标题|描述|详情|文案|title|description|商品标题|商品)/i;
+  /(?:标题|描述|详情|文案|title|description|copy|商品标题|商品|product)/i;
 
 function hasCopySubject(text: string): boolean {
   return (
@@ -193,7 +193,7 @@ function hasCopySubject(text: string): boolean {
 }
 
 function detectCopyAction(text: string): "translate" | "rewrite" | "optimize" | null {
-  if (/翻译|译一下|译出来|翻一下|translate/i.test(text)) {
+  if (/翻译|译一下|译出来|翻一下|translate|translation|locali[sz]e/i.test(text)) {
     return "translate";
   }
   if (/改写|重写|重写一下|rewrite/i.test(text)) {
@@ -229,7 +229,7 @@ function detectCopyAction(text: string): "translate" | "rewrite" | "optimize" | 
 }
 
 function refersToBatch(text: string): boolean {
-  return /(所有|全部|批量|每个|所有商品|全部商品|批量商品|一次性|统一|统统|全部改成|全部换成|给所有|都给|每个商品|都改|统一改|都改掉|全部改|本页|当前页|这一页|关联商品|已关联商品|上架商品|已上架商品|最近新增|新入库|前\s*\d+|前[十百]|top\s*\d+)/i.test(
+  return /(所有|全部|批量|每个|所有商品|全部商品|批量商品|一次性|统一|统统|全部改成|全部换成|给所有|都给|每个商品|都改|统一改|都改掉|全部改|本页|当前页|这一页|关联商品|已关联商品|上架商品|已上架商品|最近新增|新入库|前\s*\d+|前[十百]|top\s*\d+|\ball\b|\bevery\b|\bbatch\b|\beach\b|this\s*page|current\s*page|unmatched|unlinked)/i.test(
     text
   );
 }
@@ -269,16 +269,17 @@ function detectBatchFilter(
 }
 
 function tryProductStatusCommand(text: string): ProductCommandDraft | null {
-  const wantsDraft = /(放到草稿|设为草稿|改成草稿|移入草稿|保存为草稿|转草稿|draft)/i.test(
-    text
-  );
+  const wantsDraft =
+    /(放到草稿|设为草稿|改成草稿|移入草稿|保存为草稿|转草稿|\bdraft\b|to\s+draft|move\s+to\s+draft)/i.test(
+      text
+    );
   const wantsArchive =
-    /(下架|归档|archive)/i.test(text) && !wantsDraft;
+    /(下架|归档|\barchive\b|\bdelist\b)/i.test(text) && !wantsDraft;
 
   if (!wantsDraft && !wantsArchive) return null;
   if (
     !refersToCurrentProduct(text) &&
-    !/(商品|这个品|该品)/i.test(text) &&
+    !/(商品|这个品|该品|\bproduct\b)/i.test(text) &&
     !refersToBatch(text) &&
     !extractProductTitleHint(text)
   ) {
@@ -395,25 +396,47 @@ const FILTER_RULES: {
 }[] = [
   {
     filter: "pending",
-    patterns: [/只?看.*待确认|看待确认|待确认商品|筛选.*待确认|pending/i],
+    patterns: [
+      /只?看.*待确认|看待确认|待确认商品|筛选.*待确认|pending\s*only|show\s*pending|only\s*pending/i,
+    ],
   },
   {
     filter: "unbound",
-    patterns: [/只?看.*未匹配|未匹配商品|未关联商品|看未关联|unbound/i],
+    // Require filter intent — bare "unmatched/unlinked" is often rematch copy.
+    patterns: [
+      /只?看.*未匹配|未匹配商品|未关联商品|看未关联|show\s*(?:only\s*)?(?:unbound|unmatched|unlinked)|only\s*(?:unbound|unmatched|unlinked)|(?:unbound|unmatched|unlinked)\s*only|\bunlinked\s*\d+/i,
+    ],
   },
   {
     filter: "confirmed",
-    patterns: [/只?看.*已确认|已确认商品|confirmed/i],
+    patterns: [/只?看.*已确认|已确认商品|confirmed\s*only|show\s*confirmed/i],
   },
   {
     filter: "new_arrivals",
-    patterns: [/只?看.*新入库|新入库商品|新商品/i],
+    patterns: [
+      /只?看.*新入库|新入库商品|新商品|new\s*arrivals?|recent\s*arrivals?/i,
+    ],
   },
   {
     filter: "all",
-    patterns: [/看全部|全部商品|取消筛选/i],
+    patterns: [/看全部|全部商品|取消筛选|show\s*all|clear\s*filter/i],
   },
 ];
+
+/** Re-run image search — must beat FILTER_RULES that mention unmatched/unlinked. */
+function tryRerunCandidateSearchCommand(text: string): ProductCommandDraft | null {
+  if (
+    !/(再找.*候选|重新搜索|重新查找|重搜候选|更多候选|别的货源|re-?search|find\s+more\s+candidates|more\s+candidates|rematch)/i.test(
+      text
+    )
+  ) {
+    return null;
+  }
+  return withTitleHint(
+    text,
+    draft("rerun_candidate_search", {}, { confirmationRequired: false })
+  );
+}
 
 function parseChineseOrdinal(raw: string): number | null {
   const t = raw.trim();
@@ -615,6 +638,12 @@ export function classifyProductCommandByRules(
     };
   }
 
+  // Rematch before filters — English chips say "unmatched/unlinked" without "show only".
+  const rematchCmd = tryRerunCandidateSearchCommand(text);
+  if (rematchCmd) {
+    return { confidence: "high", source: "rules", draft: rematchCmd };
+  }
+
   // 无歧义的筛选/解释仍走规则
   for (const rule of FILTER_RULES) {
     if (rule.patterns.some((p) => p.test(text))) {
@@ -645,19 +674,6 @@ export function classifyProductCommandByRules(
   const sourcingCmd = trySourcingCommand(text);
   if (sourcingCmd) {
     return { confidence: "high", source: "rules", draft: sourcingCmd };
-  }
-
-  // 未命中快速操作，交给 LLM 判断
-
-  if (/再找.*候选|重新搜索|重新查找|重搜候选|更多候选|别的货源/i.test(text)) {
-    return {
-      confidence: "high",
-      source: "rules",
-      draft: withTitleHint(
-        text,
-        draft("rerun_candidate_search", {}, { confirmationRequired: false })
-      ),
-    };
   }
 
   if (/为什么推荐|为何推荐|推荐依据|推荐原因/i.test(text)) {

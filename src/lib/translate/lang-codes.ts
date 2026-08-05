@@ -113,24 +113,45 @@ function resolveLangAlias(raw: string): string | undefined {
 export function parseTargetLangFromText(text: string): string | undefined {
   const keys = Object.keys(TARGET_LANG_ALIASES).sort((a, b) => b.length - a.length);
   const langAlt = keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  const toLangVerb =
+  const toLangVerbZh =
     "翻译成|翻译为|译到|译为|译成|翻成|修改成|修改为|改为|改成|调整为|调整成|调整至|成为|成|为|到|用";
+  const toLangVerbEn = "to|into|in|as|into\\s+the";
+  // Accept common truncations: Engl → english; chip shorthand Title → EN
+  const enLoose = "engl(?:ish)?|en\\b";
   const patterns: RegExp[] = [
-    new RegExp(`(?:${toLangVerb})\\s*(${langAlt})`, "i"),
+    // 「翻译成英文」「改为日语」
+    new RegExp(`(?:${toLangVerbZh})\\s*(${langAlt})`, "i"),
     new RegExp(`(?:成为|成|为|到)\\s*(${langAlt})`, "i"),
+    // "translate … to English" / "title to EN"
     new RegExp(
-      `(?:标题|商品标题|商品|文案).*?(?:${toLangVerb})\\s*(${langAlt})`,
+      `(?:translate|translation|locali[sz]e|render)\\b[\\s\\S]{0,48}?\\b(?:${toLangVerbEn})\\s+(${langAlt}|${enLoose})`,
       "i"
     ),
     new RegExp(
-      `翻译\\s*(?:这个|该|当前|此)?\\s*商品.*?(?:${toLangVerb})\\s*(${langAlt})`,
+      `\\b(?:title|description|copy|product(?:\\s+title)?)\\b[\\s\\S]{0,24}?\\b(?:${toLangVerbEn})\\s+(${langAlt}|${enLoose})`,
+      "i"
+    ),
+    // "Title → EN" / "titles -> English"
+    new RegExp(
+      `\\b(?:title|titles|description|copy)\\b\\s*(?:→|->|=>)\\s*(${langAlt}|${enLoose})`,
+      "i"
+    ),
+    new RegExp(`\\b(?:${toLangVerbEn})\\s+(${langAlt}|${enLoose})\\b`, "i"),
+    new RegExp(
+      `(?:标题|商品标题|商品|文案).*?(?:${toLangVerbZh})\\s*(${langAlt})`,
+      "i"
+    ),
+    new RegExp(
+      `翻译\\s*(?:这个|该|当前|此)?\\s*商品.*?(?:${toLangVerbZh})\\s*(${langAlt})`,
       "i"
     ),
   ];
   for (const re of patterns) {
     const m = text.match(re);
     if (!m?.[1]) continue;
-    const code = resolveLangAlias(m[1]);
+    const raw = m[1];
+    if (/^engl/i.test(raw)) return "en";
+    const code = resolveLangAlias(raw);
     if (code) return code;
   }
   return undefined;

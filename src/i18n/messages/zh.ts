@@ -3877,6 +3877,7 @@ export const zh: Dictionary = {
     toastRebound: "已改绑货源",
     toastRejected: "已驳回，正在重新匹配",
     toastUnbound: "已取消关联",
+    unbindFailed: "取消关联失败",
     topPick: "首选",
     zoomProductImage: "放大商品主图",
     zoomSourceImage: "放大货源主图",

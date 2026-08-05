@@ -303,8 +303,8 @@ function imageSearchError(err: unknown): string {
 }
 
 /** Map backend confirm (A3-2b) errors to a readable message by machine-code prefix. */
-function imageMatchError(err: unknown): string {
-  return mapImageMatchConfirmError(err);
+function imageMatchError(err: unknown, fallback?: string): string {
+  return mapImageMatchConfirmError(err, fallback);
 }
 
 function formatSimilarity(score?: number | null): string | null {
@@ -2066,7 +2066,9 @@ function ShopProductCard({
       setCurrentIdx(0);
       showToast(t("shopProducts.toastUnbound"));
     } catch (err) {
-      setConfirmError(imageMatchError(err));
+      setConfirmError(
+        imageMatchError(err, t("shopProducts.unbindFailed"))
+      );
     } finally {
       setUnbinding(false);
     }
@@ -2087,7 +2089,9 @@ function ShopProductCard({
       await api.startMatchQueue(shopName, item.thirdPlatformItemId);
       showToast(t("shopProducts.toastRejected"));
     } catch (err) {
-      setConfirmError(imageMatchError(err));
+      setConfirmError(
+        imageMatchError(err, t("shopProducts.unbindFailed"))
+      );
     } finally {
       setRejecting(false);
     }

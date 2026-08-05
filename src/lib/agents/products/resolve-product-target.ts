@@ -15,7 +15,7 @@ export type ProductTargetResolution =
 
 /** User means the currently focused product — not a title search. */
 const CURRENT_PRODUCT_REF =
-  /(?:这个|当前|该|此)\s*商品|这个\s*品|当前\s*品|当前商品|这个商品/i;
+  /(?:这个|当前|该|此)\s*商品|这个\s*品|当前\s*品|当前商品|这个商品|(?:this|the|current|selected)\s+product\b/i;
 
 const IMPLICIT_CURRENT_COPY =
   /(?:^|[，,。\s])?(?:把它|将它|给它)(?:的)?(?:商品)?(?:标题|title)?/i;
@@ -31,11 +31,25 @@ export function refersToCurrentProduct(text: string): boolean {
   return CURRENT_PRODUCT_REF.test(text);
 }
 
-/** Selected-row copy ops: 把它标题改成… / 标题修改为… (no explicit product name). */
+/** Selected-row copy ops: 把它标题改成… / translate this product title… */
 export function refersToCurrentProductForCopy(text: string): boolean {
   if (refersToCurrentProduct(text)) return true;
   if (IMPLICIT_CURRENT_COPY.test(text)) return true;
   if (/翻译\s*(?:这个|该|当前|此)?\s*商品/i.test(text)) return true;
+  if (
+    /\b(?:translate|rewrite|optimize)\b/i.test(text) &&
+    /\b(?:this|the|current|selected)?\s*(?:product\s+)?(?:title|description|copy)\b/i.test(
+      text
+    )
+  ) {
+    return true;
+  }
+  if (
+    /\b(?:this|the|current|selected)\s+product\b/i.test(text) &&
+    /\b(?:title|description|copy|translate)\b/i.test(text)
+  ) {
+    return true;
+  }
   return false;
 }
 

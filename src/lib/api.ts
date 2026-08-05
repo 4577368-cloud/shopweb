@@ -781,12 +781,17 @@ export const api = {
 
   /** "确认无误": promote a product's PENDING (AI-suggested) image binding to ACTIVE. */
   ackImageBinding: (shop: string, thirdPlatformItemId: string) => {
+    const shopName = normalizeShopApiName(shop);
     const params = new URLSearchParams({
-      shopName: normalizeShopApiName(shop),
+      shopName,
       thirdPlatformItemId,
     });
-    return request<void>(`/api/plugin/match/image-search/ack?${params.toString()}`, {
+    // Query + form body: some gateways drop POST query strings; Spring binds either.
+    const body = params.toString();
+    return request<void>(`/api/plugin/match/image-search/ack?${body}`, {
       method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
     });
   },
 
@@ -812,12 +817,16 @@ export const api = {
 
   /** "取消关联": soft-unbind a product's image binding (PENDING or ACTIVE). */
   unbindImageBinding: (shop: string, thirdPlatformItemId: string) => {
+    const shopName = normalizeShopApiName(shop);
     const params = new URLSearchParams({
-      shopName: normalizeShopApiName(shop),
+      shopName,
       thirdPlatformItemId,
     });
-    return request<void>(`/api/plugin/match/image-search/unbind?${params.toString()}`, {
+    const body = params.toString();
+    return request<void>(`/api/plugin/match/image-search/unbind?${body}`, {
       method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
     });
   },
 
