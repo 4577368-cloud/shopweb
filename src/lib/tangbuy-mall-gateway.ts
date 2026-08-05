@@ -64,7 +64,9 @@ function gatewayBaseUrl(): string {
 }
 
 function gatewayToken(): string {
-  const token = process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim();
+  const token =
+    process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim() ||
+    readTangbuyUserToken()?.trim();
   if (!token) {
     throw new Error("商城货源暂不可用，请稍后重试或联系管理员");
   }

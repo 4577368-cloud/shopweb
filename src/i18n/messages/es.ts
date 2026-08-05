@@ -1380,7 +1380,8 @@ export const es: Dictionary = {
     toastMailLimitNoMatch:
       "Refresh complete: listing returned {{mapped}} mail-limit rows but none matched local SKUs; kept classifier results",
     toastTypeCorrected: "Logistics type updated",
-    tokenMissing: "Missing access token — re-authorize the store"
+    tokenMissing:
+      "Faltan credenciales del mall Tangbuy — inicie sesión en Tangbuy o configure NEXT_PUBLIC_TANGBUY_MALL_TOKEN (no es reautorización de Shopify)"
   },
   logisticsAgent: {
     aiAuto: "AI Confirmared",

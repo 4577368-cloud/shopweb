@@ -18,16 +18,15 @@ function gatewayBaseUrl(): string {
   return resolveBrowserMallGatewayBaseUrl();
 }
 
-function gatewayToken(): string {
-  const token =
-    process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim() ||
-    readTangbuyUserToken();
-  if (!token) {
-    throw new Error(
-      "缺少访问令牌，请重新授权店铺"
-    );
-  }
-  return token;
+/** Prefer shared mall token; fall back to login JWT (same as itemGet). */
+function resolveEstimateBearer(): string {
+  const shared = process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim();
+  if (shared) return shared;
+  const user = readTangbuyUserToken()?.trim();
+  if (user) return user;
+  throw new Error(
+    "线路报价需要商城访问凭证：请登录 Tangbuy，或配置 NEXT_PUBLIC_TANGBUY_MALL_TOKEN（Render 无法访问 tangbuy.cc，须由浏览器直连）"
+  );
 }
 
 async function buildTangbuyEstimateBody(body: LogisticsEstimateRequest) {
@@ -86,7 +85,9 @@ export async function estimateLogisticsFromBrowser(
     throw new DOMException("Aborted", "AbortError");
   }
   if (!isMallGatewayConfigured()) {
-    throw new Error("缺少访问令牌，请重新授权店铺");
+    throw new Error(
+      "线路报价需要商城访问凭证：请登录 Tangbuy，或配置 NEXT_PUBLIC_TANGBUY_MALL_TOKEN（Render 无法访问 tangbuy.cc，须由浏览器直连）"
+    );
   }
   if (!body.variants?.length) {
     throw new Error("请提供至少一个 variant");
@@ -100,7 +101,7 @@ export async function estimateLogisticsFromBrowser(
     signal,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${gatewayToken()}`,
+      Authorization: `Bearer ${resolveEstimateBearer()}`,
       Origin: "https://dropshipping.tangbuy.cc",
       Referer: "https://dropshipping.tangbuy.cc/",
       currency: body.quoteCurrency?.trim().toUpperCase() || "USD",

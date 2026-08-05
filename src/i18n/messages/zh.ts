@@ -1370,7 +1370,8 @@ export const zh: Dictionary = {
     toastMailLimitNoMatch:
       "刷新完成：listing 有 {{mapped}} 条邮限，但与本地 SKU 未匹配上，已保留原分类",
     toastTypeCorrected: "物流类型已更新",
-    tokenMissing: "缺少访问令牌，请重新授权店铺"
+    tokenMissing:
+      "缺少商城访问凭证：请先登录 Tangbuy，或由管理员配置 NEXT_PUBLIC_TANGBUY_MALL_TOKEN（不是 Shopify 店铺授权）"
   },
   logisticsAgent: {
     aiAuto: "AI 已确认",

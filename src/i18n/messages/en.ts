@@ -1382,7 +1382,8 @@ export const en = {
     toastMailLimitNoMatch:
       "Refresh complete: listing returned {{mapped}} mail-limit rows but none matched local SKUs; kept classifier results",
     toastTypeCorrected: "Logistics type updated",
-    tokenMissing: "Missing access token — re-authorize the store"
+    tokenMissing:
+      "Missing Tangbuy mall credentials — sign in to Tangbuy, or set NEXT_PUBLIC_TANGBUY_MALL_TOKEN (not Shopify store re-auth)"
   },
   logisticsAgent: {
     aiAuto: "AI confirmed",
