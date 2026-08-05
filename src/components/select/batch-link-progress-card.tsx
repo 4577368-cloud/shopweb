@@ -278,22 +278,6 @@ export function BatchLinkProgressCard({
             );
           })}
         </ul>
-      ) : (batchLinkProgress?.recent.length ?? 0) > 0 ? (
-        <ul className="mt-1.5 space-y-0.5 text-[10px] leading-snug text-slate-600">
-          {batchLinkProgress!.recent.slice(0, 3).map((line) => (
-            <li key={line} className="truncate">
-              {line}
-            </li>
-          ))}
-        </ul>
-      ) : unboundMatchJob?.recent?.length ? (
-        <ul className="mt-1.5 space-y-0.5 text-[10px] leading-snug text-slate-600">
-          {unboundMatchJob.recent.slice(0, 3).map((line) => (
-            <li key={line} className="truncate">
-              {line}
-            </li>
-          ))}
-        </ul>
       ) : null}
     </div>
   );
