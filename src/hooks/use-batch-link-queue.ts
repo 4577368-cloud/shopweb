@@ -2,8 +2,16 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { Locale } from "@/i18n/config";
+import {
+  formatAutoBindIncompleteMessage,
+  inspectAutoBindSnapshot,
+  pickAutoBindCandidates,
+} from "@/lib/batch-link/auto-bind-eligibility";
 import { classifyMatchConfidence } from "@/lib/batch-link/confidence";
-import { resolveCandidateConfidence } from "@/lib/batch-link/candidate-confidence";
+import {
+  allowPoolIngestOnConfirm,
+  resolveCandidateConfidence,
+} from "@/lib/batch-link/candidate-confidence";
 import { confirmCandidateBinding } from "@/lib/batch-link/confirm-binding";
 import {
   isGatewayBusyError,
@@ -270,7 +278,8 @@ export function useBatchLinkQueue({
           continue;
         }
 
-        // Auto-bind any candidate as PENDING — merchant confirms later (single/batch).
+        // Auto-bind complete candidates as PENDING — merchant confirms later.
+        // Incomplete top hits (no image / title / price) must not win by rank alone.
         setCardState(id, "candidates_ready", {
           productTitle: title,
           ...confidencePatch,
@@ -282,7 +291,30 @@ export function useBatchLinkQueue({
         await sleep(CANDIDATES_READY_MS);
         if (runId !== runIdRef.current) break;
 
-        const candidatesToTry = rankedItems.slice(0, AUTO_BIND_CANDIDATE_LIMIT);
+        const candidatesToTry = pickAutoBindCandidates(
+          rankedItems,
+          locale,
+          AUTO_BIND_CANDIDATE_LIMIT
+        );
+        if (candidatesToTry.length === 0) {
+          const topInspect = inspectAutoBindSnapshot(rankedItems[0]!, locale);
+          const msg = formatAutoBindIncompleteMessage(
+            topInspect.ok ? [] : topInspect.reasons
+          );
+          setCardState(id, "needs_review", {
+            productTitle: title,
+            ...confidencePatch,
+            searchResult: searchResult,
+            matchScores: pipeline.matchScores,
+            imageScores: pipeline.imageScores,
+            highlightTopCandidate: true,
+            errorMessage: msg,
+            selectButtonPhase: "idle",
+          });
+          bumpProcessed(product, "needs_review", `${title}：${msg}`);
+          continue;
+        }
+
         setCardState(id, "auto_selecting", {
           productTitle: title,
           ...confidencePatch,
@@ -309,6 +341,11 @@ export function useBatchLinkQueue({
         let lastErr: unknown = null;
         for (let i = 0; i < candidatesToTry.length; i++) {
           const candidate = candidatesToTry[i]!;
+          const conf = resolveCandidateConfidence(
+            candidate,
+            pipeline.matchScores,
+            pipeline.imageScores
+          );
           try {
             const view = await confirmCandidateBinding(
               shopName,
@@ -317,7 +354,10 @@ export function useBatchLinkQueue({
               searchResult,
               {
                 auto: true,
-                allowPoolIngest: true,
+                allowPoolIngest: allowPoolIngestOnConfirm({
+                  tier: conf.tier,
+                  auto: true,
+                }),
                 imageScores: pipeline.imageScores,
                 titleScores: pipeline.matchScores,
                 locale,
@@ -335,8 +375,14 @@ export function useBatchLinkQueue({
               selectButtonPhase: "idle",
               doneFlash: true,
             });
+            const skippedIncomplete =
+              rankedItems.indexOf(candidate) > 0
+                ? `（已跳过不完整/失效货源）`
+                : "";
             const suffix =
-              i > 0 ? `（已跳过 ${i} 个失效货源）` : "";
+              i > 0
+                ? `（已跳过 ${i} 个失效货源）`
+                : skippedIncomplete;
             bumpProcessed(product, "linked", `${title}：已自动关联，待确认${suffix}`);
             await sleep(DONE_FLASH_MS);
             patchCard(id, { doneFlash: false });

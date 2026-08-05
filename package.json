@@ -13,7 +13,7 @@
     "env:update": "node scripts/update-env.mjs",
     "env:sync": "node scripts/sync-env-from-json.mjs",
     "env:push": "node scripts/sync-env-from-json.mjs",
-    "test:batch-link": "npx tsx src/lib/batch-link/test-escalation.ts && npx tsx src/lib/sku-align/test-representative-variant-images.ts",
+    "test:batch-link": "npx tsx src/lib/batch-link/test-escalation.ts && npx tsx src/lib/batch-link/test-auto-bind-eligibility.ts && npx tsx src/lib/sku-align/test-representative-variant-images.ts",
     "test:images": "npx tsx src/lib/images/test-cdn-thumb-url.ts",
     "test:products": "npx tsx src/lib/products/test-agent-commands.ts",
     "test:sourcing": "npx tsx src/lib/sourcing/test-classify-rules.ts && npx tsx src/lib/sourcing/test-display-pricing.ts"
