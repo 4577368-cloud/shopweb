@@ -123,6 +123,7 @@ import {
   preflightBatchLinkScope,
 } from "@/lib/batch-link/preflight";
 import { confirmCandidateBinding } from "@/lib/batch-link/confirm-binding";
+import { promotePendingImageBinding } from "@/lib/batch-link/promote-pending-binding";
 import {
   autoAckHighConfidencePendingBindings,
 } from "@/lib/batch-link/auto-ack-binding";
@@ -1043,7 +1044,7 @@ export function ShopProductsPanel({
     }
     setBatchAcking(true);
     try {
-      const result = await batchAckPendingBindings(shopName, pendingIds);
+      const result = await batchAckPendingBindings(shopName, pendingIds, bindings);
       setBindings((prev) => applyBatchAckToBindings(prev, pendingIds, result.failed));
       onActivity?.();
       showToast(
@@ -2022,14 +2023,26 @@ function ShopProductCard({
     await executeBinding(candidate, { allowPoolIngest: true });
   };
 
-  // "确认无误": promote the AI-suggested (PENDING) binding to confirmed (ACTIVE).
+  // "确认无误": promote PENDING → ACTIVE (ack, then confirm bound offer if ack fails).
   const ackBinding = async () => {
-    if (acking || !binding?.bound) return;
+    if (acking || !binding?.bound || binding.bindStatus !== "PENDING") return;
     setAcking(true);
     setConfirmError(null);
     try {
-      await api.ackImageBinding(shopName, item.thirdPlatformItemId);
-      onBound(item.thirdPlatformItemId, { ...binding, bindStatus: "ACTIVE" });
+      const next = await promotePendingImageBinding(
+        shopName,
+        item.thirdPlatformItemId,
+        binding
+      );
+      onBound(item.thirdPlatformItemId, {
+        ...binding,
+        ...next,
+        bindStatus: "ACTIVE",
+        sourceIdentity: next.sourceIdentity ?? binding.sourceIdentity,
+      });
+      setResult(null);
+      setCurrentIdx(0);
+      setTrayOpen(false);
       showToast(t("shopProducts.toastConfirmed"));
     } catch (err) {
       setConfirmError(imageMatchError(err));

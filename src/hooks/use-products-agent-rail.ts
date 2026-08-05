@@ -343,7 +343,7 @@ export function useProductsAgentRail(params: UseProductsAgentRailParams) {
             return;
           }
           try {
-            const result = await batchAckPendingBindings(shopName, ids);
+            const result = await batchAckPendingBindings(shopName, ids, bindingsMap);
             const nextBindings = applyBatchAckToBindings(
               bindingsMap,
               ids,

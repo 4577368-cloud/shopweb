@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { promotePendingImageBinding } from "@/lib/batch-link/promote-pending-binding";
 import { isPendingImageBinding } from "@/lib/shop-product-binding-stats";
 import type { ImageBindingView, ShopMirrorProduct } from "@/lib/types";
 
@@ -14,11 +15,26 @@ export function listPendingAckProductIds(
 
 export async function batchAckPendingBindings(
   shopName: string,
-  productIds: string[]
+  productIds: string[],
+  bindings: Record<string, ImageBindingView> = {}
 ): Promise<{ ok: number; failed: string[] }> {
   if (productIds.length === 0) return { ok: 0, failed: [] };
-  const result = await api.batchAckImageBindings(shopName, productIds);
-  return { ok: result.ok, failed: result.failed };
+  const failed: string[] = [];
+  let ok = 0;
+  for (const id of productIds) {
+    const binding = bindings[id];
+    try {
+      if (binding?.bound && binding.bindStatus === "PENDING") {
+        await promotePendingImageBinding(shopName, id, binding);
+      } else {
+        await api.ackImageBinding(shopName, id);
+      }
+      ok += 1;
+    } catch {
+      failed.push(id);
+    }
+  }
+  return { ok, failed };
 }
 
 /** Apply ACTIVE status locally for rows acked successfully. */

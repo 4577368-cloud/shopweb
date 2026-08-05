@@ -37,7 +37,12 @@ export function mapImageMatchConfirmError(
   fallback = "确认匹配失败"
 ): string {
   const raw = extractBackendErrorMessage(err);
-  if (!raw) return fallback;
+  if (!raw) {
+    if (err instanceof ApiError && err.status > 0) {
+      return `${fallback}（HTTP ${err.status}）`;
+    }
+    return fallback;
+  }
   if (raw.startsWith("PRODUCT_NOT_FOUND")) {
     return "未找到该商品镜像，请先同步商品";
   }
@@ -61,7 +66,19 @@ export function mapImageMatchConfirmError(
   if (raw.startsWith("AOP_TOKEN_INVALID")) {
     return "货源授权已失效，请重新授权后重试";
   }
-  return fallback;
+  // Surface unknown backend/gateway text so「确认匹配失败」is diagnosable.
+  const clipped = raw.length > 80 ? `${raw.slice(0, 80)}…` : raw;
+  if (
+    clipped.startsWith("Request failed") ||
+    clipped.startsWith("Network request failed") ||
+    clipped === fallback
+  ) {
+    if (err instanceof ApiError && err.status > 0) {
+      return `${fallback}（HTTP ${err.status}）`;
+    }
+    return fallback;
+  }
+  return `${fallback}（${clipped}）`;
 }
 
 export function mapImageSearchError(err: unknown): string {
