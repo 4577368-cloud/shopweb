@@ -302,7 +302,10 @@ export const es: Dictionary = {
     forgotPasswordSubmit: "Enviar enlace",
     forgotPasswordSubmitting: "Enviando…",
     forgotPasswordSubtitle: "Introduce tu correo registrado y te enviaremos un enlace de restablecimiento.",
+    forgotPasswordPlaceholderHint:
+      "La recuperación de contraseña se activará al conectar las APIs de Tangbuy. Esto es un marcador de posición.",
     forgotPasswordTitle: "Contraseña olvidada",
+    tangbuyPasswordApiNeeded: "需要Tangbuy 改密/找回接口路径和入参",
     loginLink: "Iniciar sesión",
     loginPrompt: "¿Ya tienes cuenta?",
     loginSubmit: "Iniciar sesión",
@@ -416,6 +419,7 @@ export const es: Dictionary = {
   },
   accountSecurity: {
     changePassword: "Cambiar contraseña",
+    forgotPassword: "Olvidé la contraseña",
     errorConfirmMismatch: "Las nuevas contraseñas no coinciden.",
     errorSamePassword: "La nueva contraseña no puede ser igual a la actual.",
     errorUnauthenticated: "Sesión expirada. Inicia sesión de nuevo.",
@@ -426,12 +430,15 @@ export const es: Dictionary = {
     fieldNew: "Nueva contraseña",
     fieldNewPlaceholder: "Al menos 8 caracteres",
     passwordHint: "Tras cambiar la contraseña, se cerrarán todas las sesiones y deberás iniciar sesión de nuevo.",
+    passwordPlaceholderHint:
+      "El inicio de sesión ya usa Tangbuy. Cambiar/recuperar contraseña se activará al conectar las APIs de Tangbuy. Esto es un marcador de posición.",
     passwordSideEffect: "Si se realiza con éxito, se cerrarán todas las sesiones (incluida esta).",
-    sectionPassword: "Cambiar contraseña",
+    sectionPassword: "Contraseña y seguridad",
     signInRequired: "Inicia sesión para gestionar la seguridad.",
-    subtitle: "Cambia tu contraseña para proteger tu cuenta.",
+    subtitle: "La seguridad de la cuenta se alineará con Tangbuy.",
     title: "Seguridad",
     toastPasswordChanged: "Contraseña cambiada. Inicia sesión de nuevo.",
+    tangbuyPasswordApiNeeded: "需要Tangbuy 改密/找回接口路径和入参",
     sectionHub: "Hub de operaciones",
     hubHint:
       "Activa los menús del Centro de pedidos, Centro de operaciones y Centro de cumplimiento. Desactivado por defecto para controlar la visibilidad durante el desarrollo.",
