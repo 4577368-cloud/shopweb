@@ -1380,7 +1380,7 @@ export const fr: Dictionary = {
     toastMailLimitNoMatch:
       "Refresh complete: listing returned {{mapped}} mail-limit rows but none matched local SKUs; kept classifier results",
     toastTypeCorrected: "Logistics type updated",
-    tokenMissing: "Connectez-vous à Tangbuy pour le catalogue, les devis et la publication. Sans lien avec l’autorisation boutique."
+    tokenMissing: "Passerelle mall non configurée (NEXT_PUBLIC_TANGBUY_MALL_TOKEN manquant). Devis et publication indisponibles jusqu’à configuration et redéploiement. Sans lien avec l’autorisation boutique."
   },
   logisticsAgent: {
     aiAuto: "AI Confirmered",

@@ -1,14 +1,13 @@
-import { resolvePortalTokenFromRequest } from "@/lib/auth/portal-token";
-
-/** Resolve Tangbuy portal JWT for server/BFF mall calls (per-request user). */
-export function resolveServerMallToken(request?: {
-  headers: Headers;
-}): string | null {
-  if (request) {
-    const fromUser = resolvePortalTokenFromRequest(request);
-    if (fromUser) return fromUser;
-  }
-  return null;
+/** Server-side Tangbuy mall gateway credentials (estimate / itemGet). */
+export function resolveServerMallToken(): string | null {
+  return (
+    process.env.TANGBUY_MALL_TOKEN?.trim() ||
+    process.env.TANG_PLUGIN_TANGBUY_MALL_TOKEN?.trim() ||
+    // Legacy: still accepted so existing Vercel envs keep working, but prefer
+    // server-only TANGBUY_MALL_TOKEN (not inlined into the browser bundle).
+    process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim() ||
+    null
+  );
 }
 
 export function resolveMallGatewayBaseUrl(): string {
@@ -20,8 +19,6 @@ export function resolveMallGatewayBaseUrl(): string {
   ).replace(/\/+$/, "");
 }
 
-export function isServerMallGatewayConfigured(request?: {
-  headers: Headers;
-}): boolean {
-  return Boolean(resolveServerMallToken(request));
+export function isServerMallGatewayConfigured(): boolean {
+  return Boolean(resolveServerMallToken());
 }

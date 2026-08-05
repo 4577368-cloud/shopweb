@@ -17,8 +17,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Legacy server-side estimate — uses the caller's Tangbuy portal JWT
- * (Authorization or TANGBUY_TOKEN cookie). Prefer browser-direct estimate in production.
+ * Legacy server-side estimate (local dev with TANG_PLUGIN_TANGBUY_MALL_TOKEN only).
+ * Production UI calls tangbuy.cc from the browser — Render cannot reach .cc domains.
  */
 export async function POST(request: Request) {
   const denied = rejectUnlessAppSession(request);
@@ -55,13 +55,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请提供至少一个 variant" }, { status: 400 });
   }
 
-  const token = resolveServerMallToken(request);
+  const token = resolveServerMallToken();
   if (!token) {
     return NextResponse.json(
       {
-        error: "请先登录 Tangbuy 账号后再进行线路报价",
+        error:
+          "请在前端配置 NEXT_PUBLIC_TANGBUY_MALL_TOKEN 由浏览器直连 tangbuy.cc（Render 无法访问 .cc）。本路由仅作本地 server token 调试备用。",
       },
-      { status: 401 }
+      { status: 503 }
     );
   }
 

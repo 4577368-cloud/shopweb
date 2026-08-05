@@ -1368,7 +1368,7 @@ export const zh: Dictionary = {
     toastMailLimitNoMatch:
       "刷新完成：listing 有 {{mapped}} 条邮限，但与本地 SKU 未匹配上，已保留原分类",
     toastTypeCorrected: "物流类型已更新",
-    tokenMissing: "请先登录 Tangbuy 账号，登录后即可使用货盘、报价与上架（与店铺授权无关）"
+    tokenMissing: "商城货源网关未配置（缺少 NEXT_PUBLIC_TANGBUY_MALL_TOKEN），物流报价与上架暂不可用，请联系管理员配置后重新部署。与店铺授权无关。"
   },
   logisticsAgent: {
     aiAuto: "AI 已确认",

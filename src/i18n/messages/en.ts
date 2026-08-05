@@ -1381,7 +1381,7 @@ export const en = {
     toastMailLimitNoMatch:
       "Refresh complete: listing returned {{mapped}} mail-limit rows but none matched local SKUs; kept classifier results",
     toastTypeCorrected: "Logistics type updated",
-    tokenMissing: "Sign in to your Tangbuy account to use catalog, quotes, and publish. This is unrelated to store authorization."
+    tokenMissing: "Mall gateway is not configured (missing NEXT_PUBLIC_TANGBUY_MALL_TOKEN). Quotes and catalog publish are unavailable until an admin sets it and redeploys. This is unrelated to store authorization."
   },
   logisticsAgent: {
     aiAuto: "AI confirmed",

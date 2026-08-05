@@ -1,4 +1,3 @@
-import { getPortalMallToken } from "@/lib/auth/portal-token";
 import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
 
 const AREA_LIST_PATH = "/gateway/resource/areaListGroup";
@@ -23,7 +22,7 @@ function gatewayBaseUrl(): string {
 }
 
 function gatewayToken(): string | null {
-  return getPortalMallToken();
+  return process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim() || null;
 }
 
 function readSessionCache(): Map<string, string> | null {
