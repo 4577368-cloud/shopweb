@@ -76,7 +76,16 @@ assert.notEqual(
 );
 assert.equal(batchLinkRunKey(INITIAL_BATCH_LINK_PROGRESS), null);
 
-// Moving "no reliable candidate" from failed to needs_review keeps the summary honest.
+// Summary separates pending auto-links from hard failures.
+assert.match(
+  formatBatchLinkSummary(
+    progressOf(
+      { a: { state: "done" }, b: { state: "failed" } },
+      { linked: 1, needsReview: 0, failed: 1 }
+    )
+  ),
+  /1 个已自动关联（待确认）/
+);
 assert.match(
   formatBatchLinkSummary(
     progressOf(
@@ -84,7 +93,16 @@ assert.match(
       { linked: 0, needsReview: 1, failed: 1 }
     )
   ),
-  /2 个需手动处理/
+  /1 个需复核/
+);
+assert.match(
+  formatBatchLinkSummary(
+    progressOf(
+      { a: { state: "needs_review" }, b: { state: "failed" } },
+      { linked: 0, needsReview: 1, failed: 1 }
+    )
+  ),
+  /1 个失败/
 );
 
 // Machine codes and raw image URLs never reach the card.
