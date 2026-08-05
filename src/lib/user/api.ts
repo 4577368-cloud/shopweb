@@ -1,29 +1,61 @@
 /**
  * User-center API client for `/api/plugin/user/**` (profile).
  *
- * Same pattern as auth/api.ts and billing/api.ts: same-origin path so httpOnly
- * cookies flow automatically. Backend JwtAuthFilter protects this prefix; a
- * missing/expired access cookie returns 401 → api.ts 401-retry will refresh.
+ * Same auth strategy as auth/api.ts and api.ts: cookie or Bearer depending on Host,
+ * with a single 401 → refresh → retry so a short-lived access cookie does not
+ * falsely surface as “登录已失效” while the sidebar still shows the user.
  */
 
-import { ApiError } from "@/lib/api";
+import { ApiError, refreshAccessCookie } from "@/lib/api";
 
 const USER_BASE = "/api/plugin/user";
 
-async function userRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function userRequest<T>(
+  path: string,
+  init?: RequestInit,
+  retried = false
+): Promise<T> {
   const url = path.startsWith("/") ? path : `${USER_BASE}/${path}`;
+
+  const { resolveAuthStrategyFromLocation } = await import(
+    "@/host/adapters/auth-transport"
+  );
+  const strategy = resolveAuthStrategyFromLocation();
+  const auth = await strategy.prepareRequest();
+
+  const mergedHeaders: Record<string, string> = {
+    Accept: "application/json",
+    ...auth.headers,
+  };
+  const initHeaders = init?.headers;
+  if (initHeaders instanceof Headers) {
+    initHeaders.forEach((value, key) => {
+      mergedHeaders[key] = value;
+    });
+  } else if (Array.isArray(initHeaders)) {
+    for (const [key, value] of initHeaders) mergedHeaders[key] = value;
+  } else if (initHeaders) {
+    Object.assign(mergedHeaders, initHeaders as Record<string, string>);
+  }
+
   let res: Response;
   try {
     res = await fetch(url, {
       ...init,
-      credentials: "include",
-      headers: {
-        Accept: "application/json",
-        ...(init?.headers ?? {}),
-      },
+      credentials: init?.credentials ?? auth.credentials,
+      headers: mergedHeaders,
     });
   } catch (cause) {
     throw new ApiError(`Network request failed: ${url}`, 0, cause);
+  }
+
+  if (res.status === 401 && !retried && typeof window !== "undefined") {
+    const refreshed =
+      (await strategy.refreshAfterUnauthorized()) ||
+      (await refreshAccessCookie());
+    if (refreshed) {
+      return userRequest<T>(path, init, true);
+    }
   }
 
   const text = await res.text();

@@ -35,7 +35,7 @@ import {
 export default function AccountProfilePage() {
   const t = useT();
   const locale = useLocale();
-  const { status, bootstrapping, refreshUser } = useUser();
+  const { user, status, bootstrapping, refreshUser } = useUser();
   const { isEmbedded } = useEmbeddedMode();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -54,11 +54,31 @@ export default function AccountProfilePage() {
       setProfile(p);
       setName(p.name ?? "");
     } catch (err) {
-      setError(readError(err, t));
+      // Session menu already has /me — show that snapshot instead of a hard fail
+      // when profile enrichment is briefly unavailable.
+      if (user) {
+        setProfile({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+          locale: user.locale,
+          timezone: user.timezone,
+          currency: user.currency,
+          aiResponseLanguage: user.aiResponseLanguage,
+          status: user.status,
+          createdAt: "",
+          lastLoginAt: null,
+        });
+        setName(user.name ?? "");
+        setError(null);
+      } else {
+        setError(readError(err, t));
+      }
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, user]);
 
   useEffect(() => {
     if (bootstrapping) return;
@@ -111,12 +131,17 @@ export default function AccountProfilePage() {
     );
   }
 
+  const userIdDisplay = formatUserId(
+    profile?.id ?? user?.id,
+    profile?.name ?? user?.name
+  );
+
   return (
     <section className="space-y-6">
       <AccountPageHeader
         title={t("accountProfile.title")}
         subtitle={t("accountProfile.subtitle")}
-        footnote={profile?.email}
+        footnote={profile?.email ?? user?.email}
         actions={
           <Button
             type="button"
@@ -146,6 +171,15 @@ export default function AccountProfilePage() {
         <>
           <AccountCard title={t("accountProfile.sectionAccount")}>
             <dl className="grid grid-cols-1 gap-3 text-[12px] sm:grid-cols-2">
+              <MetaItem
+                label={t("accountProfile.fieldUserId")}
+                value={userIdDisplay}
+                hint={
+                  /^TD\d+/i.test(userIdDisplay) && profile?.id != null
+                    ? t("accountProfile.fieldUserIdSystem", { id: profile.id })
+                    : t("accountProfile.fieldUserIdHint")
+                }
+              />
               <MetaItem label={t("accountProfile.fieldEmail")} value={profile.email} />
               <MetaItem
                 label={t("accountProfile.fieldStatus")}
@@ -228,15 +262,36 @@ export default function AccountProfilePage() {
   );
 }
 
-function MetaItem({ label, value }: { label: string; value: string }) {
+function MetaItem({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div className="flex flex-col">
       <dt className="text-[10px] uppercase tracking-wide text-muted-foreground/80">
         {label}
       </dt>
-      <dd className="break-all text-muted-foreground">{value}</dd>
+      <dd className="break-all font-medium text-foreground" title={hint}>
+        {value}
+      </dd>
+      {hint ? (
+        <p className="mt-0.5 text-[10px] text-muted-foreground/70">{hint}</p>
+      ) : null}
     </div>
   );
+}
+
+/** Prefer Tangbuy-style public code (TD…) from display name; else numeric id. */
+function formatUserId(id: number | undefined | null, name?: string | null): string {
+  const trimmed = name?.trim() ?? "";
+  if (/^TD\d+/i.test(trimmed)) return trimmed;
+  if (id != null && Number.isFinite(id)) return String(id);
+  return "—";
 }
 
 function fmtDate(locale: string, iso?: string | null): string {
