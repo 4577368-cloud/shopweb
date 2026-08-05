@@ -140,6 +140,7 @@ import {
 } from "@/lib/batch-link/candidate-confidence";
 import { buildImageSearchRecoveryHints } from "@/lib/batch-link/search-recovery-hints";
 import {
+  isOfferNotFoundError,
   mapImageMatchConfirmError,
   mapImageSearchError,
   userFacingImageSearchMessage,
@@ -1975,11 +1976,29 @@ function ShopProductCard({
       }
       setSupplierConfirm(null);
       setTrayOpen(false);
+      setResult(null);
+      setCurrentIdx(0);
       showToast(wasRebind ? t("shopProducts.toastRebound") : t("shopProducts.toastBound"));
     } catch (err) {
       const msg = imageMatchError(err);
       setConfirmError(msg);
       showToast(msg);
+      // Delisted / invalid offer: drop it from the tray so「改绑」doesn't keep targeting a dead hit.
+      if (isOfferNotFoundError(err) && result.items.length > 0) {
+        const dropKey = `${candidate.productId}:${candidate.skuId ?? ""}`;
+        const nextItems = result.items.filter(
+          (c) => `${c.productId}:${c.skuId ?? ""}` !== dropKey
+        );
+        if (nextItems.length === 0) {
+          setResult(null);
+          setCurrentIdx(0);
+          setTrayOpen(false);
+        } else {
+          const nextIdx = Math.min(currentIdx, nextItems.length - 1);
+          setResult({ ...result, items: nextItems });
+          setCurrentIdx(nextIdx);
+        }
+      }
     } finally {
       setConfirmingId(null);
     }
@@ -2419,34 +2438,38 @@ function ShopProductCard({
       : null;
   const detailUrl = sourceDetailUrl;
 
-  // PENDING: primary means ack. Rebind only when the tray is open on a different candidate.
-  const pendingRebind = cardState === "pending" && trayOpen && Boolean(current) && isRebind;
+  // 「改绑」only when the tray is open on a candidate that differs from the live binding.
+  // Closed-card leftover search hits must not surface a dead CTA that re-confirms a delisted top.
+  const trayRebind =
+    trayOpen && Boolean(current) && isRebind && Boolean(boundOfferId);
+  const pendingAck =
+    cardState === "pending" && !trayRebind;
 
   const primaryLabel =
     cardState === "unbound" && !current
       ? t("shopProducts.findCandidates")
-      : cardState === "pending" && !pendingRebind
+      : pendingAck
         ? t("shopProducts.confirm")
-        : current && !isBoundHere
-          ? isRebind
-            ? t("shopProducts.rebind")
-            : t("shopProducts.confirm")
-          : null;
+        : trayRebind
+          ? t("shopProducts.rebind")
+          : current && !isBoundHere && !boundOfferId
+            ? t("shopProducts.confirm")
+            : null;
 
   const onPrimary = () => {
     if (cardState === "unbound" && !current) {
       void openOrRunSearch(true);
       return;
     }
-    if (cardState === "pending") {
-      if (pendingRebind && current) {
-        void confirmMatch(current);
-        return;
-      }
+    if (pendingAck) {
       void ackBinding();
       return;
     }
-    if (current && !isBoundHere) {
+    if (trayRebind && current) {
+      void confirmMatch(current);
+      return;
+    }
+    if (current && !isBoundHere && !boundOfferId) {
       void confirmMatch(current);
     }
   };
@@ -3011,6 +3034,17 @@ function ShopProductCard({
                   aria-label={t("shopProducts.collapseCandidates")}
                   onClick={(e) => {
                     e.stopPropagation();
+                    // Avoid closed-card「改绑」on a hidden non-bound candidate.
+                    if (boundOfferId && candidates?.length) {
+                      const boundIdx = candidates.findIndex((c) =>
+                        candidateMatchesBoundSource(
+                          c,
+                          boundOfferId,
+                          boundSourceIdentity
+                        )
+                      );
+                      if (boundIdx >= 0) setCurrentIdx(boundIdx);
+                    }
                     setTrayOpen(false);
                   }}
                 >
