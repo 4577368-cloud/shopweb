@@ -432,6 +432,10 @@ function tryRerunCandidateSearchCommand(text: string): ProductCommandDraft | nul
   ) {
     return null;
   }
+  // 「给未匹配商品再找候选」— scope is unbound set, not a product title hint.
+  if (/未匹配|未关联|unmatched|unlinked|unbound/i.test(text)) {
+    return draft("rerun_candidate_search", {}, { confirmationRequired: false });
+  }
   return withTitleHint(
     text,
     draft("rerun_candidate_search", {}, { confirmationRequired: false })
@@ -864,7 +868,7 @@ export function buildCommandClassifySystemPrompt(
   const contextBlock = buildPageContextSummary(ctx ?? null);
   const langBlock = responseLanguageRule
     ? `\n[Language]\n${responseLanguageRule}\n`
-    : "\n[Language]\nUnderstand user input in any language (English, French, Spanish, Chinese, etc.).\n";
+    : "\n[Language]\nUnderstand user input in any language. When canonicalZh is provided, treat it as the authoritative Simplified Chinese form of the command for intent mapping; still write clarify text in the user's language.\n";
   return `You are a senior Shopify product-sourcing operator. Map natural-language commands to executable system intents.
 
 Available commands:
@@ -872,7 +876,7 @@ ${lines}
 ${contextBlock ? `\n${contextBlock}\n` : ""}
 ${langBlock}
 [Intent rules]
-1. Understand what the user wants (change price? translate copy? open settings? view products?) before mapping.
+1. Understand what the user wants (change price? translate copy? open settings? view products?) before mapping. User may write in any language; a Chinese canonicalZh rewrite may accompany userText — use it.
 2. Distinguish "change listing price" vs "open pricing settings":
    - "Set this product price to 9.9" / 「售价改成 9.9」→ update_listing_price with params.price=9.9
    - "Add 1 to the price" / 「把商品价格加1」/ 「售价减2」→ update_listing_price with params.priceDelta=+1 or -2 (NOT params.price=1)
@@ -881,7 +885,7 @@ ${langBlock}
    - "Change exchange rate to 7.2" / "configure pricing" → open_pricing_editor
 3. Product copy / translation (NOT listing price unless 售价/卖价/金额数字):
    - Synonyms for translate: 翻译/译/翻, and when a target language is named: 修改为/改成/改为/调整为/翻译为/翻译成/成为/成/为/到 + language
-   - Language names → params.copyTargetLang: 英文/英语→en, 日文/日语/日本语→ja, 韩文/韩语→ko, 中文/中文简体/简体→zh, etc.
+   - Language names → params.copyTargetLang: 英文/英语→en, 日文/日语/日本语→ja, 韩文/韩语→ko, 中文/中文简体/简体→zh, English→en, etc.
    - Field: 标题/title (default if omitted), 描述/description, 文案/all
    - Scope: 这个商品/当前商品/这个/当前/把它/将它/翻译这个商品… with no other product name → targetScope=current (use [当前页面上下文] selected product)
    - Examples: 「标题修改为英文」「把它标题改成韩文」「翻译这个商品成为日语」→ update_product_copy, copyAction=translate
@@ -891,12 +895,12 @@ ${langBlock}
    - params.batchFilter = all|pending|confirmed|unbound|linked|listed|page|recent
    - For translate / title rewrite / batch price: prefer batchFilter=page (current list page only). Never plan a whole-catalog translate/price run.
    - params.batchLimit = number when user says 前10 / top 15
-5. "Show pending only" / "show unlinked" → open_filter
-6. "Re-search candidates" → rerun_candidate_search
+5. "Show pending only" / "show unlinked" / 「只看待确认」→ open_filter
+6. "Re-search candidates" / 「再找候选」→ rerun_candidate_search
 7. "Why recommend this" → explain_product_match (matchExplain=reason)
 8. "Is this reliable" / "any risks" → explain_product_match (matchExplain=risk)
-9. "Move to draft" → draft_product or batch_draft_products
-10. "Archive" / "delist" → archive_product or batch_archive_products
+9. "Move to draft" / 「放到草稿」→ draft_product or batch_draft_products
+10. "Archive" / "delist" / 「下架」→ archive_product or batch_archive_products
 11. Discover sourcing — "find red dress" / "search phone cases on 1688" → search_sourcing (params.sourcingKeywords, optional sourcingSourceFilter)
 12. "List item 2" / "publish the second one" → publish_sourcing_item (params.sourcingListIndex)
 13. "Under $15" / "Tangbuy only" / "1688 only" on discover → set_sourcing_filters

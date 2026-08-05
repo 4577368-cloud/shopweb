@@ -15,6 +15,7 @@ import type { LogisticsCommandClassifyResult } from "@/lib/agents/logistics/comm
 import { chatCompletionJson } from "@/lib/agents/llm/openai-compatible";
 import { LlmUnavailableError } from "@/lib/agents/llm/openai-compatible";
 import { createTranslator } from "@/i18n/server";
+import { canonicalizeCommandToZh } from "@/lib/agents/shared/canonicalize-command-text";
 
 export async function POST(req: Request) {
   const denied = rejectUnlessAppSession(req);
@@ -34,19 +35,32 @@ export async function POST(req: Request) {
       );
     }
 
-    const local = classifyLogisticsCommandByRules(text, context);
+    const { original, canonicalZh, translated } =
+      await canonicalizeCommandToZh(text);
+    const classifyText = canonicalZh;
+
+    const local = classifyLogisticsCommandByRules(classifyText, context);
 
     try {
       const prompt = buildLogisticsClassifyPrompt(
         localized,
-        text,
+        classifyText,
         context,
-        buildResponseLanguageRule(text, body.locale)
+        buildResponseLanguageRule(original, body.locale)
       );
       const llmResult = await chatCompletionJson({
         messages: [
           { role: "system", content: prompt },
-          { role: "user", content: text },
+          {
+            role: "user",
+            content: translated
+              ? JSON.stringify({
+                  userText: original,
+                  canonicalZh: classifyText,
+                  note: "canonicalZh is Simplified Chinese rewrite; prefer it for intent mapping.",
+                })
+              : original,
+          },
         ],
         temperature: 0.1,
       });
@@ -55,7 +69,7 @@ export async function POST(req: Request) {
       if (parsed) {
         const draft = normalizeLogisticsCommandDraft(parsed);
         const confidence = calibrateLogisticsLlmConfidence(
-          text,
+          classifyText,
           draft,
           local,
           context
@@ -81,6 +95,11 @@ export async function POST(req: Request) {
       } as LogisticsCommandClassifyResult);
     } catch (llmErr) {
       if (llmErr instanceof LlmUnavailableError) {
+        if (translated && local.confidence !== "high") {
+          return NextResponse.json(
+            classifyLogisticsCommandByRules(original, context)
+          );
+        }
         return NextResponse.json(local);
       }
       throw llmErr;

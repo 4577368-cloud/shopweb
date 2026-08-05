@@ -6,6 +6,7 @@ import type { SkuCommandClassifyResult } from "@/lib/agents/sku-align/command-sc
 import { chatCompletionJson } from "@/lib/agents/llm/openai-compatible";
 import { LlmUnavailableError } from "@/lib/agents/llm/openai-compatible";
 import { createTranslator } from "@/i18n/server";
+import { canonicalizeCommandToZh } from "@/lib/agents/shared/canonicalize-command-text";
 
 export async function POST(req: Request) {
   const denied = rejectUnlessAppSession(req);
@@ -25,19 +26,32 @@ export async function POST(req: Request) {
       );
     }
 
+    const { original, canonicalZh, translated } =
+      await canonicalizeCommandToZh(text);
+    const classifyText = canonicalZh;
+
     // LLM-first: the model is the authority for natural-language mapping.
     // Deterministic rules are kept only as an offline fallback when the LLM
     // is unavailable, so the rail still works during outages.
-    const local = classifySkuCommandByRules(text, localized);
+    const local = classifySkuCommandByRules(classifyText, localized);
     try {
       const prompt = buildSkuCommandClassifySystemPrompt(
         context,
-        buildResponseLanguageRule(text, body.locale)
+        buildResponseLanguageRule(original, body.locale)
       );
       const llmResult = await chatCompletionJson({
         messages: [
           { role: "system", content: prompt },
-          { role: "user", content: text },
+          {
+            role: "user",
+            content: translated
+              ? JSON.stringify({
+                  userText: original,
+                  canonicalZh: classifyText,
+                  note: "canonicalZh is Simplified Chinese rewrite; prefer it for intent mapping.",
+                })
+              : original,
+          },
         ],
         temperature: 0.1,
       });
@@ -77,6 +91,11 @@ export async function POST(req: Request) {
       } as SkuCommandClassifyResult);
     } catch (llmErr) {
       if (llmErr instanceof LlmUnavailableError) {
+        if (translated && local.confidence !== "high" && !local.draft) {
+          return NextResponse.json(
+            classifySkuCommandByRules(original, localized)
+          );
+        }
         return NextResponse.json(local);
       }
       throw llmErr;
