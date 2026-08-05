@@ -1,3 +1,7 @@
+import {
+  hasPortalMallToken,
+  requirePortalMallToken,
+} from "@/lib/auth/portal-token";
 import type { CatalogRecommendation } from "@/lib/types";
 import { calculateSalePrice } from "@/lib/price-calculator";
 import type { PricingTemplate } from "@/lib/types";
@@ -26,10 +30,15 @@ interface GatewayResponse {
   msg?: string;
 }
 
-/** True when the browser should call tangbuy.cc directly (Render backend cannot reach it). */
+/**
+ * True when the current Tangbuy login can call tangbuy.cc (per-user portal JWT).
+ * Alias kept for existing call sites; prefer {@link hasPortalMallToken}.
+ */
 export function isMallGatewayConfigured(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim());
+  return hasPortalMallToken();
 }
+
+export { hasPortalMallToken };
 
 function gatewayBaseUrl(): string {
   return (
@@ -38,11 +47,7 @@ function gatewayBaseUrl(): string {
 }
 
 function gatewayToken(): string {
-  const token = process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim();
-  if (!token) {
-    throw new Error("商城货源暂不可用，请稍后重试或联系管理员");
-  }
-  return token;
+  return requirePortalMallToken();
 }
 
 export async function fetchMallPage(

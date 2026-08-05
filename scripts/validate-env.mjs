@@ -22,7 +22,7 @@ for (const line of raw.split("\n")) {
   vars[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
 }
 
-const required = ["NEXT_PUBLIC_API_BASE", "NEXT_PUBLIC_TANGBUY_MALL_TOKEN"];
+const required = ["NEXT_PUBLIC_API_BASE"];
 const recommended = [
   "NEXT_PUBLIC_TANGBUY_MALL_GATEWAY_BASE_URL",
   "TANGBUY_ADMIN_API_BASE",
@@ -51,7 +51,7 @@ for (const key of recommended) {
 const apiBase = vars.NEXT_PUBLIC_API_BASE ?? "";
 if (apiBase.includes("localhost") && !apiBase.includes("127.0.0.1")) {
   console.warn(
-    "⚠ NEXT_PUBLIC_API_BASE uses localhost — prefer 127.0.0.1 for local plugin or https://shop-x2mw.onrender.com for Render"
+    "⚠ NEXT_PUBLIC_API_BASE uses localhost — prefer 127.0.0.1 for local plugin or the GitLab gateway URL for production"
   );
 }
 
@@ -64,11 +64,11 @@ if (
   );
 }
 
-if (vars.TANG_PLUGIN_TANGBUY_MALL_TOKEN && !vars.NEXT_PUBLIC_TANGBUY_MALL_TOKEN) {
+if (vars.NEXT_PUBLIC_TANGBUY_MALL_TOKEN) {
   console.warn(
-    "⚠ TANG_PLUGIN_* in .env.local only affects Next server routes — copy mall token to NEXT_PUBLIC_TANGBUY_MALL_TOKEN for the browser"
+    "⚠ NEXT_PUBLIC_TANGBUY_MALL_TOKEN is deprecated — mall/catalog/estimate use the logged-in user's TANGBUY_TOKEN / embedded platform token"
   );
 }
 
 if (failed) process.exit(1);
-console.log("\nEnv structure OK (Render Shopify keys are only on tangbuy-plugin, not here).");
+console.log("\nEnv structure OK (mall auth = per-user portal JWT; Shopify keys live on the plugin host).");

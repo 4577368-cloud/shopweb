@@ -1376,7 +1376,7 @@ export const es: Dictionary = {
     toastMailLimitNoMatch:
       "Refresh complete: listing returned {{mapped}} mail-limit rows but none matched local SKUs; kept classifier results",
     toastTypeCorrected: "Logistics type updated",
-    tokenMissing: "La pasarela del mall no está configurada (falta NEXT_PUBLIC_TANGBUY_MALL_TOKEN). Cotizaciones y publicación no están disponibles hasta que un admin la configure y redepliegue. No está relacionado con la autorización de la tienda."
+    tokenMissing: "Inicia sesión en Tangbuy para usar catálogo, cotizaciones y publicación. No está relacionado con la autorización de la tienda."
   },
   logisticsAgent: {
     aiAuto: "AI Confirmared",

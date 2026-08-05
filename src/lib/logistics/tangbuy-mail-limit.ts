@@ -2,9 +2,7 @@
  * Tangbuy 商品邮限（mailLimitList）+ 物流模板邮限规则（limitsMailList）。
  * 浏览器直连 tangbuy.cc；失败时调用方回退关键词分类。
  *
- * 注意：listing/page 按「登录账号绑定的店铺商品」返回。
- * 运费 estimate 用的 mall token 可能看不到店铺 listing（total=0）。
- * 可另配 NEXT_PUBLIC_TANGBUY_LISTING_TOKEN（www.tangbuy.cc 店铺账号 Bearer）。
+ * listing/page 按「登录账号绑定的店铺商品」返回 — 使用当前用户门户 JWT。
  */
 import type {
   LogisticsAnalysis,
@@ -16,6 +14,7 @@ import {
   computeVariantDecisionStatus,
   DEFAULT_DECISION_COUNTS,
 } from "@/lib/logistics/decision-engine";
+import { requirePortalMallToken } from "@/lib/auth/portal-token";
 import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
 
 const LISTING_PATH = "/gateway/plugin/third/platform/product/listing/page";
@@ -70,15 +69,11 @@ function gatewayBaseUrl(): string {
   ).replace(/\/+$/, "");
 }
 
-/** Prefer shop-owner portal token for listing; fall back to mall token. */
+/** Prefer optional listing override; else current user portal token. */
 function listingToken(): { token: string; usedListingToken: boolean } {
   const listing = process.env.NEXT_PUBLIC_TANGBUY_LISTING_TOKEN?.trim();
   if (listing) return { token: listing, usedListingToken: true };
-  const mall = process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim();
-  if (!mall) {
-    throw new Error("缺少 NEXT_PUBLIC_TANGBUY_MALL_TOKEN");
-  }
-  return { token: mall, usedListingToken: false };
+  return { token: requirePortalMallToken(), usedListingToken: false };
 }
 
 function listingHeaders(token: string): HeadersInit {

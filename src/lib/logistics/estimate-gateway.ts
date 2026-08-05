@@ -6,6 +6,7 @@ import {
 } from "@/lib/logistics/template-params";
 import { resolveTangbuyCountryId } from "@/lib/logistics/tangbuy-country";
 import { toTangbuyPostLimitType } from "@/lib/logistics/postal-limit-map";
+import { requirePortalMallToken } from "@/lib/auth/portal-token";
 import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
 
 const ESTIMATE_PATH = "/gateway/plugin/logistic/estimateSkuSaleFeePrice";
@@ -17,13 +18,7 @@ function gatewayBaseUrl(): string {
 }
 
 function gatewayToken(): string {
-  const token = process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim();
-  if (!token) {
-    throw new Error(
-      "线路报价需在 .env.local 配置 NEXT_PUBLIC_TANGBUY_MALL_TOKEN（与 Render 上 TANG_PLUGIN_TANGBUY_MALL_TOKEN 相同；Render 无法访问 tangbuy.cc，须由浏览器直连）"
-    );
-  }
-  return token;
+  return requirePortalMallToken();
 }
 
 async function buildTangbuyEstimateBody(body: LogisticsEstimateRequest) {
@@ -82,9 +77,7 @@ export async function estimateLogisticsFromBrowser(
     throw new DOMException("Aborted", "AbortError");
   }
   if (!isMallGatewayConfigured()) {
-    throw new Error(
-      "线路报价需在 .env.local 配置 NEXT_PUBLIC_TANGBUY_MALL_TOKEN（Render 无法访问 tangbuy.cc，须浏览器直连网关）"
-    );
+    throw new Error("请先登录 Tangbuy 账号后再进行线路报价");
   }
   if (!body.variants?.length) {
     throw new Error("请提供至少一个 variant");
