@@ -43,8 +43,13 @@ function normalizeCurrency(raw?: string | null): string | undefined {
 
 function parseListingPrice(text: string): { price: number; currency?: string } | null {
   const patterns = [
-    /(?:价格|售价|卖价)\s*(?:改(?:成|为)|设为|设置为)\s*(\d+(?:\.\d+)?)/i,
+    // 「改价为9.9」「调价成 19.9」
+    /(?:改价|调价|定价)\s*(?:成|为|到)\s*(\d+(?:\.\d+)?)\s*(美元|美金|USD|usd|\$|EUR|eur|欧元|GBP|gbp|英镑|CNY|cny|元)?/i,
+    // 「价格改为9.9」「售价设为 9.9 美元」
+    /(?:价格|售价|卖价|上架价)\s*(?:改(?:成|为)|设为|设置为|调到)\s*(\d+(?:\.\d+)?)\s*(美元|美金|USD|usd|\$|EUR|eur|欧元|GBP|gbp|英镑|CNY|cny|元)?/i,
+    // 「改为9.9」「设为9.9美元」
     /(?:改成|改为|设为|设置为|调整到?)\s*(\d+(?:\.\d+)?)\s*(美元|美金|USD|usd|\$|EUR|eur|欧元|GBP|gbp|英镑|CNY|cny|元)?/i,
+    // 「9.9 美元」「9.9USD」
     /(\d+(?:\.\d+)?)\s*(美元|美金|USD|usd|\$|EUR|eur|欧元|GBP|gbp|英镑)\s*(?:售价|价格)?/i,
     /\$\s*(\d+(?:\.\d+)?)/,
   ];
@@ -87,7 +92,11 @@ function pageScopedBatchFilter(
 }
 
 function tryListingPriceCommand(text: string): ProductCommandDraft | null {
-  if (!/(售价|卖价|上架价|listing|shopify.*价|改成|改为|设为|价格)/i.test(text)) {
+  if (
+    !/(售价|卖价|上架价|listing|shopify.*价|改成|改为|设为|改价|调价|定价|价格)/i.test(
+      text
+    )
+  ) {
     return null;
   }
   // 排除明显是定价配置/汇率/策略相关的，不是改某个商品价格

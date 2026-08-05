@@ -172,24 +172,73 @@ export function ProductsAgentPanel({
     );
 
   const exampleCommands = useMemo(() => {
-    const examples: string[] = [];
-    if (context.pendingCount > 0) examples.push(t("productsAgent.exampleConfirmAll"));
-    if (context.unboundCount > 0) examples.push(t("productsAgent.exampleRematch"));
+    type ExampleChip = {
+      /** Short label shown on the chip */
+      label: string;
+      /** Text submitted to the classifier — must be recognizable, not the short label */
+      command?: string;
+      /** Prefer direct action when the phrase is not a text command */
+      action?: AgentSuggestedAction;
+    };
+    const examples: ExampleChip[] = [];
+    if (context.pendingCount > 0) {
+      examples.push({
+        label: t("productsAgent.exampleConfirmAll"),
+        action: {
+          kind: "batch_ack_pending",
+          tab: "shop",
+          shopFilter: "pending",
+          label: t("productsAgent.batchAckAll", { count: context.pendingCount }),
+        },
+      });
+    }
+    if (context.unboundCount > 0) {
+      examples.push({
+        label: t("productsAgent.exampleRematch"),
+        action: {
+          kind: "rematch_unbound",
+          tab: "shop",
+          shopFilter: "unbound",
+          label: t("productsAgent.exampleRematch"),
+        },
+      });
+    }
     if (context.tab === "catalog") {
       examples.push(
-        t("productsAgent.exampleDiscoverSearch"),
-        t("productsAgent.examplePublishSecond")
+        {
+          label: t("productsAgent.exampleDiscoverSearch"),
+          command: t("productsAgent.exampleDiscoverSearch"),
+        },
+        {
+          label: t("productsAgent.examplePublishSecond"),
+          command: t("productsAgent.examplePublishSecond"),
+        }
       );
     }
     examples.push(
-      t("productsAgent.examplePrice"),
+      {
+        label: t("productsAgent.examplePrice"),
+        command: t("productsAgent.examplePriceCommand"),
+      },
       context.focusProductId
-        ? t("productsAgent.exampleTranslate")
-        : t("productsAgent.exampleTranslateAll"),
-      t("productsAgent.examplePendingOnly")
+        ? {
+            label: t("productsAgent.exampleTranslate"),
+            command: t("productsAgent.exampleTranslateCommand"),
+          }
+        : {
+            label: t("productsAgent.exampleTranslateAll"),
+            command: t("productsAgent.exampleTranslateAllCommand"),
+          },
+      {
+        label: t("productsAgent.examplePendingOnly"),
+        command: t("productsAgent.examplePendingOnlyCommand"),
+      }
     );
     if (context.tab !== "catalog") {
-      examples.push(t("productsAgent.exampleDraft"));
+      examples.push({
+        label: t("productsAgent.exampleDraft"),
+        command: t("productsAgent.exampleDraftCommand"),
+      });
     }
     return examples.slice(0, 5);
   }, [
@@ -580,9 +629,10 @@ export function ProductsAgentPanel({
     setClarify(null);
   }, [context.focusProductId]);
 
-  const submitShortInput = () => {
-    const text = input.trim();
+  const submitShortInput = (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     if (!text || commandInputLocked) return;
+    if (overrideText != null) setInput(text);
     const seq = ++requestSeq.current;
     setLoading(true);
     setClarify(null);
@@ -697,8 +747,7 @@ export function ProductsAgentPanel({
           disabled={commandInputLocked}
           onClick={() => {
             if (commandInputLocked) return;
-            setInput(t("productsAgent.translateAllEn"));
-            setTimeout(() => submitShortInput(), 50);
+            submitShortInput(t("productsAgent.translateAllEn"));
           }}
           className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border border-brand/20 bg-white px-2.5 py-1.5 text-xs font-medium text-brand hover:border-brand/40 hover:bg-surface-hover transition-colors"
         >
@@ -777,20 +826,27 @@ export function ProductsAgentPanel({
         </Button>
       </form>
 
-      {/* 示例命令 - 改用下划线 chip 样式 */}
+      {/* 示例命令：短文案展示，可识别指令填入 */}
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-[10px] text-slate-400">{t("productsAgent.tryLabel")}</span>
-        {exampleCommands.map((text) => (
+        {exampleCommands.map((ex) => (
           <button
-            key={text}
+            key={ex.label}
             type="button"
+            disabled={commandInputLocked}
             onClick={() => {
-              setInput(text);
-              setTimeout(() => submitShortInput(), 50);
+              if (commandInputLocked) return;
+              if (ex.action) {
+                dispatchAction(ex.action);
+                return;
+              }
+              const command = (ex.command ?? ex.label).trim();
+              if (!command) return;
+              submitShortInput(command);
             }}
-            className="rounded-md border-b border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600 hover:border-slate-400 hover:text-slate-800"
+            className="rounded-md border-b border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600 hover:border-slate-400 hover:text-slate-800 disabled:opacity-50"
           >
-            {text}
+            {ex.label}
           </button>
         ))}
       </div>
