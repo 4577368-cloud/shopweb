@@ -611,6 +611,9 @@ export const es: Dictionary = {
     changeShop: "Change Tienda",
     connectDomain: "Connect {{domain}}",
     connectShop: "Connect Shopify Tienda",
+    connectWooCommerce: "Conectar WooCommerce",
+    connectWooCommerceNote:
+      "Introduce el dominio de WooCommerce y aprueba TangBuy en WordPress.",
     connectSubtitle: "Authorize via official Shopify OAuth — scoped to products for sourcing and listing.",
     connectTitle: "Connect your Tienda",
     welcomeRegisterTitle: "Bienvenido a 60s Sourcing",

@@ -8,9 +8,12 @@ import { useMemo, useSyncExternalStore } from "react";
  * Truth sources (Shopify App Bridge / Admin load URL):
  * - `embedded=1` query param
  * - `host` query param (base64 Admin host)
+ * - sticky host **only while still inside an iframe** (Admin soft-nav)
  * - `shop` alone is NOT enough (standalone also uses `?shop=`)
+ * - `window.shopify` alone is NOT enough (App Bridge can linger after sticky pollution)
  *
- * Standalone (`ai.tangbuy.com` direct) must remain the default when these are absent.
+ * Standalone top-level (`source.tangbuy.cc` / `ai.tangbuy.com`) clears sticky Admin
+ * mode so Connect uses window.location.assign — not "leave Admin frame" errors.
  */
 
 export type EmbeddedModeSnapshot = {
@@ -73,26 +76,44 @@ function snapshotFromSearch(search: URLSearchParams): EmbeddedModeSnapshot {
   const host = (search.get("host") ?? "").trim();
   const embeddedFlag = search.get("embedded");
   const shop = (search.get("shop") ?? "").trim().toLowerCase();
-  let isEmbedded =
+  const adminSignal =
     Boolean(host) || embeddedFlag === "1" || embeddedFlag === "true";
-  // Admin iframe may briefly lack host on soft-nav; frame / App Bridge are truthy too.
-  if (!isEmbedded && typeof window !== "undefined") {
+
+  let inFrame = false;
+  if (typeof window !== "undefined") {
     try {
-      if (window.self !== window.top) isEmbedded = true;
+      inFrame = window.self !== window.top;
     } catch {
-      isEmbedded = true; // cross-origin parent ⇒ embedded
+      inFrame = true;
     }
-    if (window.shopify) isEmbedded = true;
   }
-  // Soft-nav can drop host; keep sticky shop/host when still embedded.
-  if (isEmbedded && stickyClientSnapshot?.isEmbedded) {
+
+  // Soft-nav inside Admin iframe can briefly drop ?host= — keep sticky only while framed.
+  if (!adminSignal && inFrame) {
+    const sticky = stickyClientSnapshot ?? readStickyFromSession();
+    if (sticky?.isEmbedded && sticky.host) {
+      return {
+        isEmbedded: true,
+        host: sticky.host,
+        shop: shop || sticky.shop,
+      };
+    }
+  }
+
+  // Top-level standalone (source.tangbuy.cc / ai.tangbuy.com): never inherit
+  // sticky Admin mode or lingering window.shopify from a prior App Bridge load.
+  if (!adminSignal) {
+    return { isEmbedded: false, host: "", shop };
+  }
+
+  if (stickyClientSnapshot?.isEmbedded) {
     return {
       isEmbedded: true,
       host: host || stickyClientSnapshot.host,
       shop: shop || stickyClientSnapshot.shop,
     };
   }
-  return { isEmbedded, host, shop };
+  return { isEmbedded: true, host, shop };
 }
 
 /**

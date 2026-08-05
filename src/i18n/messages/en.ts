@@ -613,6 +613,9 @@ export const en = {
     changeShop: "Change store",
     connectDomain: "Connect {{domain}}",
     connectShop: "Connect Shopify store",
+    connectWooCommerce: "Connect WooCommerce store",
+    connectWooCommerceNote:
+      "Enter the WooCommerce site domain, then approve TangBuy in WordPress.",
     connectSubtitle: "Authorize via official Shopify OAuth — scoped to products for sourcing and listing.",
     connectTitle: "Connect your store",
     welcomeRegisterTitle: "Welcome to 60s Sourcing",

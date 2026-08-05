@@ -608,6 +608,8 @@ export const zh: Dictionary = {
     changeShop: "更换店铺",
     connectDomain: "连接 {{domain}}",
     connectShop: "连接 Shopify 店铺",
+    connectWooCommerce: "连接 WooCommerce 店铺",
+    connectWooCommerceNote: "输入 WooCommerce 站点域名，然后在 WordPress 中批准 TangBuy。",
     connectSubtitle: "通过 Shopify 官方 OAuth 授权，权限范围覆盖选品与上架所需的商品读写。",
     connectTitle: "连接 Shopify 店铺",
     welcomeRegisterTitle: "欢迎加入 60s Sourcing",

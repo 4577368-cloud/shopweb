@@ -63,15 +63,16 @@ export default function RootLayout({
       <head>
         {/*
           Detect Shopify Admin embed before React (avoids standalone chrome flash).
-          App Bridge CDN must ONLY load when Admin signals exist (host / embedded=1
-          / sticky host). Loading it on standalone login throws
-          "missing required configuration fields: shop" and can leave the page as
-          inert SSR HTML (tabs/buttons stop working).
+          App Bridge CDN must ONLY load when Admin URL signals exist (host /
+          embedded=1). Sticky alone must not load Bridge on top-level standalone
+          (or third-party iframes) — that polluted sessionStorage and made
+          Connect show "leave the Admin frame" on source.tangbuy.cc.
+          Soft-nav sticky is handled in use-embedded-mode (iframe + sticky host).
           CDN rules: classic script, no async/defer; document.write during parse.
         */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var q=new URLSearchParams(location.search);var host=(q.get("host")||"").trim();var embFlag=q.get("embedded")==="1"||q.get("embedded")==="true";var shop=(q.get("shop")||"").trim().toLowerCase();var stickyHost="";try{var raw=sessionStorage.getItem("tb_embedded_mode_v1");if(raw){var p=JSON.parse(raw);if(p&&p.isEmbedded&&p.host)stickyHost=String(p.host||"")}}catch(e){}var loadBridge=Boolean(host)||embFlag||Boolean(stickyHost);var inFrame=false;try{inFrame=window.self!==window.top}catch(e){inFrame=true}if(loadBridge||inFrame){document.documentElement.dataset.embedded="1"}if(loadBridge){try{sessionStorage.setItem("tb_embedded_mode_v1",JSON.stringify({isEmbedded:true,host:host||stickyHost,shop:shop}))}catch(e){}}${
+            __html: `(function(){try{var q=new URLSearchParams(location.search);var host=(q.get("host")||"").trim();var embFlag=q.get("embedded")==="1"||q.get("embedded")==="true";var shop=(q.get("shop")||"").trim().toLowerCase();var adminSignal=Boolean(host)||embFlag;var inFrame=false;try{inFrame=window.self!==window.top}catch(e){inFrame=true}if(!adminSignal&&!inFrame){try{sessionStorage.removeItem("tb_embedded_mode_v1")}catch(e){}}var loadBridge=adminSignal;if(loadBridge){document.documentElement.dataset.embedded="1";try{sessionStorage.setItem("tb_embedded_mode_v1",JSON.stringify({isEmbedded:true,host:host,shop:shop}))}catch(e){}}${
               shopifyApiKey
                 ? `if(loadBridge){document.write(${JSON.stringify(`<meta name="shopify-api-key" content="${shopifyApiKey}">`)});document.write('<script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"><\\/script>');}`
                 : ""

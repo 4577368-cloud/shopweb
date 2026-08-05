@@ -716,14 +716,16 @@ function AuthorizePageContent() {
                         onClick={startWooCommerceInstall}
                         disabled={authorizing}
                       >
-                        {authorizing ? t("authorize.authorizing") : t("authorize.connectShop")}
+                        {authorizing
+                          ? t("authorize.authorizing")
+                          : t("authorize.connectWooCommerce")}
                       </Button>
                     </div>
                     {wooError ? (
                       <p className="mt-1.5 text-[11px] leading-4 text-red-600">{wooError}</p>
                     ) : (
                       <p className="mt-1.5 text-[11px] leading-4 text-ink-subtle">
-                        Enter the WooCommerce site domain, then approve TangBuy in WordPress.
+                        {t("authorize.connectWooCommerceNote")}
                       </p>
                     )}
                   </div>
