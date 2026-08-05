@@ -431,13 +431,15 @@ export function resolveBoundSkuDisplay(input: {
 export async function fetchSourceSkuMatrixResult(
   detailUrl: string
 ): Promise<SourceSkuMatrixFetchResult> {
-  if (!isMallGatewayConfigured()) {
-    return { rows: [], error: "商城货源暂不可用，无法加载 itemGet 规格表" };
-  }
   try {
     const detail = await fetchItemDetail(detailUrl);
     if (!detail) {
-      return { rows: [], error: "itemGet 未返回商品详情" };
+      return {
+        rows: [],
+        error: isMallGatewayConfigured()
+          ? "itemGet 未返回商品详情"
+          : "商城货源暂不可用，无法加载 itemGet 规格表",
+      };
     }
     const rows = mapItemGetToSourceSkuMatrix(detail);
     if (!rows.length) {

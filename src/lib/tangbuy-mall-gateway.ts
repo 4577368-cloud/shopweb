@@ -242,12 +242,23 @@ export function buildTangbuyProductUrl(
   return `https://www.tangbuy.cc/product?dataSource=${encodeURIComponent(dataSource)}&id=${encodeURIComponent(id)}`;
 }
 
-/** GET /gateway/product/v3/itemGet — full product detail for publish enrichment. */
+/** GET itemGet — prefer plugin (publish mall token), then browser gateway if configured. */
 export async function fetchItemDetail(
   productUrl: string
 ): Promise<ItemGetProduct | null> {
   const url = productUrl.trim();
   if (!url) return null;
+
+  try {
+    const { api } = await import("@/lib/api");
+    const res = await api.getSkuItemGet(url);
+    if (res?.item) return res.item;
+  } catch {
+    // Fall through to browser-direct when plugin is down or mall token missing on server.
+  }
+
+  if (!isMallGatewayConfigured()) return null;
+
   const endpoint = `${gatewayBaseUrl()}${ITEM_GET_PATH}?url=${encodeURIComponent(url)}`;
   try {
     const res = await fetch(endpoint, {

@@ -1054,6 +1054,15 @@ export const api = {
       )}&country=${encodeURIComponent(country)}`
     ),
 
+  /**
+   * Tangbuy itemGet via plugin mall token (same as catalog publish).
+   * Prefer this for SKU matrix — does not require NEXT_PUBLIC_TANGBUY_MALL_TOKEN.
+   */
+  getSkuItemGet: (productUrl: string) =>
+    request<{ item: import("@/lib/tangbuy-mall-gateway").ItemGetProduct }>(
+      `/api/plugin/match/sku/item-get?url=${encodeURIComponent(productUrl.trim())}`
+    ),
+
   /** 1688 keyword-assisted image search (discover tab dual-source). */
   search1688Offers: (opts: {
     keyword?: string;
