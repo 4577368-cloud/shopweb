@@ -43,6 +43,14 @@ export function readTangbuyUserToken(): string | null {
   }
 }
 
+export function resolveBrowserMallGatewayBaseUrl(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_TANGBUY_GATEWAY_BASE_URL ||
+    process.env.NEXT_PUBLIC_TANGBUY_MALL_GATEWAY_BASE_URL ||
+    "https://tangbuy.cc";
+  return raw.replace(/\/+$/, "").replace(/\/gateway$/i, "");
+}
+
 /** True when a browser mall token is available. Prefer login JWT or plugin. */
 export function isMallGatewayConfigured(): boolean {
   return Boolean(
@@ -52,9 +60,7 @@ export function isMallGatewayConfigured(): boolean {
 }
 
 function gatewayBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_TANGBUY_MALL_GATEWAY_BASE_URL ?? "https://tangbuy.cc"
-  ).replace(/\/$/, "");
+  return resolveBrowserMallGatewayBaseUrl();
 }
 
 function gatewayToken(): string {

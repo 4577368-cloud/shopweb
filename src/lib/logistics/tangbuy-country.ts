@@ -1,4 +1,7 @@
-import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
+import {
+  isMallGatewayConfigured,
+  resolveBrowserMallGatewayBaseUrl,
+} from "@/lib/tangbuy-mall-gateway";
 
 const AREA_LIST_PATH = "/gateway/resource/areaListGroup";
 const SESSION_KEY = "tangbuy-country-ids:v1";
@@ -16,9 +19,7 @@ let countryMapCache: Map<string, string> | null = null;
 let countryMapPromise: Promise<Map<string, string>> | null = null;
 
 function gatewayBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_TANGBUY_MALL_GATEWAY_BASE_URL ?? "https://tangbuy.cc"
-  ).replace(/\/+$/, "");
+  return resolveBrowserMallGatewayBaseUrl();
 }
 
 function gatewayToken(): string | null {

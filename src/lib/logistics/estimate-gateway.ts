@@ -9,14 +9,13 @@ import { toTangbuyPostLimitType } from "@/lib/logistics/postal-limit-map";
 import {
   isMallGatewayConfigured,
   readTangbuyUserToken,
+  resolveBrowserMallGatewayBaseUrl,
 } from "@/lib/tangbuy-mall-gateway";
 
 const ESTIMATE_PATH = "/gateway/plugin/logistic/estimateSkuSaleFeePrice";
 
 function gatewayBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_TANGBUY_MALL_GATEWAY_BASE_URL ?? "https://tangbuy.cc"
-  ).replace(/\/+$/, "");
+  return resolveBrowserMallGatewayBaseUrl();
 }
 
 function gatewayToken(): string {

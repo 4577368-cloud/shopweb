@@ -16,7 +16,10 @@ import {
   computeVariantDecisionStatus,
   DEFAULT_DECISION_COUNTS,
 } from "@/lib/logistics/decision-engine";
-import { isMallGatewayConfigured } from "@/lib/tangbuy-mall-gateway";
+import {
+  isMallGatewayConfigured,
+  resolveBrowserMallGatewayBaseUrl,
+} from "@/lib/tangbuy-mall-gateway";
 
 const LISTING_PATH = "/gateway/plugin/third/platform/product/listing/page";
 const TEMPLATE_BY_GOODS_PATH =
@@ -65,9 +68,7 @@ export interface MailLimitEnrichResult {
 }
 
 function gatewayBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_TANGBUY_MALL_GATEWAY_BASE_URL ?? "https://tangbuy.cc"
-  ).replace(/\/+$/, "");
+  return resolveBrowserMallGatewayBaseUrl();
 }
 
 /** Prefer shop-owner portal token for listing; fall back to mall token. */
