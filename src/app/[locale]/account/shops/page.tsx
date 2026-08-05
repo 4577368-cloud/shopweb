@@ -37,7 +37,7 @@ import { AccountLedgerTable, AccountStatItem } from "@/components/account/accoun
  * user unbind a shop (DELETE), and switches the active shop by writing
  * SHOP_STORAGE_KEY and hydrating onboarding state.
  *
- * The page is gated by proxy.ts (no `tb_access` cookie → redirect to /login).
+ * The page is gated by proxy.ts (`TANGBUY_TOKEN` or `tb_access`).
  * Backend further enforces JWT auth on the API endpoints, so a stale cookie
  * surfaces as 401 → the local UserProvider will refresh or sign out.
  */

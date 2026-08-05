@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
  * remain reachable without expanding a menu. Each page keeps its own header
  * inside the content area — the tab bar only owns navigation.
  *
- * Auth gating: protected by proxy.ts (no `tb_access` cookie → /login redirect).
+ * Auth gating: protected by proxy.ts (`TANGBUY_TOKEN` or `tb_access` → allow).
  * Pages themselves call useUser() and render a sign-in CTA if the bootstrap
  * resolves to unauthenticated, so a stale cookie does not lock the user out
  * of the shell itself.
