@@ -682,6 +682,22 @@ export const api = {
       { method: "DELETE" }
     ),
 
+  /** Tangbuy system FX: CNY units per 1 target currency (e.g. USD). */
+  getSystemExchangeRate: async (currency: string): Promise<number> => {
+    const raw = await request<{ data?: unknown } | number | string>(
+      `/api/plugin/pay/exchangeRate?currency=${encodeURIComponent(currency)}`
+    );
+    const data =
+      raw && typeof raw === "object" && "data" in raw
+        ? (raw as { data: unknown }).data
+        : raw;
+    const n = typeof data === "number" ? data : Number(data);
+    if (!Number.isFinite(n) || n <= 0) {
+      throw new Error("invalid system exchange rate");
+    }
+    return n;
+  },
+
   /** Active "已刊登" count: Tangbuy catalog publishes still present in the Shopify product mirror. */
   getPublishedCount: (shop: string) =>
     request<{ count: number }>(
