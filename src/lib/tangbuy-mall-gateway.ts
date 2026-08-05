@@ -26,9 +26,29 @@ interface GatewayResponse {
   msg?: string;
 }
 
-/** True when a shared browser mall token is inlined (legacy). Prefer login JWT or plugin. */
+/** Standalone login JWT — same class of portal token used by mall gateway. */
+export function readTangbuyUserToken(): string | null {
+  if (typeof document === "undefined") return null;
+  const prefix = "TANGBUY_TOKEN=";
+  const raw = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+    ?.slice(prefix.length);
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/** True when a browser mall token is available. Prefer login JWT or plugin. */
 export function isMallGatewayConfigured(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim());
+  return Boolean(
+    process.env.NEXT_PUBLIC_TANGBUY_MALL_TOKEN?.trim() ||
+      readTangbuyUserToken()
+  );
 }
 
 function gatewayBaseUrl(): string {
@@ -240,23 +260,6 @@ export function buildTangbuyProductUrl(
 ): string {
   const id = candidateId.trim();
   return `https://www.tangbuy.cc/product?dataSource=${encodeURIComponent(dataSource)}&id=${encodeURIComponent(id)}`;
-}
-
-/** Standalone login JWT — same class of portal token used by mall gateway. */
-function readTangbuyUserToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const prefix = "TANGBUY_TOKEN=";
-  const raw = document.cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(prefix))
-    ?.slice(prefix.length);
-  if (!raw) return null;
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
 }
 
 async function fetchItemGetWithBearer(
