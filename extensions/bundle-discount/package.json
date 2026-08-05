@@ -1,0 +1,14 @@
+{
+  "name": "bundle-discount",
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typegen": "shopify app function typegen",
+    "preview": "shopify app function run"
+  },
+  "dependencies": {
+    "@shopify/shopify_function": "~2.0.0"
+  }
+}

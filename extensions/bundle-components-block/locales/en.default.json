@@ -1,0 +1,61 @@
+{
+  "blocks": {
+    "kit_components": {
+      "name": "60s · Kit components",
+      "eyebrow": "Bundle deal",
+      "heading": "Complete Your Bundle",
+      "list_heading": "Included items",
+      "save_amount": "Save {{ amount }} with this bundle",
+      "save_percent": "Save {{ percent }}% with this bundle",
+      "empty": "Kit composition is not available yet.",
+      "items_count": "items",
+      "total_units": "Total units",
+      "included_products": "Products",
+      "bundle_discount": "Bundle save",
+      "editor_empty_hint": "This block shows kit contents after you create a kit in Bundle Hub and publish metafields on this product. Settings appear in the right sidebar; the storefront stays empty until then."
+    },
+    "byob_builder": {
+      "name": "60s · Build your own",
+      "eyebrow": "Build your own",
+      "heading": "Build your bundle",
+      "hint": "Pick items in each slot, then add all at once. Checkout stays multi-line.",
+      "add": "Add",
+      "add_bundle": "Add bundle to cart",
+      "ready": "Ready to add",
+      "added": "Added to cart",
+      "add_error": "Could not add bundle",
+      "incomplete": "Finish required slots to continue",
+      "over_limit": "Too many items in a slot",
+      "unavailable": "Unavailable",
+      "empty_slot": "No products in this slot yet.",
+      "empty_slot_hint": "Ask the merchant to assign products to this slot.",
+      "slot_unavailable": "No sellable items in this slot right now.",
+      "product_id": "Product {{ id }}",
+      "slots": "slots",
+      "slot_label": "Slot",
+      "required": "Required",
+      "optional": "Optional",
+      "summary": "Your picks",
+      "items_selected": "selected",
+      "current_product": "This product",
+      "qty_decrease": "Decrease quantity",
+      "qty_increase": "Increase quantity"
+    },
+    "gift_offer": {
+      "name": "60s · Free gift",
+      "eyebrow": "Free gift",
+      "heading": "Free gift with purchase",
+      "hint": "Buy {{ qty }}+ of this product and get a free gift at checkout.",
+      "cta": "Claim free gift",
+      "badge": "Free",
+      "free_label": "FREE",
+      "default_gift_title": "Bonus gift included",
+      "progress_default": "Add {{ qty }} to unlock your gift",
+      "locked": "Quantity threshold not met yet",
+      "need_more": "Add __COUNT__ more to unlock your gift",
+      "ready": "Threshold met — claim your free gift",
+      "added": "Free gift is in your cart",
+      "add_error": "Could not add the free gift. Try again."
+    }
+  }
+}

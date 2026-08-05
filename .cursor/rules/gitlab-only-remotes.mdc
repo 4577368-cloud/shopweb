@@ -1,0 +1,10 @@
+---
+description: GitLab is the only deploy/source-of-truth remote; ignore GitHub and Vercel
+alwaysApply: true
+---
+
+# GitLab-only remotes
+
+- **Source of truth / CI / deploy**: GitLab only (`gitlab` / `gitlab-cc` for FE; `gitlab-cn` / `gitlab-cc` for BE).
+- **Not in scope for shipping**: GitHub (`origin`), Vercel, or any “push to GitHub so Vercel deploys” flow.
+- When reporting status after a ship, mention GitLab remotes only — do not claim GitHub or Vercel updates unless the user explicitly asks about those remotes.

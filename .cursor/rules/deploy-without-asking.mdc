@@ -1,20 +1,28 @@
 ---
-description: After completing deploy-worthy work, commit and push main to GitHub + GitLab without asking
+description: After deploy-worthy work, commit and push to GitLab only (no GitHub/Vercel)
 alwaysApply: true
 ---
 
-# Deploy without confirmation
+# Deploy without confirmation — GitLab only
+
+**This project is not shipped via Vercel or GitHub.** Treat GitHub `origin` as irrelevant for deploy. All ship focus is **GitLab**.
 
 When the user has asked for a feature/fix and the work is ready to ship:
 
 - **Do not ask** whether to commit, push, or deploy — proceed directly.
-- Follow the repo git safety protocol (no force-push to main, no skipping hooks unless user explicitly requests).
-- **Production** (`ai.tangbuy.com`) tracks **`main`**: merge or commit on `main` and push when deployment is the natural completion of the task.
-- **Always push `main` to both remotes** after a ship commit:
-  - `origin` → GitHub (`4577368-cloud/shopweb`)
-  - `gitlab` → GitLab (`gitlab.tangbuy.cn/guifeng/60s-Sourcing`)
-  - Prefer `git push origin main && git push gitlab main` (or equivalent). If sandbox/proxy blocks GitLab, retry with full permissions — do not leave GitLab behind.
+- Follow the repo git safety protocol (no force-push to main/master, no skipping hooks unless user explicitly requests).
+- **Do not** `git push origin …` to GitHub for shipping, and **do not** say Vercel will deploy.
+- Push the branch you actually worked on (often `ygf`; use `main` only when that is the explicit ship target) to **GitLab remotes**:
+  - **Frontend** (`shopify_qianru` / 60s-Sourcing):
+    - `gitlab` → `gitlab.tangbuy.cn/guifeng/60s-Sourcing`
+    - `gitlab-cc` → `gitlab.tangbuy.cc/guifeng/60s-Sourcing`
+    - Prefer `git push gitlab <branch> && git push gitlab-cc <branch>`
+  - **Backend** (`tangbuy-plugin` / tang-source-plugin), when BE changed:
+    - `gitlab-cn` → `gitlab.tangbuy.cn/guifeng/tang-source-plugin`
+    - `gitlab-cc` → `gitlab.tangbuy.cc/guifeng/tang-source-plugin`
+    - Prefer `git push gitlab-cn <branch> && git push gitlab-cc <branch>`
+- If sandbox/proxy blocks GitLab, retry with full permissions — do not leave a GitLab remote behind.
 - If the user only asked a question or review with **no code change**, do not deploy.
-- If push to `main` is blocked (protected branch), use the project's approval flow and retry — still without asking the user first unless authentication/approval truly requires them.
+- If push is blocked (protected branch), use the project's approval flow and retry — still without asking first unless auth truly requires the user.
 
-Briefly tell the user what was committed and that both remotes were updated (Vercel deploys from GitHub `main`).
+Briefly tell the user what was committed and which **GitLab** remotes/branches were updated.

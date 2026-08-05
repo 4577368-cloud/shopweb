@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -15,6 +15,8 @@ import { ProductsScanView } from "@/components/select/products-page/products-sca
 import { ProductsPageHeaderActions } from "@/components/select/products-page/products-page-header-actions";
 import { ProductsShopTab } from "@/components/select/products-page/products-shop-tab";
 import { ProductsCatalogTab } from "@/components/select/products-page/products-catalog-tab";
+import { BundleHubPanel } from "@/components/bundle-hub/bundle-hub-panel";
+import type { BundleHubSeed } from "@/lib/bundle/campaign-types";
 import { useProductsPageTab } from "@/hooks/use-products-page-tab";
 import { useProductsBatchLink } from "@/hooks/use-products-batch-link";
 import { useProductsNewArrivals } from "@/hooks/use-products-new-arrivals";
@@ -77,6 +79,10 @@ function SelectContent() {
   const locale = useLocale();
   const { isEmbedded } = useEmbeddedMode();
   const { tab, setTab } = useProductsPageTab(locale);
+  const [bundleHubOpen, setBundleHubOpen] = useState(false);
+  const [bundleHubSeed, setBundleHubSeed] = useState<BundleHubSeed | null>(
+    null
+  );
   const breadcrumbs = [
     { label: t("nav.workbench"), href: localePath(locale, "/") },
     { label: t("products.title") },
@@ -371,6 +377,20 @@ function SelectContent() {
     ]
   );
 
+  const openBundleHub = useCallback(
+    (productId?: string) => {
+      setBundleHubSeed(productId?.trim() ? { productId } : null);
+      setBundleHubOpen(true);
+      if (tab !== "shop") setTab("shop");
+    },
+    [setTab, tab]
+  );
+
+  useEffect(() => {
+    if (searchParams.get("bundles") !== "1") return;
+    setBundleHubOpen(true);
+  }, [searchParams]);
+
   const shopTab = useProductsShopTabProps({
     pendingNewAnalysisCount: newArrivalStats.pendingNewAnalysisCount,
     pendingNewAnalysisIds: newArrivalStats.pendingNewAnalysisIds,
@@ -409,6 +429,8 @@ function SelectContent() {
     searchQuery,
     filtersHighlighted: highlightedArea === "filters",
     template,
+    onOpenBundleHub: (productId: string) => openBundleHub(productId),
+    onOpenBundleHubList: () => openBundleHub(),
   });
 
   useRegisterEmbeddedPageChrome({
@@ -556,7 +578,7 @@ function SelectContent() {
   );
 
   const isShopTab = tab === "shop";
-  const pageCtas = (
+  const pageCtas = !bundleHubOpen ? (
     <ProductsPageHeaderActions
       // Discover has its own SmartSourcingFilters; shop search here does nothing on catalog.
       showSearch={isShopTab && !isEmbedded}
@@ -575,7 +597,7 @@ function SelectContent() {
           : undefined
       }
     />
-  );
+  ) : null;
 
   /**
    * Row 1: Shopify / 选品发现 tabs only.
@@ -584,24 +606,26 @@ function SelectContent() {
   const pageToolbar = (
     <div className="flex w-full min-w-0 flex-col gap-2">
       <div className="shrink-0">{pageTabs}</div>
-      <div className="flex w-full min-w-0 items-center gap-2">
-        <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:thin]">
-          {isShopTab ? (
-            <div ref={setShopFiltersMountEl} className="min-w-0" />
-          ) : (
-            <div ref={setCatalogFiltersMountEl} className="min-w-0" />
-          )}
+      {!bundleHubOpen ? (
+        <div className="flex w-full min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:thin]">
+            {isShopTab ? (
+              <div ref={setShopFiltersMountEl} className="min-w-0" />
+            ) : (
+              <div ref={setCatalogFiltersMountEl} className="min-w-0" />
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {isShopTab ? (
+              <div
+                ref={setShopActionsMountEl}
+                className="flex shrink-0 items-center gap-2"
+              />
+            ) : null}
+            {pageCtas}
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {isShopTab ? (
-            <div
-              ref={setShopActionsMountEl}
-              className="flex shrink-0 items-center gap-2"
-            />
-          ) : null}
-          {pageCtas}
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 
@@ -618,7 +642,25 @@ function SelectContent() {
         toolbar={pageToolbar}
       >
         <div className="space-y-3">
-          {tab === "shop" ? (
+          {tab === "shop" && bundleHubOpen ? (
+            <BundleHubPanel
+              shopName={shopName}
+              shopDomain={shop.domain}
+              catalog={shopProducts}
+              bindings={bindingsMap}
+              pricingTemplate={template}
+              seed={bundleHubSeed}
+              onSeedConsumed={() => setBundleHubSeed(null)}
+              onClose={() => {
+                setBundleHubOpen(false);
+                setBundleHubSeed(null);
+              }}
+              onToast={showToast}
+              onActivity={refreshProductsQuietly}
+            />
+          ) : null}
+
+          {tab === "shop" && !bundleHubOpen ? (
             <ProductsShopTab
               summary={shopTab.summary}
               panel={shopTab.panel}

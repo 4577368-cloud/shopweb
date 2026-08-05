@@ -1,0 +1,40 @@
+query CartLinesDiscountsGenerateRun {
+  cart {
+    lines {
+      id
+      quantity
+      cost {
+        subtotalAmount {
+          amount
+        }
+      }
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          id
+          product {
+            id
+            bundleDiscount: metafield(
+              namespace: "tangbuy_bundle"
+              key: "discount_percent"
+            ) {
+              value
+            }
+            comboConfig: metafield(namespace: "tangbuy_combo", key: "config") {
+              value
+            }
+            mixRule: metafield(namespace: "tangbuy_mix", key: "rule") {
+              value
+            }
+            giftRule: metafield(namespace: "tangbuy_gift", key: "rule") {
+              value
+            }
+          }
+        }
+      }
+    }
+  }
+  discount {
+    discountClasses
+  }
+}

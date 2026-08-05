@@ -62,6 +62,8 @@ export interface UseProductsShopTabPropsParams {
   searchQuery: string;
   filtersHighlighted: boolean;
   template: PricingTemplate | null;
+  onOpenBundleHub?: (productId: string) => void;
+  onOpenBundleHubList?: () => void;
 }
 
 export function useProductsShopTabProps(
@@ -108,6 +110,8 @@ export function useProductsShopTabProps(
     searchQuery,
     filtersHighlighted,
     template,
+    onOpenBundleHub,
+    onOpenBundleHubList,
   } = params;
 
   const onViewNewArrivals = useCallback(
@@ -214,6 +218,8 @@ export function useProductsShopTabProps(
       searchQuery,
       highlighted: filtersHighlighted,
       pricingTemplate: template,
+      onOpenBundleHub,
+      onOpenBundleHubList,
     }),
     [
       refreshProductsQuietly,
@@ -249,6 +255,8 @@ export function useProductsShopTabProps(
       searchQuery,
       filtersHighlighted,
       template,
+      onOpenBundleHub,
+      onOpenBundleHubList,
     ]
   );
 

@@ -52,6 +52,7 @@ import {
   PersonIcon,
   PlusIcon,
   ProductIcon,
+  QuestionCircleIcon,
   RefreshIcon,
   SaveIcon,
   SearchIcon,
@@ -82,6 +83,7 @@ export const ChevronDown = createPolarisIcon(ChevronDownIcon, "ChevronDown");
 export const ChevronLeft = createPolarisIcon(ChevronLeftIcon, "ChevronLeft");
 export const ChevronRight = createPolarisIcon(ChevronRightIcon, "ChevronRight");
 export const ChevronUp = createPolarisIcon(ChevronUpIcon, "ChevronUp");
+export const CircleHelp = createPolarisIcon(QuestionCircleIcon, "CircleHelp");
 export const Clock = createPolarisIcon(ClockIcon, "Clock");
 export const Coins = createPolarisIcon(CashDollarIcon, "Coins");
 export const Crosshair = createPolarisIcon(TargetIcon, "Crosshair");

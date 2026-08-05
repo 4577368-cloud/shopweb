@@ -18,6 +18,7 @@ import {
   Clock,
   Loader2,
   MoveRight,
+  Package,
   RefreshCw,
   Search,
 } from "@/lib/ui/icons";
@@ -518,6 +519,8 @@ export function ShopProductsPanel({
   searchQuery = "",
   highlighted = false,
   pricingTemplate = null,
+  onOpenBundleHub,
+  onOpenBundleHubList,
 }: {
   onActivity?: () => void;
   /** Optional controlled filter — lets the page's top CTA jump straight to e.g. 待确认. */
@@ -533,6 +536,10 @@ export function ShopProductsPanel({
   filtersMountEl?: HTMLElement | null;
   /** When set, batch-ack / refresh portal into this host (sticky toolbar right, with page CTAs). */
   actionsMountEl?: HTMLElement | null;
+  /** Open shop-level Bundle Hub (preferred over local composer). */
+  onOpenBundleHub?: (productId: string) => void;
+  /** Open Bundle Hub list (no product seed) — toolbar revisit entry. */
+  onOpenBundleHubList?: () => void;
   focusProductId?: string | null;
   scrollToProductId?: string | null;
   onScrollToConsumed?: () => void;
@@ -1350,6 +1357,23 @@ export function ShopProductsPanel({
   /** Right-aligned with page CTAs / embedded top chrome (search · refresh · assistant). */
   const toolbarActions = (
     <div className="flex shrink-0 flex-nowrap items-center gap-2">
+      {onOpenBundleHubList || onOpenBundleHub ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="h-7 w-7 px-0"
+          title={t("bundleHub.toolbarOpen")}
+          aria-label={t("bundleHub.toolbarOpen")}
+          disabled={linkingLocked}
+          onClick={() => {
+            if (onOpenBundleHubList) onOpenBundleHubList();
+            else onOpenBundleHub?.("");
+          }}
+        >
+          <Package className="h-3.5 w-3.5" />
+        </Button>
+      ) : null}
       {manualAckPendingCount > 0 ? (
         <Button
           size="sm"
@@ -1498,6 +1522,11 @@ export function ShopProductsPanel({
                 linkingLocked={linkingLocked}
                 bindingsPending={bindingsPending}
                 locale={locale}
+                onOpenBundle={
+                  onOpenBundleHub
+                    ? () => onOpenBundleHub(p.thirdPlatformItemId)
+                    : undefined
+                }
               />
             ))}
           </div>
@@ -1572,6 +1601,7 @@ function ShopProductCard({
   bindingsPending = false,
   pricingTemplate = null,
   locale = "zh",
+  onOpenBundle,
 }: {
   item: ShopMirrorProduct;
   shopName: string;
@@ -1597,6 +1627,8 @@ function ShopProductCard({
   bindingsPending?: boolean;
   pricingTemplate?: PricingTemplate | null;
   locale?: Locale;
+  /** Open Bundle Hub for this product (组合商品). */
+  onOpenBundle?: () => void;
 }) {
   const { showToast } = useOnboarding();
   const t = useT();
@@ -2930,6 +2962,23 @@ function ShopProductCard({
             >
               {t("shopProducts.manualMatch")}
             </button>
+            {onOpenBundle ? (
+              <>
+                <span className="text-surface-border">|</span>
+                <button
+                  type="button"
+                  className="font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+                  disabled={cardActionsLocked}
+                  title={t("bundleHub.cardHintCreate")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenBundle();
+                  }}
+                >
+                  {t("bundleHub.cardAction")}
+                </button>
+              </>
+            ) : null}
             {!fromPublish ? (
               <>
                 <span className="text-surface-border">|</span>

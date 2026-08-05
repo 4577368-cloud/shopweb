@@ -1,0 +1,7 @@
+api_version = "2026-01"
+uid = "1b5fe4da-10d2-ca6b-3953-34197706ffa7a43bc91a"
+
+[[extensions]]
+name = "Tangbuy Kit Components"
+handle = "bundle-components-block"
+type = "theme"
