@@ -35,11 +35,8 @@ api_version = "2026-07"
   compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
   uri = "/api/plugin/shopify/webhooks/compliance"
 
-[app_proxy]
-# Optional later — not required for sourcing workbench v1
-# url = "https://ai.tangbuy.com/apps/tangbuy"
-# subpath = "tangbuy"
-# prefix = "apps"
+# App Proxy not used for sourcing workbench v1 — omit the whole [app_proxy]
+# table; an empty section fails `shopify app deploy` validation.
 
 [pos]
 embedded = false
