@@ -66,7 +66,11 @@
   endif
 %}
 
-{% if is_kit and line_count > 0 %}
+{% comment %}
+  Show whenever composition metafield has lines. Do not require is_kit —
+  some parents only got components_json if boolean write lagged.
+{% endcomment %}
+{% if line_count > 0 %}
   <div
     class="tb-kit-premium"
     {{ block.shopify_attributes }}
