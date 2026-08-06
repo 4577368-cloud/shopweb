@@ -4803,6 +4803,9 @@ export const fr: Dictionary = {
     listPoolCount: "{{count}} produits",
     poolTitle: "Pool ({{count}} sélectionnés)",
     poolSelectAllBound: "Tout sélectionner liés ({{count}})",
+    errOpenFixedMissingContext:
+      "Impossible d’ouvrir ce kit : aucun composant dans le catalogue (supprimé ou non synchronisé). Ouvrez depuis la fiche produit ou actualisez.",
+    errOpenUnsupported: "Ouverture de ce type de campagne non prise en charge",
     poolEmpty: "Aucun produit lié ACTIVE. Liez d’abord les sources.",
     poolEmptyCatalog: "Pas encore de produits. Synchronisez le catalogue.",
     poolNeedBinding: "Liez une source avant d’ajouter au pool (nécessaire pour l’achat)",

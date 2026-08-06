@@ -4809,6 +4809,9 @@ export const en = {
     listPoolCount: "{{count}} products",
     poolTitle: "Pool ({{count}} selected)",
     poolSelectAllBound: "Select all linked ({{count}})",
+    errOpenFixedMissingContext:
+      "Cannot open this kit: no component product is still in the store catalog (deleted or not synced). Open from a product card, or refresh and retry.",
+    errOpenUnsupported: "Opening this campaign type is not supported yet",
     poolEmpty: "No ACTIVE-linked products to add. Link sources first.",
     poolEmptyCatalog: "No store products yet. Sync the catalog first.",
     poolNeedBinding: "Link a source before adding to the pool (needed for procurement)",

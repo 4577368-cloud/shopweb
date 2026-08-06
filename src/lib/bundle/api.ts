@@ -41,6 +41,8 @@ export interface BundleCardStatus {
   bundleId: number;
   status: BundleStatus;
   parentProductId?: string | null;
+  /** Product that started the kit (composer context) — prefer this when opening edit. */
+  contextProductId?: string | null;
   parentTitle?: string | null;
   componentCount: number;
   /** Shopify product ids of kit components (when asParent). */

@@ -67,6 +67,10 @@ export function synthesizeFixedCampaigns(
   for (const [productId, card] of Object.entries(map.byProductId ?? {})) {
     if (!card?.asParent || card.bundleId == null) continue;
     if (byId.has(card.bundleId)) continue;
+    const contextId =
+      (card.contextProductId && String(card.contextProductId).trim()) ||
+      card.componentProductIds?.[0] ||
+      productId;
     byId.set(card.bundleId, {
       id: `fixed-${card.bundleId}`,
       shopName,
@@ -78,11 +82,59 @@ export function synthesizeFixedCampaigns(
       synthetic: true,
       shopifyRefsJson: JSON.stringify({
         parentProductId: card.parentProductId,
-        contextHint: productId,
+        contextProductId: contextId,
+        contextHint: contextId,
       }),
     });
   }
   return Array.from(byId.values());
+}
+
+/** Resolve which catalog product to open in the fixed-kit composer. */
+export function resolveFixedKitContextProductId(
+  campaign: BundleCampaign,
+  statusMap: BundleStatusMap | null,
+  catalogIds: Set<string>
+): string | null {
+  const tryId = (raw: string | null | undefined): string | null => {
+    const id = raw?.trim();
+    if (!id) return null;
+    return catalogIds.has(id) ? id : null;
+  };
+
+  try {
+    if (campaign.shopifyRefsJson) {
+      const refs = JSON.parse(campaign.shopifyRefsJson) as {
+        contextProductId?: string;
+        contextHint?: string;
+      };
+      const fromRefs =
+        tryId(refs.contextProductId) || tryId(refs.contextHint);
+      if (fromRefs) return fromRefs;
+    }
+  } catch {
+    /* ignore bad JSON */
+  }
+
+  const bundleId = campaign.linkedBundleId;
+  if (bundleId == null || !statusMap?.byProductId) return null;
+
+  for (const card of Object.values(statusMap.byProductId)) {
+    if (card?.bundleId !== bundleId) continue;
+    const fromCard = tryId(card.contextProductId ?? undefined);
+    if (fromCard) return fromCard;
+    for (const cid of card.componentProductIds ?? []) {
+      const hit = tryId(cid);
+      if (hit) return hit;
+    }
+  }
+
+  for (const [productId, card] of Object.entries(statusMap.byProductId)) {
+    if (card?.bundleId === bundleId && catalogIds.has(productId)) {
+      return productId;
+    }
+  }
+  return null;
 }
 
 export async function listCampaigns(shopName: string): Promise<{

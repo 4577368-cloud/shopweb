@@ -4779,6 +4779,9 @@ export const zh: Dictionary = {
     listPoolCount: "{{count}} 件商品",
     poolTitle: "可选池（已选 {{count}}）",
     poolSelectAllBound: "全选已关联（{{count}}）",
+    errOpenFixedMissingContext:
+      "打不开这个固定套装：找不到仍在店铺商品列表里的组件商品（可能已删除或未同步）。请从商品卡进入，或刷新后再试。",
+    errOpenUnsupported: "暂不支持打开该类型活动",
     poolEmpty: "暂无 ACTIVE 绑定商品。请先完成货源关联。",
     poolEmptyCatalog: "店铺里还没有商品，请先同步。",
     poolNeedBinding: "请先完成货源关联后再加入可选池（否则无法采购）",

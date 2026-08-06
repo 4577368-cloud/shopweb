@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/i18n/LocaleProvider";
 import { readableError } from "@/lib/api";
-import { listCampaigns } from "@/lib/bundle/campaign-api";
+import { listCampaigns, resolveFixedKitContextProductId } from "@/lib/bundle/campaign-api";
 import type {
   BundleCampaign,
   BundleHubSeed,
@@ -144,6 +144,33 @@ export function BundleHubPanel({
     return m;
   }, [catalog]);
 
+  const catalogIdSet = useMemo(
+    () => new Set(catalog.map((p) => p.thirdPlatformItemId)),
+    [catalog]
+  );
+
+  const openCampaign = (c: BundleCampaign) => {
+    setError(null);
+    if (c.playType === "mix_match") {
+      setMode({ kind: "mix", campaign: c });
+      return;
+    }
+    if (c.playType === "byob") {
+      setMode({ kind: "byob", campaign: c });
+      return;
+    }
+    if (c.playType === "fixed_kit") {
+      const pid = resolveFixedKitContextProductId(c, statusMap, catalogIdSet);
+      if (!pid) {
+        setError(t("bundleHub.errOpenFixedMissingContext"));
+        return;
+      }
+      setMode({ kind: "fixed", productId: pid });
+      return;
+    }
+    setError(t("bundleHub.errOpenUnsupported"));
+  };
+
   const seedProductForOffer = useMemo(() => {
     if (mode.kind !== "offer") return null;
     return catalogById.get(mode.productId) ?? null;
@@ -154,6 +181,19 @@ export function BundleHubPanel({
     return catalogById.get(mode.productId) ?? null;
   }, [catalogById, mode]);
 
+  const fixedExisting = useMemo(() => {
+    if (mode.kind !== "fixed" || !statusMap?.byProductId) return null;
+    const direct = statusMap.byProductId[mode.productId];
+    if (direct?.bundleId != null) return direct;
+    // Fall back to any card sharing the same kit (e.g. parent-only lookup).
+    return (
+      Object.values(statusMap.byProductId).find(
+        (card) =>
+          card?.contextProductId === mode.productId ||
+          card?.componentProductIds?.includes(mode.productId)
+      ) ?? null
+    );
+  }, [mode, statusMap]);
   const onPick = (type: BundlePlayType) => {
     const productId = seedProductId ?? catalog[0]?.thirdPlatformItemId;
     if (type === "fixed_kit") {
@@ -287,51 +327,17 @@ export function BundleHubPanel({
                     </p>
                   </div>
                   <div className="flex gap-1.5">
-                    {c.playType === "fixed_kit" && c.linkedBundleId != null ? (
+                    {c.playType === "fixed_kit" ||
+                    c.playType === "mix_match" ||
+                    c.playType === "byob" ? (
                       <Button
                         type="button"
                         size="sm"
                         variant="secondary"
                         className="h-7"
-                        onClick={() => {
-                          const refs = c.shopifyRefsJson
-                            ? (JSON.parse(c.shopifyRefsJson) as {
-                                contextHint?: string;
-                              })
-                            : {};
-                          const pid =
-                            refs.contextHint ||
-                            catalog.find((p) => {
-                              const card =
-                                statusMap?.byProductId?.[p.thirdPlatformItemId];
-                              return card?.bundleId === c.linkedBundleId;
-                            })?.thirdPlatformItemId;
-                          if (pid) setMode({ kind: "fixed", productId: pid });
-                        }}
+                        onClick={() => openCampaign(c)}
                       >
-                        {t("bundleHub.open")}
-                      </Button>
-                    ) : null}
-                    {c.playType === "mix_match" ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-7"
-                        onClick={() => setMode({ kind: "mix", campaign: c })}
-                      >
-                        {t("bundleHub.open")}
-                      </Button>
-                    ) : null}
-                    {c.playType === "byob" ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-7"
-                        onClick={() => setMode({ kind: "byob", campaign: c })}
-                      >
-                        {c.status === "COMING_SOON"
+                        {c.playType === "byob" && c.status === "COMING_SOON"
                           ? t("bundleHub.setupByob")
                           : t("bundleHub.open")}
                       </Button>
@@ -395,6 +401,21 @@ export function BundleHubPanel({
         />
       ) : null}
 
+      {mode.kind === "fixed" && !fixedContext ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-[12px] text-amber-900">
+          <p>{t("bundleHub.errOpenFixedMissingContext")}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="mt-2 h-7"
+            onClick={() => setMode({ kind: "list" })}
+          >
+            {t("bundleHub.back")}
+          </Button>
+        </div>
+      ) : null}
+
       {mode.kind === "fixed" && fixedContext ? (
         <BundleComposerDrawer
           open
@@ -403,7 +424,7 @@ export function BundleHubPanel({
           contextProduct={fixedContext}
           catalog={catalog}
           feature={statusMap?.feature ?? null}
-          existing={statusMap?.byProductId?.[mode.productId] ?? null}
+          existing={fixedExisting}
           statusMap={statusMap}
           bindings={bindings}
           pricingTemplate={pricingTemplate}
