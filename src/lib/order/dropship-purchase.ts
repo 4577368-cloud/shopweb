@@ -1,45 +1,45 @@
-// 代发简版采购单 API（对接 plugin DraftOrderController）
+/**
+ * Dropship place-order orchestration — aligns with DraftOrderController:
+ * resolve (derive if missing) → purchaseOrder → { tradeNo, expireTime }.
+ *
+ * Paths: `/api/plugin/draftorder/*` (not legacy `/api/plugin/draft/order/*`).
+ */
 import { ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
+import {
+  buildPackageQueryFormFromTemplate,
+} from "@/lib/logistics/template-params";
+import { logisticsTemplateFromVo } from "@/lib/logistics/default-template";
+import { fetchLogisticsTemplatesByGoods } from "@/lib/logistics/tangbuy-mail-limit";
+import type { LogisticsTemplate } from "@/lib/types";
+import type { OrderSummary } from "./types";
+import {
+  purchaseDraftOrder,
+  resolveDraftOrder,
+  type DraftPackageCreateInfo,
+  type DraftPurchaseResult,
+} from "./draftorder-api";
 
-export interface DropshipPackageCreateInfo {
-  lineId: number;
-  lineName?: string;
-  deliveryTime?: string;
-  packageComment?: string;
-  packageChoosedContent?: {
-    currency?: string;
-    couponId?: string;
-    passwordDiscount?: string;
-    incrementList?: string[];
-    insure?: number;
-    useInsure?: number;
-    queryForm?: {
-      currencyId?: number;
-      declareMode?: number;
-      registrationType?: number;
-      tax?: number;
-      taxNo?: string;
-    };
-  };
-}
+export type {
+  DraftPackageCreateInfo as DropshipPackageCreateInfo,
+} from "./draftorder-api";
 
 export interface DropshipPurchaseRequest {
   shopName: string;
   outerOrderId: string;
   orderId?: number;
   orderType?: number;
-  packageCreateInfo?: DropshipPackageCreateInfo;
+  packageCreateInfo?: DraftPackageCreateInfo;
 }
 
-export interface DropshipPurchaseResult {
-  tradeNo?: string;
-  expireTime?: string;
-  type?: string;
+export interface DropshipPurchaseResult extends DraftPurchaseResult {
   orderId?: number;
   outerOrderId?: string;
   tangbuyOrderNo?: string;
+  /** Purchase amount from draft header when available (CNY). */
   payableAmountCny?: number;
-  lineNos?: string[];
+  draftStatus?: number;
+  expireTimeMs?: number | null;
 }
 
 export interface DropshipPurchaseAmountPreview {
@@ -48,58 +48,164 @@ export interface DropshipPurchaseAmountPreview {
   totalCny?: number;
 }
 
-async function draftRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const { resolveAuthStrategyFromLocation } = await import(
-    "@/host/adapters/auth-transport"
-  );
-  const strategy = resolveAuthStrategyFromLocation();
-  const auth = await strategy.prepareRequest();
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-    ...auth.headers,
-  };
-  const res = await fetch(path, {
-    ...init,
-    credentials: init?.credentials ?? auth.credentials,
-    headers,
-  });
-  const text = await res.text();
-  let data: unknown = undefined;
+function parseNumericLineId(raw: string | number | null | undefined): number | null {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    return Math.trunc(raw);
+  }
+  const s = String(raw).trim();
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Build packageCreateInfo from shop logistics template + optional line hint.
+ * Declare prefs come from template; lineId prefers explicit hint, then mail-template lane for destination.
+ */
+export async function buildPackageCreateInfoForOrder(opts: {
+  shopName: string;
+  order: OrderSummary;
+  lineIdHint?: number | string | null;
+  lineNameHint?: string | null;
+  deliveryTimeHint?: string | null;
+}): Promise<DraftPackageCreateInfo | undefined> {
+  const { shopName, order } = opts;
+  let template: LogisticsTemplate | null = null;
   try {
-    data = text ? JSON.parse(text) : undefined;
+    const vo = await api.getLogisticsTemplate(shopName);
+    template = logisticsTemplateFromVo(vo, shopName);
   } catch {
-    data = text;
+    template = null;
   }
-  if (!res.ok) {
-    let message = `Request failed (${res.status}): ${path}`;
-    if (data && typeof data === "object" && data !== null) {
-      const m =
-        (data as { message?: unknown; msg?: unknown }).message ??
-        (data as { msg?: unknown }).msg;
-      if (typeof m === "string" && m.trim()) message = m;
+
+  let lineId = parseNumericLineId(opts.lineIdHint);
+  let lineName = opts.lineNameHint?.trim() || undefined;
+  let deliveryTime = opts.deliveryTimeHint?.trim() || undefined;
+
+  if (lineId == null) {
+    const country = (order.destinationCountry?.code || "").trim().toUpperCase();
+    try {
+      const lanes = await fetchLogisticsTemplatesByGoods();
+      const match =
+        (country
+          ? lanes.find(
+              (l) =>
+                l.countryCode === country &&
+                typeof l.lineId === "number" &&
+                l.lineId > 0
+            )
+          : undefined) ??
+        lanes.find((l) => typeof l.lineId === "number" && (l.lineId as number) > 0);
+      if (match?.lineId) {
+        lineId = match.lineId;
+        lineName = lineName || match.lineName || match.templateName;
+      }
+    } catch {
+      /* optional enrichment */
     }
-    throw new ApiError(message, res.status, data);
   }
-  return data as T;
+
+  if (lineId == null) {
+    // purchaseOrder allows null packageCreateInfo (goods-only pre-order).
+    return undefined;
+  }
+
+  const goodsAmount = (() => {
+    const raw = order.productCost ?? order.payableAmount;
+    if (!raw) return null;
+    const n = Number(String(raw).replace(/[^\d.\-]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  })();
+
+  const queryForm = buildPackageQueryFormFromTemplate(template, goodsAmount);
+
+  return {
+    lineId,
+    lineName,
+    deliveryTime,
+    packageComment: order.remark?.trim() || "",
+    packageChoosedContent: {
+      currency: queryForm.currency || "USD",
+      couponId: "",
+      passwordDiscount: "",
+      incrementList: [],
+      insure: 0,
+      useInsure: 0,
+      queryForm: {
+        declareMode: queryForm.declareMode,
+        registrationType: queryForm.registrationType,
+        tax: queryForm.tax,
+        currency: queryForm.currency,
+        ...(queryForm.taxNo ? { taxNo: queryForm.taxNo } : {}),
+      },
+    },
+  };
 }
 
-/** POST /api/plugin/draft/order/purchaseOrder — 代发简版下单 */
-export function placeDropshipOrder(
-  body: DropshipPurchaseRequest
+/**
+ * Full place flow: resolve/derive draft → purchaseOrder.
+ * Throws ApiError on failure — callers must not silently mock-succeed.
+ */
+export async function placeDropshipOrder(
+  body: DropshipPurchaseRequest & { order?: OrderSummary }
 ): Promise<DropshipPurchaseResult> {
-  return draftRequest<DropshipPurchaseResult>(
-    "/api/plugin/draft/order/purchaseOrder",
-    { method: "POST", body: JSON.stringify({ ...body, orderType: 1 }) }
-  );
+  const shopName = body.shopName?.trim();
+  const outerOrderId = body.outerOrderId?.trim();
+  if (!shopName || !outerOrderId) {
+    throw new ApiError("shopName and outerOrderId required", 400);
+  }
+
+  const resolved = await resolveDraftOrder(shopName, outerOrderId, true);
+  const orderId = body.orderId ?? resolved.orderId;
+  if (orderId == null) {
+    throw new ApiError("draft orderId missing after resolve", 400);
+  }
+
+  let packageCreateInfo = body.packageCreateInfo;
+  if (!packageCreateInfo && body.order) {
+    packageCreateInfo = await buildPackageCreateInfoForOrder({
+      shopName,
+      order: body.order,
+    });
+  }
+
+  const purchased = await purchaseDraftOrder({
+    shopName,
+    outerOrderId,
+    orderId,
+    orderType: body.orderType ?? 1,
+    packageCreateInfo,
+  });
+
+  const tradeNo = purchased.tradeNo || resolved.payNo || resolved.tradeNo || undefined;
+  const expireRaw = purchased.expireTime;
+  let expireTimeMs: number | null | undefined =
+    resolved.expireTime ?? undefined;
+  if (typeof expireRaw === "string" && expireRaw) {
+    const t = Date.parse(expireRaw);
+    if (!Number.isNaN(t)) expireTimeMs = t;
+  }
+
+  return {
+    ...purchased,
+    tradeNo,
+    orderId,
+    outerOrderId,
+    tangbuyOrderNo: tradeNo || String(orderId),
+    payableAmountCny:
+      resolved.purchaseAmount != null ? Number(resolved.purchaseAmount) : undefined,
+    draftStatus: resolved.status,
+    expireTimeMs: expireTimeMs ?? null,
+  };
 }
 
-/** POST /api/plugin/draft/order/calDraftPurchasedAmount — 试算 */
-export function previewDropshipAmount(
-  body: DropshipPurchaseRequest
+/** Preview is not exposed on the trimmed DraftOrderController — keep stub for callers. */
+export async function previewDropshipAmount(
+  _body: DropshipPurchaseRequest
 ): Promise<DropshipPurchaseAmountPreview> {
-  return draftRequest<DropshipPurchaseAmountPreview>(
-    "/api/plugin/draft/order/calDraftPurchasedAmount",
-    { method: "POST", body: JSON.stringify({ ...body, orderType: 1 }) }
+  throw new ApiError(
+    "calDraftPurchasedAmount is not available on this plugin build",
+    501
   );
 }

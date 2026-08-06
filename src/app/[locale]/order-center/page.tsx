@@ -19,8 +19,11 @@ import {
   invalidateOrderHeadersCache,
   parseCreatedAt,
   placeDropshipOrder,
+  resolveDraftOrder,
+  DRAFT_STATUS,
   type OrderSource,
 } from "@/lib/order/api";
+import { ApiError } from "@/lib/api";
 import { MetricSummaryCards, type MetricSummaryItem, type MetricTone } from "@/components/workbench/metric-summary-cards";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Button } from "@/components/ui/button";
@@ -40,6 +43,7 @@ import {
   getBalanceCny,
   setBalanceCny as persistBalanceCny,
   setOrderInternal,
+  getOrderInternal,
   generateTangbuyOrderNo,
   generateSupplierOrderNo,
   type PaymentChannel,
@@ -68,7 +72,7 @@ function OrderCenterContent() {
   const locale = useLocale();
   const router = useRouter();
   const wb = useWorkbenchPage("order-center");
-  const { shop } = useOnboarding();
+  const { shop, showToast } = useOnboarding();
   const shopName = resolveShopApiName(shop);
 
   const [activeTab, setActiveTab] = useState<TabKey>("pendingOrder");
@@ -158,120 +162,161 @@ function OrderCenterContent() {
     [locale, router]
   );
 
-  // 代发下单：优先调 plugin purchaseOrder；失败时回退 mock（本地无后端联调）
+  // 代发下单：resolve/derive → purchaseOrder（真实 draftorder API，失败不 mock）
   const handlePlace = useCallback(
     async (order: OrderSummary) => {
       if (order.status !== "pendingOrder") return;
       const unbound = (order.lineItems ?? []).some((it) => !it.linkedOffer);
       if ((order.lineItems?.length ?? 0) > 0 && unbound) {
+        showToast(t("order.action.placeNeedBind"));
         const first = order.lineItems!.find((it) => !it.linkedOffer);
         if (first) handleNeedBindSource(first);
+        return;
+      }
+      if (!shopName) {
+        showToast(t("order.action.placeNeedShop"));
         return;
       }
 
       setPlacingId(order.id);
       const amountUsd = deriveAmountUsd(order);
       try {
-        if (shopName) {
-          const res = await placeDropshipOrder({
-            shopName,
-            outerOrderId: order.shopifyOrderId || order.id,
-            orderType: 1,
-          });
-          const tangbuyNo = res.tangbuyOrderNo || res.tradeNo || generateTangbuyOrderNo(order.id);
-          const supplierNo = res.lineNos?.[0] || generateSupplierOrderNo(order.id);
-          setOrderInternal(order.id, {
-            tangbuyOrderNo: tangbuyNo,
-            supplierOrderNo: supplierNo,
-            placedAt: new Date().toISOString(),
-            amountUsd:
-              res.payableAmountCny != null ? Number(res.payableAmountCny) : amountUsd,
-            paymentStatus: "unpaid",
-          });
-          setRawOrders((prev) =>
-            prev.map((o) =>
-              o.id === order.id
-                ? {
-                    ...o,
-                    status: "pendingPayment",
-                    tangbuyOrderNo: tangbuyNo,
-                    supplierOrderNo: supplierNo,
-                    payableAmount:
-                      res.payableAmountCny != null
-                        ? `CNY ${Number(res.payableAmountCny).toFixed(2)}`
-                        : `USD ${amountUsd.toFixed(2)}`,
-                    payMethod: "—",
-                  }
-                : o
-            )
-          );
-          invalidateOrderHeadersCache(shopName);
-          refreshInternal();
-          return;
-        }
+        const res = await placeDropshipOrder({
+          shopName,
+          outerOrderId: order.shopifyOrderId || order.id,
+          orderType: 1,
+          orderId: order.draftOrderId,
+          order: order,
+        });
+        const tangbuyNo =
+          res.tangbuyOrderNo ||
+          res.tradeNo ||
+          (res.orderId != null ? String(res.orderId) : generateTangbuyOrderNo(order.id));
+        const supplierNo = generateSupplierOrderNo(order.id);
+        setOrderInternal(order.id, {
+          tangbuyOrderNo: tangbuyNo,
+          supplierOrderNo: supplierNo,
+          placedAt: new Date().toISOString(),
+          amountUsd:
+            res.payableAmountCny != null
+              ? Number(res.payableAmountCny)
+              : amountUsd,
+          paymentStatus: "unpaid",
+          draftOrderId: res.orderId,
+          tradeNo: res.tradeNo || undefined,
+          draftStatus: DRAFT_STATUS.AWAITING_PAYMENT,
+          expireTimeMs: res.expireTimeMs ?? null,
+        });
+        setRawOrders((prev) =>
+          prev.map((o) =>
+            o.id === order.id
+              ? {
+                  ...o,
+                  status: "pendingPayment",
+                  tangbuyOrderNo: tangbuyNo,
+                  supplierOrderNo: supplierNo,
+                  draftOrderId: res.orderId,
+                  tradeNo: res.tradeNo || undefined,
+                  draftStatus: DRAFT_STATUS.AWAITING_PAYMENT,
+                  payableAmount:
+                    res.payableAmountCny != null
+                      ? `CNY ${Number(res.payableAmountCny).toFixed(2)}`
+                      : `USD ${amountUsd.toFixed(2)}`,
+                  payMethod: "—",
+                  paymentStatus: "unpaid",
+                }
+              : o
+          )
+        );
+        invalidateOrderHeadersCache(shopName);
+        refreshInternal();
+        showToast(t("order.action.placedToast"));
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn("[order] placeDropshipOrder failed, fallback mock:", err);
+        const msg =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        showToast(t("order.action.placeFailed", { msg }));
+      } finally {
+        setPlacingId(undefined);
       }
-
-      setOrderInternal(order.id, {
-        tangbuyOrderNo: generateTangbuyOrderNo(order.id),
-        supplierOrderNo: generateSupplierOrderNo(order.id),
-        placedAt: new Date().toISOString(),
-        amountUsd,
-        paymentStatus: "unpaid",
-      });
-      setRawOrders((prev) =>
-        prev.map((o) =>
-          o.id === order.id
-            ? {
-                ...o,
-                status: "pendingPayment",
-                tangbuyOrderNo: generateTangbuyOrderNo(order.id),
-                supplierOrderNo: generateSupplierOrderNo(order.id),
-                payableAmount: `USD ${amountUsd.toFixed(2)}`,
-                payMethod: "—",
-              }
-            : o
-        )
-      );
-      refreshInternal();
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shopName, handleNeedBindSource]
+    [shopName, handleNeedBindSource, showToast, t]
   );
 
-  useEffect(() => {
-    if (!placingId) return;
-    const t = setTimeout(() => setPlacingId(undefined), 500);
-    return () => clearTimeout(t);
-  }, [placingId]);
+  // A+ 批：打开支付弹窗（先刷新 draft 拿最新 tradeNo/status）
+  const handleOpenPayment = useCallback(
+    async (order: OrderSummary) => {
+      if (order.status !== "pendingPayment") return;
+      setPaymentOrderId(order.id);
+      if (!shopName) return;
+      const outer = order.shopifyOrderId || order.id;
+      try {
+        const draft = await resolveDraftOrder(shopName, outer, false);
+        setOrderInternal(order.id, {
+          draftOrderId: draft.orderId,
+          tradeNo: draft.tradeNo || draft.payNo || undefined,
+          draftStatus: draft.status,
+          expireTimeMs: draft.expireTime ?? null,
+          tangbuyOrderNo:
+            draft.tradeNo ||
+            draft.payNo ||
+            getOrderInternal(order.id).tangbuyOrderNo,
+        });
+        setRawOrders((prev) =>
+          prev.map((o) =>
+            o.id === order.id
+              ? {
+                  ...o,
+                  draftOrderId: draft.orderId,
+                  tradeNo: draft.tradeNo || draft.payNo || o.tradeNo,
+                  draftStatus: draft.status,
+                  tangbuyOrderNo:
+                    draft.tradeNo ||
+                    draft.payNo ||
+                    o.tangbuyOrderNo,
+                  payableAmount:
+                    draft.purchaseAmount != null
+                      ? `CNY ${Number(draft.purchaseAmount).toFixed(2)}`
+                      : o.payableAmount,
+                }
+              : o
+          )
+        );
+        refreshInternal();
+      } catch {
+        /* keep cached tradeNo */
+      }
+    },
+    [shopName]
+  );
 
-  // A+ 批：打开支付弹窗
-  const handleOpenPayment = useCallback((order: OrderSummary) => {
-    if (order.status !== "pendingPayment") return;
-    setPaymentOrderId(order.id);
-  }, []);
-
-  // A+ 批：支付成功 → pendingPayment 转 preparing
-  // 余额通道：modal 已调用后端 /billing/consume/balance 扣减，并传回 newBalanceCny（元）；
-  // PayPal/Ulimit：mock 流程，不真扣（P3.2 接入支付网关）
+  // 支付成功 → pendingPayment 转 preparing（procurement pay 或 billing 兜底）
   const handlePaid = useCallback(
-    (channel: PaymentChannel, feeUsd: number, newBalanceCny?: number) => {
+    (
+      channel: PaymentChannel,
+      feeUsd: number,
+      newBalanceCny?: number,
+      meta?: { draftStatus?: number; tradeNo?: string }
+    ) => {
       if (!paymentOrderId) return;
       const order = rawOrders.find((o) => o.id === paymentOrderId);
       if (!order) return;
 
-      // 余额通道：用后端返回的最新余额覆盖本地 state（后端已扣，无需再本地扣）
       if (channel === "balance" && newBalanceCny != null) {
         persistBalanceCny(newBalanceCny);
         setBalanceCnyState(newBalanceCny);
       }
+      const draftStatus = meta?.draftStatus ?? DRAFT_STATUS.PROCESSING;
       setOrderInternal(paymentOrderId, {
         paidAt: new Date().toISOString(),
         paymentChannel: channel,
         feeUsd,
         paymentStatus: "paid",
+        draftStatus,
+        tradeNo: meta?.tradeNo || order.tradeNo,
       });
       setRawOrders((prev) =>
         prev.map((o) =>
@@ -280,12 +325,13 @@ function OrderCenterContent() {
                 ...o,
                 status: "preparing",
                 paymentStatus: "paid",
+                draftStatus,
                 payMethod:
                   channel === "balance"
                     ? t("order.payMethodBalance")
                     : channel === "paypal"
-                    ? "PayPal"
-                    : "Ulimit",
+                      ? "PayPal"
+                      : String(channel),
                 payFee: `USD ${feeUsd.toFixed(2)}`,
                 expectedShipAt: todayPlus(1),
               }
@@ -294,8 +340,9 @@ function OrderCenterContent() {
       );
       refreshInternal();
       setPaymentOrderId(undefined);
+      showToast(t("order.action.paidToast"));
     },
-    [paymentOrderId, rawOrders]
+    [paymentOrderId, rawOrders, showToast, t]
   );
 
   const paymentOrder = useMemo(
@@ -573,6 +620,7 @@ function OrderCenterContent() {
         open={!!paymentOrderId}
         order={paymentOrder}
         balanceCny={balanceCny}
+        shopName={shopName}
         onClose={() => setPaymentOrderId(undefined)}
         onPaid={handlePaid}
       />

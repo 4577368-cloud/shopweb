@@ -3174,6 +3174,9 @@ export const zh: Dictionary = {
       payBtn: "支付",
       placedToast: "已下单，待支付",
       paidToast: "支付成功，备货中",
+      placeFailed: "下单失败：{msg}",
+      placeNeedShop: "请先选择已授权店铺后再下单",
+      placeNeedBind: "请先完成货源绑定后再下单",
     },
     procurement: {
       lineStatus: "采购阶段",
@@ -3203,6 +3206,7 @@ export const zh: Dictionary = {
         paypal: "Paypal",
         ulimit: "Ulimit 支付渠道",
         ulimitSub: "支持 Visa, MasterCard",
+        ulimitNote: "支持 Visa / MasterCard",
         balance: "余额",
         balanceNote: "余额支付好省钱",
       },
@@ -3215,6 +3219,9 @@ export const zh: Dictionary = {
       insufficient: "余额不足 — 需要 {need}，当前 {have}",
       serverError: "支付失败，请稍后重试或联系客服",
       settlementNote: "结算货币为美元，非美元货币可由银行自动兑换。",
+      loadingChannels: "正在加载支付通道…",
+      procurementHint: "Tangbuy 采购支付通道",
+      missingTradeNo: "缺少支付单号，请先完成下单后再支付",
     },
   },
   onboarding: {

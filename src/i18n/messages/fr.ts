@@ -3189,6 +3189,9 @@ export const fr: Dictionary = {
       payBtn: "Payer",
       placedToast: "Commande passée — en attente de paiement",
       paidToast: "Paiement réussi — en préparation",
+      placeFailed: "Échec de la commande : {msg}",
+      placeNeedShop: "Sélectionnez une boutique autorisée avant de commander",
+      placeNeedBind: "Liez les SKU d'approvisionnement avant de commander",
     },
     procurement: {
       lineStatus: "Étape d'achat",
@@ -3218,6 +3221,7 @@ export const fr: Dictionary = {
         paypal: "PayPal",
         ulimit: "Ulimit",
         ulimitSub: "Accepte Visa, MasterCard",
+        ulimitNote: "Accepte Visa / MasterCard",
         balance: "Solde du compte",
         balanceNote: "Économisez avec le solde",
       },
@@ -3230,6 +3234,9 @@ export const fr: Dictionary = {
       insufficient: "Solde insuffisant — besoin {need}, disponible {have}",
       serverError: "Échec du paiement. Veuillez réessayer ou contacter le support.",
       settlementNote: "Règlement en USD ; conversion auto par la banque pour les autres devises.",
+      loadingChannels: "Chargement des canaux de paiement…",
+      procurementHint: "Canal de paiement d'achat Tangbuy",
+      missingTradeNo: "Numéro de paiement manquant — passez commande avant de payer",
     },
   },
   onboarding: {

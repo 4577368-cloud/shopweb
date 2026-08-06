@@ -10,7 +10,8 @@
 // - SSR 友好：所有读取/写入用 try/catch + typeof window 保护。
 // ----------------------------------------------------------------------------
 
-import type { OrderSummary, PaymentStatus } from "./types";
+import type { OrderStatus, OrderSummary, PaymentStatus } from "./types";
+import { mapDraftStatusToOrderStatus } from "./draftorder-api";
 
 const INTERNAL_KEY = "tangbuy.order.internal.v1";
 const BALANCE_KEY = "tangbuy.order.balance.cny.v1";
@@ -19,7 +20,7 @@ const BALANCE_KEY = "tangbuy.order.balance.cny.v1";
 export const DEFAULT_BALANCE_CNY = 10000;
 
 /** 我们向货源付款的渠道（与设计稿保持解耦，可独立枚举） */
-export type PaymentChannel = "paypal" | "ulimit" | "balance";
+export type PaymentChannel = "paypal" | "ulimit" | "balance" | string;
 
 /** 订单内部状态增量（按订单 id 持有；不污染 OrderSummary shape） */
 export interface OrderInternal {
@@ -38,6 +39,14 @@ export interface OrderInternal {
   feeUsd?: number;
   /** 内部支付状态（与 OrderSummary.paymentStatus 同步） */
   paymentStatus?: PaymentStatus;
+  /** Plugin draft order id */
+  draftOrderId?: number;
+  /** Tangbuy pay tradeNo */
+  tradeNo?: string;
+  /** DraftOrderItemEnum code */
+  draftStatus?: number;
+  /** Pay expire epoch ms */
+  expireTimeMs?: number | null;
 }
 
 type InternalMap = Record<string, OrderInternal>;
@@ -85,14 +94,31 @@ export function hydrateOrders(orders: OrderSummary[]): OrderSummary[] {
   return orders.map((o) => {
     const intl = map[o.id];
     if (!intl) return o;
+    const fromDraft = mapDraftStatusToOrderStatus(
+      intl.draftStatus ?? o.draftStatus
+    ) as OrderStatus | null;
+    // Prefer draft machine when we have placed/paid internals; else keep Shopify/procurement.
+    let status = o.status;
+    if (intl.paidAt || (intl.draftStatus != null && intl.draftStatus >= 3)) {
+      status = fromDraft ?? "preparing";
+    } else if (intl.placedAt || intl.tradeNo || intl.draftOrderId) {
+      status = fromDraft ?? "pendingPayment";
+    }
     return {
       ...o,
       tangbuyOrderNo: intl.tangbuyOrderNo ?? o.tangbuyOrderNo,
       supplierOrderNo: intl.supplierOrderNo ?? o.supplierOrderNo,
+      draftOrderId: intl.draftOrderId ?? o.draftOrderId,
+      tradeNo: intl.tradeNo ?? o.tradeNo,
+      draftStatus: intl.draftStatus ?? o.draftStatus,
+      status,
       // 内部态优先级最高
       paymentStatus: intl.paymentStatus ?? o.paymentStatus,
       // 仅当原值缺失时才用「明天」兜底，避免覆盖后端真实预计发货时间。
       expectedShipAt: o.expectedShipAt ?? (intl.paidAt ? todayPlus(1) : undefined),
+      payableAmount:
+        o.payableAmount ??
+        (intl.amountUsd != null ? `USD ${intl.amountUsd.toFixed(2)}` : undefined),
     };
   });
 }

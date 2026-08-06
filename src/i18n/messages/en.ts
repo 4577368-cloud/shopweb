@@ -3190,6 +3190,9 @@ export const en = {
       payBtn: "Pay now",
       placedToast: "Order placed — pending payment",
       paidToast: "Payment successful — preparing now",
+      placeFailed: "Place order failed: {msg}",
+      placeNeedShop: "Select an authorized shop before placing an order",
+      placeNeedBind: "Bind sourcing SKUs before placing an order",
     },
     procurement: {
       lineStatus: "Procurement stage",
@@ -3219,6 +3222,7 @@ export const en = {
         paypal: "PayPal",
         ulimit: "Ulimit payment",
         ulimitSub: "Supports Visa, MasterCard",
+        ulimitNote: "Supports Visa / MasterCard",
         balance: "Account balance",
         balanceNote: "Save more with balance",
       },
@@ -3231,6 +3235,9 @@ export const en = {
       insufficient: "Insufficient balance — need {need}, have {have}",
       serverError: "Payment failed. Please try again or contact support.",
       settlementNote: "Settlement in USD; non-USD auto-converted by the bank.",
+      loadingChannels: "Loading payment channels…",
+      procurementHint: "Tangbuy procurement payment channel",
+      missingTradeNo: "Missing trade number — place the order before paying",
     },
   },
   onboarding: {

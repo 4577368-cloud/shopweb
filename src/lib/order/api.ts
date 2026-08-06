@@ -20,9 +20,22 @@ import { applyProcurementSnapshot } from "./tangbuy";
 export {
   placeDropshipOrder,
   previewDropshipAmount,
+  buildPackageCreateInfoForOrder,
   type DropshipPurchaseRequest,
   type DropshipPurchaseResult,
 } from "./dropship-purchase";
+
+export {
+  resolveDraftOrder,
+  getDraftOrder,
+  listDraftLines,
+  refundDraftOrder,
+  listPayChannels,
+  submitPayOrder,
+  mapDraftStatusToOrderStatus,
+  payCodeOf,
+  DRAFT_STATUS,
+} from "./draftorder-api";
 
 export type OrderSource = "real" | "mock";
 
@@ -120,6 +133,7 @@ export function mapShopOrderHeader(h: ShopOrderHeader): OrderSummary {
     paymentStatus: derivePayment(h.financialStatus),
     productCost: formatMoney(h.totalPrice, h.currency),
     lineItems: nestedLines.length > 0 ? nestedLines : undefined,
+    draftOrderId: h.draftOrderId ?? undefined,
   };
   if (h.procurementLine && Object.keys(h.procurementLine).length > 0) {
     return applyProcurementSnapshot(base, h.procurementLine, {

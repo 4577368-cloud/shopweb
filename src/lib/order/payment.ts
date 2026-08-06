@@ -12,7 +12,7 @@ import type { PaymentChannel } from "./mock-store";
 export const CNY_PER_USD = 6.43;
 
 /** 通道固定手续费（USD；余额为 0） */
-export const CHANNEL_FEE_USD: Record<PaymentChannel, number> = {
+export const CHANNEL_FEE_USD: Record<"paypal" | "ulimit" | "balance", number> = {
   paypal: 1.11,
   ulimit: 0.92,
   balance: 0,
@@ -86,7 +86,10 @@ export function deriveAmountUsd(order: OrderSummary): number {
 
 /** 通道手续费（USD） */
 export function feeForChannel(channel: PaymentChannel): number {
-  return CHANNEL_FEE_USD[channel] ?? 0;
+  if (channel === "paypal") return CHANNEL_FEE_USD.paypal;
+  if (channel === "ulimit") return CHANNEL_FEE_USD.ulimit;
+  if (channel === "balance") return CHANNEL_FEE_USD.balance;
+  return 0;
 }
 
 /** USD → CNY 展示用 */

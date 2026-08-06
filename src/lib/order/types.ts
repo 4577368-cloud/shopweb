@@ -143,4 +143,11 @@ export interface OrderSummary {
   merchantFulfillmentPhase?: string;
   procurementExceptionTag?: string;
   procurementQueue?: string;
+
+  /** Plugin draft order id (`t_draft_order.id`) after resolve/derive. */
+  draftOrderId?: number;
+  /** Tangbuy pay tradeNo / payNo from purchaseOrder. */
+  tradeNo?: string;
+  /** DraftOrderItemEnum code from plugin draft header. */
+  draftStatus?: number;
 }
