@@ -37,6 +37,7 @@ import { SameProductComboPanel } from "@/components/select/same-product-combo-pa
 import { BundleHelpBubble } from "@/components/bundle-hub/bundle-help-bubble";
 import { BundleAiNameButton } from "@/components/bundle-hub/bundle-ai-name-button";
 import { api, readableError } from "@/lib/api";
+import { isBindingReady } from "@/lib/bundle/catalog-pool";
 import { openExternal } from "@/host/adapters/external-link";
 import { shopifyProductAdminUrl } from "@/lib/shop-product-external-link";
 import type {
@@ -71,15 +72,6 @@ function formatShopPrice(
   if (price == null || !Number.isFinite(price) || price <= 0) return null;
   const cur = (currency || "USD").trim() || "USD";
   return `${cur} ${price}`;
-}
-
-function isBindingReady(
-  bindings: Record<string, ImageBindingView>,
-  productId: string
-): boolean {
-  const b = bindings[productId];
-  if (!b?.bound || !b.tangbuyProductId) return false;
-  return b.bindStatus == null || b.bindStatus === "ACTIVE";
 }
 
 /** Map Shopify Fixed Bundle nesting errors to operator-facing copy. */
@@ -505,21 +497,68 @@ export function BundleComposerDrawer({
         p.thirdPlatformItemId.includes(q)
       );
     });
+    // Bound first (paging), then selected, then blocked last.
     return rows.sort((a, b) => {
       const aId = a.thirdPlatformItemId;
       const bId = b.thirdPlatformItemId;
-      const aSel = selected[aId] ? 0 : isOccupiedElsewhere(aId) ? 2 : 1;
-      const bSel = selected[bId] ? 0 : isOccupiedElsewhere(bId) ? 2 : 1;
+      const aBound = isBindingReady(bindings, aId) ? 0 : 1;
+      const bBound = isBindingReady(bindings, bId) ? 0 : 1;
+      if (aBound !== bBound) return aBound - bBound;
+      const aSel = selected[aId]
+        ? 0
+        : isOccupiedElsewhere(aId) || isKitParentBlocked(aId)
+          ? 2
+          : 1;
+      const bSel = selected[bId]
+        ? 0
+        : isOccupiedElsewhere(bId) || isKitParentBlocked(bId)
+          ? 2
+          : 1;
       if (aSel !== bSel) return aSel - bSel;
       return (a.title || "").localeCompare(b.title || "");
     });
-  }, [catalog, contextId, isOccupiedElsewhere, query, selected]);
+  }, [
+    bindings,
+    catalog,
+    contextId,
+    isKitParentBlocked,
+    isOccupiedElsewhere,
+    query,
+    selected,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(candidates.length / CATALOG_PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageRows = candidates.slice(
     (safePage - 1) * CATALOG_PAGE_SIZE,
     safePage * CATALOG_PAGE_SIZE
+  );
+  const pageSelectableIds = useMemo(
+    () =>
+      pageRows
+        .map((p) => p.thirdPlatformItemId)
+        .filter(
+          (id) =>
+            isBindingReady(bindings, id) &&
+            !isOccupiedElsewhere(id) &&
+            !isKitParentBlocked(id)
+        ),
+    [bindings, isKitParentBlocked, isOccupiedElsewhere, pageRows]
+  );
+  const pageAllSelected =
+    pageSelectableIds.length > 0 &&
+    pageSelectableIds.every((id) => Boolean(selected[id]));
+  const allBoundSelectableIds = useMemo(
+    () =>
+      candidates
+        .map((p) => p.thirdPlatformItemId)
+        .filter(
+          (id) =>
+            isBindingReady(bindings, id) &&
+            !isOccupiedElsewhere(id) &&
+            !isKitParentBlocked(id)
+        ),
+    [bindings, candidates, isKitParentBlocked, isOccupiedElsewhere]
   );
 
   const selectedEntries = useMemo(
@@ -660,6 +699,20 @@ export function BundleComposerDrawer({
       const next = { ...prev };
       if (next[id]) delete next[id];
       else next[id] = { quantity: 1, variantId: null };
+      return next;
+    });
+  };
+
+  const toggleSelectIds = (ids: string[], select: boolean) => {
+    setSelected((prev) => {
+      const next = { ...prev };
+      for (const id of ids) {
+        if (select) {
+          if (!next[id]) next[id] = { quantity: 1, variantId: null };
+        } else {
+          delete next[id];
+        }
+      }
       return next;
     });
   };
@@ -1299,16 +1352,53 @@ export function BundleComposerDrawer({
               <p className="text-[12px] font-semibold text-ink">
                 {t("bundle.selectProducts")}
               </p>
-              <span
-                className={cn(
-                  "text-[11px] tabular-nums",
-                  selectedCount >= 1
-                    ? "font-medium text-amber-700"
-                    : "text-ink-muted"
-                )}
-              >
-                {t("bundle.pickedCount", { count: selectedCount })}
-              </span>
+              <div className="flex items-center gap-2">
+                <label
+                  className={cn(
+                    "flex items-center gap-1 text-[10px]",
+                    pageSelectableIds.length === 0
+                      ? "cursor-not-allowed text-ink-subtle"
+                      : "cursor-pointer text-ink-muted hover:text-ink"
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={pageAllSelected}
+                    onChange={() =>
+                      toggleSelectIds(pageSelectableIds, !pageAllSelected)
+                    }
+                    disabled={busy || pageSelectableIds.length === 0}
+                  />
+                  {t("bundle.selectPageBound", {
+                    count: pageSelectableIds.length,
+                  })}
+                </label>
+                <button
+                  type="button"
+                  className="text-[10px] text-ink-muted underline-offset-2 hover:text-ink hover:underline disabled:opacity-40"
+                  disabled={busy || allBoundSelectableIds.length === 0}
+                  onClick={() =>
+                    toggleSelectIds(
+                      allBoundSelectableIds,
+                      !allBoundSelectableIds.every((id) => Boolean(selected[id]))
+                    )
+                  }
+                >
+                  {t("bundle.selectAllBound", {
+                    count: allBoundSelectableIds.length,
+                  })}
+                </button>
+                <span
+                  className={cn(
+                    "text-[11px] tabular-nums",
+                    selectedCount >= 1
+                      ? "font-medium text-amber-700"
+                      : "text-ink-muted"
+                  )}
+                >
+                  {t("bundle.pickedCount", { count: selectedCount })}
+                </span>
+              </div>
             </div>
 
             <div className="shrink-0 px-3 pt-2">

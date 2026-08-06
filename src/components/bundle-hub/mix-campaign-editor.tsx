@@ -13,15 +13,11 @@ import { Loader2 } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { BundleHelpBubble } from "@/components/bundle-hub/bundle-help-bubble";
 import { BundleAiNameButton } from "@/components/bundle-hub/bundle-ai-name-button";
-
-function isBindingReady(
-  bindings: Record<string, ImageBindingView>,
-  productId: string
-): boolean {
-  const b = bindings[productId];
-  if (!b?.bound || !b.tangbuyProductId) return false;
-  return b.bindStatus == null || b.bindStatus === "ACTIVE";
-}
+import {
+  boundProductIds,
+  isBindingReady,
+  sortCatalogByBinding,
+} from "@/lib/bundle/catalog-pool";
 
 export function MixCampaignEditor({
   shopName,
@@ -78,7 +74,16 @@ export function MixCampaignEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const candidates = catalog;
+  const candidates = useMemo(
+    () => sortCatalogByBinding(catalog, bindings),
+    [catalog, bindings]
+  );
+  const selectableIds = useMemo(
+    () => boundProductIds(candidates, bindings),
+    [candidates, bindings]
+  );
+  const allBoundSelected =
+    selectableIds.length > 0 && selectableIds.every((id) => pool.has(id));
   const qtyNum = Math.max(2, Number(minQty) || 2);
   const pctNum = Math.min(100, Math.max(1, Number(percent) || 1));
   const amountNum = Math.max(0.01, Number(amount) || 0.01);
@@ -100,6 +105,20 @@ export function MixCampaignEditor({
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllBound = () => {
+    setPool((prev) => {
+      if (selectableIds.length === 0) return prev;
+      if (selectableIds.every((id) => prev.has(id))) {
+        const next = new Set(prev);
+        for (const id of selectableIds) next.delete(id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const id of selectableIds) next.add(id);
       return next;
     });
   };
@@ -261,8 +280,28 @@ export function MixCampaignEditor({
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-hairline">
-        <div className="border-b border-hairline px-3 py-2 text-[12px] font-semibold text-ink">
-          {t("bundleHub.poolTitle", { count: pool.size })}
+        <div className="flex items-center justify-between gap-2 border-b border-hairline px-3 py-2">
+          <p className="text-[12px] font-semibold text-ink">
+            {t("bundleHub.poolTitle", { count: pool.size })}
+          </p>
+          <label
+            className={cn(
+              "flex items-center gap-1.5 text-[11px]",
+              selectableIds.length === 0
+                ? "cursor-not-allowed text-ink-subtle"
+                : "cursor-pointer text-ink-muted hover:text-ink"
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={allBoundSelected}
+              onChange={toggleSelectAllBound}
+              disabled={saving || selectableIds.length === 0}
+            />
+            {t("bundleHub.poolSelectAllBound", {
+              count: selectableIds.length,
+            })}
+          </label>
         </div>
         <p className="border-b border-hairline px-3 py-1.5 text-[10px] text-ink-muted">
           {t("bundleHub.slotPoolHint")}

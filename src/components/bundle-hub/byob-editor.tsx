@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/i18n/LocaleProvider";
@@ -12,13 +12,18 @@ import { Loader2, Plus, Trash2 } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { BundleHelpBubble } from "@/components/bundle-hub/bundle-help-bubble";
 import { BundleAiNameButton } from "@/components/bundle-hub/bundle-ai-name-button";
+import {
+  boundProductIds,
+  isBindingReady,
+  sortCatalogByBinding,
+} from "@/lib/bundle/catalog-pool";
 
 function newSlot(role: ByobSlot["role"]): ByobSlot {
   return {
     id: `slot-${role}-${Math.random().toString(36).slice(2, 8)}`,
     role,
     title: role,
-    min: role === "main" ? 1 : 0,
+    min: 1,
     max: role === "main" ? 1 : 3,
     poolProductIds: [],
   };
@@ -37,13 +42,13 @@ function roleTitleKey(role: ByobSlot["role"]): string {
   }
 }
 
-/** Avoid browser number quirks that produce leading zeros like "01". */
-function parseQty(raw: string, fallback: number, min: number): number {
+/** Avoid browser number quirks that produce leading zeros like "01". Empty → keep floor. */
+function parseQty(raw: string, fallback: number, floor: number): number {
   const cleaned = raw.replace(/[^\d]/g, "");
-  if (cleaned === "") return fallback;
+  if (cleaned === "") return Math.max(floor, fallback);
   const n = Number.parseInt(cleaned, 10);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(min, n);
+  if (!Number.isFinite(n)) return Math.max(floor, fallback);
+  return Math.max(floor, n);
 }
 
 /** BYOB slot template editor — persists draft; storefront Block reads metafield. */
@@ -72,7 +77,13 @@ export function ByobEditor({
     if (initial?.ruleJson) {
       try {
         const rule = JSON.parse(initial.ruleJson) as { slots?: ByobSlot[] };
-        if (rule.slots?.length) return rule.slots;
+        if (rule.slots?.length) {
+          return rule.slots.map((s) => {
+            const min = Math.max(1, Number(s.min) || 1);
+            const max = Math.max(min, Number(s.max) || min);
+            return { ...s, min, max };
+          });
+        }
       } catch {
         /* fallthrough */
       }
@@ -82,13 +93,16 @@ export function ByobEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isReady = (productId: string) => {
-    const b = bindings[productId];
-    if (!b?.bound || !b.tangbuyProductId) return false;
-    return b.bindStatus == null || b.bindStatus === "ACTIVE";
-  };
+  const isReady = (productId: string) => isBindingReady(bindings, productId);
 
-  const candidates = catalog;
+  const candidates = useMemo(
+    () => sortCatalogByBinding(catalog, bindings),
+    [catalog, bindings]
+  );
+  const selectableIds = useMemo(
+    () => boundProductIds(candidates, bindings),
+    [candidates, bindings]
+  );
 
   const togglePool = (slotId: string, productId: string) => {
     if (!isReady(productId)) return;
@@ -99,6 +113,46 @@ export function ByobEditor({
         if (set.has(productId)) set.delete(productId);
         else set.add(productId);
         return { ...s, poolProductIds: Array.from(set) };
+      })
+    );
+  };
+
+  const toggleSelectAllBound = (slotId: string) => {
+    setSlots((all) =>
+      all.map((s) => {
+        if (s.id !== slotId) return s;
+        const allOn =
+          selectableIds.length > 0 &&
+          selectableIds.every((id) => s.poolProductIds.includes(id));
+        if (allOn) {
+          return {
+            ...s,
+            poolProductIds: s.poolProductIds.filter(
+              (id) => !selectableIds.includes(id)
+            ),
+          };
+        }
+        const set = new Set(s.poolProductIds);
+        for (const id of selectableIds) set.add(id);
+        return { ...s, poolProductIds: Array.from(set) };
+      })
+    );
+  };
+
+  const setSlotQty = (
+    slotId: string,
+    field: "min" | "max",
+    raw: string
+  ) => {
+    setSlots((all) =>
+      all.map((s) => {
+        if (s.id !== slotId) return s;
+        if (field === "min") {
+          const min = parseQty(raw, s.min, 1);
+          return { ...s, min, max: Math.max(s.max, min) };
+        }
+        const max = parseQty(raw, s.max, 1);
+        return { ...s, max: Math.max(max, s.min) };
       })
     );
   };
@@ -284,16 +338,8 @@ export function ByobEditor({
                 <Input
                   inputMode="numeric"
                   pattern="[0-9]*"
-                  value={String(slot.min)}
-                  onChange={(e) =>
-                    setSlots((all) =>
-                      all.map((s) =>
-                        s.id === slot.id
-                          ? { ...s, min: parseQty(e.target.value, 0, 0) }
-                          : s
-                      )
-                    )
-                  }
+                  value={String(Math.max(1, slot.min))}
+                  onChange={(e) => setSlotQty(slot.id, "min", e.target.value)}
                   disabled={saving}
                 />
                 <span className="block text-[10px] text-ink-subtle">
@@ -305,16 +351,8 @@ export function ByobEditor({
                 <Input
                   inputMode="numeric"
                   pattern="[0-9]*"
-                  value={String(slot.max)}
-                  onChange={(e) =>
-                    setSlots((all) =>
-                      all.map((s) =>
-                        s.id === slot.id
-                          ? { ...s, max: parseQty(e.target.value, 1, 1) }
-                          : s
-                      )
-                    )
-                  }
+                  value={String(Math.max(1, slot.max, slot.min))}
+                  onChange={(e) => setSlotQty(slot.id, "max", e.target.value)}
                   disabled={saving}
                 />
                 <span className="block text-[10px] text-ink-subtle">
@@ -324,8 +362,33 @@ export function ByobEditor({
             </div>
 
             <div className="mt-2 overflow-hidden rounded-md border border-hairline">
-              <div className="border-b border-hairline px-2.5 py-1.5 text-[11px] font-medium text-ink">
-                {t("bundleHub.slotPool", { count: slot.poolProductIds.length })}
+              <div className="flex items-center justify-between gap-2 border-b border-hairline px-2.5 py-1.5">
+                <p className="text-[11px] font-medium text-ink">
+                  {t("bundleHub.slotPool", { count: slot.poolProductIds.length })}
+                </p>
+                <label
+                  className={cn(
+                    "flex items-center gap-1 text-[10px]",
+                    selectableIds.length === 0
+                      ? "cursor-not-allowed text-ink-subtle"
+                      : "cursor-pointer text-ink-muted hover:text-ink"
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={
+                      selectableIds.length > 0 &&
+                      selectableIds.every((id) =>
+                        slot.poolProductIds.includes(id)
+                      )
+                    }
+                    onChange={() => toggleSelectAllBound(slot.id)}
+                    disabled={saving || selectableIds.length === 0}
+                  />
+                  {t("bundleHub.poolSelectAllBound", {
+                    count: selectableIds.length,
+                  })}
+                </label>
               </div>
               <p className="border-b border-hairline px-2.5 py-1.5 text-[10px] text-ink-muted">
                 {t("bundleHub.slotPoolHint")}
