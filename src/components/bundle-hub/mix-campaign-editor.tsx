@@ -16,6 +16,10 @@ import { BundleAiNameButton } from "@/components/bundle-hub/bundle-ai-name-butto
 import {
   boundProductIds,
   isBindingReady,
+  normalizePoolProductIds,
+  numericShopifyId,
+  poolHasProductId,
+  sameShopifyProductId,
   sortCatalogByBinding,
 } from "@/lib/bundle/catalog-pool";
 
@@ -46,13 +50,17 @@ export function MixCampaignEditor({
     }
   }, [initial?.ruleJson]);
   const parsedPool = useMemo(() => {
-    if (!initial?.poolJson) return seedProductIds ?? [];
-    try {
-      const arr = JSON.parse(initial.poolJson) as string[];
-      return Array.isArray(arr) ? arr : seedProductIds ?? [];
-    } catch {
-      return seedProductIds ?? [];
+    let raw: Array<string | number> = seedProductIds ?? [];
+    if (initial?.poolJson) {
+      try {
+        const arr = JSON.parse(initial.poolJson) as unknown;
+        if (Array.isArray(arr)) raw = arr as Array<string | number>;
+      } catch {
+        /* keep seed */
+      }
     }
+    // Canonical numeric ids — API stores these; catalog often uses gid://…
+    return normalizePoolProductIds(raw);
   }, [initial?.poolJson, seedProductIds]);
 
   const [title, setTitle] = useState(initial?.title || t("bundleHub.mixDefaultTitle"));
@@ -70,7 +78,7 @@ export function MixCampaignEditor({
       ? String(parsedRule.pricing.amount)
       : "99"
   );
-  const [pool, setPool] = useState<Set<string>>(new Set(parsedPool));
+  const [pool, setPool] = useState<Set<string>>(() => new Set(parsedPool));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,7 +91,8 @@ export function MixCampaignEditor({
     [candidates, bindings]
   );
   const allBoundSelected =
-    selectableIds.length > 0 && selectableIds.every((id) => pool.has(id));
+    selectableIds.length > 0 &&
+    selectableIds.every((id) => poolHasProductId(pool, id));
   const qtyNum = Math.max(2, Number(minQty) || 2);
   const pctNum = Math.min(100, Math.max(1, Number(percent) || 1));
   const amountNum = Math.max(0.01, Number(amount) || 0.01);
@@ -101,10 +110,15 @@ export function MixCampaignEditor({
 
   const toggle = (id: string) => {
     if (!isBindingReady(bindings, id)) return;
+    const key = numericShopifyId(id);
+    if (!key) return;
     setPool((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const on = poolHasProductId(prev, key);
+      const next = new Set<string>();
+      for (const x of prev) {
+        if (!sameShopifyProductId(x, key)) next.add(numericShopifyId(x) || x);
+      }
+      if (!on) next.add(key);
       return next;
     });
   };
@@ -112,13 +126,21 @@ export function MixCampaignEditor({
   const toggleSelectAllBound = () => {
     setPool((prev) => {
       if (selectableIds.length === 0) return prev;
-      if (selectableIds.every((id) => prev.has(id))) {
-        const next = new Set(prev);
-        for (const id of selectableIds) next.delete(id);
+      if (selectableIds.every((id) => poolHasProductId(prev, id))) {
+        const next = new Set<string>();
+        for (const x of prev) {
+          if (!selectableIds.some((id) => sameShopifyProductId(x, id))) {
+            next.add(numericShopifyId(x) || x);
+          }
+        }
         return next;
       }
-      const next = new Set(prev);
-      for (const id of selectableIds) next.add(id);
+      const next = new Set<string>();
+      for (const x of prev) next.add(numericShopifyId(x) || x);
+      for (const id of selectableIds) {
+        const key = numericShopifyId(id);
+        if (key) next.add(key);
+      }
       return next;
     });
   };
@@ -182,7 +204,7 @@ export function MixCampaignEditor({
               percent: pctNum,
               fixedAmount: String(amountNum),
               poolTitles: candidates
-                .filter((p) => pool.has(p.thirdPlatformItemId))
+                .filter((p) => poolHasProductId(pool, p.thirdPlatformItemId))
                 .map((p) => p.title)
                 .filter(Boolean)
                 .slice(0, 8),
@@ -315,7 +337,7 @@ export function MixCampaignEditor({
             candidates.map((p) => {
               const id = p.thirdPlatformItemId;
               const ready = isBindingReady(bindings, id);
-              const on = pool.has(id);
+              const on = poolHasProductId(pool, id);
               return (
                 <label
                   key={id}

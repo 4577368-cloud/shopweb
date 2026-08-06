@@ -15,6 +15,10 @@ import { BundleAiNameButton } from "@/components/bundle-hub/bundle-ai-name-butto
 import {
   boundProductIds,
   isBindingReady,
+  normalizePoolProductIds,
+  numericShopifyId,
+  poolHasProductId,
+  sameShopifyProductId,
   sortCatalogByBinding,
 } from "@/lib/bundle/catalog-pool";
 
@@ -81,7 +85,12 @@ export function ByobEditor({
           return rule.slots.map((s) => {
             const min = Math.max(1, Number(s.min) || 1);
             const max = Math.max(min, Number(s.max) || min);
-            return { ...s, min, max };
+            return {
+              ...s,
+              min,
+              max,
+              poolProductIds: normalizePoolProductIds(s.poolProductIds),
+            };
           });
         }
       } catch {
@@ -106,13 +115,17 @@ export function ByobEditor({
 
   const togglePool = (slotId: string, productId: string) => {
     if (!isReady(productId)) return;
+    const key = numericShopifyId(productId);
+    if (!key) return;
     setSlots((all) =>
       all.map((s) => {
         if (s.id !== slotId) return s;
-        const set = new Set(s.poolProductIds);
-        if (set.has(productId)) set.delete(productId);
-        else set.add(productId);
-        return { ...s, poolProductIds: Array.from(set) };
+        const on = poolHasProductId(s.poolProductIds, key);
+        const next = s.poolProductIds
+          .map((id) => numericShopifyId(id) || id)
+          .filter((id) => !sameShopifyProductId(id, key));
+        if (!on) next.push(key);
+        return { ...s, poolProductIds: next };
       })
     );
   };
@@ -123,18 +136,23 @@ export function ByobEditor({
         if (s.id !== slotId) return s;
         const allOn =
           selectableIds.length > 0 &&
-          selectableIds.every((id) => s.poolProductIds.includes(id));
+          selectableIds.every((id) => poolHasProductId(s.poolProductIds, id));
         if (allOn) {
           return {
             ...s,
             poolProductIds: s.poolProductIds.filter(
-              (id) => !selectableIds.includes(id)
+              (id) => !selectableIds.some((sid) => sameShopifyProductId(id, sid))
             ),
           };
         }
-        const set = new Set(s.poolProductIds);
-        for (const id of selectableIds) set.add(id);
-        return { ...s, poolProductIds: Array.from(set) };
+        const next = new Set(
+          s.poolProductIds.map((id) => numericShopifyId(id) || id)
+        );
+        for (const id of selectableIds) {
+          const key = numericShopifyId(id);
+          if (key) next.add(key);
+        }
+        return { ...s, poolProductIds: Array.from(next) };
       })
     );
   };
@@ -162,13 +180,15 @@ export function ByobEditor({
       setError(t("bundleHub.errTitle"));
       return;
     }
-    const byId = new Map(
-      catalog.map((p) => [p.thirdPlatformItemId, p] as const)
+    const byNumeric = new Map(
+      catalog.map(
+        (p) => [numericShopifyId(p.thirdPlatformItemId), p] as const
+      )
     );
     const normalized = slots.map((s) => {
-      const poolProductIds = s.poolProductIds;
+      const poolProductIds = normalizePoolProductIds(s.poolProductIds);
       const poolProducts = poolProductIds.map((id) => {
-        const p = byId.get(id);
+        const p = byNumeric.get(numericShopifyId(id));
         return {
           id,
           handle: p?.handle ?? undefined,
@@ -253,7 +273,9 @@ export function ByobEditor({
             context={{
               poolTitles: catalog
                 .filter((p) =>
-                  slots.some((s) => s.poolProductIds.includes(p.thirdPlatformItemId))
+                  slots.some((s) =>
+                    poolHasProductId(s.poolProductIds, p.thirdPlatformItemId)
+                  )
                 )
                 .map((p) => p.title)
                 .filter(Boolean)
@@ -303,7 +325,10 @@ export function ByobEditor({
                     slotRole: slot.role,
                     poolTitles: catalog
                       .filter((p) =>
-                        slot.poolProductIds.includes(p.thirdPlatformItemId)
+                        poolHasProductId(
+                          slot.poolProductIds,
+                          p.thirdPlatformItemId
+                        )
                       )
                       .map((p) => p.title)
                       .filter(Boolean)
@@ -379,7 +404,7 @@ export function ByobEditor({
                     checked={
                       selectableIds.length > 0 &&
                       selectableIds.every((id) =>
-                        slot.poolProductIds.includes(id)
+                        poolHasProductId(slot.poolProductIds, id)
                       )
                     }
                     onChange={() => toggleSelectAllBound(slot.id)}
@@ -402,7 +427,7 @@ export function ByobEditor({
                   candidates.map((p) => {
                     const id = p.thirdPlatformItemId;
                     const ready = isReady(id);
-                    const on = slot.poolProductIds.includes(id);
+                    const on = poolHasProductId(slot.poolProductIds, id);
                     return (
                       <label
                         key={id}
