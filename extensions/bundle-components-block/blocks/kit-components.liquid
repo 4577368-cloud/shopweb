@@ -66,6 +66,19 @@
   endif
 %}
 
+{% liquid
+  assign has_multi_qty = false
+  if total_units > line_count
+    assign has_multi_qty = true
+  endif
+  assign show_summary_block = false
+  if show_summary
+    if has_multi_qty or discount_pct > 0
+      assign show_summary_block = true
+    endif
+  endif
+%}
+
 {% comment %}
   Show whenever composition metafield has lines. Do not require is_kit —
   some parents only got components_json if boolean write lagged.
@@ -96,16 +109,18 @@
       </div>
     </div>
 
-    {% if show_summary %}
+    {% if show_summary_block %}
       <div class="tb-kit-premium__summary" role="list">
-        <div class="tb-kit-premium__summary-item" role="listitem">
-          <span class="tb-kit-premium__summary-value">{{ total_units }}</span>
-          <span class="tb-kit-premium__summary-label">{{ 'blocks.kit_components.total_units' | t }}</span>
-        </div>
-        <div class="tb-kit-premium__summary-item" role="listitem">
-          <span class="tb-kit-premium__summary-value">{{ line_count }}</span>
-          <span class="tb-kit-premium__summary-label">{{ 'blocks.kit_components.included_products' | t }}</span>
-        </div>
+        {% if has_multi_qty %}
+          <div class="tb-kit-premium__summary-item" role="listitem">
+            <span class="tb-kit-premium__summary-value">{{ total_units }}</span>
+            <span class="tb-kit-premium__summary-label">{{ 'blocks.kit_components.total_units' | t }}</span>
+          </div>
+          <div class="tb-kit-premium__summary-item" role="listitem">
+            <span class="tb-kit-premium__summary-value">{{ line_count }}</span>
+            <span class="tb-kit-premium__summary-label">{{ 'blocks.kit_components.included_products' | t }}</span>
+          </div>
+        {% endif %}
         {% if discount_pct > 0 %}
           <div class="tb-kit-premium__summary-item" role="listitem">
             <span class="tb-kit-premium__summary-value">{{ discount_pct }}%</span>
