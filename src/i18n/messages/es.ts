@@ -3070,6 +3070,11 @@ export const es: Dictionary = {
         title: "Error al cargar pedidos",
         desc: "El servicio de pedidos está temporalmente indisponible. Por favor, inténtelo de nuevo más tarde.",
       },
+      noShop: {
+        title: "Ninguna tienda seleccionada",
+        desc: "La lista de pedidos requiere una tienda Shopify autorizada. Autorice o cambie de tienda y actualice.",
+        action: "Autorizar tienda",
+      },
     },
     filter: {
       searchPlaceholder: "Buscar pedido / ID Shopify / producto",

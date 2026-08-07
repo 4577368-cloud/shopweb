@@ -248,8 +248,8 @@ async function mapWithConcurrencyLimit<T, R>(
 export async function fetchOrders(shop: string): Promise<FetchOrdersResult> {
   const raw = (shop ?? "").trim();
   if (!raw) {
-    // 未连接店铺（开发预览）：保留示例数据，但标 no_shop 让 UI 明确其为演示。
-    return { orders: makeMockOrders(), source: "mock", error: "no_shop" };
+    // 未连接店铺：诚实空态（不再塞 mock，避免线上误以为有订单 / Network 无请求却看不清原因）。
+    return { orders: [], source: "real", error: "no_shop" };
   }
   const shopName = normalizeShopName(raw);
   try {

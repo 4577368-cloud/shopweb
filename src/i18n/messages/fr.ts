@@ -3071,6 +3071,11 @@ export const fr: Dictionary = {
         title: "Échec du chargement des commandes",
         desc: "Le service de commandes est temporairement indisponible. Veuillez réessayer plus tard.",
       },
+      noShop: {
+        title: "Aucune boutique sélectionnée",
+        desc: "La liste des commandes nécessite une boutique Shopify autorisée. Autorisez ou changez de boutique, puis actualisez.",
+        action: "Autoriser la boutique",
+      },
     },
     filter: {
       searchPlaceholder: "Rechercher commande / ID Shopify / produit",

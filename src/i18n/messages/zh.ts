@@ -3056,6 +3056,11 @@ export const zh: Dictionary = {
         title: "订单加载失败",
         desc: "订单服务暂不可用，请稍后重试。",
       },
+      noShop: {
+        title: "尚未选择店铺",
+        desc: "订单列表需要已授权的 Shopify 店铺。请先完成授权或切换店铺后再刷新。",
+        action: "去授权店铺",
+      },
     },
     filter: {
       searchPlaceholder: "搜索店铺订单号 / Shopify 单号 / 商品名称",

@@ -3072,6 +3072,11 @@ export const en = {
         title: "Failed to load orders",
         desc: "Order service is temporarily unavailable. Please retry later.",
       },
+      noShop: {
+        title: "No shop selected",
+        desc: "Order list requires an authorized Shopify shop. Authorize or switch shops, then refresh.",
+        action: "Authorize shop",
+      },
     },
     filter: {
       searchPlaceholder: "Search order / Shopify ID / product",

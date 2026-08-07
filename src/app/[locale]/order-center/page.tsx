@@ -8,23 +8,23 @@ import { AssistantRail } from "@/components/workbench/assistant-rail";
 import { WorkbenchSidebar } from "@/components/workbench/workbench-sidebar";
 import { useWorkbenchPage } from "@/components/workbench/workbench-page";
 import { useT, useLocale } from "@/i18n/LocaleProvider";
-import { localePath } from "@/i18n/LocaleLink";
+import { LocaleLink, localePath } from "@/i18n/LocaleLink";
 import { useOnboarding } from "@/context/onboarding-context";
+import { useAuth } from "@/context/user-context";
 import { resolveShopApiName } from "@/lib/resolve-shop-api-name";
 import type { OrderStatus, OrderSummary } from "@/lib/order/types";
 import { STATUS_ORDER, countByStatus } from "@/lib/order/state-machine";
-import { makeMockOrders } from "@/lib/order/mock";
 import {
   fetchOrders,
   invalidateOrderHeadersCache,
   parseCreatedAt,
   placeDropshipOrder,
-  type OrderSource,
 } from "@/lib/order/api";
 import { ApiError } from "@/lib/api";
 import { MetricSummaryCards, type MetricSummaryItem, type MetricTone } from "@/components/workbench/metric-summary-cards";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   OrderFilterBar,
   type ExceptionFilter,
@@ -70,7 +70,11 @@ function OrderCenterContent() {
   const locale = useLocale();
   const router = useRouter();
   const wb = useWorkbenchPage("order-center");
-  const { shop, showToast } = useOnboarding();
+  const { shop, showToast, isAuthorized, authBootstrapping, shopAuthHydrating } =
+    useOnboarding();
+  const { bootstrapping: userBootstrapping } = useAuth();
+  const sessionPending =
+    authBootstrapping || userBootstrapping || shopAuthHydrating;
   const shopName = resolveShopApiName(shop);
 
   const [activeTab, setActiveTab] = useState<TabKey>("pendingOrder");
@@ -91,10 +95,9 @@ function OrderCenterContent() {
   const [internalVersion, setInternalVersion] = useState(0);
   const refreshInternal = () => setInternalVersion((v) => v + 1);
 
-  // 真实订单优先；本地无后端 / 异常 → fetchOrders 内部回退 mock。
-  const [rawOrders, setRawOrders] = useState(() => makeMockOrders());
+  // 等店铺 hydrate 完成后再拉真实订单；未授权 / 无店铺时不再塞 mock。
+  const [rawOrders, setRawOrders] = useState<OrderSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState<OrderSource>("mock");
   const [loadError, setLoadError] = useState<"backend_unavailable" | "no_shop" | null>(null);
 
   const load = useCallback(() => {
@@ -104,7 +107,6 @@ function OrderCenterContent() {
       .then((res) => {
         if (!alive) return;
         setRawOrders(res.orders);
-        setSource(res.source);
         setLoadError(res.error ?? null);
         setLastUpdated(
           new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -118,7 +120,20 @@ function OrderCenterContent() {
     };
   }, [shopName]);
 
-  useEffect(() => load(), [load]);
+  useEffect(() => {
+    // 与商品/SKU 页一致：会话未就绪时不打单，避免 shopName="" 时静默跳过 Network。
+    if (sessionPending) {
+      setLoading(true);
+      return;
+    }
+    if (!isAuthorized || !shopName) {
+      setRawOrders([]);
+      setLoadError("no_shop");
+      setLoading(false);
+      return;
+    }
+    return load();
+  }, [sessionPending, isAuthorized, shopName, load]);
 
   // P3.1：从真实后端拉取余额覆盖 mock 默认值（10000 元）。
   // 失败时保持 mock 值，避免阻塞本地联调（如后端未启动 / 未登录）。
@@ -479,8 +494,20 @@ function OrderCenterContent() {
         }
         {...wb.panelProps}
       >
-        {loading ? (
+        {loading || sessionPending ? (
           <OrderSkeleton rows={6} />
+        ) : loadError === "no_shop" ? (
+          <EmptyState
+            title={t("order.error.noShop.title")}
+            description={t("order.error.noShop.desc")}
+            action={
+              <LocaleLink href={localePath(locale, "/authorize")}>
+                <Button size="sm" className="mt-1">
+                  {t("order.error.noShop.action")}
+                </Button>
+              </LocaleLink>
+            }
+          />
         ) : (
           <>
             <div className="mb-3">
