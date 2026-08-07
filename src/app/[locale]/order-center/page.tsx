@@ -21,6 +21,7 @@ import {
   placeDropshipOrder,
   type OrderSource,
 } from "@/lib/order/api";
+import { ApiError } from "@/lib/api";
 import { MetricSummaryCards, type MetricSummaryItem, type MetricTone } from "@/components/workbench/metric-summary-cards";
 import { SegmentedTabs } from "@/components/workbench/segmented-tabs";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,8 @@ import { OrderDetailDrawer } from "@/components/order/order-detail-drawer";
 import { OrderSkeleton } from "@/components/order/order-skeleton";
 import { OrderAgentPanel, type OrderAgentHandlers, type OrderAgentContext } from "@/components/order/order-agent-panel";
 import { PaymentModal } from "@/components/order/payment-modal";
+import { PlaceOrderWizard } from "@/components/order/place-order-wizard";
+import type { PlaceOrderConfirmPayload } from "@/lib/order/place-order-types";
 import { exportOrdersCsv } from "@/lib/order/export";
 import {
   hydrateOrders,
@@ -44,7 +47,6 @@ import {
   generateSupplierOrderNo,
   type PaymentChannel,
 } from "@/lib/order/mock-store";
-import { deriveAmountUsd } from "@/lib/order/payment";
 import { billingApi } from "@/lib/billing/api";
 import { RechargeModal } from "@/components/billing/recharge-modal";
 import { Download, RefreshCw, ShoppingBag, Clock, Coins, Package, Truck, CheckCircle2 } from "@/lib/ui/icons";
@@ -68,7 +70,7 @@ function OrderCenterContent() {
   const locale = useLocale();
   const router = useRouter();
   const wb = useWorkbenchPage("order-center");
-  const { shop } = useOnboarding();
+  const { shop, showToast } = useOnboarding();
   const shopName = resolveShopApiName(shop);
 
   const [activeTab, setActiveTab] = useState<TabKey>("pendingOrder");
@@ -81,6 +83,7 @@ function OrderCenterContent() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   // A+ 批：跑通下单/支付流程
   const [placingId, setPlacingId] = useState<string | undefined>();
+  const [wizardOrderId, setWizardOrderId] = useState<string | undefined>();
   const [paymentOrderId, setPaymentOrderId] = useState<string | undefined>();
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [balanceCny, setBalanceCnyState] = useState<number>(() => getBalanceCny());
@@ -158,94 +161,90 @@ function OrderCenterContent() {
     [locale, router]
   );
 
-  // 代发下单：优先调 plugin purchaseOrder；失败时回退 mock（本地无后端联调）
+  // 代发下单：打开两步确认向导（不直接 purchase）
   const handlePlace = useCallback(
-    async (order: OrderSummary) => {
+    (order: OrderSummary) => {
       if (order.status !== "pendingOrder") return;
       const unbound = (order.lineItems ?? []).some((it) => !it.linkedOffer);
       if ((order.lineItems?.length ?? 0) > 0 && unbound) {
+        showToast?.(t("order.placeWizard.needBind"));
         const first = order.lineItems!.find((it) => !it.linkedOffer);
         if (first) handleNeedBindSource(first);
         return;
       }
-
-      setPlacingId(order.id);
-      const amountUsd = deriveAmountUsd(order);
-      try {
-        if (shopName) {
-          const res = await placeDropshipOrder({
-            shopName,
-            outerOrderId: order.shopifyOrderId || order.id,
-            orderType: 1,
-          });
-          const tangbuyNo = res.tangbuyOrderNo || res.tradeNo || generateTangbuyOrderNo(order.id);
-          const supplierNo = res.lineNos?.[0] || generateSupplierOrderNo(order.id);
-          setOrderInternal(order.id, {
-            tangbuyOrderNo: tangbuyNo,
-            supplierOrderNo: supplierNo,
-            placedAt: new Date().toISOString(),
-            amountUsd:
-              res.payableAmountCny != null ? Number(res.payableAmountCny) : amountUsd,
-            paymentStatus: "unpaid",
-          });
-          setRawOrders((prev) =>
-            prev.map((o) =>
-              o.id === order.id
-                ? {
-                    ...o,
-                    status: "pendingPayment",
-                    tangbuyOrderNo: tangbuyNo,
-                    supplierOrderNo: supplierNo,
-                    payableAmount:
-                      res.payableAmountCny != null
-                        ? `CNY ${Number(res.payableAmountCny).toFixed(2)}`
-                        : `USD ${amountUsd.toFixed(2)}`,
-                    payMethod: "—",
-                  }
-                : o
-            )
-          );
-          invalidateOrderHeadersCache(shopName);
-          refreshInternal();
-          return;
-        }
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn("[order] placeDropshipOrder failed, fallback mock:", err);
+      if (!shopName) {
+        showToast?.(t("order.placeWizard.needShop"));
+        return;
       }
-
-      setOrderInternal(order.id, {
-        tangbuyOrderNo: generateTangbuyOrderNo(order.id),
-        supplierOrderNo: generateSupplierOrderNo(order.id),
-        placedAt: new Date().toISOString(),
-        amountUsd,
-        paymentStatus: "unpaid",
-      });
-      setRawOrders((prev) =>
-        prev.map((o) =>
-          o.id === order.id
-            ? {
-                ...o,
-                status: "pendingPayment",
-                tangbuyOrderNo: generateTangbuyOrderNo(order.id),
-                supplierOrderNo: generateSupplierOrderNo(order.id),
-                payableAmount: `USD ${amountUsd.toFixed(2)}`,
-                payMethod: "—",
-              }
-            : o
-        )
-      );
-      refreshInternal();
+      setWizardOrderId(order.id);
+      setDrawerOrderId(undefined);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shopName, handleNeedBindSource]
+    [shopName, handleNeedBindSource, showToast, t]
   );
 
-  useEffect(() => {
-    if (!placingId) return;
-    const t = setTimeout(() => setPlacingId(undefined), 500);
-    return () => clearTimeout(t);
-  }, [placingId]);
+  const wizardOrder = useMemo(
+    () => orders.find((o) => o.id === wizardOrderId) ?? null,
+    [orders, wizardOrderId]
+  );
+
+  const handleWizardConfirm = useCallback(
+    async (payload: PlaceOrderConfirmPayload) => {
+      const { order, packageCreateInfo, preview } = payload;
+      if (!shopName) throw new ApiError(t("order.placeWizard.needShop"), 400);
+      setPlacingId(order.id);
+      try {
+        const res = await placeDropshipOrder({
+          shopName,
+          outerOrderId: order.shopifyOrderId || order.id,
+          orderType: 1,
+          packageCreateInfo,
+        });
+        const tangbuyNo =
+          res.tangbuyOrderNo ||
+          res.tradeNo ||
+          generateTangbuyOrderNo(order.id);
+        const supplierNo =
+          res.lineNos?.[0] || generateSupplierOrderNo(order.id);
+        const payableUsd =
+          res.payableAmountCny != null
+            ? Number(res.payableAmountCny)
+            : preview.totalUsd;
+        setOrderInternal(order.id, {
+          tangbuyOrderNo: tangbuyNo,
+          supplierOrderNo: supplierNo,
+          placedAt: new Date().toISOString(),
+          amountUsd: payableUsd,
+          paymentStatus: "unpaid",
+        });
+        setRawOrders((prev) =>
+          prev.map((o) =>
+            o.id === order.id
+              ? {
+                  ...o,
+                  status: "pendingPayment",
+                  tangbuyOrderNo: tangbuyNo,
+                  supplierOrderNo: supplierNo,
+                  payableAmount: `USD ${preview.totalUsd.toFixed(2)}`,
+                  productCost: `USD ${preview.goodsAmountUsd.toFixed(2)}`,
+                  logisticsFee: `USD ${preview.packageAmountUsd.toFixed(2)}`,
+                  logisticsMethod: packageCreateInfo.lineName,
+                  logisticsEta: packageCreateInfo.deliveryTime,
+                  payMethod: "—",
+                  paymentStatus: "unpaid",
+                }
+              : o
+          )
+        );
+        invalidateOrderHeadersCache(shopName);
+        refreshInternal();
+        setWizardOrderId(undefined);
+        showToast?.(t("order.action.placedToast"));
+      } finally {
+        setPlacingId(undefined);
+      }
+    },
+    [shopName, showToast, t]
+  );
 
   // A+ 批：打开支付弹窗
   const handleOpenPayment = useCallback((order: OrderSummary) => {
@@ -294,8 +293,9 @@ function OrderCenterContent() {
       );
       refreshInternal();
       setPaymentOrderId(undefined);
+      showToast?.(t("order.action.paidToast"));
     },
-    [paymentOrderId, rawOrders]
+    [paymentOrderId, rawOrders, showToast, t]
   );
 
   const paymentOrder = useMemo(
@@ -567,6 +567,14 @@ function OrderCenterContent() {
         onPlace={handlePlace}
         onOpenPayment={handleOpenPayment}
         placingId={placingId}
+      />
+
+      <PlaceOrderWizard
+        open={!!wizardOrderId}
+        order={wizardOrder}
+        shopName={shopName || ""}
+        onClose={() => setWizardOrderId(undefined)}
+        onConfirm={handleWizardConfirm}
       />
 
       <PaymentModal
